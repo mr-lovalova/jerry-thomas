@@ -1,4 +1,6 @@
 import json
+from io import StringIO
+import logging
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
@@ -6,6 +8,8 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
+from rich.console import Console
+from rich.progress import Progress
 
 import datapipeline.operations.artifacts.series as series_operation
 from datapipeline.artifacts.models import SampleDomainEntry
@@ -23,6 +27,10 @@ from datapipeline.config.transforms import (
     FloorTimeConfig,
     PreprocessConfig,
     TransformConfig,
+)
+from datapipeline.cli.visuals.rich.progress import (
+    _ExecutionProgress,
+    _RichExecutionRenderer,
 )
 from datapipeline.domain.series import SeriesSequence
 from datapipeline.domain.record import TemporalRecord
@@ -1539,13 +1547,29 @@ def test_series_record_sort_is_part_of_the_observed_stream_pipeline(
         features=[SeriesConfig(stream="stream", id="value", field="value")],
     )
     observer = _PipelineStarts()
-    runtime.pipeline_observer = observer
+    output = StringIO()
+    console = Console(file=output, force_terminal=False)
+    progress = Progress(console=console, auto_refresh=False)
+    rich_progress = _ExecutionProgress(progress, debug=False)
+    rich_renderer = _RichExecutionRenderer(logging.INFO, console, rich_progress)
 
-    build_series_artifact(runtime, SeriesTask())
+    def observe(event: PipelineEvent) -> None:
+        observer(event)
+        rich_renderer.render(event)
+
+    runtime.pipeline_observer = observe
+    result = build_series_artifact(runtime, SeriesTask())
+    manifest_path = runtime.artifacts_root / result.relative_path
+    manifest = load_series_manifest(manifest_path)
+    [row] = open_series(manifest_path, manifest)
 
     assert observer.starts == ["series:artifact", "series:stream"]
     assert "project_series" in observer.nodes
     assert "order_series" in observer.nodes
+    assert row.features == {"value": 1.0}
+    assert progress.tasks == []
+    assert "[series:stream] started" in output.getvalue()
+    assert "[series:stream] finished status=success" in output.getvalue()
 
 
 def test_series_closes_shared_stream_after_feature_error(

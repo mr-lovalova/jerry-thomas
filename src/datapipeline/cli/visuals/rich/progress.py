@@ -85,7 +85,7 @@ class _ExecutionProgress:
         self._debug = debug
         self._operation_name: str | None = None
         self._operation_task: TaskID | None = None
-        self._pipeline_name: str | None = None
+        self._pipeline_stack: list[str] = []
         self._pipeline_task: TaskID | None = None
         self._node_tasks: dict[int, TaskID] = {}
         self._open_nodes: list[int] = []
@@ -154,9 +154,11 @@ class _ExecutionProgress:
         self.clear()
 
     def _start_pipeline(self, event: PipelineStarted) -> None:
-        if self._pipeline_name is not None:
-            raise RuntimeError("Cannot start overlapping pipeline progress")
-        self._pipeline_name = event.pipeline_name
+        if event.pipeline_name in self._pipeline_stack:
+            raise RuntimeError("Cannot start duplicate pipeline progress")
+        self._pipeline_stack.append(event.pipeline_name)
+        if len(self._pipeline_stack) > 1:
+            return
         self._pipeline_task = self._progress.add_task(
             f"[{event.pipeline_name}]",
             total=None,
@@ -164,16 +166,19 @@ class _ExecutionProgress:
         )
 
     def _finish_pipeline(self, event: PipelineFinished) -> None:
-        if self._pipeline_name is None:
+        if not self._pipeline_stack:
             raise RuntimeError("Cannot finish pipeline progress before it starts")
-        if self._pipeline_name != event.pipeline_name:
+        if self._pipeline_stack[-1] != event.pipeline_name:
             raise RuntimeError("Pipeline progress finished out of order")
+        self._pipeline_stack.pop()
+        if self._pipeline_stack:
+            return
         self._clear_pipeline()
         self._progress.refresh()
 
     def _start_node(self, event: NodeStarted) -> None:
-        if self._pipeline_name is None:
-            raise RuntimeError("Cannot start node progress before its root pipeline")
+        if not self._owns_live_node(event.pipeline_name):
+            return
         label = f"[{event.pipeline_name}/{event.node_name}]"
         status = Text.assemble(("0", "cyan"), " out")
         self._node_tasks[event.node_index] = self._progress.add_task(
@@ -187,6 +192,8 @@ class _ExecutionProgress:
             self._show_node(event.node_index)
 
     def _update_node(self, event: NodeProgress) -> None:
+        if not self._owns_live_node(event.pipeline_name):
+            return
         self._update_task(
             self._node_tasks[event.node_index],
             completed=event.progress.completed,
@@ -205,6 +212,8 @@ class _ExecutionProgress:
             self._show_node(event.node_index)
 
     def _finish_node(self, event: NodeFinished) -> None:
+        if not self._owns_live_node(event.pipeline_name):
+            return
         task_id = self._node_tasks.pop(event.node_index)
         self._open_nodes.remove(event.node_index)
         was_visible = self._visible_node == event.node_index
@@ -226,6 +235,15 @@ class _ExecutionProgress:
         self._progress.update(self._node_tasks[node_index], visible=True)
         self._visible_node = node_index
 
+    def _owns_live_node(self, pipeline_name: str) -> bool:
+        if not self._pipeline_stack:
+            raise RuntimeError("Cannot handle node progress before its root pipeline")
+        if pipeline_name == self._pipeline_stack[0]:
+            return True
+        if pipeline_name in self._pipeline_stack:
+            return False
+        raise RuntimeError("Node progress belongs to an inactive pipeline")
+
     def _update_task(
         self,
         task_id: TaskID,
@@ -242,8 +260,8 @@ class _ExecutionProgress:
             self._progress.remove_task(task_id)
         if self._pipeline_task is not None:
             self._progress.remove_task(self._pipeline_task)
-        self._pipeline_name = None
         self._pipeline_task = None
+        self._pipeline_stack.clear()
         self._node_tasks.clear()
         self._open_nodes.clear()
         self._visible_node = None

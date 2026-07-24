@@ -382,6 +382,81 @@ def test_root_pipeline_finish_clears_progress_and_remains_a_static_event() -> No
     assert progress.tasks == []
 
 
+def test_nested_pipeline_keeps_root_as_live_progress_owner() -> None:
+    progress = _progress()
+    renderer = _ExecutionProgress(progress, debug=False)
+    renderer.handle(PipelineStarted(pipeline_name="series:artifact"))
+    renderer.handle(
+        NodeStarted(
+            pipeline_name="series:artifact",
+            node_name="project_streams",
+            node_index=0,
+        )
+    )
+
+    renderer.handle(PipelineStarted(pipeline_name="series:prices"))
+    renderer.handle(
+        NodeStarted(
+            pipeline_name="series:prices",
+            node_name="open_source",
+            node_index=0,
+        )
+    )
+    renderer.handle(
+        NodeProgress(
+            pipeline_name="series:prices",
+            node_name="open_source",
+            node_index=0,
+            progress=ProgressSnapshot(completed=100),
+            elapsed_seconds=1,
+        )
+    )
+    renderer.handle(
+        NodeFinished(
+            pipeline_name="series:prices",
+            node_name="open_source",
+            node_index=0,
+            status="success",
+            output_items=100,
+            elapsed_seconds=1,
+        )
+    )
+    renderer.handle(
+        PipelineFinished(
+            pipeline_name="series:prices",
+            status="success",
+            output_items=100,
+            elapsed_seconds=1,
+        )
+    )
+
+    assert [task.description for task in progress.tasks] == [
+        "[series:artifact]",
+        "[series:artifact/project_streams]",
+    ]
+
+    renderer.handle(
+        NodeFinished(
+            pipeline_name="series:artifact",
+            node_name="project_streams",
+            node_index=0,
+            status="success",
+            output_items=100,
+            elapsed_seconds=1,
+        )
+    )
+    renderer.handle(
+        PipelineFinished(
+            pipeline_name="series:artifact",
+            status="success",
+            output_items=100,
+            elapsed_seconds=1,
+        )
+    )
+
+    assert progress.tasks == []
+
+
 def test_operation_progress_stays_live_across_sequential_pipelines() -> None:
     now = 0.0
     console, _ = _console()
