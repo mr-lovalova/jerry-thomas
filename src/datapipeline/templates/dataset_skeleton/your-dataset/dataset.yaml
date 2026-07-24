@@ -16,6 +16,7 @@ features:
 #   - id: target_feature
 #     stream: your.target.stream
 #     field: some_field
+#     horizon: 0s
 
 split:
   mode: hash

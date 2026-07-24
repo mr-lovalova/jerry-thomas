@@ -1,6 +1,7 @@
 from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 
 from datapipeline.artifacts.scaler import (
@@ -10,13 +11,13 @@ from datapipeline.artifacts.scaler import (
 )
 from datapipeline.artifacts.specs import dataset_requires_scaler
 from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.config.dataset.split import DatasetFold
+from datapipeline.config.dataset.split import DatasetFold, TimeSplitConfig
 from datapipeline.config.tasks import ScalerTask
 from datapipeline.domain.series import SeriesRecord
 from datapipeline.domain.sample_key import SampleKeyContract
 from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.persistence import ArtifactOutput
-from datapipeline.pipelines.dataset.split import build_labeler
+from datapipeline.pipelines.dataset.split import TargetHorizonPolicy, build_labeler
 from datapipeline.pipelines.series.projector import SeriesProjector
 from datapipeline.pipelines.stream.pipeline import run_stream_pipeline
 from datapipeline.runtime import Runtime, require_runtime_stream
@@ -28,6 +29,26 @@ from datapipeline.utils.time import floor_time_to_cadence, parse_cadence
 class _ScalerInput:
     group_key: tuple
     records: tuple[SeriesRecord, ...]
+
+
+@dataclass
+class _FoldScalerState:
+    accumulator: ScalerAccumulator
+    expected_ids: set[str]
+    training_labels: frozenset[str]
+    horizon_policy: TargetHorizonPolicy | None
+
+    def observe(self, label: str, item: _ScalerInput) -> None:
+        if self.horizon_policy is not None and not self.horizon_policy.allows(
+            label,
+            item.group_key,
+        ):
+            return
+        self.expected_ids.update(record.id for record in item.records)
+        if label not in self.training_labels:
+            return
+        for record in item.records:
+            self.accumulator.observe(record.id, record.value)
 
 
 def materialize_scaler_statistics(
@@ -93,35 +114,40 @@ def _fit_folded_scaler(
     split = runtime.dataset.split
     assert split is not None
 
-    train_folds_by_label: dict[str, list[str]] = defaultdict(list)
-    output_folds_by_label: dict[str, list[str]] = defaultdict(list)
-    accumulators = {fold.id: _new_accumulator(task) for fold in folds}
-    expected_ids: dict[str, set[str]] = {fold.id: set() for fold in folds}
+    target_horizon = runtime.dataset.max_target_horizon
+    time_split = split if isinstance(split, TimeSplitConfig) else None
+    states_by_label: dict[str, list[_FoldScalerState]] = defaultdict(list)
+    states: dict[str, _FoldScalerState] = {}
     for fold in folds:
-        for label in fold.train:
-            train_folds_by_label[label].append(fold.id)
+        state = _FoldScalerState(
+            accumulator=_new_accumulator(task),
+            expected_ids=set(),
+            training_labels=frozenset(fold.train),
+            horizon_policy=(
+                TargetHorizonPolicy(time_split, fold, target_horizon)
+                if time_split is not None and target_horizon > timedelta()
+                else None
+            ),
+        )
+        states[fold.id] = state
         for label in (*fold.train, *fold.validation, *fold.test):
-            output_folds_by_label[label].append(fold.id)
+            states_by_label[label].append(state)
 
     labeler = build_labeler(split)
     inputs = _iter_scaler_inputs(runtime, configs)
     try:
         for item in inputs:
             label = labeler.label(item.group_key)
-            for fold_id in output_folds_by_label.get(label, ()):
-                expected_ids[fold_id].update(record.id for record in item.records)
-            for fold_id in train_folds_by_label.get(label, ()):
-                accumulator = accumulators[fold_id]
-                for record in item.records:
-                    accumulator.observe(record.id, record.value)
+            for state in states_by_label.get(label, ()):
+                state.observe(label, item)
     finally:
         _close_iterator(inputs)
 
     return FoldedScalerArtifact(
         folds={
             fold.id: _finish_scaler(
-                accumulators[fold.id],
-                expected_ids[fold.id],
+                states[fold.id].accumulator,
+                states[fold.id].expected_ids,
                 f"dataset fold {fold.id!r}",
             )
             for fold in folds

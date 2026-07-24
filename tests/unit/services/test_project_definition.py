@@ -11,7 +11,7 @@ from datapipeline.artifacts.specs import (
     VECTOR_METADATA,
 )
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
+from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
 from datapipeline.config.streams import StreamsConfig
 from datapipeline.config.tasks import (
@@ -593,6 +593,128 @@ def test_scaler_hash_tracks_every_fold_role(tmp_path: Path) -> None:
     assert scaler_hash(validation_changed) != scaler_hash(baseline)
     assert scaler_hash(test_changed) != scaler_hash(baseline)
     assert scaler_hash(training_changed) != scaler_hash(baseline)
+
+
+def test_target_horizon_changes_folded_scaler_but_not_series_or_metadata(
+    tmp_path: Path,
+) -> None:
+    definition = load_project_definition(_write_project(tmp_path))
+    streams = _single_stream_catalog()
+    split = TimeSplitConfig(
+        intervals=[
+            TimeInterval(id="train", until="2024-02-01T00:00:00Z"),
+            TimeInterval(id="validation"),
+        ],
+        folds=[
+            DatasetFold(
+                id="holdout",
+                train=["train"],
+                validation=["validation"],
+            )
+        ],
+    )
+    feature = SeriesConfig(
+        id="price",
+        stream="prices",
+        field="close",
+        scale=True,
+    )
+    baseline_target = TargetSeriesConfig(
+        id="return",
+        stream="prices",
+        field="future_return",
+        horizon="1d",
+    )
+    baseline = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[feature],
+        targets=[baseline_target],
+        split=split,
+    )
+    changed = baseline.model_copy(
+        update={
+            "targets": [
+                baseline_target.model_copy(update={"horizon": "2d"}),
+            ]
+        }
+    )
+    equivalent = baseline.model_copy(
+        update={
+            "targets": [
+                baseline_target.model_copy(update={"horizon": "24h"}),
+            ]
+        }
+    )
+    tasks = (ScalerTask(), SeriesTask(), MetadataTask())
+
+    baseline_hashes = calculate_artifact_hashes(
+        definition.project,
+        baseline,
+        streams,
+        tasks,
+    )
+    changed_hashes = calculate_artifact_hashes(
+        definition.project,
+        changed,
+        streams,
+        tasks,
+    )
+    equivalent_hashes = calculate_artifact_hashes(
+        definition.project,
+        equivalent,
+        streams,
+        tasks,
+    )
+
+    assert changed_hashes.for_artifact(SCALER_STATISTICS) != (
+        baseline_hashes.for_artifact(SCALER_STATISTICS)
+    )
+    assert changed_hashes.for_artifact(SERIES) == baseline_hashes.for_artifact(SERIES)
+    assert changed_hashes.for_artifact(VECTOR_METADATA) == (
+        baseline_hashes.for_artifact(VECTOR_METADATA)
+    )
+    assert equivalent_hashes == baseline_hashes
+
+
+def test_target_horizon_does_not_change_standard_scaler_fingerprint(
+    tmp_path: Path,
+) -> None:
+    definition = load_project_definition(_write_project(tmp_path))
+    streams = _single_stream_catalog()
+    target = TargetSeriesConfig(
+        id="return",
+        stream="prices",
+        field="future_return",
+        scale=True,
+        horizon="1d",
+    )
+    baseline = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[SeriesConfig(id="price", stream="prices", field="close")],
+        targets=[target],
+    )
+    changed = baseline.model_copy(
+        update={
+            "targets": [
+                target.model_copy(update={"horizon": "2d"}),
+            ]
+        }
+    )
+
+    baseline_hash = calculate_artifact_hashes(
+        definition.project,
+        baseline,
+        streams,
+        (ScalerTask(),),
+    ).for_artifact(SCALER_STATISTICS)
+    changed_hash = calculate_artifact_hashes(
+        definition.project,
+        changed,
+        streams,
+        (ScalerTask(),),
+    ).for_artifact(SCALER_STATISTICS)
+
+    assert changed_hash == baseline_hash
 
 
 def _single_stream_catalog() -> StreamsConfig:

@@ -9,7 +9,7 @@ import pytest
 
 from datapipeline.artifacts.models import ScalarVectorMetadataEntry
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
+from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
 from datapipeline.config.preview import PreviewStage
 from datapipeline.domain.sample import Sample
@@ -40,7 +40,7 @@ def _runtime(streams=None):
 
 
 def _dataset(
-    targets: list[SeriesConfig] | None = None,
+    targets: list[TargetSeriesConfig] | None = None,
     split: TimeSplitConfig | None = None,
 ) -> DatasetConfig:
     return DatasetConfig(
@@ -351,7 +351,14 @@ def test_dataset_operation_returns_parquet_split_outputs(monkeypatch, tmp_path):
 def test_samples_preview_stops_before_postprocess(monkeypatch):
     runtime = _runtime()
     dataset = _dataset(
-        targets=[SeriesConfig(id="target", stream="targets", field="value")]
+        targets=[
+            TargetSeriesConfig(
+                id="target",
+                stream="targets",
+                field="value",
+                horizon="0s",
+            )
+        ]
     )
     target = _target()
     monkeypatch.setattr(

@@ -18,7 +18,11 @@ from datapipeline.artifacts.specs import (
     VECTOR_METADATA,
 )
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, SequenceConfig
+from datapipeline.config.dataset.series import (
+    SeriesConfig,
+    SequenceConfig,
+    TargetSeriesConfig,
+)
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.tasks import SeriesTask
 from datapipeline.config.transforms import (
@@ -1279,7 +1283,12 @@ def test_rectangular_features_and_targets_share_every_planned_key(
     )
     runtime.window_bounds = (_ts(0), _ts(2))
     feature = SeriesConfig(stream="stream", id="price", field="value")
-    target = SeriesConfig(stream="stream", id="return", field="target")
+    target = TargetSeriesConfig(
+        stream="stream",
+        id="return",
+        field="target",
+        horizon="0s",
+    )
     register_series(runtime, [feature], "1h", targets=[target])
 
     samples = list(
@@ -1437,10 +1446,11 @@ def test_series_shared_stream_matches_independent_series_pipelines(
         scale=True,
         sequence=SequenceConfig(size=2),
     )
-    volume = SeriesConfig(
+    volume = TargetSeriesConfig(
         stream="stream",
         id="volume",
         field="volume",
+        horizon="0s",
     )
     runtime.dataset = DatasetConfig(
         sample=SampleConfig(cadence="1h", keys=["exchange"]),

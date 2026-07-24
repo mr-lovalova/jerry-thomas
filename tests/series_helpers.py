@@ -3,7 +3,7 @@ from collections.abc import Sequence
 
 from datapipeline.artifacts.specs import SERIES
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
+from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.tasks import SeriesTask
 from datapipeline.operations.artifacts.series import build_series_artifact
 from datapipeline.runtime import Runtime
@@ -14,7 +14,7 @@ def register_series(
     features: Sequence[SeriesConfig],
     cadence: str,
     *,
-    targets: Sequence[SeriesConfig] = (),
+    targets: Sequence[TargetSeriesConfig] = (),
     sample_keys: Sequence[str] = (),
 ) -> None:
     current = runtime.dataset

@@ -9,7 +9,11 @@ from datapipeline.artifacts.scaler import (
     load_scaler_artifact,
 )
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, SequenceConfig
+from datapipeline.config.dataset.series import (
+    SeriesConfig,
+    SequenceConfig,
+    TargetSeriesConfig,
+)
 from datapipeline.config.dataset.split import (
     DatasetFold,
     HashSplitConfig,
@@ -182,6 +186,64 @@ def test_scaler_fitting_observes_scalars_before_sequence(tmp_path) -> None:
     assert isinstance(artifact, StandardScalerArtifact)
     assert artifact.observations == 2
     assert artifact.statistics["x"].mean == 2.0
+
+
+def test_target_horizon_trims_pre_sequence_feature_scaler_origins(tmp_path) -> None:
+    dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1d"),
+        features=[
+            SeriesConfig(
+                id="x",
+                stream="stream",
+                field="value",
+                scale=True,
+                sequence=SequenceConfig(size=3),
+            )
+        ],
+        targets=[
+            TargetSeriesConfig(
+                id="target",
+                stream="stream",
+                field="other",
+                horizon="2d",
+            )
+        ],
+        split=TimeSplitConfig(
+            intervals=[
+                TimeInterval(id="train", until="2024-01-05T00:00:00Z"),
+                TimeInterval(id="validation"),
+            ],
+            folds=[
+                DatasetFold(
+                    id="fold",
+                    train=["train"],
+                    validation=["validation"],
+                )
+            ],
+        ),
+    )
+    runtime = _runtime(
+        tmp_path,
+        dataset,
+        rows=[
+            _record(1, 1.0, other=10.0),
+            _record(2, 3.0, other=20.0),
+            _record(3, 100.0, other=30.0),
+            _record(4, 200.0, other=40.0),
+        ],
+    )
+
+    result = materialize_scaler_statistics(
+        runtime,
+        ScalerTask(output="scaler.json"),
+    )
+
+    assert result is not None
+    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    assert isinstance(artifact, FoldedScalerArtifact)
+    scaler = artifact.for_fold("fold")
+    assert scaler.observations == 2
+    assert scaler.statistics["x"].mean == 2.0
 
 
 def test_materialize_folded_scaler_uses_dataset_owned_expanding_train_roles(

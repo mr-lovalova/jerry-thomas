@@ -698,9 +698,10 @@ features:
     sequence: { size: 6, stride: 1 }
 
 targets:
-  - id: returns_1d
+  - id: forward_return_1d
     stream: equity.ohlcv
-    field: returns_1d
+    field: forward_return_1d
+    horizon: 1d
 
 split:
   mode: time # hash | time
@@ -747,6 +748,13 @@ postprocess:
   series IDs such as `close__@security_id:AAPL`. This supports long, wide, and
   hybrid layouts without a separate format or series-identity setting.
 - `field` selects the record attribute used as the feature/target value.
+- Every target requires `horizon`. It is the conservative maximum elapsed
+  time between the sample key and the latest observation used to compute that
+  target. Use `0s` for a contemporaneous target. Jerry does not infer this
+  contract from `lead`, `forward_sum`, or custom transforms.
+- Features do not accept a horizon: a feature must be observable at its sample
+  time. Use `lag` or a trailing `sequence` for historical feature context;
+  future-derived feature values are leakage.
 - `None` is the canonical missing series value. A floating `NaN` produced by
   a parser, mapper, or transform is converted to `None` when the field is
   projected; positive and negative infinity are rejected. Identity fields
@@ -764,8 +772,9 @@ postprocess:
   before series projection when contiguous ticks are required. The resolved
   stream partition keeps every independent series in one contiguous ordered
   group.
-- Series configuration exposes only `scale` and `sequence`; it does not accept
-  arbitrary transform entry-point clauses.
+- Feature and target series support `scale` and `sequence`; targets additionally
+  require `horizon`. Series configuration does not accept arbitrary transform
+  entry-point clauses.
 - `split` first assigns each sample one primitive label. Hash splits assign from
   the complete sample key and require `ratios`. Time splits require ordered
   `intervals` with unique IDs and strictly increasing endpoints. Every interval
@@ -776,6 +785,11 @@ postprocess:
   IDs are `<fold-id>.train`, `<fold-id>.validation`, and `<fold-id>.test` for
   the nonempty roles. Labels omitted from every fold are purge/embargo
   intervals and are not published.
+- For time folds with future targets, Jerry removes each role's trailing
+  samples unless `sample time + maximum target horizon` is strictly before the
+  next nonempty role starts. Equality is excluded. Omitted purge/embargo
+  intervals may absorb that support window. The final nonempty role has no
+  later fold boundary.
 - Fold labels must exist as hash-ratio labels or time-interval IDs and cannot
   belong to two roles within the same fold. A fold ID names the output plan; it
   does not need to match any interval ID. Time-fold roles must be chronological.
@@ -821,8 +835,9 @@ postprocess:
 
 - Hash-ratio mappings are canonicalized by label, so YAML key order does not
   change sample assignment. Hash splits are not allowed when any feature or
-  target uses `sequence`, because overlapping windows could share observations
-  across partitions. Use a time split for sequence datasets.
+  target uses `sequence`, or when any target has a positive horizon, because
+  temporal support could cross hash partitions. Use a time split for temporal
+  datasets.
 - `postprocess.columns` and `postprocess.samples` are structural policies that
   run after assembly and before serving.
 

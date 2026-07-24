@@ -1,3 +1,4 @@
+from datetime import timedelta
 from typing import Annotated, Self
 
 from pydantic import (
@@ -9,7 +10,7 @@ from pydantic import (
     model_validator,
 )
 
-from datapipeline.config.dataset.series import SeriesConfig
+from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.dataset.postprocess import PostprocessConfig
 from datapipeline.config.dataset.split import HashSplitConfig, SplitConfig
 from datapipeline.utils.time import CADENCE_PATTERN
@@ -42,13 +43,20 @@ class DatasetConfig(BaseModel):
 
     sample: SampleConfig
     features: list[SeriesConfig] = Field(default_factory=list)
-    targets: list[SeriesConfig] = Field(default_factory=list)
+    targets: list[TargetSeriesConfig] = Field(default_factory=list)
     split: SplitConfig | None = None
     postprocess: PostprocessConfig = Field(default_factory=PostprocessConfig)
 
     @property
     def series(self) -> tuple[SeriesConfig, ...]:
         return (*self.features, *self.targets)
+
+    @property
+    def max_target_horizon(self) -> timedelta:
+        return max(
+            (target.horizon_duration for target in self.targets),
+            default=timedelta(),
+        )
 
     @model_validator(mode="after")
     def validate_series(self) -> Self:
@@ -62,10 +70,22 @@ class DatasetConfig(BaseModel):
                     "features and targets"
                 )
             seen.add(config.id)
+
+        future_target_fields = {
+            (target.stream, target.field)
+            for target in self.targets
+            if target.horizon_duration > timedelta()
+        }
+        for feature in self.features:
+            if (feature.stream, feature.field) in future_target_fields:
+                raise ValueError(
+                    f"feature {feature.id!r} cannot select a field declared as a "
+                    "future target"
+                )
         return self
 
     @model_validator(mode="after")
-    def validate_hash_split_sequences(self) -> Self:
+    def validate_hash_split_temporal_dependencies(self) -> Self:
         if not isinstance(self.split, HashSplitConfig):
             return self
         sequenced = [config.id for config in self.series if config.sequence is not None]
@@ -73,5 +93,15 @@ class DatasetConfig(BaseModel):
             raise ValueError(
                 "hash splits cannot be used with sequenced features or targets: "
                 + ", ".join(sequenced)
+            )
+        future_targets = [
+            target.id
+            for target in self.targets
+            if target.horizon_duration > timedelta()
+        ]
+        if future_targets:
+            raise ValueError(
+                "hash splits cannot be used with positive target horizons: "
+                + ", ".join(future_targets)
             )
         return self

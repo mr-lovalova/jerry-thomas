@@ -26,12 +26,15 @@ targets:
   - id: power_target
     stream: targets.power
     field: value
+    horizon: 0s
   - id: power_future_2
     stream: targets.power
     field: future_2
+    horizon: 2h
   - id: power_log1p
     stream: targets.power
     field: log1p_value
+    horizon: 0s
 
 postprocess:
   samples:

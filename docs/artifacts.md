@@ -54,6 +54,16 @@ orphaned, missing, altered, stale, and incomplete chains are left unavailable.
 Commands targeting the same artifacts root cannot overlap; a second command
 fails before reading or mutating managed artifacts.
 
+Jerry 8 requires every target in `dataset.yaml` to declare `horizon`. Add
+`horizon: 0s` for contemporaneous targets. Future-derived targets must declare
+a conservative wall-clock duration that covers their latest supporting
+observation. Positive horizons cannot use a hash split. With a time split,
+Jerry automatically removes unsafe role tails and fits folded scalers over the
+same eligible sample origins; an unsplit dataset has no role boundary to
+enforce. The grouped series and metadata artifacts do not change when only a
+horizon changes. `AUTO` rebuilds a folded scaler when its effective maximum
+target horizon changes.
+
 Jerry 7 renames the v6 `variable_records` artifact to `series`:
 
 - `operations/variable_records.yaml` becomes `operations/series.yaml`.
@@ -174,9 +184,15 @@ Build profiles remain explicit roots for `jerry build` and retain their own
 - Preview bypasses split fanout and emits one combined stage output.
 - Split datasets fit one scaler from each fold's `train` labels. Every output in
   a fold uses that fold's scaler.
-- Hash splits cannot be combined with sequence features because overlapping
-  windows could share observations across hash partitions. Use a time split for
-  sequence datasets.
+- Every target declares a conservative elapsed `horizon`. Time folds remove a
+  role's trailing samples when their maximum target support reaches or crosses
+  the next nonempty role. Omitted intervals can provide an explicit
+  purge/embargo gap. Fold scalers use the same eligible sample origins.
+- Hash splits cannot be combined with sequenced features or targets because
+  overlapping windows could share observations across hash partitions. Use a
+  time split for sequence datasets.
+- Hash splits likewise reject positive target horizons because temporal support
+  cannot be isolated by a key hash.
 
 Canonical series artifacts remain unscaled and independent of fold
 selection. The scaler artifact records the fold-specific statistics needed at

@@ -17,6 +17,7 @@ targets:
   - id: dk1_price
     stream: targets.price.dk1
     field: value
+    horizon: 0s
 
 postprocess:
   samples:

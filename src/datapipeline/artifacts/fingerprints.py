@@ -3,6 +3,7 @@ import hashlib
 import json
 import stat
 from collections.abc import Iterable, Mapping
+from datetime import timedelta
 from pathlib import Path
 
 from datapipeline.artifacts.models import VECTOR_METADATA_VERSION
@@ -10,6 +11,7 @@ from datapipeline.artifacts.planning import build_artifact_graph
 from datapipeline.artifacts.series import SERIES_MANIFEST_VERSION
 from datapipeline.artifacts.specs import dataset_requires_scaler
 from datapipeline.config.dataset.dataset import DatasetConfig
+from datapipeline.config.dataset.split import TimeSplitConfig
 from datapipeline.config.sources import (
     FsLoaderConfig,
     SourceConfig,
@@ -161,20 +163,32 @@ def _artifact_inputs(
             (config.stream for config in scaled),
             streams,
         )
+        dataset_inputs: dict[str, object] = {
+            "sample": dataset.sample.model_dump(mode="json"),
+            "split": (
+                dataset.split.model_dump(mode="json")
+                if dataset.split is not None
+                else None
+            ),
+            "scaled_vectors": [
+                config.model_dump(
+                    mode="json",
+                    exclude={"horizon", "sequence"},
+                )
+                for config in scaled
+            ],
+        }
+        target_horizon = dataset.max_target_horizon
+        if (
+            isinstance(dataset.split, TimeSplitConfig)
+            and target_horizon > timedelta()
+        ):
+            dataset_inputs["target_horizon_seconds"] = int(
+                target_horizon.total_seconds()
+            )
         return (
             {
-                "dataset": {
-                    "sample": dataset.sample.model_dump(mode="json"),
-                    "split": (
-                        dataset.split.model_dump(mode="json")
-                        if dataset.split is not None
-                        else None
-                    ),
-                    "scaled_vectors": [
-                        config.model_dump(mode="json", exclude={"sequence"})
-                        for config in scaled
-                    ],
-                },
+                "dataset": dataset_inputs,
                 "streams": stream_config,
             },
             source_ids,
@@ -196,7 +210,10 @@ def _artifact_inputs(
                         for config in dataset.features
                     ],
                     "targets": [
-                        config.model_dump(mode="json", exclude={"scale"})
+                        config.model_dump(
+                            mode="json",
+                            exclude={"horizon", "scale"},
+                        )
                         for config in dataset.targets
                     ],
                 },

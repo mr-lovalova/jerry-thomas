@@ -83,6 +83,12 @@ transforms:
   - { operation: forward_sum, field: market_excess_return, window: 21, to: future_market_excess_return_21 }
 ```
 
+When a future-derived field is selected as a dataset target, declare its
+conservative wall-clock support under that target's `horizon`. The transform
+describes how values are calculated; the target horizon separately controls
+fold-boundary eligibility. Jerry deliberately does not guess one from the
+other.
+
 ```yaml
 transforms:
   - { operation: lag, field: close, to: close_lag_21, periods: 21 }

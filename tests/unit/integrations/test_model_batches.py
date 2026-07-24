@@ -13,7 +13,7 @@ from datapipeline.artifacts.models import (
     VectorMetadataEntry,
 )
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
+from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.dataset.split import (
     DatasetFold,
     TimeInterval,
@@ -504,10 +504,11 @@ def _dataset(
         ],
         targets=(
             [
-                SeriesConfig(
+                TargetSeriesConfig(
                     id="label",
                     stream="labels",
                     field="label",
+                    horizon="0s",
                 )
             ]
             if with_targets

@@ -1,5 +1,6 @@
 from collections.abc import Collection, Generator, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import timedelta
 from functools import partial
 from itertools import islice
 
@@ -9,7 +10,7 @@ from datapipeline.artifacts.scaler import (
     StandardScalerArtifact,
 )
 from datapipeline.artifacts.specs import dataset_requires_scaler
-from datapipeline.config.dataset.split import DatasetFold
+from datapipeline.config.dataset.split import DatasetFold, TimeSplitConfig
 from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.domain.sample import Sample
 from datapipeline.execution.context import PipelineContext
@@ -19,7 +20,12 @@ from datapipeline.pipelines.dataset.postprocess import (
     PostprocessPlan,
     build_postprocess_plan,
 )
-from datapipeline.pipelines.dataset.split import HashLabeler, TimeLabeler, build_labeler
+from datapipeline.pipelines.dataset.split import (
+    HashLabeler,
+    TargetHorizonPolicy,
+    TimeLabeler,
+    build_labeler,
+)
 from datapipeline.pipelines.sample.input import build_sample_input
 from datapipeline.transforms.vector.scaler import SampleScaler
 
@@ -43,6 +49,25 @@ class FoldOutputPlan:
                 f"Dataset fold {self.fold.id!r} does not contain selected labels: "
                 + ", ".join(sorted(unknown))
             )
+
+
+@dataclass(frozen=True)
+class _FoldRoute:
+    output_by_label: Mapping[str, str]
+    scaler: SampleScaler | None
+    horizon_policy: TargetHorizonPolicy | None
+
+    def select(
+        self,
+        labeled: Sequence[tuple[str, Sample]],
+    ) -> Iterator[Sample]:
+        policy = self.horizon_policy
+        return (
+            sample
+            for label, sample in labeled
+            if label in self.output_by_label
+            and (policy is None or policy.allows(label, sample.key))
+        )
 
 
 def run_dataset_pipeline(
@@ -181,10 +206,11 @@ def run_fold_outputs_pipeline(
             raise RuntimeError("A split dataset requires a folded scaler artifact.")
         scaler_artifact = artifact
 
+    target_horizon = context.runtime.dataset.max_target_horizon
     routes = tuple(
-        (
-            plan.output_by_label,
-            (
+        _FoldRoute(
+            output_by_label=plan.output_by_label,
+            scaler=(
                 None
                 if scaler_artifact is None
                 else _sample_scaler(
@@ -192,6 +218,12 @@ def run_fold_outputs_pipeline(
                     feature_configs,
                     target_configs,
                 )
+            ),
+            horizon_policy=(
+                TargetHorizonPolicy(split, plan.fold, target_horizon)
+                if isinstance(split, TimeSplitConfig)
+                and target_horizon > timedelta()
+                else None
             ),
         )
         for plan in plans
@@ -226,22 +258,19 @@ def run_fold_outputs_pipeline(
 
 def _prepare_fold_outputs(
     labeler: HashLabeler | TimeLabeler,
-    routes: Sequence[
-        tuple[
-            Mapping[str, str],
-            SampleScaler | None,
-        ]
-    ],
+    routes: Sequence[_FoldRoute],
     postprocess: PostprocessPlan,
     samples: Iterator[Sample],
 ) -> Iterator[tuple[str, Sample]]:
     while batch := tuple(islice(samples, _FOLD_BATCH_SIZE)):
         labeled = tuple((labeler.label(sample.key), sample) for sample in batch)
-        for output_by_label, scaler in routes:
-            selected = (sample for label, sample in labeled if label in output_by_label)
-            processed = selected if scaler is None else scaler.apply(selected)
+        for route in routes:
+            selected = route.select(labeled)
+            processed = (
+                selected if route.scaler is None else route.scaler.apply(selected)
+            )
             for sample in postprocess.apply(processed):
-                output_id = output_by_label.get(labeler.label(sample.key))
+                output_id = route.output_by_label.get(labeler.label(sample.key))
                 if output_id is not None:
                     yield output_id, sample
 

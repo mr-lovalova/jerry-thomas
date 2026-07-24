@@ -7,7 +7,7 @@ from datapipeline.artifacts.registry import SCALER_SPEC
 from datapipeline.artifacts.scaler import save_scaler_artifact
 from datapipeline.artifacts.specs import SCALER_STATISTICS
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
+from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.transforms import (
     FillConfig,
@@ -164,10 +164,11 @@ def test_sample_targets_respect_partitioned_ids(tmp_path) -> None:
         ),
     ]
     target_cfgs = [
-        SeriesConfig(
+        TargetSeriesConfig(
             stream="wind_production_stream",
             id="wind_production",
             field="value",
+            horizon="0s",
         ),
     ]
     register_series(runtime, feature_cfgs, "1h", targets=target_cfgs)
@@ -214,10 +215,11 @@ def test_samples_can_group_by_record_key_fields(tmp_path) -> None:
         ),
     ]
     target_cfgs = [
-        SeriesConfig(
+        TargetSeriesConfig(
             stream="return_stream",
             id="forward_return",
             field="value",
+            horizon="0s",
         ),
     ]
     register_series(

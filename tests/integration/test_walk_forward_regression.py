@@ -140,6 +140,45 @@ def test_walk_forward_scaling_and_routed_outputs(copy_fixture, tmp_path: Path) -
     )
 
 
+def test_target_horizon_removes_each_fold_role_tail(copy_fixture) -> None:
+    project_root = copy_fixture("walk_forward_project")
+    dataset_path = project_root / "dataset.yaml"
+    dataset_path.write_text(
+        dataset_path.read_text(encoding="utf-8").replace(
+            "    horizon: 0s",
+            "    horizon: 2d",
+        ),
+        encoding="utf-8",
+    )
+
+    output_dir, scaler = _serve(project_root)
+
+    assert [
+        row["key"][0] for row in _read_output(output_dir, "fold_0.train")
+    ] == ["2024-01-01 00:00:00+00:00"]
+    assert _read_output(output_dir, "fold_0.validation") == []
+    assert [
+        row["key"][0] for row in _read_output(output_dir, "fold_0.test")
+    ] == ["2024-01-05 00:00:00+00:00"]
+    assert [
+        row["key"][0] for row in _read_output(output_dir, "fold_1.train")
+    ] == [
+        "2024-01-01 00:00:00+00:00",
+        "2024-01-02 00:00:00+00:00",
+        "2024-01-04 00:00:00+00:00",
+        "2024-01-06 00:00:00+00:00",
+    ]
+    assert _read_output(output_dir, "fold_1.validation") == []
+    assert [
+        row["key"][0] for row in _read_output(output_dir, "fold_1.test")
+    ] == ["2024-01-10 00:00:00+00:00"]
+
+    assert scaler.folds["fold_0"].statistics["signal"].count == 1
+    assert scaler.folds["fold_0"].statistics["outcome"].count == 1
+    assert scaler.folds["fold_1"].statistics["signal"].count == 4
+    assert scaler.folds["fold_1"].statistics["outcome"].count == 4
+
+
 def test_walk_forward_serve_opens_series_once(
     copy_fixture,
     monkeypatch,

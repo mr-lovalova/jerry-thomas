@@ -407,6 +407,7 @@ def test_metadata_materialization_scans_features_and_targets_once(
                 "  - id: return",
                 "    stream: market.prices",
                 "    field: return",
+                "    horizon: 0s",
                 "",
             ]
         ),

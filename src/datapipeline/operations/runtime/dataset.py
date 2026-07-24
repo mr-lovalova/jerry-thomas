@@ -122,7 +122,7 @@ def _parquet_sample_output(
 
 
 def _preview_plan(
-    preview_cfgs: list[SeriesConfig],
+    preview_cfgs: Sequence[SeriesConfig],
     preview: PreviewStage,
 ) -> list[tuple[str, SeriesConfig]]:
     if preview not in _RECORD_PREVIEWS:
@@ -176,7 +176,7 @@ def _serve_preview(
     context: PipelineContext,
     runtime: Runtime,
     feature_cfgs: list[SeriesConfig],
-    target_cfgs: list[SeriesConfig],
+    target_cfgs: Sequence[SeriesConfig],
     cadence: str,
     sample_keys: list[str],
     limit: int | None,
@@ -224,7 +224,7 @@ def _serve_preview(
         )
 
     outputs: list[RuntimeOutput] = []
-    preview_plan = _preview_plan(feature_cfgs + target_cfgs, preview)
+    preview_plan = _preview_plan((*feature_cfgs, *target_cfgs), preview)
     resolved_outputs: list[tuple[str, SeriesConfig, OutputTarget]] = []
     destinations: dict[str, str] = {}
     for output_id, cfg in preview_plan:
@@ -266,7 +266,7 @@ def _serve_dataset(
     context: PipelineContext,
     runtime: Runtime,
     feature_cfgs: list[SeriesConfig],
-    target_cfgs: list[SeriesConfig],
+    target_cfgs: Sequence[SeriesConfig],
     cadence: str,
     sample_keys: list[str],
     limit: int | None,
@@ -314,7 +314,7 @@ def _serve_fold_outputs(
     context: PipelineContext,
     runtime: Runtime,
     feature_cfgs: list[SeriesConfig],
-    target_cfgs: list[SeriesConfig],
+    target_cfgs: Sequence[SeriesConfig],
     cadence: str,
     sample_keys: list[str],
     output_ids: tuple[str, ...],
@@ -411,7 +411,7 @@ def _served_dataset_table(
     context: PipelineContext,
     sample_keys: list[str],
     feature_cfgs: list[SeriesConfig],
-    target_cfgs: list[SeriesConfig],
+    target_cfgs: Sequence[SeriesConfig],
 ) -> DatasetTable:
     plan = build_postprocess_plan(context)
     return _dataset_table(
