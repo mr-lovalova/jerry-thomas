@@ -1,7 +1,12 @@
 from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
-from datapipeline.config.streams import AlignedStreamConfig, BroadcastStreamConfig
+from datapipeline.config.streams import (
+    AlignedStreamConfig,
+    AsOfStreamConfig,
+    BroadcastAsOfStreamConfig,
+    BroadcastStreamConfig,
+)
 from datapipeline.plugins import COMBINERS_EP
 from datapipeline.transforms.utils import partition_key
 from datapipeline.utils.load import load_ep
@@ -9,7 +14,12 @@ from datapipeline.utils.placeholders import normalize_args
 
 
 def build_combine_stage(
-    config: AlignedStreamConfig | BroadcastStreamConfig,
+    config: (
+        AlignedStreamConfig
+        | BroadcastStreamConfig
+        | AsOfStreamConfig
+        | BroadcastAsOfStreamConfig
+    ),
     partition_by: tuple[str, ...],
 ) -> Callable[[Iterator[tuple[Any, ...]]], Iterable[Any]]:
     combine = load_ep(COMBINERS_EP, config.combine.entrypoint)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -45,6 +45,28 @@ class BroadcastRuntimeStream:
 
 
 @dataclass(frozen=True)
+class AsOfRuntimeStream:
+    input_stream: str
+    lookup_stream: str
+    combine: RecordStage
+    partition_by: tuple[str, ...]
+    max_age: timedelta | None
+    require_match: bool
+    transforms: tuple[TransformConfig, ...]
+
+
+@dataclass(frozen=True)
+class BroadcastAsOfRuntimeStream:
+    input_stream: str
+    lookup_stream: str
+    combine: RecordStage
+    partition_by: tuple[str, ...]
+    max_age: timedelta | None
+    require_match: bool
+    transforms: tuple[TransformConfig, ...]
+
+
+@dataclass(frozen=True)
 class AlignedRuntimeStream:
     inputs: tuple[str, ...]
     combine: RecordStage
@@ -52,12 +74,14 @@ class AlignedRuntimeStream:
     transforms: tuple[TransformConfig, ...]
 
 
-RuntimeStream = (
-    SourceRuntimeStream
-    | DerivedRuntimeStream
-    | BroadcastRuntimeStream
+CombinedRuntimeStream = (
+    BroadcastRuntimeStream
+    | AsOfRuntimeStream
+    | BroadcastAsOfRuntimeStream
     | AlignedRuntimeStream
 )
+
+RuntimeStream = SourceRuntimeStream | DerivedRuntimeStream | CombinedRuntimeStream
 
 
 @dataclass

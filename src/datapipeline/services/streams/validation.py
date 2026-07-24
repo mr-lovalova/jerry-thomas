@@ -1,5 +1,8 @@
 from datapipeline.config.sources import SourceConfig
 from datapipeline.config.streams import (
+    AlignedStreamConfig,
+    AsOfStreamConfig,
+    BroadcastAsOfStreamConfig,
     BroadcastStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
@@ -97,6 +100,16 @@ def stream_partition_by(
         return stream.partition_by
     if isinstance(stream, DerivedStreamConfig):
         return stream_partition_by(streams, stream.from_.stream)
+    if isinstance(stream, AsOfStreamConfig):
+        primary_partition = stream_partition_by(streams, stream.from_.stream)
+        lookup_partition = stream_partition_by(streams, stream.from_.as_of)
+        if lookup_partition != primary_partition:
+            raise ValueError(
+                f"As-of stream '{stream_id}' lookup input '{stream.from_.as_of}' has "
+                f"partition_by {list(lookup_partition)!r}; expected "
+                f"{list(primary_partition)!r}"
+            )
+        return primary_partition
     if isinstance(stream, BroadcastStreamConfig):
         primary_partition = stream_partition_by(streams, stream.from_.stream)
         if not primary_partition:
@@ -116,23 +129,45 @@ def stream_partition_by(
                 f"got {list(broadcast_partition)!r}"
             )
         return primary_partition
-
-    input_partitions = [
-        stream_partition_by(streams, input_stream)
-        for input_stream in stream.input_streams()
-    ]
-    expected = input_partitions[0]
-    for input_stream, partition_by in zip(
-        stream.input_streams()[1:],
-        input_partitions[1:],
-        strict=True,
-    ):
-        if partition_by != expected:
+    if isinstance(stream, BroadcastAsOfStreamConfig):
+        primary_partition = stream_partition_by(streams, stream.from_.stream)
+        if not primary_partition:
             raise ValueError(
-                f"Aligned stream '{stream_id}' input '{input_stream}' has "
-                f"partition_by {list(partition_by)!r}; expected {list(expected)!r}"
+                f"Broadcast as-of stream '{stream_id}' primary input "
+                f"'{stream.from_.stream}' must have a non-empty partition_by"
             )
-    return expected
+
+        lookup_partition = stream_partition_by(
+            streams,
+            stream.from_.broadcast_as_of,
+        )
+        if lookup_partition:
+            raise ValueError(
+                f"Broadcast as-of stream '{stream_id}' lookup input "
+                f"'{stream.from_.broadcast_as_of}' must have an empty partition_by; "
+                f"got {list(lookup_partition)!r}"
+            )
+        return primary_partition
+
+    if isinstance(stream, AlignedStreamConfig):
+        input_partitions = [
+            stream_partition_by(streams, input_stream)
+            for input_stream in stream.input_streams()
+        ]
+        expected = input_partitions[0]
+        for input_stream, partition_by in zip(
+            stream.input_streams()[1:],
+            input_partitions[1:],
+            strict=True,
+        ):
+            if partition_by != expected:
+                raise ValueError(
+                    f"Aligned stream '{stream_id}' input '{input_stream}' has "
+                    f"partition_by {list(partition_by)!r}; expected {list(expected)!r}"
+                )
+        return expected
+
+    raise TypeError(f"Unsupported stream config: {type(stream).__name__}")
 
 
 def _validate_stream_cycles(streams: dict[str, StreamConfig]) -> None:

@@ -131,7 +131,7 @@ These live under `lib/<plugin>/src/<package>/`:
 - `parsers/*.py`: raw -> DTO parsers (referenced by source YAML via entry point).
 - `domains/<domain>/model.py`: domain record models.
 - `mappers/*.py`: iterator mappings from parsed values to domain records.
-- `combiners/*.py`: functions combining broadcast or aligned domain records.
+- `combiners/*.py`: functions combining exact, as-of, or aligned domain records.
 - `loaders/*.py`: optional custom loaders for inputs beyond built-in filesystem
   and HTTP transports.
 - `pyproject.toml`: entry points for loaders, parsers, mappers, and combiners

@@ -69,6 +69,7 @@ from datapipeline.pipelines.sample.keys import (
 from datapipeline.pipelines.sample.input import open_samples
 from datapipeline.runtime import (
     AlignedRuntimeStream,
+    AsOfRuntimeStream,
     BroadcastRuntimeStream,
     DerivedRuntimeStream,
     RecordStage,
@@ -627,6 +628,58 @@ def test_broadcast_pipeline_reuses_exact_input_across_partitions(
     ]
     assert primary.closes == 1
     assert broadcast.closes == 1
+
+
+def test_as_of_pipeline_validates_lookup_tail_after_primary_finishes(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(tmp_path, [])
+    primary = _StubSource([{"time": _ts(3), "id_": "A"}])
+    lookup = _StubSource(
+        [
+            {"time": _ts(1), "id_": "A"},
+            {"time": _ts(4), "id_": "A"},
+            {"time": _ts(2), "id_": "A"},
+        ]
+    )
+
+    def take_primary(rows):
+        for primary_record, _ in rows:
+            yield primary_record
+
+    runtime.streams = {
+        "primary": SourceRuntimeStream(
+            source=primary,
+            mapper=_mapper,
+            preprocess=(),
+            partition_by=("id_",),
+            presorted=True,
+            transforms=(),
+        ),
+        "lookup": SourceRuntimeStream(
+            source=lookup,
+            mapper=_mapper,
+            preprocess=(),
+            partition_by=("id_",),
+            presorted=True,
+            transforms=(),
+        ),
+        "enriched": AsOfRuntimeStream(
+            input_stream="primary",
+            lookup_stream="lookup",
+            combine=take_primary,
+            partition_by=("id_",),
+            max_age=None,
+            require_match=True,
+            transforms=(),
+        ),
+    }
+
+    with pytest.raises(ValueError, match="violates declared ordered_by"):
+        list(run_stream_pipeline(PipelineContext(runtime), "enriched"))
+
+    assert primary.closes == 1
+    assert lookup.closes == 1
 
 
 def test_broadcast_pipeline_closes_inputs_after_partial_read(tmp_path: Path) -> None:

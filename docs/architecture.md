@@ -12,18 +12,19 @@ instances are compiled from the definition without reading configuration files.
 ## Runtime streams
 
 Every canonical stream ID has exactly one entry in `Runtime.streams`:
-`SourceRuntimeStream`, `DerivedRuntimeStream`, `BroadcastRuntimeStream`, or
-`AlignedRuntimeStream`.
+`SourceRuntimeStream`, `DerivedRuntimeStream`, `BroadcastRuntimeStream`,
+`AsOfRuntimeStream`, `BroadcastAsOfRuntimeStream`, or `AlignedRuntimeStream`.
 
 A source-backed stream owns an external source, mapper, preprocess operations,
 partition identity, and ordering policy. A derived stream names one upstream
 stream and adds ordered transforms. A broadcast stream attaches an
-unpartitioned temporal input to a partitioned primary input. An aligned stream
-intersects two or more inputs with the same partition identity. Both fan-in
-stream kinds own a prepared combine stage and inherit partition identity; only
-source-backed streams declare it. Single-input streams are flattened, while
-broadcast and aligned streams use the explicit boundaries described below. The
-strict config models keep source mapping and fan-in behavior separate.
+unpartitioned temporal input to a partitioned primary input. As-of streams
+attach the latest eligible same-partition or global lookup. An aligned stream
+intersects two or more inputs with the same partition identity. Every fan-in
+stream owns a prepared combine stage and inherits the primary partition
+identity; only source-backed streams declare it. Single-input streams are
+flattened, while fan-in streams use the explicit boundaries described below.
+The strict config models keep source mapping and fan-in behavior separate.
 
 Dataset `sample.keys` select the partition fields represented in row identity.
 The remaining partition fields deterministically suffix series IDs in declared
@@ -87,6 +88,14 @@ rejects missing, duplicate, and unordered keys, but ignores indexed timestamps
 that the primary never uses. Index memory is proportional to the number of
 broadcast records. `combine_records` receives read-only inputs; the indexed
 broadcast record object is reused across primary partitions at that timestamp.
+
+As-of streams are the backward-looking fan-in boundaries. `as_of_inputs`
+advances two equally partitioned, canonically ordered streams together and
+retains only the latest eligible lookup. `broadcast_as_of_inputs` indexes one
+finite, unpartitioned lookup history, then performs a binary search for each
+partitioned primary record. Both reject duplicates and ordering violations.
+The former uses constant matching memory; the latter uses memory proportional
+to the lookup history so it can reuse time when primary partitions restart.
 
 The runner accepts one explicit input followed by ordered stages. It owns lazy
 iteration, closing, output counts, timings, and sampled progress. It has no

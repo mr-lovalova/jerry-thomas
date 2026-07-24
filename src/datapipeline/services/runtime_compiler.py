@@ -3,6 +3,8 @@ from pathlib import Path
 from datapipeline.config.sources import SourceConfig
 from datapipeline.config.streams import (
     AlignedStreamConfig,
+    AsOfStreamConfig,
+    BroadcastAsOfStreamConfig,
     BroadcastStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
@@ -10,6 +12,8 @@ from datapipeline.config.streams import (
 )
 from datapipeline.runtime import (
     AlignedRuntimeStream,
+    AsOfRuntimeStream,
+    BroadcastAsOfRuntimeStream,
     BroadcastRuntimeStream,
     DerivedRuntimeStream,
     Runtime,
@@ -20,6 +24,7 @@ from datapipeline.services.definitions import ProjectDefinition
 from datapipeline.services.streams.combine import build_combine_stage
 from datapipeline.services.streams.source import build_mapper, build_source
 from datapipeline.services.streams.validation import stream_partition_by
+from datapipeline.utils.time import parse_timecode
 
 
 def _compile_source_stream(
@@ -62,6 +67,38 @@ def _compile_broadcast_stream(
     )
 
 
+def _compile_as_of_stream(
+    config: AsOfStreamConfig,
+    stream_configs: dict[str, StreamConfig],
+) -> AsOfRuntimeStream:
+    partition_by = stream_partition_by(stream_configs, config.id)
+    return AsOfRuntimeStream(
+        input_stream=config.from_.stream,
+        lookup_stream=config.from_.as_of,
+        combine=build_combine_stage(config, partition_by),
+        partition_by=partition_by,
+        max_age=None if config.max_age is None else parse_timecode(config.max_age),
+        require_match=config.require_match,
+        transforms=tuple(config.transforms),
+    )
+
+
+def _compile_broadcast_as_of_stream(
+    config: BroadcastAsOfStreamConfig,
+    stream_configs: dict[str, StreamConfig],
+) -> BroadcastAsOfRuntimeStream:
+    partition_by = stream_partition_by(stream_configs, config.id)
+    return BroadcastAsOfRuntimeStream(
+        input_stream=config.from_.stream,
+        lookup_stream=config.from_.broadcast_as_of,
+        combine=build_combine_stage(config, partition_by),
+        partition_by=partition_by,
+        max_age=None if config.max_age is None else parse_timecode(config.max_age),
+        require_match=config.require_match,
+        transforms=tuple(config.transforms),
+    )
+
+
 def _compile_aligned_stream(
     config: AlignedStreamConfig,
     stream_configs: dict[str, StreamConfig],
@@ -92,6 +129,16 @@ def compile_runtime(definition: ProjectDefinition) -> Runtime:
             )
         elif isinstance(config, BroadcastStreamConfig):
             runtime_streams[stream_id] = _compile_broadcast_stream(
+                config,
+                stream_configs,
+            )
+        elif isinstance(config, AsOfStreamConfig):
+            runtime_streams[stream_id] = _compile_as_of_stream(
+                config,
+                stream_configs,
+            )
+        elif isinstance(config, BroadcastAsOfStreamConfig):
+            runtime_streams[stream_id] = _compile_broadcast_as_of_stream(
                 config,
                 stream_configs,
             )

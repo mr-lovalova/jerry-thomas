@@ -6,7 +6,8 @@ These live under the dataset “project root” directory (the folder containing
 
 - `project.yaml`: paths + globals (single source of truth).
 - `sources/*.yaml`: raw sources (loader + parser wiring).
-- `streams/*.yaml`: source-backed, derived, broadcast, or aligned canonical streams.
+- `streams/*.yaml`: source-backed, derived, exact/as-of fan-in, or aligned
+  canonical streams.
 - `dataset.yaml`: sample, feature/target, split, and postprocess policy.
 - `profiles/serve.<name>.yaml`: serve profiles.
 - `profiles/build.<name>.yaml`: build profiles.
@@ -573,6 +574,59 @@ Notes:
   primary partition at its timestamp. The combiner returns one record or
   `None` to skip that primary record.
 - The broadcast stream outputs records; its own `transforms` apply afterward.
+
+### As-of Streams
+
+An as-of stream attaches the latest lookup record available at or before each
+primary record. Use `as_of` when both inputs have the same partition identity:
+
+```yaml
+id: equity.price_with_fundamentals
+from:
+  stream: equity.price.daily
+  as_of: equity.fundamentals.reported
+max_age: 180d
+require_match: true
+combine:
+  entrypoint: combine_price_and_fundamentals
+  args: {}
+```
+
+Use `broadcast_as_of` when one global lookup history applies to every primary
+partition:
+
+```yaml
+id: equity.return_with_market_factor
+from:
+  stream: equity.return.daily
+  broadcast_as_of: market.factors.published
+max_age: 7d
+combine:
+  entrypoint: combine_return_and_factor
+  args: {}
+```
+
+Notes:
+
+- Matching is strictly backward-looking: the selected lookup has the greatest
+  `time` satisfying `lookup.time <= primary.time`. Exact timestamps are
+  eligible. There is no nearest or forward match.
+- Lookup `time` is its availability time. Keep an effective or reporting period
+  in a separate record field when it differs.
+- `max_age` is optional and inclusive. It accepts a positive timecode such as
+  `30min`, `12h`, or `180d`.
+- `require_match` defaults to `true`. With `false`, an unmatched lookup is
+  passed to the combiner as `None`.
+- `from.as_of` must have the same `partition_by` as the primary. Both may be
+  unpartitioned. Matching streams in canonical order uses constant memory.
+- `from.broadcast_as_of` must be unpartitioned, while its primary must be
+  partitioned. Jerry indexes the finite lookup history in memory so it can be
+  reused when time restarts for each primary partition.
+- Primary and lookup canonical keys must be unique and ordered.
+- Combine signature is `combine(primary_record, lookup_record, **args)`, where
+  `lookup_record` may be `None` only when `require_match: false`. The combiner
+  must preserve the primary time and partition and may return `None` to drop it.
+- The stream's own `transforms` run after combining.
 
 ### Aligned Streams (Engineered Domains)
 

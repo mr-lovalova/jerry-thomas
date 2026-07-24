@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jerry-thomas"
-version = "7.0.2"
+version = "8.0.0"
 description = "Jerry-Thomas: a stream-first, plugin-friendly data pipeline (mixology-themed CLI)"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
@@ -105,7 +105,9 @@ testpaths = ["tests"]
 [tool.mutmut]
 source_paths = ["src/datapipeline/"]
 only_mutate = [
+  "src/datapipeline/alignment/as_of.py",
   "src/datapipeline/alignment/broadcast.py",
+  "src/datapipeline/alignment/broadcast_as_of.py",
   "src/datapipeline/alignment/engine.py",
   "src/datapipeline/domain/value.py",
   "src/datapipeline/operations/artifacts/utils.py",

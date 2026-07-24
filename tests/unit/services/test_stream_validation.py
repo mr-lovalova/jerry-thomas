@@ -3,6 +3,8 @@ import pytest
 from datapipeline.config.sources import SourceConfig
 from datapipeline.config.streams import (
     AlignedStreamConfig,
+    AsOfStreamConfig,
+    BroadcastAsOfStreamConfig,
     BroadcastStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
@@ -84,6 +86,34 @@ def _broadcast(
     )
 
 
+def _as_of(
+    stream_id: str,
+    primary: str,
+    lookup: str,
+) -> AsOfStreamConfig:
+    return AsOfStreamConfig.model_validate(
+        {
+            "id": stream_id,
+            "from": {"stream": primary, "as_of": lookup},
+            "combine": {"entrypoint": "attach_lookup"},
+        }
+    )
+
+
+def _broadcast_as_of(
+    stream_id: str,
+    primary: str,
+    lookup: str,
+) -> BroadcastAsOfStreamConfig:
+    return BroadcastAsOfStreamConfig.model_validate(
+        {
+            "id": stream_id,
+            "from": {"stream": primary, "broadcast_as_of": lookup},
+            "combine": {"entrypoint": "attach_lookup"},
+        }
+    )
+
+
 def test_validation_rejects_unknown_source() -> None:
     streams: dict[str, StreamConfig] = {"prices": _source_stream("prices")}
 
@@ -156,6 +186,94 @@ def test_broadcast_inherits_transitive_primary_partition() -> None:
     validate_stream_configs({"source.alias": _source()}, streams)
 
     assert stream_partition_by(streams, "enriched") == ("station",)
+
+
+def test_as_of_inherits_matching_transitive_partition() -> None:
+    streams: dict[str, StreamConfig] = {
+        "prices": _source_stream("prices", partition_by=["ticker"]),
+        "primary": _derived("primary", "prices"),
+        "reports": _source_stream("reports", partition_by=["ticker"]),
+        "lookup": _derived("lookup", "reports"),
+        "enriched": _as_of("enriched", "primary", "lookup"),
+    }
+
+    validate_stream_configs({"source.alias": _source()}, streams)
+
+    assert stream_partition_by(streams, "enriched") == ("ticker",)
+
+
+def test_as_of_accepts_two_global_inputs() -> None:
+    streams: dict[str, StreamConfig] = {
+        "primary": _source_stream("primary"),
+        "lookup": _source_stream("lookup"),
+        "enriched": _as_of("enriched", "primary", "lookup"),
+    }
+
+    validate_stream_configs({"source.alias": _source()}, streams)
+
+    assert stream_partition_by(streams, "enriched") == ()
+
+
+def test_validation_rejects_as_of_partition_mismatch() -> None:
+    streams: dict[str, StreamConfig] = {
+        "prices": _source_stream("prices", partition_by=["ticker"]),
+        "reports": _source_stream("reports", partition_by=["company_id"]),
+        "enriched": _as_of("enriched", "prices", "reports"),
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"partition_by \['company_id'\]; expected \['ticker'\]",
+    ):
+        validate_stream_configs({"source.alias": _source()}, streams)
+
+
+def test_broadcast_as_of_inherits_transitive_primary_partition() -> None:
+    streams: dict[str, StreamConfig] = {
+        "measurements": _source_stream("measurements", partition_by=["station"]),
+        "primary": _derived("primary", "measurements"),
+        "global": _source_stream("global"),
+        "lookup": _derived("lookup", "global"),
+        "enriched": _broadcast_as_of("enriched", "primary", "lookup"),
+    }
+
+    validate_stream_configs({"source.alias": _source()}, streams)
+
+    assert stream_partition_by(streams, "enriched") == ("station",)
+
+
+def test_validation_rejects_unpartitioned_broadcast_as_of_primary() -> None:
+    streams: dict[str, StreamConfig] = {
+        "primary": _source_stream("primary"),
+        "lookup": _source_stream("lookup"),
+        "enriched": _broadcast_as_of("enriched", "primary", "lookup"),
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Broadcast as-of stream 'enriched' primary input 'primary' "
+            "must have a non-empty partition_by"
+        ),
+    ):
+        validate_stream_configs({"source.alias": _source()}, streams)
+
+
+def test_validation_rejects_partitioned_broadcast_as_of_lookup() -> None:
+    streams: dict[str, StreamConfig] = {
+        "primary": _source_stream("primary", partition_by=["station"]),
+        "lookup": _source_stream("lookup", partition_by=["region"]),
+        "enriched": _broadcast_as_of("enriched", "primary", "lookup"),
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"Broadcast as-of stream 'enriched' lookup input 'lookup' must have an "
+            r"empty partition_by; got \['region'\]"
+        ),
+    ):
+        validate_stream_configs({"source.alias": _source()}, streams)
 
 
 def test_validation_rejects_unpartitioned_broadcast_primary() -> None:

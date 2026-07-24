@@ -1,10 +1,12 @@
 from collections.abc import Generator, Iterable, Iterator
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import partial
 from typing import Any
 
+from datapipeline.alignment.as_of import as_of_stream
 from datapipeline.alignment.broadcast import broadcast_stream
+from datapipeline.alignment.broadcast_as_of import broadcast_as_of_stream
 from datapipeline.alignment.engine import align_streams
 from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.observer import ignore_pipeline_event
@@ -17,7 +19,10 @@ from datapipeline.pipelines.stream.stages import (
 )
 from datapipeline.runtime import (
     AlignedRuntimeStream,
+    AsOfRuntimeStream,
+    BroadcastAsOfRuntimeStream,
     BroadcastRuntimeStream,
+    CombinedRuntimeStream,
     DerivedRuntimeStream,
     RecordStage,
     SourceRuntimeStream,
@@ -83,16 +88,48 @@ def build_stream_pipeline(
                     stream.partition_by,
                 ),
             ),
-            stages=(
-                Stage(name="combine_records", apply=stream.combine),
-                *build_transform_stages(
-                    context,
-                    stream.transforms,
-                    stream.partition_by,
-                ),
-            ),
+            stages=_combined_stages(context, stream),
             summary=(
                 f"primary={stream.input_stream},broadcast={stream.broadcast_stream}"
+            ),
+        )
+    if isinstance(stream, AsOfRuntimeStream):
+        return Pipeline(
+            name=f"stream:{stream_id}",
+            input=Input(
+                name="as_of_inputs",
+                open=partial(
+                    _as_of_inputs,
+                    context,
+                    stream.input_stream,
+                    stream.lookup_stream,
+                    stream.partition_by,
+                    stream.max_age,
+                    stream.require_match,
+                ),
+            ),
+            stages=_combined_stages(context, stream),
+            summary=f"primary={stream.input_stream},as_of={stream.lookup_stream}",
+        )
+    if isinstance(stream, BroadcastAsOfRuntimeStream):
+        return Pipeline(
+            name=f"stream:{stream_id}",
+            input=Input(
+                name="broadcast_as_of_inputs",
+                open=partial(
+                    _broadcast_as_of_inputs,
+                    context,
+                    stream.input_stream,
+                    stream.lookup_stream,
+                    stream.partition_by,
+                    stream.max_age,
+                    stream.require_match,
+                ),
+            ),
+            stages=_combined_stages(context, stream),
+            summary=(
+                f"primary={stream.input_stream},"
+                f"broadcast_as_of={stream.lookup_stream}"
             ),
         )
     if isinstance(stream, AlignedRuntimeStream):
@@ -107,14 +144,7 @@ def build_stream_pipeline(
                     stream.partition_by,
                 ),
             ),
-            stages=(
-                Stage(name="combine_records", apply=stream.combine),
-                *build_transform_stages(
-                    context,
-                    stream.transforms,
-                    stream.partition_by,
-                ),
-            ),
+            stages=_combined_stages(context, stream),
             summary="inputs=" + ",".join(stream.inputs),
         )
     raise TypeError(f"Unsupported runtime stream: {type(stream).__name__}")
@@ -135,6 +165,20 @@ def _source_stages(
             stream.presorted,
             context.runtime.execution.sort_buffer_bytes,
         ),
+        *build_transform_stages(
+            context,
+            stream.transforms,
+            stream.partition_by,
+        ),
+    )
+
+
+def _combined_stages(
+    context: PipelineContext,
+    stream: CombinedRuntimeStream,
+) -> tuple[Stage, ...]:
+    return (
+        Stage(name="combine_records", apply=stream.combine),
         *build_transform_stages(
             context,
             stream.transforms,
@@ -192,11 +236,7 @@ def _align_inputs(
     inputs = [
         (
             stream_id,
-            run_pipeline(
-                context,
-                build_stream_pipeline(context, stream_id),
-                observer=ignore_pipeline_event,
-            ),
+            _run_internal_stream(context, stream_id),
         )
         for stream_id in input_streams
     ]
@@ -209,16 +249,55 @@ def _broadcast_inputs(
     broadcast_input: str,
     partition_by: tuple[str, ...],
 ) -> Iterator[tuple[Any, Any]]:
-    input_pipeline = build_stream_pipeline(context, input_stream)
-    broadcast_pipeline = build_stream_pipeline(context, broadcast_input)
-    primary = run_pipeline(
-        context,
-        input_pipeline,
-        observer=ignore_pipeline_event,
-    )
-    broadcast = run_pipeline(
-        context,
-        broadcast_pipeline,
-        observer=ignore_pipeline_event,
-    )
+    primary = _run_internal_stream(context, input_stream)
+    broadcast = _run_internal_stream(context, broadcast_input)
     yield from broadcast_stream(primary, broadcast, partition_by)
+
+
+def _as_of_inputs(
+    context: PipelineContext,
+    input_stream: str,
+    lookup_stream: str,
+    partition_by: tuple[str, ...],
+    max_age: timedelta | None,
+    require_match: bool,
+) -> Iterator[tuple[Any, Any | None]]:
+    primary = _run_internal_stream(context, input_stream)
+    lookup = _run_internal_stream(context, lookup_stream)
+    yield from as_of_stream(
+        primary,
+        lookup,
+        partition_by,
+        max_age=max_age,
+        require_match=require_match,
+    )
+
+
+def _broadcast_as_of_inputs(
+    context: PipelineContext,
+    input_stream: str,
+    lookup_stream: str,
+    partition_by: tuple[str, ...],
+    max_age: timedelta | None,
+    require_match: bool,
+) -> Iterator[tuple[Any, Any | None]]:
+    primary = _run_internal_stream(context, input_stream)
+    lookup = _run_internal_stream(context, lookup_stream)
+    yield from broadcast_as_of_stream(
+        primary,
+        lookup,
+        partition_by,
+        max_age=max_age,
+        require_match=require_match,
+    )
+
+
+def _run_internal_stream(
+    context: PipelineContext,
+    stream_id: str,
+) -> Generator[Any, None, None]:
+    return run_pipeline(
+        context,
+        build_stream_pipeline(context, stream_id),
+        observer=ignore_pipeline_event,
+    )

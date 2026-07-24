@@ -10,7 +10,8 @@ jerry.yaml: default_dataset
   -> datasets.<alias> = <path/to/project.yaml>
     -> project.yaml: paths.sources / paths.streams / paths.dataset
       -> sources/*.yaml: id
-        -> streams/*.yaml: from.source|from.stream|from.broadcast|from.align, id
+        -> streams/*.yaml: from.source|from.stream|from.broadcast|
+                           from.as_of|from.broadcast_as_of|from.align, id
           -> dataset.yaml: stream: <streams.id>, field: <record_field>
             -> jerry serve
               -> runs/<run_id>/dataset/<profile>.jsonl|csv|parquet|...
@@ -136,6 +137,26 @@ assertions, and missing primary timestamps fail; broadcast timestamps the
 primary does not use are ignored. Matching is exact: there is no implicit as-of
 or fill behavior. Combiner inputs are read-only, and a broadcast record is
 reused across primary partitions at its timestamp.
+
+As-of streams use the latest record available at or before the primary time.
+The ordinary form requires matching partition identities:
+
+```yaml
+id: equity.price_with_fundamentals
+from:
+  stream: equity.price.daily
+  as_of: equity.fundamentals.reported
+max_age: 180d
+require_match: true
+combine:
+  entrypoint: combine_price_and_fundamentals
+```
+
+The `broadcast_as_of` form attaches one unpartitioned lookup history to every
+primary partition. Exact timestamps are eligible; future lookups never are.
+`max_age` is an optional inclusive bound. With `require_match: false`, the
+combiner receives `None` when no eligible lookup exists. Lookup `time` must
+represent when the data became available.
 
 Aligned streams intersect their inputs by partition and time. Input order is
 also combine argument order:

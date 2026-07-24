@@ -38,8 +38,7 @@ from datapipeline.pipelines.dataset.pipeline import (
 from datapipeline.pipelines.series.pipeline import run_series_pipeline
 from datapipeline.pipelines.stream.pipeline import build_stream_pipeline
 from datapipeline.runtime import (
-    AlignedRuntimeStream,
-    BroadcastRuntimeStream,
+    CombinedRuntimeStream,
     DerivedRuntimeStream,
     Runtime,
     require_runtime_stream,
@@ -162,7 +161,7 @@ def _record_preview_stream(
                 context,
                 pipeline.through_stage_count(len(upstream.stages)),
             )
-        if isinstance(stream, (AlignedRuntimeStream, BroadcastRuntimeStream)):
+        if isinstance(stream, CombinedRuntimeStream):
             node_name = "combine_records"
         else:
             node_name = "map_records"
