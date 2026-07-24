@@ -509,9 +509,9 @@ def test_scaling_policy_does_not_invalidate_unscaled_series(
     )
 
 
-def test_scaler_hash_tracks_every_fold_role(tmp_path: Path) -> None:
+def test_scaler_and_metadata_hashes_track_every_fold_role(tmp_path: Path) -> None:
     definition = load_project_definition(_write_project(tmp_path))
-    streams = _single_stream_catalog()
+    streams = _wide_stream_catalog()
     feature = SeriesConfig(
         id="price",
         stream="prices",
@@ -582,24 +582,33 @@ def test_scaler_hash_tracks_every_fold_role(tmp_path: Path) -> None:
         }
     )
 
-    def scaler_hash(dataset: DatasetConfig) -> str:
+    def artifact_hashes(dataset: DatasetConfig):
         return calculate_artifact_hashes(
             definition.project,
             dataset,
             streams,
-            (ScalerTask(),),
-        ).for_artifact(SCALER_STATISTICS)
+            (ScalerTask(), SeriesTask(), MetadataTask()),
+        )
 
-    assert scaler_hash(validation_changed) != scaler_hash(baseline)
-    assert scaler_hash(test_changed) != scaler_hash(baseline)
-    assert scaler_hash(training_changed) != scaler_hash(baseline)
+    baseline_hashes = artifact_hashes(baseline)
+    for changed in (validation_changed, test_changed, training_changed):
+        changed_hashes = artifact_hashes(changed)
+        assert changed_hashes.for_artifact(SCALER_STATISTICS) != (
+            baseline_hashes.for_artifact(SCALER_STATISTICS)
+        )
+        assert changed_hashes.for_artifact(VECTOR_METADATA) != (
+            baseline_hashes.for_artifact(VECTOR_METADATA)
+        )
+        assert changed_hashes.for_artifact(SERIES) == baseline_hashes.for_artifact(
+            SERIES
+        )
 
 
-def test_target_horizon_changes_folded_scaler_but_not_series_or_metadata(
+def test_target_horizon_changes_folded_scaler_and_metadata_but_not_series(
     tmp_path: Path,
 ) -> None:
     definition = load_project_definition(_write_project(tmp_path))
-    streams = _single_stream_catalog()
+    streams = _wide_stream_catalog()
     split = TimeSplitConfig(
         intervals=[
             TimeInterval(id="train", until="2024-02-01T00:00:00Z"),
@@ -670,7 +679,7 @@ def test_target_horizon_changes_folded_scaler_but_not_series_or_metadata(
         baseline_hashes.for_artifact(SCALER_STATISTICS)
     )
     assert changed_hashes.for_artifact(SERIES) == baseline_hashes.for_artifact(SERIES)
-    assert changed_hashes.for_artifact(VECTOR_METADATA) == (
+    assert changed_hashes.for_artifact(VECTOR_METADATA) != (
         baseline_hashes.for_artifact(VECTOR_METADATA)
     )
     assert equivalent_hashes == baseline_hashes
@@ -732,6 +741,28 @@ def _single_stream_catalog() -> StreamsConfig:
                     "id": "prices",
                     "from": {"source": "raw"},
                     "map": {"entrypoint": "map"},
+                }
+            },
+        }
+    )
+
+
+def _wide_stream_catalog() -> StreamsConfig:
+    return StreamsConfig.model_validate(
+        {
+            "sources": {
+                "raw": {
+                    "id": "raw",
+                    "parser": {"entrypoint": "parse"},
+                    "loader": {"entrypoint": "custom.loader"},
+                }
+            },
+            "streams": {
+                "prices": {
+                    "id": "prices",
+                    "from": {"source": "raw"},
+                    "map": {"entrypoint": "map"},
+                    "partition_by": ["metric"],
                 }
             },
         }

@@ -2,7 +2,7 @@ from collections.abc import Iterator, Sequence
 
 from datapipeline.domain.sample import Sample
 
-from ..common import cell_coverage, reject_unknown_values, select_expected_ids
+from .common import cell_coverage, reject_unknown_values, select_expected_ids
 
 
 def _threshold(value: float) -> float:
@@ -14,8 +14,8 @@ def _threshold(value: float) -> float:
     return threshold
 
 
-class DropSamplesTransform:
-    """Drop samples whose selected feature cells have insufficient coverage."""
+class FilterFeatureSamplesTransform:
+    """Keep samples with sufficient feature coverage."""
 
     def __init__(
         self,
@@ -38,8 +38,8 @@ class DropSamplesTransform:
                 yield sample
 
 
-class DropTargetSamplesTransform:
-    """Drop samples whose selected target cells have insufficient coverage."""
+class FilterTargetSamplesTransform:
+    """Keep samples with sufficient target coverage."""
 
     def __init__(
         self,

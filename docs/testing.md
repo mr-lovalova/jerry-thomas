@@ -39,7 +39,7 @@ missing from that contract.
 | Non-finite values | Series and output boundaries normalize `NaN` to null and reject infinity |
 | Sequencing | Fixed windows, stride, missing elements, and column order are golden |
 | Scaling | Standard and folded feature/target statistics and values are golden |
-| Leakage | Changing validation/test values cannot change fitted train statistics |
+| Leakage | Changing validation/test values cannot change fitted train statistics or introduce training columns |
 | Walk-forward splits | Fold membership, purge exclusions, routing, and row order are golden |
 | Artifact caching | Unchanged AUTO runs reuse artifacts; source/config changes rebuild stale artifacts |
 | Persistence | Real serve profiles publish exact JSONL outputs and successful run metadata |

@@ -29,7 +29,10 @@ The strict config models keep source mapping and fan-in behavior separate.
 Dataset `sample.keys` select the partition fields represented in row identity.
 The remaining partition fields deterministically suffix series IDs in declared
 order. This derives long, wide, and hybrid layouts without a separate stream
-series-identity setting.
+series-identity setting. Split datasets retain one shared schema; metadata
+building requires every fold's eligible training rows to establish each
+partition-derived ID's shape and value types, so holdout partitions cannot
+define training columns.
 
 Configured loader, parser, map, and combine entry points are resolved while
 compiling a runtime from the definition. The resulting callables are stored on the runtime stream. There are
@@ -128,27 +131,25 @@ is selected, so every train, validation, and test output uses its fold's fitted
 scaler. This keeps numerical scaling separate from dataset shaping and split
 policy.
 
-## Vector postprocess
+## Sample postprocess
 
 `dataset.yaml:postprocess` is validated into `PostprocessConfig`, with separate
-typed policies for feature selection, target selection, and sample filtering.
+typed policies for feature and target sample filtering.
 
 The dataset pipeline has one fixed postprocess order:
 
 ```text
 dataset
   assemble_samples
-  optional select_features
-  optional select_targets
   conform_features
   conform_targets (or reject_undeclared_targets)
   optional filter_samples_by_features
   optional filter_samples_by_targets
 ```
 
-Configuration can enable and parameterize selection and filtering, but cannot
-reorder phases or mutate vector values. Vector metadata is loaded once at the
-boundary where its validated contract is needed.
+Configuration can enable and parameterize row filtering, but cannot reorder
+phases, select columns from observed coverage, or mutate vector values. Vector
+metadata is loaded once at the boundary where its validated contract is needed.
 
 ## Preview boundaries
 

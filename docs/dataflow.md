@@ -196,7 +196,8 @@ Expected behavior:
   `partition_by`.
 - Partition fields in `sample.keys` identify rows. Remaining partition fields
   suffix series IDs in partition order, producing long, wide, or hybrid output
-  without a separate format setting.
+  without a separate format setting. For split datasets, each fold's eligible
+  training rows must establish every generated ID's shape and value types.
 
 ## 6) Serve writes run-scoped outputs
 

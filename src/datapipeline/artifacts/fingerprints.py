@@ -26,6 +26,7 @@ from datapipeline.config.tasks import (
     SeriesTask,
 )
 from datapipeline.services.definitions import ArtifactHashes, ProjectManifest
+from datapipeline.services.streams.validation import stream_partition_by
 
 # Increment when Jerry's core artifact semantics change without a config change.
 ARTIFACT_CACHE_VERSION = 7
@@ -148,6 +149,18 @@ def _stream_config_closure(
     return config, source_ids
 
 
+def _has_partitioned_series_ids(
+    dataset: DatasetConfig,
+    streams: StreamsConfig,
+) -> bool:
+    sample_keys = set(dataset.sample.keys)
+    for config in dataset.series:
+        partition_by = stream_partition_by(streams.streams, config.stream)
+        if any(field not in sample_keys for field in partition_by):
+            return True
+    return False
+
+
 def _artifact_inputs(
     task: ArtifactTask,
     dataset: DatasetConfig,
@@ -179,10 +192,7 @@ def _artifact_inputs(
             ],
         }
         target_horizon = dataset.max_target_horizon
-        if (
-            isinstance(dataset.split, TimeSplitConfig)
-            and target_horizon > timedelta()
-        ):
+        if isinstance(dataset.split, TimeSplitConfig) and target_horizon > timedelta():
             dataset_inputs["target_horizon_seconds"] = int(
                 target_horizon.total_seconds()
             )
@@ -226,7 +236,13 @@ def _artifact_inputs(
         return {"postprocess": dataset.postprocess.model_dump(mode="json")}, set()
 
     if isinstance(task, MetadataTask):
-        return {"metadata_format_version": VECTOR_METADATA_VERSION}, set()
+        inputs: dict[str, object] = {"metadata_format_version": VECTOR_METADATA_VERSION}
+        if dataset.split is not None and _has_partitioned_series_ids(dataset, streams):
+            inputs["split"] = dataset.split.model_dump(mode="json")
+            inputs["target_horizon_seconds"] = int(
+                dataset.max_target_horizon.total_seconds()
+            )
+        return inputs, set()
 
     if isinstance(task, CoverageStatsTask):
         return {}, set()

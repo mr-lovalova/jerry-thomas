@@ -96,12 +96,7 @@ def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
             "targets": [],
         },
         postprocess=PostprocessConfig.model_validate(
-            {
-                "columns": {
-                    "features": {"threshold": 1.0, "ids": ["sparse"]},
-                },
-                "samples": {"features": {"threshold": 1.0, "ids": ["value"]}},
-            }
+            {"samples": {"features": {"threshold": 1.0, "ids": ["value"]}}}
         ),
     )
     samples = [
@@ -116,15 +111,16 @@ def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
     plan = build_postprocess_plan(context)
     output = list(apply_postprocess(context, iter(samples)))
 
-    assert [entry.id for entry in plan.feature_entries] == ["value"]
+    assert [entry.id for entry in plan.feature_entries] == ["sparse", "value"]
     assert plan.target_entries == ()
     assert [stage.name for stage in plan.stages] == [
-        "select_features",
         "conform_features",
         "reject_undeclared_targets",
         "filter_samples_by_features",
     ]
-    assert [sample.features.values for sample in output] == [{"value": 2.0}]
+    assert [sample.features.values for sample in output] == [
+        {"sparse": None, "value": 2.0}
+    ]
 
 
 def test_postprocess_applies_explicit_target_policies(tmp_path) -> None:
@@ -160,12 +156,7 @@ def test_postprocess_applies_explicit_target_policies(tmp_path) -> None:
             ],
         },
         postprocess=PostprocessConfig.model_validate(
-            {
-                "columns": {
-                    "targets": {"threshold": 1.0, "ids": ["sparse"]},
-                },
-                "samples": {"targets": {"threshold": 1.0, "ids": ["target"]}},
-            }
+            {"samples": {"targets": {"threshold": 1.0, "ids": ["target"]}}}
         ),
     )
     sample = Sample(
@@ -178,10 +169,10 @@ def test_postprocess_applies_explicit_target_policies(tmp_path) -> None:
 
     assert output[0].features.values == {"feature": 2.0}
     assert output[0].targets is not None
-    assert output[0].targets.values == {"target": 1.0}
+    assert output[0].targets.values == {"sparse": None, "target": 1.0}
 
 
-def test_column_selection_uses_metadata_counts_without_mutating_metadata(
+def test_metadata_coverage_counts_never_change_the_dataset_schema(
     tmp_path,
 ) -> None:
     runtime = _runtime(
@@ -213,9 +204,6 @@ def test_column_selection_uses_metadata_counts_without_mutating_metadata(
             ],
             "targets": [],
         },
-        postprocess=PostprocessConfig.model_validate(
-            {"columns": {"features": {"threshold": 0.5}}}
-        ),
     )
     context = PipelineContext(runtime)
     sample = Sample(
@@ -225,7 +213,7 @@ def test_column_selection_uses_metadata_counts_without_mutating_metadata(
 
     output = list(apply_postprocess(context, iter([sample])))
 
-    assert output[0].features.values == {"complete": 2.0}
+    assert output[0].features.values == {"sparse": 1.0, "complete": 2.0}
     assert [
         entry.id for entry in context.require_artifact(VECTOR_METADATA_SPEC).features
     ] == ["sparse", "complete"]

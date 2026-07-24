@@ -44,8 +44,7 @@ def test_drop_with_metadata_and_partitioned_streams(copy_fixture):
     samples = list(apply_postprocess(context, assembled_samples))
 
     # Source emits ticks every 2h; ensure_cadence fills 1h gaps with None.
-    # drop with axis=horizontal, threshold=1.0 removes the filled (None) buckets,
-    # keeping only the original ticks.
+    # Full feature coverage keeps only the original ticks.
     expected_hours = [0, 2, 4]
     assert len(samples) == len(expected_hours)
     for sample, hour in zip(samples, expected_hours):

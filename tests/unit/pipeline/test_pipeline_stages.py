@@ -23,8 +23,13 @@ from datapipeline.config.dataset.series import (
     SequenceConfig,
     TargetSeriesConfig,
 )
+from datapipeline.config.dataset.split import (
+    DatasetFold,
+    TimeInterval,
+    TimeSplitConfig,
+)
 from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.tasks import SeriesTask
+from datapipeline.config.tasks import MetadataTask, SeriesTask
 from datapipeline.config.transforms import (
     EnsureCadenceConfig,
     EnsureTicksConfig,
@@ -49,6 +54,7 @@ from datapipeline.execution.events import (
 )
 from datapipeline.execution.pipeline import Input
 from datapipeline.execution.runner import run_pipeline
+from datapipeline.operations.artifacts.metadata import materialize_metadata
 from datapipeline.operations.artifacts.series import build_series_artifact
 from datapipeline.operations.runtime.dataset import _record_preview_stream
 from datapipeline.parsers.identity import IdentityParser
@@ -1397,6 +1403,57 @@ def test_series_artifact_feeds_serve_pipeline(tmp_path: Path) -> None:
     ]
     assert source.opens == 1
     assert source.closes == 1
+
+
+def test_metadata_rejects_projected_wide_id_outside_fold_training(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "bucket": "known", "value": 1.0},
+            {"time": _ts(2), "bucket": "future", "value": 2.0},
+        ],
+        partition_by=("bucket",),
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                id="metric",
+                stream="stream",
+                field="value",
+            )
+        ],
+        split=TimeSplitConfig(
+            intervals=[
+                TimeInterval(id="train", until="2024-01-01T02:00:00Z"),
+                TimeInterval(id="validation"),
+            ],
+            folds=[
+                DatasetFold(
+                    id="holdout",
+                    train=["train"],
+                    validation=["validation"],
+                )
+            ],
+        ),
+    )
+
+    result = build_series_artifact(runtime, SeriesTask())
+    runtime.artifacts.register(SERIES, result.relative_path, meta=result.meta)
+    manifest_path = runtime.artifacts_root / result.relative_path
+    manifest = load_series_manifest(manifest_path)
+
+    assert [tuple(row.features) for row in open_series(manifest_path, manifest)] == [
+        ("metric__@bucket:known",),
+        ("metric__@bucket:future",),
+    ]
+    with pytest.raises(
+        RuntimeError,
+        match=r"fold 'holdout'.*feature series IDs.*metric__@bucket:future",
+    ):
+        materialize_metadata(runtime, MetadataTask(output="metadata.json"))
 
 
 def test_series_shared_stream_matches_independent_series_pipelines(

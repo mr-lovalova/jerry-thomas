@@ -156,7 +156,7 @@ These live under `lib/<plugin>/src/<package>/`:
   vectors that receive the selected dataset fold's scaler during full serving.
   Each target also declares its maximum elapsed `horizon`, which time folds use
   to remove boundary samples whose future support reaches the next role.
-- **Postprocess policies** select assembled vector columns and filter samples by coverage. Configure them under `postprocess:` in `dataset.yaml`.
+- **Postprocess policies** filter assembled samples by feature or target coverage. Configure them under `postprocess:` in `dataset.yaml`.
 - Transform lists contain flat, validated built-in operations. Each item has an
   `operation` discriminator and that operation's fields. See the
   [transform guide](docs/transforms/index.md) for the supported operations.

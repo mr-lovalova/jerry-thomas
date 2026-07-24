@@ -7,8 +7,8 @@ Transforms are split by the stage where they run:
   per-partition history.
 - [Series shaping](series.md): feature/target payload shaping before vector
   assembly.
-- [Postprocess policies](postprocess.md): column selection and sample filtering
-  before split and output persistence.
+- [Postprocess policies](postprocess.md): sample filtering before split and
+  output persistence.
 
 Preprocess and ordered transforms are explicit built-in operations. Their config is
 validated before pipeline execution; arbitrary transform entry points are not
@@ -43,5 +43,5 @@ transforms:
 
 Missing or unknown operations, unknown fields, and invalid field values are
 rejected while loading the project. Postprocess instead has a fixed structural
-shape separating feature selection, target selection, and final sample filters.
-See [Postprocess policies](postprocess.md) for its complete shape.
+shape with separate feature and target sample filters. See
+[Postprocess policies](postprocess.md) for its complete shape.

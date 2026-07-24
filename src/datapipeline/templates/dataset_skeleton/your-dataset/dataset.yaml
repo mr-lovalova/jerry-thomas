@@ -29,9 +29,6 @@ split:
       test: [test]
 
 postprocess:
-  columns:
-    features:
-      threshold: 0.9
   samples:
     features:
       threshold: 1.0

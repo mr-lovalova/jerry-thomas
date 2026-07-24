@@ -1,4 +1,5 @@
 import math
+import shutil
 
 import pytest
 
@@ -149,3 +150,58 @@ def test_long_and_hybrid_identity_with_aligned_derived_stream(copy_fixture) -> N
             }
         )
         assert sample["targets"] is None
+
+
+def test_validation_values_do_not_change_hybrid_wide_training_output(
+    copy_fixture,
+    tmp_path,
+) -> None:
+    project_root = copy_fixture("identity_alignment_project")
+    changed_root = tmp_path / "identity_alignment_changed_validation"
+    shutil.copytree(project_root, changed_root)
+    split = """
+
+split:
+  mode: time
+  intervals:
+    - {id: train, until: "2024-01-03T00:00:00Z"}
+    - {id: validation}
+  folds:
+    - id: holdout
+      train: [train]
+      validation: [validation]
+"""
+    for root in (project_root, changed_root):
+        dataset_path = root / "dataset.yaml"
+        dataset_path.write_text(
+            dataset_path.read_text(encoding="utf-8") + split,
+            encoding="utf-8",
+        )
+
+    fundamentals_path = changed_root / "data" / "fundamentals.jsonl"
+    fundamentals_path.write_text(
+        fundamentals_path.read_text(encoding="utf-8").replace(
+            '"ticker":"A","metric":"revenue","value":120',
+            '"ticker":"A","metric":"revenue","value":null',
+        ),
+        encoding="utf-8",
+    )
+
+    baseline_request = serve_dataset(project_root)
+    changed_request = serve_dataset(changed_root)
+    baseline_outputs = baseline_request.serve_run_plans[0].paths.dataset_dir
+    changed_outputs = changed_request.serve_run_plans[0].paths.dataset_dir
+    baseline_train = read_jsonl(baseline_outputs / "dataset.holdout.train.jsonl")
+    changed_train = read_jsonl(changed_outputs / "dataset.holdout.train.jsonl")
+    baseline_validation = read_jsonl(
+        baseline_outputs / "dataset.holdout.validation.jsonl"
+    )
+    changed_validation = read_jsonl(
+        changed_outputs / "dataset.holdout.validation.jsonl"
+    )
+
+    assert changed_train == baseline_train
+    assert changed_validation != baseline_validation
+    assert [set(row["features"]["values"]) for row in changed_validation] == [
+        set(row["features"]["values"]) for row in baseline_validation
+    ]

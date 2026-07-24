@@ -529,6 +529,10 @@ transforms:
   target ID in partition order (for example, `temp__@station_id:XYZ`). Putting
   every partition field in `sample.keys` produces long/entity-keyed output;
   putting none there produces wide output; using a subset produces a hybrid.
+  For split datasets, each fold's eligible training rows must establish every
+  generated wide or hybrid series ID, including its scalar/list shape and value
+  types. Metadata building fails rather than let validation or test data alter
+  the training schema.
   Dataset feature and target IDs cannot contain the reserved `__` separator.
   Generated suffixes escape strings and tag non-string scalar values so
   different component tuples cannot produce the same series ID.
@@ -718,11 +722,6 @@ split:
       test: [test]
 
 postprocess:
-  columns:
-    features:
-      threshold: 0.8
-    targets:
-      threshold: 0.9
   samples:
     features:
       threshold: 0.95
@@ -746,7 +745,9 @@ postprocess:
 - `partition_by` is the complete series identity. `sample.keys` select which
   partition fields identify output rows; remaining partition fields suffix
   series IDs such as `close__@security_id:AAPL`. This supports long, wide, and
-  hybrid layouts without a separate format or series-identity setting.
+  hybrid layouts without a separate format or series-identity setting. In a
+  split dataset, each fold's eligible training rows must establish every
+  resulting wide or hybrid ID's shape and value types.
 - `field` selects the record attribute used as the feature/target value.
 - Every target requires `horizon`. It is the conservative maximum elapsed
   time between the sample key and the latest observation used to compute that
@@ -838,19 +839,14 @@ postprocess:
   target uses `sequence`, or when any target has a positive horizon, because
   temporal support could cross hash partitions. Use a time split for temporal
   datasets.
-- `postprocess.columns` and `postprocess.samples` are structural policies that
-  run after assembly and before serving.
-
-- `postprocess.columns.features` and `postprocess.columns.targets` have separate
-  selection policies.
 - `postprocess.samples.features` and `postprocess.samples.targets` filter
   complete rows after typed conformance.
-- `ids` is optional. Selection and sample filters default to every retained ID.
+- `ids` is optional. Sample filters default to every declared ID.
   Empty, duplicate, or unknown IDs are errors.
-- Column selection and conformance use the same typed `build/metadata.json`
-  artifact.
-- Execution order is fixed: column selection, typed conformance, then sample
+- Execution order is fixed: typed conformance, then feature and target sample
   filters.
+- Postprocess never selects columns from observed coverage. Use coverage reports
+  to evaluate the declared series explicitly.
 - Postprocess does not mutate values. Configure missing-value repair on the
   ordered record stream before feature extraction.
 
