@@ -21,9 +21,11 @@ from datapipeline.config.dataset.split import (
     TimeSplitConfig,
 )
 from datapipeline.config.tasks import ScalerTask
+from datapipeline.config.transforms import EnsureCadenceConfig, ForwardFillConfig
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.operations.artifacts.scaler import materialize_scaler_statistics
 from datapipeline.runtime import Runtime, SourceRuntimeStream
+from datapipeline.transforms.utils import set_record_domain_anchor
 
 
 def _time(day: int) -> datetime:
@@ -64,7 +66,7 @@ def _runtime(
     artifacts_root.mkdir()
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 3\nartifact_revision: 1\n", encoding="utf-8"
+        "schema_version: 4\nartifact_revision: 1\n", encoding="utf-8"
     )
     if dataset is None:
         dataset = DatasetConfig(sample=SampleConfig(cadence="1h"))
@@ -87,12 +89,13 @@ def _runtime(
 def _dataset(
     *,
     cadence: str = "1h",
+    sample_keys: tuple[str, ...] = (),
     scale: bool = True,
     sequence: SequenceConfig | None = None,
     split: HashSplitConfig | TimeSplitConfig | None = None,
 ) -> DatasetConfig:
     return DatasetConfig(
-        sample=SampleConfig(cadence=cadence),
+        sample=SampleConfig(cadence=cadence, keys=list(sample_keys)),
         features=[
             SeriesConfig(
                 id="x",
@@ -153,6 +156,101 @@ def test_materialize_standard_scaler_persists_build_options(
     assert artifact.with_mean is False
     assert artifact.with_std is False
     assert artifact.epsilon == 0.5
+
+
+@pytest.mark.parametrize("placeholder_value", [None, 100.0])
+def test_standard_scaler_excludes_placeholder_only_wide_ids(
+    monkeypatch,
+    tmp_path,
+    placeholder_value,
+) -> None:
+    runtime = _runtime(tmp_path, _dataset())
+    runtime.streams["stream"] = replace(
+        runtime.streams["stream"],
+        partition_by=("bucket",),
+    )
+    genuine = _record(1, 1.0)
+    genuine.bucket = "known"
+    placeholder = _record(1, placeholder_value)
+    placeholder.bucket = "future"
+    set_record_domain_anchor(placeholder, False)
+    monkeypatch.setattr(
+        "datapipeline.operations.artifacts.scaler.run_stream_pipeline",
+        lambda *_args: iter((genuine, placeholder)),
+    )
+
+    result = materialize_scaler_statistics(
+        runtime,
+        ScalerTask(output="scaler.json"),
+    )
+
+    assert result is not None
+    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    assert isinstance(artifact, StandardScalerArtifact)
+    assert artifact.observations == 1
+    assert tuple(artifact.statistics) == ("x__@bucket:known",)
+
+
+@pytest.mark.parametrize(
+    "split",
+    [
+        pytest.param(None, id="standard"),
+        pytest.param(
+            TimeSplitConfig(
+                intervals=[TimeInterval(id="train")],
+                folds=[DatasetFold(id="fold", train=["train"])],
+            ),
+            id="folded",
+        ),
+    ],
+)
+def test_scaler_excludes_leading_placeholders_for_later_entities(
+    monkeypatch,
+    tmp_path,
+    split,
+) -> None:
+    runtime = _runtime(
+        tmp_path,
+        _dataset(sample_keys=("bucket",), split=split),
+    )
+    runtime.streams["stream"] = replace(
+        runtime.streams["stream"],
+        partition_by=("bucket",),
+    )
+    genuine_a = _record(1, 1.0)
+    genuine_a.bucket = "A"
+    leading_placeholder_b = _record(1, 100.0)
+    leading_placeholder_b.bucket = "B"
+    set_record_domain_anchor(leading_placeholder_b, False)
+    genuine_b = _record(2, 2.0)
+    genuine_b.bucket = "B"
+    trailing_placeholder_b = _record(3, 2.0)
+    trailing_placeholder_b.bucket = "B"
+    set_record_domain_anchor(trailing_placeholder_b, False)
+    monkeypatch.setattr(
+        "datapipeline.operations.artifacts.scaler.run_stream_pipeline",
+        lambda *_args: iter(
+            (
+                genuine_a,
+                leading_placeholder_b,
+                genuine_b,
+                trailing_placeholder_b,
+            )
+        ),
+    )
+
+    result = materialize_scaler_statistics(
+        runtime,
+        ScalerTask(output="scaler.json"),
+    )
+
+    assert result is not None
+    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    scaler = artifact.for_fold("fold") if split is not None else artifact
+    assert isinstance(scaler, StandardScalerArtifact)
+    assert scaler.observations == 3
+    assert scaler.statistics["x"].count == 3
+    assert scaler.statistics["x"].mean == pytest.approx(5 / 3)
 
 
 def test_materialize_scaler_skips_dataset_without_scaled_features(
@@ -531,6 +629,83 @@ def test_folded_scaler_requires_training_statistics_for_all_output_vectors(
             runtime,
             ScalerTask(output="scaler.json"),
         )
+
+
+def test_folded_scaler_includes_filled_training_placeholders(
+    tmp_path,
+) -> None:
+    runtime = _runtime(
+        tmp_path,
+        _dataset(
+            cadence="1d",
+            split=TimeSplitConfig(
+                intervals=[TimeInterval(id="train")],
+                folds=[DatasetFold(id="fold", train=["train"])],
+            ),
+        ),
+        rows=[_record(1, 1.0), _record(3, 3.0)],
+    )
+    runtime.streams["stream"] = replace(
+        runtime.streams["stream"],
+        transforms=(
+            EnsureCadenceConfig(cadence="1d"),
+            ForwardFillConfig(field="value"),
+        ),
+    )
+
+    result = materialize_scaler_statistics(
+        runtime,
+        ScalerTask(output="scaler.json"),
+    )
+
+    assert result is not None
+    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    assert isinstance(artifact, FoldedScalerArtifact)
+    scaler = artifact.for_fold("fold")
+    assert scaler.observations == 3
+    assert scaler.statistics["x"].count == 3
+    assert scaler.statistics["x"].mean == pytest.approx(5 / 3)
+
+
+def test_folded_scaler_excludes_placeholder_only_wide_ids(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime(
+        tmp_path,
+        _dataset(
+            cadence="1d",
+            split=TimeSplitConfig(
+                intervals=[TimeInterval(id="train")],
+                folds=[DatasetFold(id="fold", train=["train"])],
+            ),
+        ),
+    )
+    runtime.streams["stream"] = replace(
+        runtime.streams["stream"],
+        partition_by=("bucket",),
+    )
+    genuine = _record(1, 1.0)
+    genuine.bucket = "known"
+    placeholder = _record(1, 100.0)
+    placeholder.bucket = "future"
+    set_record_domain_anchor(placeholder, False)
+    monkeypatch.setattr(
+        "datapipeline.operations.artifacts.scaler.run_stream_pipeline",
+        lambda *_args: iter((genuine, placeholder)),
+    )
+
+    result = materialize_scaler_statistics(
+        runtime,
+        ScalerTask(output="scaler.json"),
+    )
+
+    assert result is not None
+    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    assert isinstance(artifact, FoldedScalerArtifact)
+    scaler = artifact.for_fold("fold")
+    assert scaler.observations == 1
+    assert tuple(scaler.statistics) == ("x__@bucket:known",)
 
 
 def test_materialize_folded_scaler_supports_hash_splits(tmp_path) -> None:

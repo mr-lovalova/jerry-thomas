@@ -6,6 +6,7 @@ from datapipeline.config.dataset.series import SequenceConfig, SeriesConfig
 from datapipeline.domain.series import SeriesRecord, SeriesSequence
 from datapipeline.pipelines.series.projector import SeriesProjector
 from datapipeline.pipelines.sort import SortProgress, batch_sort
+from datapipeline.transforms.utils import record_establishes_domain
 from datapipeline.utils.time import floor_time_to_cadence, parse_cadence
 
 
@@ -34,6 +35,7 @@ class SeriesSequencer:
         self.config = config
         self._active_key: tuple[str, tuple] | None = None
         self._window: deque[Any] = deque(maxlen=config.size)
+        self._domain_anchors: deque[bool] = deque(maxlen=config.size)
         self._position = 0
 
     def append(self, record: SeriesRecord) -> SeriesSequence | None:
@@ -41,10 +43,12 @@ class SeriesSequencer:
         if key != self._active_key:
             self._active_key = key
             self._window.clear()
+            self._domain_anchors.clear()
             self._position = 0
 
         position = self._position
         self._window.append(record.value)
+        self._domain_anchors.append(record_establishes_domain(record))
         self._position += 1
 
         window_start = position - self.config.size + 1
@@ -57,6 +61,7 @@ class SeriesSequencer:
             values=list(self._window),
             id=record.id,
             entity_key=record.entity_key,
+            _establishes_domain=any(self._domain_anchors),
         )
 
 

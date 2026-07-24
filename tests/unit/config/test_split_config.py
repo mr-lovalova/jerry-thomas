@@ -407,6 +407,7 @@ def test_fold_output_helpers_expose_only_configured_roles() -> None:
     )
     assert resolve_fold_output(config, "walk_1.train") == (
         second,
+        "train",
         ("train_0", "validation_0", "train_1"),
     )
 

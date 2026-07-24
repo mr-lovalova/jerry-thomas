@@ -1,4 +1,4 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
@@ -8,8 +8,6 @@ from datapipeline.artifacts.models import (
     ScalarVectorMetadataEntry,
     VectorMetadataEntry,
 )
-from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.domain.series_id import base_id as _base_series_id
 from datapipeline.transforms.utils import is_missing
 
 
@@ -81,88 +79,6 @@ class VectorMetadataStats:
             )
         self.kind = "scalar"
         self.scalar_types.add(_type_name(value))
-
-
-class VectorMetadataCollector:
-    def __init__(
-        self,
-        configs: Sequence[SeriesConfig],
-        sample_keys: Sequence[str],
-    ) -> None:
-        self._config_order = {config.id: index for index, config in enumerate(configs)}
-        self._sample_keys = tuple(sample_keys)
-        self._stats: dict[str, VectorMetadataStats] = {}
-        self._sample_domain: dict[tuple, tuple[datetime, datetime]] = {}
-        self._vector_count = 0
-
-    def observe(self, key: tuple, values: Mapping[str, object]) -> None:
-        if not values:
-            return
-        if (
-            not isinstance(key, tuple)
-            or len(key) != len(self._sample_keys) + 1
-            or not isinstance(key[0], datetime)
-        ):
-            raise RuntimeError(
-                "Vector sample key does not match the configured sample keys."
-            )
-
-        self._vector_count += 1
-        observed_at = key[0]
-        if self._sample_keys:
-            _update_sample_domain(self._sample_domain, key, observed_at)
-        for series_id, value in values.items():
-            entry = self._stats.get(series_id)
-            if entry is None:
-                entry = self._stats[series_id] = VectorMetadataStats(
-                    id=series_id,
-                    base_id=_base_series_id(series_id),
-                )
-            entry.observe(value, observed_at)
-
-    def result(
-        self,
-    ) -> tuple[
-        list[VectorMetadataStats],
-        int,
-        dict[tuple, tuple[datetime, datetime]],
-    ]:
-        observed_ids = {entry.base_id for entry in self._stats.values()}
-        configured_ids = set(self._config_order)
-        unexpected_ids = sorted(observed_ids - configured_ids)
-        if unexpected_ids:
-            raise RuntimeError(
-                "Vector metadata contains IDs outside the configured vectors: "
-                f"{unexpected_ids!r}."
-            )
-        missing_ids = sorted(configured_ids - observed_ids)
-        if missing_ids:
-            raise RuntimeError(
-                "Configured vectors produced no metadata: "
-                f"{missing_ids!r}. Check upstream source data and credentials."
-            )
-        ordered = sorted(
-            self._stats.values(),
-            key=lambda entry: (
-                self._config_order[entry.base_id],
-                entry.id,
-            ),
-        )
-        return ordered, self._vector_count, self._sample_domain
-
-
-def _update_sample_domain(
-    sample_domain: dict[tuple, tuple[datetime, datetime]],
-    group_key: tuple,
-    ts: datetime,
-) -> None:
-    key_values = tuple(group_key[1:])
-    current = sample_domain.get(key_values)
-    if current is None:
-        sample_domain[key_values] = (ts, ts)
-        return
-    start, end = current
-    sample_domain[key_values] = min(start, ts), max(end, ts)
 
 
 def metadata_entries_from_stats(

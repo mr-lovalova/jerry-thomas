@@ -244,10 +244,10 @@ def split_output_ids(config: SplitConfig) -> tuple[str, ...]:
 def resolve_fold_output(
     config: SplitConfig,
     output_id: str,
-) -> tuple[DatasetFold, tuple[str, ...]]:
+) -> tuple[DatasetFold, FoldRole, tuple[str, ...]]:
     for fold in config.folds:
         for role in FOLD_ROLES:
             labels = getattr(fold, role)
             if labels and output_id == fold_output_id(fold.id, role):
-                return fold, tuple(labels)
+                return fold, role, tuple(labels)
     raise KeyError(f"dataset fold output {output_id!r} is not defined")

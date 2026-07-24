@@ -55,6 +55,6 @@ def _metadata_window_bounds(runtime: Runtime) -> WindowBounds:
     metadata = _optional_metadata(runtime)
     if metadata is None:
         return None, None
-    if metadata.window is None:
+    if metadata.catalog.window is None:
         return None, None
-    return metadata.window.start, metadata.window.end
+    return metadata.catalog.window.start, metadata.catalog.window.end

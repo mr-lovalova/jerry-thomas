@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
+from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import VECTOR_METADATA
 from datapipeline.config.tasks import MetadataTask
 from datapipeline.execution.context import PipelineContext
@@ -34,14 +35,22 @@ def test_drop_with_metadata_and_partitioned_streams(copy_fixture):
         VECTOR_METADATA,
         relative_path=metadata.relative_path,
     )
+    metadata_artifact = context.require_artifact(VECTOR_METADATA_SPEC)
+    schema = metadata_artifact.catalog
     assembled_samples = open_samples(
         context,
-        dataset.features,
+        [entry.id for entry in schema.features],
         dataset.sample.cadence,
-        target_configs=dataset.targets,
-        rectangular=False,
+        target_ids=[entry.id for entry in schema.targets],
+        key_plan=None,
     )
-    samples = list(apply_postprocess(context, assembled_samples))
+    samples = list(
+        apply_postprocess(
+            dataset.postprocess,
+            schema,
+            assembled_samples,
+        )
+    )
 
     # Source emits ticks every 2h; ensure_cadence fills 1h gaps with None.
     # Full feature coverage keeps only the original ticks.

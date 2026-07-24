@@ -29,10 +29,11 @@ The strict config models keep source mapping and fan-in behavior separate.
 Dataset `sample.keys` select the partition fields represented in row identity.
 The remaining partition fields deterministically suffix series IDs in declared
 order. This derives long, wide, and hybrid layouts without a separate stream
-series-identity setting. Split datasets retain one shared schema; metadata
-building requires every fold's eligible training rows to establish each
-partition-derived ID's shape and value types, so holdout partitions cannot
-define training columns.
+series-identity setting. An unsplit dataset uses the global metadata catalog as
+its schema. A split dataset stores one training-owned schema per fold and uses
+that schema for every output role in the fold. Genuine IDs observed in a fold's
+validation or test data must therefore already be established by the fold's
+eligible training rows; cadence placeholders do not establish columns.
 
 Configured loader, parser, map, and combine entry points are resolved while
 compiling a runtime from the definition. The resulting callables are stored on the runtime stream. There are

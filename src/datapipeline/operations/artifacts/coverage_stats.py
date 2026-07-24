@@ -8,6 +8,7 @@ from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.sample.input import open_samples
+from datapipeline.pipelines.sample.keys import require_metadata_key_plan
 from datapipeline.runtime import Runtime
 from datapipeline.utils.json_artifact import write_json_artifact
 
@@ -19,20 +20,26 @@ def build_coverage_stats_artifact(
     dataset = runtime.dataset
     context = PipelineContext(runtime)
     metadata = context.require_artifact(VECTOR_METADATA_SPEC)
-    context.window_bounds(rectangular_required=True)
+    schema = metadata.catalog
+    key_plan = require_metadata_key_plan(
+        schema.window,
+        schema.sample,
+        dataset.sample.cadence,
+        dataset.sample.keys,
+    )
 
     samples = open_samples(
         context,
-        dataset.features,
+        tuple(entry.id for entry in schema.features),
         dataset.sample.cadence,
-        target_configs=dataset.targets,
-        rectangular=True,
+        target_ids=tuple(entry.id for entry in schema.targets),
         sample_keys=dataset.sample.keys,
+        key_plan=key_plan,
     )
-    feature_entries = metadata.features
-    target_entries = metadata.targets
+    feature_entries = schema.features
+    target_entries = schema.targets
     if task_cfg.stage == "postprocessed":
-        plan = build_postprocess_plan(context)
+        plan = build_postprocess_plan(dataset.postprocess, schema)
         feature_entries = plan.feature_entries
         target_entries = plan.target_entries
         samples = plan.apply(samples)

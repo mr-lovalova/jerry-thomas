@@ -23,6 +23,8 @@ filenames, such as `operations/model_grid.yaml`.
 - `build/metadata.json`: the typed feature/target contract used during
   postprocess, including identifiers, scalar/list kinds, fixed list lengths,
   coverage counts, value types, sample domain, and resolved dataset window.
+  Unsplit datasets use the global catalog directly. Split datasets additionally
+  store one training-owned schema and one output-domain contract per fold.
 - `build/coverage_stats.json`: bounded assembled or postprocessed availability
   counters used by coverage inspection. It never stores per-sample status maps.
 - Tick operation outputs: named timestamp grids used by `ensure_ticks`
@@ -60,9 +62,15 @@ a conservative wall-clock duration that covers their latest supporting
 observation. Positive horizons cannot use a hash split. With a time split,
 Jerry automatically removes unsafe role tails and fits folded scalers over the
 same eligible sample origins; an unsplit dataset has no role boundary to
-enforce. The grouped series and metadata artifacts do not change when only a
-horizon changes. `AUTO` rebuilds a folded scaler when its effective maximum
-target horizon changes.
+enforce. A horizon change does not change the grouped series values, but it does
+change folded scaler eligibility and the fold contracts stored in metadata.
+
+Jerry 8 series manifests use format version 9 to preserve whether a value came
+from a genuine source record or a cadence placeholder. Metadata format version
+4 stores the global catalog plus the explicit unsplit or folded layout. The
+artifact cache generation is also incremented for the new folded-scaler
+semantics. `AUTO` therefore rebuilds stale v7 series, scaler, metadata, and
+dependent coverage artifacts; `OFF` requires a v8 build first.
 
 Jerry 7 renames the v6 `variable_records` artifact to `series`:
 
@@ -81,10 +89,10 @@ The old build-state entry and `build/variable_records/` directory are ignored;
 after the migration. Reinstall an editable checkout after upgrading so its
 entry-point metadata exposes the renamed core artifacts.
 
-Jerry 7 beta series manifests used one gzip file per configured series. Current
+Jerry 7 beta series manifests used one gzip file per configured series. Jerry 7
 manifests use format version 8 and one grouped companion, avoiding an
 open-file-per-series limit and repeated key parsing. The artifact fingerprint
-includes this format version, so `AUTO` rebuilds beta series, metadata, and
+includes the format version, so `AUTO` rebuilds beta series, metadata, and
 coverage artifacts. YAML configuration and final dataset output are unchanged.
 
 Jerry 7 metadata supports the three distinct window modes `union`,

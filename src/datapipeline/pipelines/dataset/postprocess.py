@@ -1,10 +1,9 @@
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from datapipeline.artifacts.models import VectorMetadataEntry
-from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
+from datapipeline.artifacts.models import VectorMetadataEntry, VectorSchema
+from datapipeline.config.dataset.postprocess import PostprocessConfig
 from datapipeline.domain.sample import Sample
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.pipeline import Stage
 from datapipeline.transforms.vector.sample_filter import (
     FilterFeatureSamplesTransform,
@@ -29,16 +28,17 @@ class PostprocessPlan:
         return stream
 
 
-def build_postprocess_plan(context: PipelineContext) -> PostprocessPlan:
-    metadata = context.require_artifact(VECTOR_METADATA_SPEC)
-    if not metadata.features:
+def build_postprocess_plan(
+    config: PostprocessConfig,
+    schema: VectorSchema,
+) -> PostprocessPlan:
+    if not schema.features:
         raise RuntimeError(
             "Metadata has no feature entries. Rebuild build/metadata.json."
         )
 
-    config = context.runtime.dataset.postprocess
-    feature_entries = metadata.features
-    target_entries = metadata.targets
+    feature_entries = schema.features
+    target_entries = schema.targets
     stages: list[Stage] = []
 
     stages.append(
@@ -97,12 +97,13 @@ def build_postprocess_plan(context: PipelineContext) -> PostprocessPlan:
 
 
 def apply_postprocess(
-    context: PipelineContext,
+    config: PostprocessConfig,
+    schema: VectorSchema,
     samples: Iterator[Sample],
 ) -> Iterator[Sample]:
     """Apply the same ordered postprocess stages used by the dataset pipeline."""
 
-    return build_postprocess_plan(context).apply(samples)
+    return build_postprocess_plan(config, schema).apply(samples)
 
 
 def _reject_undeclared_targets(stream: Iterator[Sample]) -> Iterator[Sample]:

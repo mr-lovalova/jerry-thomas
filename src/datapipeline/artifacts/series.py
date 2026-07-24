@@ -29,7 +29,7 @@ from datapipeline.io.sinks.files import GzipBinarySink
 from datapipeline.services.path_policy import resolve_artifact_output_path
 from datapipeline.utils.time import CADENCE_PATTERN, parse_datetime
 
-SERIES_MANIFEST_VERSION: Final = 8
+SERIES_MANIFEST_VERSION: Final = 9
 _JSON_SCALAR_TYPES = {type(None), bool, int, float, str}
 _NonEmptyString = Annotated[
     str,
@@ -48,7 +48,7 @@ class SeriesEntry(BaseModel):
 class SeriesManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    version: Literal[8] = SERIES_MANIFEST_VERSION
+    version: Literal[9] = SERIES_MANIFEST_VERSION
     format: Literal["jsonl.gz"] = "jsonl.gz"
     cadence: str = Field(pattern=CADENCE_PATTERN)
     sample_keys: tuple[_NonEmptyString, ...] = ()
@@ -90,6 +90,7 @@ class SeriesRow:
     entity_key: tuple
     features: dict[str, Any]
     targets: dict[str, Any]
+    placeholder_ids: frozenset[str]
 
     @property
     def key(self) -> tuple:
@@ -136,12 +137,17 @@ def write_series_rows(path: Path, rows: Iterable[SeriesRow]) -> SeriesWriteResul
     count = 0
     try:
         for row in rows:
-            _validate_series_row(row)
+            placeholder_ids = _validate_series_row(row)
             payload = {
                 "time": _to_iso(row.time),
                 "entity_key": list(row.entity_key),
                 "features": row.features,
                 "targets": row.targets,
+                "placeholder_ids": [
+                    series_id
+                    for series_id in (*row.features, *row.targets)
+                    if series_id in placeholder_ids
+                ],
             }
             _require_json_value(payload)
             line = (
@@ -157,7 +163,9 @@ def write_series_rows(path: Path, rows: Iterable[SeriesRow]) -> SeriesWriteResul
     return SeriesWriteResult(rows=count, sha256=hasher.hexdigest())
 
 
-def _validate_series_row(row: SeriesRow) -> None:
+def _validate_series_row(
+    row: SeriesRow,
+) -> frozenset[str]:
     if not isinstance(row, SeriesRow):
         raise TypeError(f"Expected SeriesRow; got {type(row).__name__}.")
     if row.time.tzinfo is None:
@@ -168,6 +176,18 @@ def _validate_series_row(row: SeriesRow) -> None:
         sample_key_value_type(f"entity_key[{index}]", component)
     if type(row.features) is not dict or type(row.targets) is not dict:
         raise TypeError("Series row features and targets must be dictionaries.")
+    duplicate_ids = row.features.keys() & row.targets.keys()
+    if duplicate_ids:
+        raise ValueError(
+            "Series row contains IDs as both features and targets: "
+            + ", ".join(sorted(duplicate_ids))
+        )
+    if not isinstance(row.placeholder_ids, frozenset):
+        raise TypeError("Series row placeholder IDs must be a frozenset.")
+    unexpected = row.placeholder_ids - (row.features.keys() | row.targets.keys())
+    if unexpected:
+        raise ValueError("Series row placeholder IDs must reference row values.")
+    return row.placeholder_ids
 
 
 def load_series_manifest(path: Path) -> SeriesManifest:
@@ -333,11 +353,17 @@ def _payload_to_series_row(payload: Mapping[str, Any], path: Path) -> SeriesRow:
             f"Series row in '{path}' contains IDs as both features and targets: "
             + ", ".join(sorted(duplicate_ids))
         )
+    placeholder_ids = _placeholder_ids(
+        payload,
+        features.keys() | targets.keys(),
+        path,
+    )
     return SeriesRow(
         time=time_value,
         entity_key=entity_key,
         features=features,
         targets=targets,
+        placeholder_ids=placeholder_ids,
     )
 
 
@@ -352,6 +378,29 @@ def _value_mapping(
     if any(not isinstance(series_id, str) or not series_id for series_id in value):
         raise ValueError(f"Series row in '{path}' has an invalid series id.")
     return value
+
+
+def _placeholder_ids(
+    payload: Mapping[str, Any],
+    values: set[str],
+    path: Path,
+) -> frozenset[str]:
+    placeholder_ids = payload.get("placeholder_ids")
+    if not isinstance(placeholder_ids, list):
+        raise ValueError(f"Series row in '{path}' must define list 'placeholder_ids'.")
+    if any(
+        not isinstance(series_id, str) or not series_id for series_id in placeholder_ids
+    ):
+        raise ValueError(f"Series row in '{path}' has an invalid placeholder ID.")
+    if len(placeholder_ids) != len(set(placeholder_ids)):
+        raise ValueError(f"Series row in '{path}' has duplicate placeholder IDs.")
+    unknown = set(placeholder_ids) - values
+    if unknown:
+        raise ValueError(
+            f"Series row in '{path}' has placeholder IDs without values: "
+            + ", ".join(sorted(unknown))
+        )
+    return frozenset(placeholder_ids)
 
 
 def _entity_key(payload: Mapping[str, Any], path: Path) -> tuple:

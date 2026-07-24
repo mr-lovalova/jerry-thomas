@@ -36,7 +36,7 @@ def _write_project_yaml(
 ) -> Path:
     project_yaml = project_root / "project.yaml"
     lines = [
-        "schema_version: 3",
+        "schema_version: 4",
         "artifact_revision: 1",
         "name: sample",
     ]
@@ -91,12 +91,12 @@ def test_project_requires_schema_version(tmp_path: Path) -> None:
 
     with pytest.raises(
         ValueError,
-        match="Project config requires schema_version: 3",
+        match="Project config requires schema_version: 4",
     ):
         load_project(project_yaml)
 
 
-@pytest.mark.parametrize("value", ["1", "2", "4"])
+@pytest.mark.parametrize("value", ["1", "2", "3"])
 def test_project_rejects_unsupported_schema_version(
     tmp_path: Path,
     value: str,
@@ -106,7 +106,7 @@ def test_project_rejects_unsupported_schema_version(
 
     with pytest.raises(
         ValueError,
-        match=rf"Unsupported project schema version {value}; expected 3",
+        match=rf"Unsupported project schema version {value}; expected 4",
     ):
         load_project(project_yaml)
 
@@ -119,7 +119,7 @@ def test_project_schema_version_must_be_integer(
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(f"schema_version: {value}\n", encoding="utf-8")
 
-    with pytest.raises(TypeError, match="schema_version must be the integer 3"):
+    with pytest.raises(TypeError, match="schema_version must be the integer 4"):
         load_project(project_yaml)
 
 
@@ -305,7 +305,7 @@ def test_project_paths_validate_interpolation_without_declared_variables(
     _write_project_files(tmp_path)
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        """schema_version: 3
+        """schema_version: 4
 artifact_revision: 1
 paths:
   streams: streams

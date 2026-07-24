@@ -80,7 +80,7 @@ def _write_project(tmp_path: Path) -> Path:
     project_path.write_text(
         "\n".join(
             [
-                "schema_version: 3",
+                "schema_version: 4",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: ./streams",

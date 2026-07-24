@@ -8,7 +8,11 @@ from datapipeline.config.streams import (
     BroadcastStreamConfig,
 )
 from datapipeline.plugins import COMBINERS_EP
-from datapipeline.transforms.utils import partition_key
+from datapipeline.transforms.utils import (
+    partition_key,
+    record_establishes_domain,
+    set_record_domain_anchor,
+)
 from datapipeline.utils.load import load_ep
 from datapipeline.utils.placeholders import normalize_args
 
@@ -61,6 +65,12 @@ def build_combine_stage(
                         f"Stream '{config.id}' combine must preserve partition "
                         f"field {field!r}: expected {expected!r}, got {actual!r}."
                     )
+            establishes_domain = (
+                any(record_establishes_domain(item) for item in records)
+                if isinstance(config, AlignedStreamConfig)
+                else record_establishes_domain(records[0])
+            )
+            set_record_domain_anchor(record, establishes_domain)
             yield record
 
     return combine_records

@@ -9,10 +9,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
-from datapipeline.artifacts.models import VectorMetadataEntry
+from datapipeline.artifacts.models import (
+    UnsplitMetadataLayout,
+    VectorMetadataEntry,
+    VectorSchema,
+)
+from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import dataset_requires_scaler
 from datapipeline.config.dataset.split import (
-    DatasetFold,
     resolve_fold_output,
     split_output_ids,
 )
@@ -20,11 +24,17 @@ from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
 from datapipeline.execution.context import PipelineContext
 from datapipeline.pipelines.dataset.pipeline import (
+    FoldOutputPlan,
+    resolve_fold_output_plans,
     run_dataset_pipeline,
     run_fold_dataset_pipeline,
     run_scaled_dataset_pipeline,
 )
 from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
+from datapipeline.pipelines.sample.keys import (
+    RectangularKeyPlan,
+    require_metadata_key_plan,
+)
 from datapipeline.runtime import Runtime
 from datapipeline.services.project_definition import load_project_definition
 from datapipeline.services.runtime_compiler import compile_runtime
@@ -52,8 +62,9 @@ class ModelBatch:
 @dataclass(frozen=True, slots=True)
 class _SampleSource:
     runtime: Runtime
-    fold: DatasetFold | None
-    labels: tuple[str, ...]
+    fold_output: FoldOutputPlan | None
+    schema: VectorSchema
+    key_plan: RectangularKeyPlan | None
 
     @classmethod
     def from_project(
@@ -68,8 +79,6 @@ class _SampleSource:
                 raise ValueError(
                     "output_id is only valid when dataset.split is configured."
                 )
-            fold = None
-            labels: tuple[str, ...] = ()
         else:
             available = split_output_ids(split)
             if output_id is None:
@@ -78,7 +87,7 @@ class _SampleSource:
                     + ", ".join(available)
                 )
             try:
-                fold, labels = resolve_fold_output(split, output_id)
+                resolve_fold_output(split, output_id)
             except KeyError as exc:
                 raise ValueError(
                     f"Dataset output {output_id!r} is not defined; choose one of: "
@@ -87,7 +96,35 @@ class _SampleSource:
 
         runtime = compile_runtime(definition)
         hydrate_runtime_artifacts_for_pipeline(runtime, definition)
-        return cls(runtime=runtime, fold=fold, labels=labels)
+        context = PipelineContext(runtime)
+        metadata = context.require_artifact(VECTOR_METADATA_SPEC)
+        if split is None:
+            if not isinstance(metadata.layout, UnsplitMetadataLayout):
+                raise RuntimeError(
+                    "Unsplit dataset requires unsplit metadata. "
+                    "Rebuild build/metadata.json."
+                )
+            key_plan = require_metadata_key_plan(
+                metadata.catalog.window,
+                metadata.catalog.sample,
+                definition.dataset.sample.cadence,
+                definition.dataset.sample.keys,
+            )
+            return cls(
+                runtime=runtime,
+                fold_output=None,
+                schema=metadata.catalog,
+                key_plan=key_plan,
+            )
+
+        assert output_id is not None
+        fold_output = resolve_fold_output_plans(context, (output_id,))[0]
+        return cls(
+            runtime=runtime,
+            fold_output=fold_output,
+            schema=fold_output.schema,
+            key_plan=None,
+        )
 
     def iter_samples(self, limit: int | None) -> Generator[Sample, None, None]:
         if limit is not None and limit < 0:
@@ -101,13 +138,12 @@ class _SampleSource:
             )
 
         context = PipelineContext(self.runtime)
-        if self.fold is not None:
+        if self.fold_output is not None:
             samples = run_fold_dataset_pipeline(
                 context,
                 dataset.features,
                 dataset.sample.cadence,
-                self.fold,
-                self.labels,
+                self.fold_output,
                 target_configs=dataset.targets,
                 sample_keys=dataset.sample.keys,
             )
@@ -121,6 +157,8 @@ class _SampleSource:
                 context,
                 dataset.features,
                 dataset.sample.cadence,
+                self.schema,
+                self.key_plan,
                 target_configs=dataset.targets,
                 sample_keys=dataset.sample.keys,
             )
@@ -169,7 +207,10 @@ def iter_model_batches(
         ) from exc
 
     source = _SampleSource.from_project(project_yaml, output_id)
-    plan = build_postprocess_plan(PipelineContext(source.runtime))
+    plan = build_postprocess_plan(
+        source.runtime.dataset.postprocess,
+        source.schema,
+    )
     feature_columns = _columns(plan.feature_entries)
     target_columns = _columns(plan.target_entries)
     if len(feature_columns) != len(set(feature_columns)):

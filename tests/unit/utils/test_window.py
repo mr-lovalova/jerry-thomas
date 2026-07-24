@@ -26,14 +26,17 @@ class _Artifacts:
         if spec is VECTOR_METADATA_SPEC:
             return VectorMetadata.model_validate(
                 {
-                    "schema_version": 3,
-                    "features": [],
-                    "targets": [],
-                    "counts": {
-                        "feature_vectors": 0,
-                        "target_vectors": 0,
+                    "schema_version": 4,
+                    "catalog": {
+                        "features": [],
+                        "targets": [],
+                        "counts": {
+                            "feature_vectors": 0,
+                            "target_vectors": 0,
+                        },
+                        **doc,
                     },
-                    **doc,
+                    "layout": {"kind": "unsplit"},
                 }
             )
         return doc

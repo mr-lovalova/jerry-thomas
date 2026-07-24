@@ -4,10 +4,13 @@ import pytest
 from pydantic import ValidationError
 
 from datapipeline.artifacts.models import (
+    FoldedMetadataLayout,
     ListVectorMetadataEntry,
     SampleMetadata,
     ScalarVectorMetadataEntry,
+    UnsplitMetadataLayout,
     VectorMetadata,
+    VectorSchema,
     Window,
 )
 
@@ -112,14 +115,17 @@ def test_sample_metadata_rejects_unstable_identity_values(domain) -> None:
 
 def _metadata_payload() -> dict[str, object]:
     return {
-        "schema_version": 3,
-        "features": [],
-        "targets": [],
-        "counts": {"feature_vectors": 1, "target_vectors": 1},
+        "schema_version": 4,
+        "catalog": {
+            "features": [],
+            "targets": [],
+            "counts": {"feature_vectors": 1, "target_vectors": 1},
+        },
+        "layout": {"kind": "unsplit"},
     }
 
 
-@pytest.mark.parametrize("version", [1, 2, 4, "3"])
+@pytest.mark.parametrize("version", [1, 2, 3, 5, "4"])
 def test_vector_metadata_rejects_unsupported_schema_versions(version: object) -> None:
     with pytest.raises(ValidationError, match="schema_version"):
         VectorMetadata.model_validate(
@@ -149,10 +155,8 @@ def test_vector_metadata_rejects_removed_fields(field: str, value: object) -> No
 
 def test_metadata_ids_share_one_feature_and_target_namespace() -> None:
     with pytest.raises(ValidationError, match="across features and targets"):
-        VectorMetadata.model_validate(
+        VectorSchema.model_validate(
             {
-                **_metadata_payload(),
-                "schema_version": 3,
                 "features": [
                     {
                         "id": "price",
@@ -171,5 +175,141 @@ def test_metadata_ids_share_one_feature_and_target_namespace() -> None:
                         "null_count": 0,
                     }
                 ],
+                "counts": {"feature_vectors": 1, "target_vectors": 1},
             }
         )
+
+
+def _folded_metadata_payload() -> dict[str, object]:
+    return {
+        **_metadata_payload(),
+        "layout": {
+            "kind": "folded",
+            "folds": [
+                {
+                    "id": "walk_0",
+                    "training_schema": {
+                        "features": [],
+                        "targets": [],
+                        "counts": {
+                            "feature_vectors": 1,
+                            "target_vectors": 1,
+                        },
+                    },
+                    "outputs": [
+                        {"role": "train", "labels": ["train_0"]},
+                        {"role": "validation", "labels": ["validation_0"]},
+                    ],
+                }
+            ],
+        },
+    }
+
+
+def test_vector_metadata_selects_unsplit_layout_from_discriminator() -> None:
+    metadata = VectorMetadata.model_validate(_metadata_payload())
+
+    assert isinstance(metadata.layout, UnsplitMetadataLayout)
+    assert metadata.catalog.counts.feature_vectors == 1
+
+
+def test_vector_metadata_selects_folded_layout_from_discriminator() -> None:
+    metadata = VectorMetadata.model_validate(_folded_metadata_payload())
+
+    assert isinstance(metadata.layout, FoldedMetadataLayout)
+    assert metadata.layout.folds[0].id == "walk_0"
+    assert metadata.layout.folds[0].outputs[1].role == "validation"
+
+
+@pytest.mark.parametrize("kind", [None, "split", "unknown"])
+def test_vector_metadata_requires_a_supported_layout_discriminator(
+    kind: object,
+) -> None:
+    payload = _metadata_payload()
+    payload["layout"] = {} if kind is None else {"kind": kind}
+
+    with pytest.raises(ValidationError, match="kind|discriminator"):
+        VectorMetadata.model_validate(payload)
+
+
+def test_folded_metadata_requires_unique_fold_ids() -> None:
+    payload = _folded_metadata_payload()
+    layout = payload["layout"]
+    assert isinstance(layout, dict)
+    folds = layout["folds"]
+    assert isinstance(folds, list)
+    folds.append(folds[0])
+
+    with pytest.raises(ValidationError, match="fold ids must be unique"):
+        VectorMetadata.model_validate(payload)
+
+
+def test_fold_metadata_requires_unique_output_roles() -> None:
+    payload = _folded_metadata_payload()
+    layout = payload["layout"]
+    assert isinstance(layout, dict)
+    folds = layout["folds"]
+    assert isinstance(folds, list)
+    fold = folds[0]
+    assert isinstance(fold, dict)
+    fold["outputs"] = [
+        {"role": "train", "labels": ["train_0"]},
+        {"role": "train", "labels": ["train_1"]},
+    ]
+
+    with pytest.raises(ValidationError, match="output roles must be unique"):
+        VectorMetadata.model_validate(payload)
+
+
+def test_fold_metadata_requires_a_train_output() -> None:
+    payload = _folded_metadata_payload()
+    layout = payload["layout"]
+    assert isinstance(layout, dict)
+    folds = layout["folds"]
+    assert isinstance(folds, list)
+    fold = folds[0]
+    assert isinstance(fold, dict)
+    fold["outputs"] = [{"role": "validation", "labels": ["validation_0"]}]
+
+    with pytest.raises(ValidationError, match="requires one train output"):
+        VectorMetadata.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "labels",
+    [
+        [],
+        ["train_0", "train_0"],
+        [""],
+        [" train_0"],
+    ],
+)
+def test_fold_output_requires_nonempty_unique_labels(labels: list[str]) -> None:
+    payload = _folded_metadata_payload()
+    layout = payload["layout"]
+    assert isinstance(layout, dict)
+    folds = layout["folds"]
+    assert isinstance(folds, list)
+    fold = folds[0]
+    assert isinstance(fold, dict)
+    fold["outputs"] = [{"role": "train", "labels": labels}]
+
+    with pytest.raises(ValidationError, match="labels"):
+        VectorMetadata.model_validate(payload)
+
+
+def test_fold_labels_belong_to_only_one_output_role() -> None:
+    payload = _folded_metadata_payload()
+    layout = payload["layout"]
+    assert isinstance(layout, dict)
+    folds = layout["folds"]
+    assert isinstance(folds, list)
+    fold = folds[0]
+    assert isinstance(fold, dict)
+    fold["outputs"] = [
+        {"role": "train", "labels": ["shared"]},
+        {"role": "test", "labels": ["shared"]},
+    ]
+
+    with pytest.raises(ValidationError, match="only one output role"):
+        VectorMetadata.model_validate(payload)

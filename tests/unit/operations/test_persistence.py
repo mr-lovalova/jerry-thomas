@@ -934,9 +934,30 @@ def test_routed_dataset_table_output_persists_each_parquet_output(tmp_path) -> N
         )
         for output_id in ("train", "validation")
     }
+    tables = {
+        "train": _dataset_table(),
+        "validation": DatasetTable(
+            sample_keys=("ticker",),
+            sample_key_types=("string",),
+            feature_entries=(
+                ScalarVectorMetadataEntry(
+                    id="score",
+                    base_id="score",
+                    kind="scalar",
+                    present_count=1,
+                    null_count=0,
+                    value_types=("float",),
+                ),
+            ),
+            target_entries=(),
+        ),
+    }
     samples = (
         _dataset_sample(1, "AAPL", 10.0),
-        _dataset_sample(2, "MSFT", 20.0),
+        Sample(
+            key=(datetime(2024, 1, 2, tzinfo=timezone.utc), "MSFT"),
+            features=Vector(values={"score": 20.0}),
+        ),
     )
 
     persist_runtime_result(
@@ -947,7 +968,7 @@ def test_routed_dataset_table_output_persists_each_parquet_output(tmp_path) -> N
                     ("validation", samples[1]),
                 )
             ),
-            table=_dataset_table(),
+            tables=tables,
             targets=targets,
         ),
         target=None,
@@ -960,6 +981,66 @@ def test_routed_dataset_table_output_persists_each_parquet_output(tmp_path) -> N
     assert parquet.read_table(targets["validation"].destination).column(
         "sample.ticker"
     ).to_pylist() == ["MSFT"]
+    assert parquet.read_table(targets["train"].destination).column_names == [
+        "sample.time",
+        "sample.ticker",
+        "features.price",
+    ]
+    assert parquet.read_table(targets["validation"].destination).column_names == [
+        "sample.time",
+        "sample.ticker",
+        "features.score",
+    ]
+
+
+def test_routed_dataset_table_output_requires_a_table_for_every_target(
+    tmp_path,
+) -> None:
+    targets = {
+        output_id: OutputTarget(
+            transport="fs",
+            format="parquet",
+            view="flat",
+            encoding=None,
+            destination=tmp_path / f"{output_id}.parquet",
+        )
+        for output_id in ("train", "validation")
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"missing tables for output IDs: \['validation'\]",
+    ):
+        RoutedDatasetTableOutput(
+            rows=iter(()),
+            tables={"train": _dataset_table()},
+            targets=targets,
+        )
+
+
+def test_routed_dataset_table_output_rejects_a_table_without_a_target(
+    tmp_path,
+) -> None:
+    target = OutputTarget(
+        transport="fs",
+        format="parquet",
+        view="flat",
+        encoding=None,
+        destination=tmp_path / "train.parquet",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"tables without targets for output IDs: \['validation'\]",
+    ):
+        RoutedDatasetTableOutput(
+            rows=iter(()),
+            tables={
+                "train": _dataset_table(),
+                "validation": _dataset_table(),
+            },
+            targets={"train": target},
+        )
 
 
 def test_dataset_table_projection_failure_preserves_destination(tmp_path) -> None:

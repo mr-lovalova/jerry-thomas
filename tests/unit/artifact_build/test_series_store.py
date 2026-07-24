@@ -28,12 +28,14 @@ def _row(
     entity_key: tuple = (),
     features: dict[str, Any] | None = None,
     targets: dict[str, Any] | None = None,
+    placeholder_ids: frozenset[str] = frozenset(),
 ) -> SeriesRow:
     return SeriesRow(
         time=_time(hour),
         entity_key=entity_key,
         features={} if features is None else features,
         targets={} if targets is None else targets,
+        placeholder_ids=placeholder_ids,
     )
 
 
@@ -95,6 +97,7 @@ def test_series_rows_round_trip_json_native_values(tmp_path: Path) -> None:
             1,
             entity_key=("B", 8, "south"),
             features={"record": 3.0},
+            placeholder_ids=frozenset({"record"}),
         ),
     ]
     destination = tmp_path / "series.jsonl.gz"
@@ -123,12 +126,19 @@ def test_series_row_preserves_wire_shape(tmp_path: Path) -> None:
     with gzip.open(destination, "rt", encoding="utf-8") as handle:
         payload = json.loads(handle.read())
 
-    assert list(payload) == ["time", "entity_key", "features", "targets"]
+    assert list(payload) == [
+        "time",
+        "entity_key",
+        "features",
+        "targets",
+        "placeholder_ids",
+    ]
     assert payload == {
         "time": "2024-01-01T00:00:00Z",
         "entity_key": ["AAPL"],
         "features": {"price": 1.0},
         "targets": {"return": [0.1, 0.2]},
+        "placeholder_ids": [],
     }
 
 
@@ -207,6 +217,7 @@ def test_series_writer_rejects_lossy_values_atomically(
                 entity_key=(),
                 features={},
                 targets={},
+                placeholder_ids=frozenset(),
             ),
             ValueError,
             "timezone-aware",
@@ -217,6 +228,7 @@ def test_series_writer_rejects_lossy_values_atomically(
                 entity_key=cast(Any, "AAPL"),
                 features={},
                 targets={},
+                placeholder_ids=frozenset(),
             ),
             TypeError,
             "entity key must be a tuple",
@@ -227,12 +239,30 @@ def test_series_writer_rejects_lossy_values_atomically(
                 entity_key=(),
                 features=cast(Any, ()),
                 targets={},
+                placeholder_ids=frozenset(),
             ),
             TypeError,
             "features and targets must be dictionaries",
         ),
+        (
+            SeriesRow(
+                time=_time(0),
+                entity_key=(),
+                features={"price": 1.0},
+                targets={},
+                placeholder_ids=cast(Any, ["price"]),
+            ),
+            TypeError,
+            "placeholder IDs must be a frozenset",
+        ),
     ],
-    ids=["wrong-type", "naive-time", "non-tuple-key", "non-dict-values"],
+    ids=[
+        "wrong-type",
+        "naive-time",
+        "non-tuple-key",
+        "non-dict-values",
+        "non-frozenset-placeholders",
+    ],
 )
 def test_series_writer_rejects_invalid_row_contract(
     tmp_path: Path,
@@ -319,7 +349,7 @@ def test_series_writer_removes_temp_file_on_interrupt(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "version",
-    [None, 1, 2, 3, 4, 5, 6, 7, 7.0, True],
+    [None, 1, 2, 3, 4, 5, 6, 7, 8, 8.0, True],
 )
 def test_series_manifest_rejects_incompatible_version(
     tmp_path: Path,
@@ -493,6 +523,56 @@ def test_series_reader_rejects_malformed_rows(
 
     with pytest.raises(ValueError, match=message):
         list(read_series_rows(destination))
+
+
+@pytest.mark.parametrize(
+    ("change", "value", "message"),
+    [
+        ("placeholder_ids", None, "list 'placeholder_ids'"),
+        ("placeholder_ids", "price", "list 'placeholder_ids'"),
+        ("placeholder_ids", [""], "invalid placeholder ID"),
+        ("placeholder_ids", ["price", "price"], "duplicate placeholder IDs"),
+        ("placeholder_ids", ["unknown"], "placeholder IDs without values"),
+    ],
+)
+def test_series_reader_rejects_invalid_placeholder_ids(
+    tmp_path: Path,
+    change: str,
+    value: object,
+    message: str,
+) -> None:
+    row = {
+        "time": "2024-01-01T00:00:00Z",
+        "entity_key": [],
+        "features": {"price": 1.0},
+        "targets": {"return": 0.1},
+        "placeholder_ids": [],
+    }
+    row[change] = value
+    destination = tmp_path / "series.jsonl.gz"
+    with gzip.open(destination, "wt", encoding="utf-8") as handle:
+        handle.write(json.dumps(row) + "\n")
+
+    with pytest.raises(ValueError, match=message):
+        list(read_series_rows(destination))
+
+
+def test_series_writer_rejects_invalid_placeholder_ids(tmp_path: Path) -> None:
+    destination = tmp_path / "series.jsonl.gz"
+
+    with pytest.raises(ValueError, match="must reference row values"):
+        write_series_rows(
+            destination,
+            [
+                _row(
+                    0,
+                    features={"price": 1.0},
+                    placeholder_ids=frozenset({"unknown"}),
+                )
+            ],
+        )
+
+    assert not destination.exists()
 
 
 def test_series_reader_rejects_duplicate_json_keys(tmp_path: Path) -> None:

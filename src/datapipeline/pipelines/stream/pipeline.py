@@ -29,6 +29,7 @@ from datapipeline.runtime import (
     require_runtime_stream,
 )
 from datapipeline.sources.observability import source_progress, source_summary
+from datapipeline.transforms.utils import set_record_domain_anchor
 
 
 def run_stream_pipeline(
@@ -128,8 +129,7 @@ def build_stream_pipeline(
             ),
             stages=_combined_stages(context, stream),
             summary=(
-                f"primary={stream.input_stream},"
-                f"broadcast_as_of={stream.lookup_stream}"
+                f"primary={stream.input_stream},broadcast_as_of={stream.lookup_stream}"
             ),
         )
     if isinstance(stream, AlignedRuntimeStream):
@@ -207,6 +207,7 @@ def _map_records(mapper: RecordStage, records: Iterator[Any]) -> Iterator[Any]:
                 raise ValueError(
                     f"Mapped record {position} time must be timezone-aware."
                 )
+            set_record_domain_anchor(record, True)
             yield record
     except GeneratorExit:
         raise

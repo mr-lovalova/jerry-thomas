@@ -71,7 +71,7 @@ def test_dataset_path_resolves_relative_to_workspace_root(monkeypatch, tmp_path)
     project_file = workspace_root / "projects" / "weather" / "project.yaml"
     project_file.parent.mkdir(parents=True)
     project_file.write_text(
-        "schema_version: 3\nartifact_revision: 1\nname: weather\npaths: {}\n",
+        "schema_version: 4\nartifact_revision: 1\nname: weather\npaths: {}\n",
         encoding="utf-8",
     )
 
@@ -100,7 +100,7 @@ def test_resolve_project_from_args_uses_workspace_default_dataset(tmp_path):
     project_file = tmp_path / "datasets" / "demo" / "project.yaml"
     project_file.parent.mkdir(parents=True)
     project_file.write_text(
-        "schema_version: 3\nartifact_revision: 1\nname: demo\npaths: {}\n",
+        "schema_version: 4\nartifact_revision: 1\nname: demo\npaths: {}\n",
         encoding="utf-8",
     )
 
@@ -218,7 +218,7 @@ def test_main_resolves_project_for_serve_with_workspace_default(monkeypatch, tmp
     project_file = tmp_path / "datasets" / "demo" / "project.yaml"
     project_file.parent.mkdir(parents=True)
     project_file.write_text(
-        "schema_version: 3\nartifact_revision: 1\nname: demo\npaths: {}\n",
+        "schema_version: 4\nartifact_revision: 1\nname: demo\npaths: {}\n",
         encoding="utf-8",
     )
     workspace = WorkspaceContext(

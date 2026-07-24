@@ -44,13 +44,15 @@ def test_long_and_hybrid_identity_with_aligned_derived_stream(copy_fixture) -> N
     assert price_statistics.std == pytest.approx(math.sqrt(296 / 3))
 
     metadata_artifact = runtime.artifacts.load(VECTOR_METADATA_SPEC)
-    assert metadata_artifact.counts.feature_vectors == 6
-    assert metadata_artifact.counts.target_vectors == 0
-    assert metadata_artifact.sample is not None
-    assert metadata_artifact.sample.keys == ["ticker"]
-    assert [entry.key for entry in metadata_artifact.sample.domain] == [["A"], ["B"]]
+    assert metadata_artifact.layout.kind == "unsplit"
+    catalog = metadata_artifact.catalog
+    assert catalog.counts.feature_vectors == 6
+    assert catalog.counts.target_vectors == 0
+    assert catalog.sample is not None
+    assert catalog.sample.keys == ["ticker"]
+    assert [entry.key for entry in catalog.sample.domain] == [["A"], ["B"]]
 
-    assert [(entry.id, entry.kind) for entry in metadata_artifact.features] == [
+    assert [(entry.id, entry.kind) for entry in catalog.features] == [
         ("price_scaled", "scalar"),
         ("price_history", "list"),
         ("price_mean_2", "scalar"),
@@ -60,10 +62,10 @@ def test_long_and_hybrid_identity_with_aligned_derived_stream(copy_fixture) -> N
         ("fundamental__@metric:debt", "scalar"),
         ("fundamental__@metric:revenue", "scalar"),
     ]
-    price_history = metadata_artifact.features[1]
+    price_history = catalog.features[1]
     assert price_history.kind == "list"
     assert price_history.length == 2
-    assert metadata_artifact.targets == ()
+    assert catalog.targets == ()
 
     dataset_path = request.serve_run_plans[0].paths.dataset_dir / "dataset.jsonl"
     samples = read_jsonl(dataset_path)

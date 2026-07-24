@@ -174,7 +174,18 @@ def test_sample_targets_respect_partitioned_ids(tmp_path) -> None:
     register_series(runtime, feature_cfgs, "1h", targets=target_cfgs)
 
     samples = list(
-        open_samples(context, feature_cfgs, "1h", target_configs=target_cfgs)
+        open_samples(
+            context,
+            {
+                "wind_speed__@municipality:06019",
+                "wind_speed__@municipality:06030",
+            },
+            "1h",
+            target_ids={
+                "wind_production__@municipality:06019",
+                "wind_production__@municipality:06030",
+            },
+        )
     )
 
     assert len(samples) == 1
@@ -233,10 +244,9 @@ def test_samples_can_group_by_record_key_fields(tmp_path) -> None:
     samples = list(
         open_samples(
             context,
-            feature_cfgs,
+            [config.id for config in feature_cfgs],
             "1h",
-            target_configs=target_cfgs,
-            rectangular=False,
+            target_ids=[config.id for config in target_cfgs],
             sample_keys=["security_id"],
         )
     )
@@ -302,9 +312,8 @@ def test_samples_keep_entity_buckets_contiguous(tmp_path) -> None:
     samples = list(
         open_samples(
             context,
-            feature_cfgs,
+            [config.id for config in feature_cfgs],
             "1d",
-            rectangular=False,
             sample_keys=["security_id"],
         )
     )
@@ -357,9 +366,8 @@ def test_sequence_series_are_windowed_by_sample_keys(tmp_path) -> None:
     samples = list(
         open_samples(
             context,
-            feature_cfgs,
+            [config.id for config in feature_cfgs],
             "1h",
-            rectangular=False,
             sample_keys=["security_id"],
         )
     )
@@ -374,7 +382,7 @@ def test_sequence_series_are_windowed_by_sample_keys(tmp_path) -> None:
     ]
 
 
-def test_partition_fields_outside_sample_keys_form_wide_feature_identity(
+def test_sample_input_selects_exact_wide_feature_ids(
     tmp_path,
 ) -> None:
     def _equity_record(hour: int, security_id: str, value: float) -> TemporalRecord:
@@ -385,7 +393,9 @@ def test_partition_fields_outside_sample_keys_form_wide_feature_identity(
     streams = {
         "monthly_returns": [
             _equity_record(0, "AAPL", 1.0),
+            _equity_record(0, "MSFT", 10.0),
             _equity_record(1, "AAPL", 2.0),
+            _equity_record(1, "MSFT", 20.0),
         ],
     }
     runtime = _runtime_with_streams(tmp_path, streams)
@@ -411,9 +421,8 @@ def test_partition_fields_outside_sample_keys_form_wide_feature_identity(
     samples = list(
         open_samples(
             context,
-            feature_cfgs,
+            ["monthly_return__@security_id:AAPL"],
             "1h",
-            rectangular=False,
         )
     )
 
@@ -473,9 +482,8 @@ def test_stream_transforms_use_explicit_stream_partition(tmp_path) -> None:
     samples = list(
         open_samples(
             context,
-            feature_cfgs,
+            [config.id for config in feature_cfgs],
             "1h",
-            rectangular=False,
             sample_keys=["security_id"],
         )
     )
@@ -538,7 +546,11 @@ def test_regression_scaled_shapes_airpressure_high_freq_and_windspeed_hourly(
     register_series(runtime, configs, group_by)
     context = PipelineContext(runtime)
 
-    raw = open_samples(context, configs, group_by)
+    raw = open_samples(
+        context,
+        [config.id for config in configs],
+        group_by,
+    )
     out = list(
         SampleScaler(
             context.require_artifact(SCALER_SPEC),
@@ -628,7 +640,11 @@ def test_regression_fill_then_scale_with_missing_values(tmp_path) -> None:
     _register_scaler(runtime, configs, group_by)
     register_series(runtime, configs, group_by)
     context = PipelineContext(runtime)
-    raw = open_samples(context, configs, group_by)
+    raw = open_samples(
+        context,
+        [config.id for config in configs],
+        group_by,
+    )
     out = list(
         SampleScaler(
             context.require_artifact(SCALER_SPEC),

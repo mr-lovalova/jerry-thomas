@@ -32,6 +32,7 @@ from datapipeline.pipelines.sort import SortProgress, batch_sort
 from datapipeline.pipelines.stream.pipeline import build_stream_pipeline
 from datapipeline.runtime import Runtime, require_runtime_stream
 from datapipeline.services.path_policy import resolve_artifact_output_path
+from datapipeline.transforms.utils import record_establishes_domain
 from datapipeline.utils.json_artifact import write_json_artifact
 from datapipeline.utils.time import floor_time_to_cadence, parse_cadence
 
@@ -49,12 +50,14 @@ class _StreamPlan:
 class _ProjectedScalar:
     id: str
     value: Any
+    establishes_domain: bool
 
 
 @dataclass(frozen=True)
 class _ProjectedSequence:
     id: str
     values: list[Any]
+    establishes_domain: bool
 
 
 _ProjectedValue = _ProjectedScalar | _ProjectedSequence
@@ -271,9 +274,17 @@ def _project_stream(
 
                 value: _ProjectedValue
                 if isinstance(result, SeriesSequence):
-                    value = _ProjectedSequence(result.id, result.values)
+                    value = _ProjectedSequence(
+                        result.id,
+                        result.values,
+                        record_establishes_domain(result),
+                    )
                 else:
-                    value = _ProjectedScalar(result.id, result.value)
+                    value = _ProjectedScalar(
+                        result.id,
+                        result.value,
+                        record_establishes_domain(result),
+                    )
                 if config.id in feature_ids:
                     features.append(value)
                 else:
@@ -321,8 +332,14 @@ def _group_series_rows(
             feature_records.extend(row.features)
             target_records.extend(row.targets)
 
-        features = _assemble_values(feature_records, feature_order)
-        targets = _assemble_values(target_records, target_order)
+        features, feature_placeholders = _assemble_values(
+            feature_records,
+            feature_order,
+        )
+        targets, target_placeholders = _assemble_values(
+            target_records,
+            target_order,
+        )
         feature_counts.update({base_id(series_id) for series_id in features})
         target_counts.update({base_id(series_id) for series_id in targets})
         yield SeriesRow(
@@ -330,15 +347,17 @@ def _group_series_rows(
             entity_key=tuple(key[1:]),
             features=features,
             targets=targets,
+            placeholder_ids=feature_placeholders | target_placeholders,
         )
 
 
 def _assemble_values(
     records: Iterable[_ProjectedValue],
     config_order: dict[str, int],
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], frozenset[str]]:
     values_by_id: dict[str, list[Any]] = {}
     sequence_ids: set[str] = set()
+    established: set[str] = set()
     for record in records:
         if record.id in values_by_id and isinstance(record, _ProjectedSequence) != (
             record.id in sequence_ids
@@ -346,18 +365,20 @@ def _assemble_values(
             raise ValueError(
                 f"Series {record.id!r} contains both scalar and sequence values."
             )
-        values = values_by_id.setdefault(record.id, [])
+        record_values = values_by_id.setdefault(record.id, [])
         if isinstance(record, _ProjectedSequence):
             sequence_ids.add(record.id)
-            values.extend(record.values)
+            record_values.extend(record.values)
         else:
-            values.append(record.value)
+            record_values.append(record.value)
+        if record.establishes_domain:
+            established.add(record.id)
 
     ordered_ids = sorted(
         values_by_id,
         key=lambda series_id: (config_order[base_id(series_id)], series_id),
     )
-    return {
+    assembled = {
         series_id: (
             values_by_id[series_id]
             if series_id in sequence_ids or len(values_by_id[series_id]) != 1
@@ -365,6 +386,7 @@ def _assemble_values(
         )
         for series_id in ordered_ids
     }
+    return assembled, frozenset(values_by_id.keys() - established)
 
 
 def _remove_failed_generation(generation_root: Path) -> None:

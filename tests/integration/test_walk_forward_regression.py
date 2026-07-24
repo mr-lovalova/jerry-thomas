@@ -140,6 +140,46 @@ def test_walk_forward_scaling_and_routed_outputs(copy_fixture, tmp_path: Path) -
     )
 
 
+def test_training_rows_do_not_depend_on_validation_availability(
+    copy_fixture,
+    tmp_path: Path,
+) -> None:
+    baseline_root = copy_fixture("walk_forward_project")
+    changed_root = tmp_path / "walk_forward_missing_validation"
+    shutil.copytree(baseline_root, changed_root)
+
+    baseline_signal = "\n".join(
+        [
+            "time,value",
+            "2024-01-01T00:00:00Z,0",
+            "2024-01-04T00:00:00Z,4",
+            "",
+        ]
+    )
+    (baseline_root / "data" / "signal.csv").write_text(
+        baseline_signal,
+        encoding="utf-8",
+    )
+    (changed_root / "data" / "signal.csv").write_text(
+        "time,value\n2024-01-01T00:00:00Z,0\n",
+        encoding="utf-8",
+    )
+
+    baseline_output, _ = _serve(baseline_root)
+    changed_output, _ = _serve(changed_root)
+    baseline_train = _read_output(baseline_output, "fold_0.train")
+    changed_train = _read_output(changed_output, "fold_0.train")
+
+    assert [row["key"][0] for row in baseline_train] == [
+        "2024-01-01 00:00:00+00:00",
+    ]
+    assert changed_train == baseline_train
+    assert _read_output(changed_output, "fold_0.validation") != _read_output(
+        baseline_output,
+        "fold_0.validation",
+    )
+
+
 def test_target_horizon_removes_each_fold_role_tail(copy_fixture) -> None:
     project_root = copy_fixture("walk_forward_project")
     dataset_path = project_root / "dataset.yaml"
@@ -153,25 +193,23 @@ def test_target_horizon_removes_each_fold_role_tail(copy_fixture) -> None:
 
     output_dir, scaler = _serve(project_root)
 
-    assert [
-        row["key"][0] for row in _read_output(output_dir, "fold_0.train")
-    ] == ["2024-01-01 00:00:00+00:00"]
+    assert [row["key"][0] for row in _read_output(output_dir, "fold_0.train")] == [
+        "2024-01-01 00:00:00+00:00"
+    ]
     assert _read_output(output_dir, "fold_0.validation") == []
-    assert [
-        row["key"][0] for row in _read_output(output_dir, "fold_0.test")
-    ] == ["2024-01-05 00:00:00+00:00"]
-    assert [
-        row["key"][0] for row in _read_output(output_dir, "fold_1.train")
-    ] == [
+    assert [row["key"][0] for row in _read_output(output_dir, "fold_0.test")] == [
+        "2024-01-05 00:00:00+00:00"
+    ]
+    assert [row["key"][0] for row in _read_output(output_dir, "fold_1.train")] == [
         "2024-01-01 00:00:00+00:00",
         "2024-01-02 00:00:00+00:00",
         "2024-01-04 00:00:00+00:00",
         "2024-01-06 00:00:00+00:00",
     ]
     assert _read_output(output_dir, "fold_1.validation") == []
-    assert [
-        row["key"][0] for row in _read_output(output_dir, "fold_1.test")
-    ] == ["2024-01-10 00:00:00+00:00"]
+    assert [row["key"][0] for row in _read_output(output_dir, "fold_1.test")] == [
+        "2024-01-10 00:00:00+00:00"
+    ]
 
     assert scaler.folds["fold_0"].statistics["signal"].count == 1
     assert scaler.folds["fold_0"].statistics["outcome"].count == 1

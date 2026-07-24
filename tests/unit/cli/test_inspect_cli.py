@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -52,19 +53,28 @@ def _coverage_stats() -> CoverageStatsArtifact:
 def _metadata() -> VectorMetadata:
     return VectorMetadata.model_validate(
         {
-            "schema_version": 3,
-            "features": [
-                {
-                    "id": "speed",
-                    "base_id": "speed",
-                    "kind": "scalar",
-                    "present_count": 1,
-                    "null_count": 0,
-                    "value_types": ["float"],
-                }
-            ],
-            "targets": [],
-            "counts": {"feature_vectors": 1, "target_vectors": 0},
+            "schema_version": 4,
+            "catalog": {
+                "features": [
+                    {
+                        "id": "speed",
+                        "base_id": "speed",
+                        "kind": "scalar",
+                        "present_count": 1,
+                        "null_count": 0,
+                        "value_types": ["float"],
+                    }
+                ],
+                "targets": [],
+                "counts": {"feature_vectors": 1, "target_vectors": 0},
+                "window": {
+                    "start": datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    "end": datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    "mode": "union",
+                    "size": 1,
+                },
+            },
+            "layout": {"kind": "unsplit"},
         }
     )
 
@@ -85,10 +95,6 @@ class _MatrixContext:
     def require_artifact(self, spec):
         assert spec.key == VECTOR_METADATA
         return _metadata()
-
-    def window_bounds(self, rectangular_required: bool):
-        assert rectangular_required is True
-        return None, None
 
 
 def _matrix_runtime():
@@ -113,9 +119,9 @@ def _patch_matrix(monkeypatch) -> None:
     monkeypatch.setattr(
         matrix_ops,
         "build_postprocess_plan",
-        lambda _context: PostprocessPlan(
-            feature_entries=metadata.features,
-            target_entries=metadata.targets,
+        lambda *_args: PostprocessPlan(
+            feature_entries=metadata.catalog.features,
+            target_entries=metadata.catalog.targets,
             stages=(),
         ),
     )
@@ -279,9 +285,9 @@ def test_matrix_limit_caps_samples_after_postprocess(monkeypatch) -> None:
     monkeypatch.setattr(
         matrix_ops,
         "build_postprocess_plan",
-        lambda _context: PostprocessPlan(
-            feature_entries=metadata.features,
-            target_entries=metadata.targets,
+        lambda *_args: PostprocessPlan(
+            feature_entries=metadata.catalog.features,
+            target_entries=metadata.catalog.targets,
             stages=(Stage(name="drop_first", apply=drop_first),),
         ),
     )
@@ -306,9 +312,9 @@ def test_postprocessed_matrix_keeps_headers_when_every_sample_is_dropped(
     monkeypatch.setattr(
         matrix_ops,
         "build_postprocess_plan",
-        lambda _context: PostprocessPlan(
-            feature_entries=metadata.features,
-            target_entries=metadata.targets,
+        lambda *_args: PostprocessPlan(
+            feature_entries=metadata.catalog.features,
+            target_entries=metadata.catalog.targets,
             stages=(drop_all,),
         ),
     )

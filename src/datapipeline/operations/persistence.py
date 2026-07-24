@@ -68,9 +68,24 @@ class DatasetTableOutput:
 @dataclass(frozen=True)
 class RoutedDatasetTableOutput:
     rows: Iterable[tuple[str, Sample]]
-    table: DatasetTable
+    tables: Mapping[str, DatasetTable]
     targets: Mapping[str, OutputTarget]
     limit_per_output: int | None = None
+
+    def __post_init__(self) -> None:
+        missing_table_ids = sorted(set(self.targets) - set(self.tables))
+        if missing_table_ids:
+            raise ValueError(
+                "Routed dataset table output is missing tables for output IDs: "
+                f"{missing_table_ids}."
+            )
+
+        unmatched_table_ids = sorted(set(self.tables) - set(self.targets))
+        if unmatched_table_ids:
+            raise ValueError(
+                "Routed dataset table output has tables without targets for output "
+                f"IDs: {unmatched_table_ids}."
+            )
 
 
 RoutedOutput: TypeAlias = RoutedRuntimeOutput | RoutedDatasetTableOutput
@@ -358,7 +373,7 @@ def _persist_routed_output(
                 writers[output_id] = (
                     dataset_writer_factory(
                         target,
-                        result.table,
+                        result.tables[output_id],
                         row_group_rows=parquet_row_group_rows,
                     )
                     if isinstance(result, RoutedDatasetTableOutput)

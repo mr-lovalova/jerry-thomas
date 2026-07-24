@@ -1,6 +1,7 @@
 import pytest
 
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
+from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import (
     SCALER_STATISTICS,
     SERIES,
@@ -52,13 +53,15 @@ def _dataset_samples(project_yaml):
         VECTOR_METADATA,
         relative_path=metadata_rel.relative_path,
     )
+    metadata = context.require_artifact(VECTOR_METADATA_SPEC)
     return list(
         run_scaled_dataset_pipeline(
             context,
             dataset.features,
             dataset.sample.cadence,
+            schema=metadata.catalog,
+            key_plan=None,
             target_configs=dataset.targets,
-            rectangular=False,
         )
     )
 

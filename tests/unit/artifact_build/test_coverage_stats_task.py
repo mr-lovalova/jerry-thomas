@@ -23,30 +23,39 @@ def _ts(day: int) -> datetime:
 def _metadata() -> VectorMetadata:
     return VectorMetadata.model_validate(
         {
-            "schema_version": 3,
-            "features": [
-                {
-                    "id": "speed",
-                    "base_id": "speed",
-                    "kind": "list",
-                    "present_count": 1,
-                    "null_count": 0,
-                    "element_types": ["float", "null"],
-                    "length": 2,
-                    "observed_elements": 1,
-                }
-            ],
-            "targets": [
-                {
-                    "id": "return",
-                    "base_id": "return",
-                    "kind": "scalar",
-                    "present_count": 1,
-                    "null_count": 0,
-                    "value_types": ["float"],
-                }
-            ],
-            "counts": {"feature_vectors": 1, "target_vectors": 1},
+            "schema_version": 4,
+            "catalog": {
+                "features": [
+                    {
+                        "id": "speed",
+                        "base_id": "speed",
+                        "kind": "list",
+                        "present_count": 1,
+                        "null_count": 0,
+                        "element_types": ["float", "null"],
+                        "length": 2,
+                        "observed_elements": 1,
+                    }
+                ],
+                "targets": [
+                    {
+                        "id": "return",
+                        "base_id": "return",
+                        "kind": "scalar",
+                        "present_count": 1,
+                        "null_count": 0,
+                        "value_types": ["float"],
+                    }
+                ],
+                "counts": {"feature_vectors": 1, "target_vectors": 1},
+                "window": {
+                    "start": _ts(1),
+                    "end": _ts(2),
+                    "mode": "intersection",
+                    "size": 2,
+                },
+            },
+            "layout": {"kind": "unsplit"},
         }
     )
 
@@ -54,7 +63,7 @@ def _metadata() -> VectorMetadata:
 def _runtime(tmp_path) -> Runtime:
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 3\nartifact_revision: 1\n", encoding="utf-8"
+        "schema_version: 4\nartifact_revision: 1\n", encoding="utf-8"
     )
     return Runtime(
         project_yaml=project_yaml,
@@ -82,16 +91,12 @@ class _Context:
         assert spec.key == VECTOR_METADATA
         return _metadata()
 
-    def window_bounds(self, rectangular_required: bool):
-        assert rectangular_required is True
-        return _ts(1), _ts(2)
-
 
 def _postprocess_plan(*stages: Stage) -> PostprocessPlan:
     metadata = _metadata()
     return PostprocessPlan(
-        feature_entries=metadata.features,
-        target_entries=metadata.targets,
+        feature_entries=metadata.catalog.features,
+        target_entries=metadata.catalog.targets,
         stages=stages,
     )
 
@@ -118,7 +123,7 @@ def test_build_coverage_stats_artifact_writes_bounded_v3_summary(
     )
     monkeypatch.setattr(
         "datapipeline.operations.artifacts.coverage_stats.build_postprocess_plan",
-        lambda _context: _postprocess_plan(),
+        lambda _config, _schema: _postprocess_plan(),
     )
 
     result = build_coverage_stats_artifact(
@@ -198,7 +203,7 @@ def test_postprocessed_coverage_stats_keep_columns_when_every_sample_is_dropped(
     )
     monkeypatch.setattr(
         "datapipeline.operations.artifacts.coverage_stats.build_postprocess_plan",
-        lambda _context: _postprocess_plan(drop_all),
+        lambda _config, _schema: _postprocess_plan(drop_all),
     )
 
     result = build_coverage_stats_artifact(

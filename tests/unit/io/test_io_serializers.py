@@ -33,7 +33,13 @@ def test_record_json_serializer_emits_plain_payload() -> None:
 
 def test_series_json_serializer_emits_only_projected_fields() -> None:
     time = datetime(2024, 7, 4, tzinfo=timezone.utc)
-    record = SeriesRecord("feature_a", time, 7.0, ("AAPL",))
+    record = SeriesRecord(
+        "feature_a",
+        time,
+        7.0,
+        ("AAPL",),
+        _establishes_domain=True,
+    )
 
     payload = json.loads(json_line_serializer()(record))
 

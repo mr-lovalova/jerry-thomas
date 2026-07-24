@@ -12,7 +12,8 @@ from rich.console import Console
 from rich.progress import Progress
 
 import datapipeline.operations.artifacts.series as series_operation
-from datapipeline.artifacts.models import SampleDomainEntry
+from datapipeline.artifacts.models import SampleDomainEntry, VectorMetadataCatalog
+from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import (
     SERIES,
     VECTOR_METADATA,
@@ -339,7 +340,7 @@ def _runtime_with_rows(
     artifacts_root.mkdir(parents=True, exist_ok=True)
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 3\nartifact_revision: 1\n", encoding="utf-8"
+        "schema_version: 4\nartifact_revision: 1\n", encoding="utf-8"
     )
     runtime = Runtime(
         project_yaml=project_yaml,
@@ -369,29 +370,33 @@ def _set_source_mapper(runtime: Runtime, mapper: RecordStage) -> None:
     )
 
 
-def _register_price_metadata(runtime: Runtime) -> None:
+def _register_price_metadata(runtime: Runtime) -> VectorMetadataCatalog:
     metadata_path = runtime.artifacts_root / "metadata.json"
     metadata_path.write_text(
         json.dumps(
             {
-                "schema_version": 3,
-                "counts": {"feature_vectors": 1, "target_vectors": 0},
-                "features": [
-                    {
-                        "id": "price",
-                        "base_id": "price",
-                        "kind": "scalar",
-                        "present_count": 1,
-                        "null_count": 0,
-                    }
-                ],
-                "targets": [],
+                "schema_version": 4,
+                "catalog": {
+                    "counts": {"feature_vectors": 1, "target_vectors": 0},
+                    "features": [
+                        {
+                            "id": "price",
+                            "base_id": "price",
+                            "kind": "scalar",
+                            "present_count": 1,
+                            "null_count": 0,
+                        }
+                    ],
+                    "targets": [],
+                },
+                "layout": {"kind": "unsplit"},
             },
             indent=2,
         ),
         encoding="utf-8",
     )
     runtime.artifacts.register(VECTOR_METADATA, "metadata.json")
+    return PipelineContext(runtime).require_artifact(VECTOR_METADATA_SPEC).catalog
 
 
 def test_source_pipeline_carries_source_summary(tmp_path: Path) -> None:
@@ -1194,7 +1199,7 @@ def test_series_pipeline_keeps_scaled_sequence_inputs_raw(
 
 def test_postprocess_rejects_targets_absent_from_metadata(tmp_path: Path) -> None:
     runtime = _runtime_with_rows(tmp_path, [])
-    _register_price_metadata(runtime)
+    schema = _register_price_metadata(runtime)
     samples = [
         Sample(key=(_ts(0),), features=Vector(values={"price": 1.0})),
         Sample(
@@ -1205,7 +1210,13 @@ def test_postprocess_rejects_targets_absent_from_metadata(tmp_path: Path) -> Non
     ]
 
     with pytest.raises(RuntimeError, match="no target entries"):
-        list(apply_postprocess(PipelineContext(runtime), iter(samples)))
+        list(
+            apply_postprocess(
+                runtime.dataset.postprocess,
+                schema,
+                iter(samples),
+            )
+        )
 
 
 def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -> None:
@@ -1214,7 +1225,7 @@ def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -
         {"time": _ts(1), "value": 2.0},
     ]
     runtime = _runtime_with_rows(tmp_path, rows)
-    _register_price_metadata(runtime)
+    schema = _register_price_metadata(runtime)
     ctx = PipelineContext(runtime)
     cfg = SeriesConfig(stream="stream", id="price", field="value")
     register_series(runtime, [cfg], "1h")
@@ -1223,42 +1234,40 @@ def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -
         ctx,
         [cfg],
         "1h",
-        rectangular=False,
+        schema,
+        None,
     )
     assert isinstance(pipeline.input, Input)
     assert pipeline.input.progress is None
 
-    dataset_out = list(run_dataset_pipeline(ctx, [cfg], "1h", rectangular=False))
+    dataset_out = list(run_dataset_pipeline(ctx, [cfg], "1h", schema, None))
 
-    manual = open_samples(ctx, [cfg], "1h", rectangular=False)
-    manual_out = list(apply_postprocess(ctx, manual))
+    manual = open_samples(ctx, [cfg.id], "1h")
+    manual_out = list(apply_postprocess(runtime.dataset.postprocess, schema, manual))
 
     assert dataset_out == manual_out
 
 
 def test_rectangular_dataset_source_reuses_its_key_plan(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runtime = _runtime_with_rows(tmp_path, [])
     runtime.window_bounds = (_ts(0, 10), _ts(2, 50))
-    _register_price_metadata(runtime)
+    schema = _register_price_metadata(runtime)
     context = PipelineContext(runtime)
     cfg = SeriesConfig(stream="stream", id="price", field="value")
     feature_configs = [cfg]
     register_series(runtime, feature_configs, "1h")
 
-    original = sample_input.rectangular_key_plan
-    plan_count = 0
-
-    def count_plans(pipeline_context, cadence, sample_keys):
-        nonlocal plan_count
-        plan_count += 1
-        return original(pipeline_context, cadence, sample_keys)
-
-    monkeypatch.setattr(sample_input, "rectangular_key_plan", count_plans)
-
-    pipeline = build_dataset_pipeline(context, feature_configs, "1h")
+    key_plan = window_key_plan(_ts(0, 10), _ts(2, 50), "1h")
+    assert key_plan is not None
+    pipeline = build_dataset_pipeline(
+        context,
+        feature_configs,
+        "1h",
+        schema,
+        key_plan,
+    )
     feature_configs.clear()
 
     assert isinstance(pipeline.input, Input)
@@ -1274,7 +1283,6 @@ def test_rectangular_dataset_source_reuses_its_key_plan(
         total=len(samples),
         unit="samples",
     )
-    assert plan_count == 1
 
 
 def test_rectangular_features_and_targets_share_every_planned_key(
@@ -1296,13 +1304,16 @@ def test_rectangular_features_and_targets_share_every_planned_key(
         horizon="0s",
     )
     register_series(runtime, [feature], "1h", targets=[target])
+    key_plan = window_key_plan(_ts(0), _ts(2), "1h")
+    assert key_plan is not None
 
     samples = list(
         open_samples(
             PipelineContext(runtime),
-            [feature],
+            [feature.id],
             "1h",
-            target_configs=[target],
+            target_ids=[target.id],
+            key_plan=key_plan,
         )
     )
 
@@ -1360,9 +1371,8 @@ def test_series_artifact_feeds_serve_pipeline(tmp_path: Path) -> None:
     cached = _sample_payload(
         open_samples(
             PipelineContext(runtime),
-            configs,
+            [config.id for config in configs],
             "1h",
-            rectangular=False,
             sample_keys=["id_"],
         )
     )
@@ -1923,10 +1933,13 @@ def test_series_rejects_symlinked_output_before_mutation(
     assert victim.read_text(encoding="utf-8") == "keep"
 
 
-@pytest.mark.parametrize("rectangular", [False, True])
+@pytest.mark.parametrize(
+    "key_plan",
+    [None, window_key_plan(_ts(0), _ts(1), "1h")],
+)
 def test_sample_input_requires_series_artifact(
     tmp_path: Path,
-    rectangular: bool,
+    key_plan,
 ) -> None:
     runtime = _runtime_with_rows(
         tmp_path,
@@ -1936,7 +1949,7 @@ def test_sample_input_requires_series_artifact(
     cfg = SeriesConfig(stream="stream", id="price", field="value")
 
     with pytest.raises(RuntimeError, match="Series artifact is required"):
-        list(open_samples(context, [cfg], "1h", rectangular=rectangular))
+        list(open_samples(context, [cfg.id], "1h", key_plan=key_plan))
 
 
 def test_cached_sample_input_rejects_manifest_cadence_mismatch(
@@ -1957,9 +1970,8 @@ def test_cached_sample_input_rejects_manifest_cadence_mismatch(
         list(
             open_samples(
                 PipelineContext(runtime),
-                [cfg],
+                [cfg.id],
                 "1h",
-                rectangular=False,
             )
         )
 
@@ -1982,9 +1994,8 @@ def test_cached_sample_input_verifies_manifest_rows(
         list(
             open_samples(
                 PipelineContext(runtime),
-                [cfg],
+                [cfg.id],
                 "1h",
-                rectangular=False,
             )
         )
 
@@ -2004,9 +2015,8 @@ def test_cached_sample_input_reads_requested_feature_subset(
     samples = list(
         open_samples(
             PipelineContext(runtime),
-            [value_cfg],
+            [value_cfg.id],
             "1h",
-            rectangular=False,
         )
     )
 
@@ -2044,12 +2054,14 @@ def test_cached_series_rows_close_reader_when_stopped_early(
                         entity_key=(),
                         features={"a": 1.0, "b": 1.0},
                         targets={},
+                        placeholder_ids=frozenset(),
                     ),
                     SeriesRow(
                         time=_ts(1),
                         entity_key=(),
                         features={"a": 2.0, "b": 2.0},
                         targets={},
+                        placeholder_ids=frozenset(),
                     ),
                 ]
             )
@@ -2078,9 +2090,8 @@ def test_cached_series_rows_close_reader_when_stopped_early(
 
     samples = open_samples(
         PipelineContext(runtime),
-        configs,
+        [config.id for config in configs],
         "1h",
-        rectangular=False,
     )
     assert next(samples).features.values == {"a": 1.0, "b": 1.0}
     assert opens == 1
@@ -2123,9 +2134,8 @@ def test_cached_sample_input_opens_one_reader_for_many_series(
     samples = list(
         open_samples(
             PipelineContext(runtime),
-            configs,
+            [config.id for config in configs],
             "1h",
-            rectangular=False,
         )
     )
 

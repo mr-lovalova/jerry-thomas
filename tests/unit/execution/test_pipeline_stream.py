@@ -97,7 +97,7 @@ class _ProcessingAndCleanupFailure(Iterator[int]):
 def _context(tmp_path: Path) -> PipelineContext:
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 3\nartifact_revision: 1\n", encoding="utf-8"
+        "schema_version: 4\nartifact_revision: 1\n", encoding="utf-8"
     )
     artifacts_root = tmp_path / "artifacts"
     artifacts_root.mkdir(parents=True, exist_ok=True)

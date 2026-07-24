@@ -2,6 +2,7 @@ import json
 
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import VECTOR_METADATA
+from datapipeline.artifacts.models import VectorMetadataCatalog
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.postprocess import PostprocessConfig
 from datapipeline.domain.sample import Sample
@@ -17,13 +18,13 @@ from datapipeline.runtime import Runtime
 
 def _runtime(
     tmp_path,
-    metadata: dict,
+    catalog: dict,
     postprocess: PostprocessConfig | None = None,
 ) -> Runtime:
     artifacts_root = tmp_path / "artifacts"
     artifacts_root.mkdir()
     project = tmp_path / "project.yaml"
-    project.write_text("schema_version: 3\nartifact_revision: 1\n", encoding="utf-8")
+    project.write_text("schema_version: 4\nartifact_revision: 1\n", encoding="utf-8")
     if postprocess is None:
         postprocess = PostprocessConfig()
     runtime = Runtime(
@@ -36,16 +37,28 @@ def _runtime(
     )
 
     metadata_path = artifacts_root / "metadata.json"
-    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "catalog": catalog,
+                "layout": {"kind": "unsplit"},
+            }
+        ),
+        encoding="utf-8",
+    )
     runtime.artifacts.register(VECTOR_METADATA, metadata_path.name)
     return runtime
+
+
+def _catalog(runtime: Runtime) -> VectorMetadataCatalog:
+    return PipelineContext(runtime).require_artifact(VECTOR_METADATA_SPEC).catalog
 
 
 def test_dataset_pipeline_assembles_before_postprocess(tmp_path) -> None:
     runtime = _runtime(
         tmp_path,
-        metadata={
-            "schema_version": 3,
+        catalog={
             "counts": {"feature_vectors": 0, "target_vectors": 0},
             "features": [
                 {
@@ -60,7 +73,13 @@ def test_dataset_pipeline_assembles_before_postprocess(tmp_path) -> None:
         },
     )
 
-    pipeline = build_dataset_pipeline(PipelineContext(runtime), [], "1h")
+    pipeline = build_dataset_pipeline(
+        PipelineContext(runtime),
+        [],
+        "1h",
+        _catalog(runtime),
+        None,
+    )
 
     assert pipeline.name == "dataset"
     assert pipeline.input.name == "assemble_samples"
@@ -74,8 +93,7 @@ def test_dataset_pipeline_assembles_before_postprocess(tmp_path) -> None:
 def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
     runtime = _runtime(
         tmp_path,
-        metadata={
-            "schema_version": 3,
+        catalog={
             "counts": {"feature_vectors": 2, "target_vectors": 0},
             "features": [
                 {
@@ -107,9 +125,9 @@ def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
         ),
     ]
 
-    context = PipelineContext(runtime)
-    plan = build_postprocess_plan(context)
-    output = list(apply_postprocess(context, iter(samples)))
+    schema = _catalog(runtime)
+    plan = build_postprocess_plan(runtime.dataset.postprocess, schema)
+    output = list(apply_postprocess(runtime.dataset.postprocess, schema, iter(samples)))
 
     assert [entry.id for entry in plan.feature_entries] == ["sparse", "value"]
     assert plan.target_entries == ()
@@ -126,8 +144,7 @@ def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
 def test_postprocess_applies_explicit_target_policies(tmp_path) -> None:
     runtime = _runtime(
         tmp_path,
-        metadata={
-            "schema_version": 3,
+        catalog={
             "counts": {"feature_vectors": 1, "target_vectors": 1},
             "features": [
                 {
@@ -165,7 +182,13 @@ def test_postprocess_applies_explicit_target_policies(tmp_path) -> None:
         targets=Vector(values={"sparse": None, "target": 1.0}),
     )
 
-    output = list(apply_postprocess(PipelineContext(runtime), iter([sample])))
+    output = list(
+        apply_postprocess(
+            runtime.dataset.postprocess,
+            _catalog(runtime),
+            iter([sample]),
+        )
+    )
 
     assert output[0].features.values == {"feature": 2.0}
     assert output[0].targets is not None
@@ -177,8 +200,7 @@ def test_metadata_coverage_counts_never_change_the_dataset_schema(
 ) -> None:
     runtime = _runtime(
         tmp_path,
-        metadata={
-            "schema_version": 3,
+        catalog={
             "counts": {"feature_vectors": 100, "target_vectors": 0},
             "window": {
                 "start": "2024-01-01T00:00:00Z",
@@ -211,9 +233,16 @@ def test_metadata_coverage_counts_never_change_the_dataset_schema(
         features=Vector(values={"sparse": 1.0, "complete": 2.0}),
     )
 
-    output = list(apply_postprocess(context, iter([sample])))
+    output = list(
+        apply_postprocess(
+            runtime.dataset.postprocess,
+            _catalog(runtime),
+            iter([sample]),
+        )
+    )
 
     assert output[0].features.values == {"sparse": 1.0, "complete": 2.0}
     assert [
-        entry.id for entry in context.require_artifact(VECTOR_METADATA_SPEC).features
+        entry.id
+        for entry in context.require_artifact(VECTOR_METADATA_SPEC).catalog.features
     ] == ["sparse", "complete"]

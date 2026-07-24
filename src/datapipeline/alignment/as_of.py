@@ -75,8 +75,7 @@ def as_of_stream(
                 )
             if lookup_key is not None and key < lookup_key:
                 raise ValueError(
-                    "As-of lookup is not ordered: "
-                    f"key {key!r} follows {lookup_key!r}"
+                    f"As-of lookup is not ordered: key {key!r} follows {lookup_key!r}"
                 )
 
             lookup_record = record

@@ -55,6 +55,22 @@ def partition_key(
     return tuple(values)
 
 
+def record_establishes_domain(record: object) -> bool:
+    try:
+        value = getattr(record, "_establishes_domain")
+    except AttributeError as exc:
+        raise RuntimeError(
+            f"{type(record).__name__} lost its sample-domain provenance."
+        ) from exc
+    if type(value) is not bool:
+        raise TypeError("Record sample-domain provenance must be a boolean.")
+    return value
+
+
+def set_record_domain_anchor(record: object, establishes_domain: bool) -> None:
+    setattr(record, "_establishes_domain", establishes_domain)
+
+
 def clone_record(record: TRecord, **updates: Any) -> TRecord:
     """Return a shallow clone of record with updated fields."""
     cloned = copy.copy(record)

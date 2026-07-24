@@ -41,7 +41,7 @@ def _write_test_project(tmp_path):
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
         """\
-schema_version: 3
+schema_version: 4
 artifact_revision: 1
 name: runtime-compiler-test
 paths:

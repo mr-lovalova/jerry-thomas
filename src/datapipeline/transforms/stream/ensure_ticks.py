@@ -4,7 +4,11 @@ from itertools import chain, groupby
 
 from datapipeline.artifacts.ticks import TickGrid
 from datapipeline.domain.record import TemporalRecord
-from datapipeline.transforms.utils import clone_record, partition_key
+from datapipeline.transforms.utils import (
+    clone_record,
+    partition_key,
+    set_record_domain_anchor,
+)
 from datapipeline.utils.time import parse_timecode
 
 
@@ -101,4 +105,6 @@ def _placeholder_record(
     updates = {
         key: None for key in vars(record) if not key.startswith("_") and key not in keep
     }
-    return clone_record(record, time=time, **updates)
+    placeholder = clone_record(record, time=time, **updates)
+    set_record_domain_anchor(placeholder, False)
+    return placeholder

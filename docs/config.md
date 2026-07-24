@@ -36,7 +36,7 @@ All dataset configuration is rooted at a single `project.yaml` file. Other YAML 
 ### `project.yaml`
 
 ```yaml
-schema_version: 3
+schema_version: 4
 artifact_revision: 1
 name: default
 paths:
@@ -141,6 +141,40 @@ adapt it with `GeneratorLoader`, both from `datapipeline.sources.loader`.
 Less commonly imported runtime types moved from `sources.models.source.Source`
 to `sources.source.Source` and from `sources.models.parsing_error.ParsingError`
 to `sources.parser.ParsingError`.
+
+#### Migrating project schema 3 to 4
+
+Schema 4 makes target timing and fold-owned dataset contracts explicit:
+
+```yaml
+# project.yaml
+schema_version: 4
+
+# dataset.yaml
+targets:
+  - id: current_return
+    stream: equity.returns
+    field: current
+    horizon: 0s
+  - id: forward_return
+    stream: equity.returns
+    field: forward_21
+    horizon: 21d
+```
+
+- Add `horizon: 0s` to contemporaneous targets and a conservative wall-clock
+  horizon to every future-derived target.
+- Remove `postprocess.columns`. Declare the intended feature and target columns
+  directly; postprocess now filters rows only.
+- When a split is configured, positive target horizons and sequences require
+  a time split. Hash splits cannot isolate their temporal support.
+- Replace any older `metadata.window_mode: relaxed` override with `union`.
+
+Upgrade Jerry and project plugins together, then run the normal command in
+`AUTO` mode. Jerry rebuilds incompatible series, scaler, metadata, and dependent
+artifacts. Existing served runs remain immutable, so rerun `serve` to publish a
+dataset with the corrected fold contracts. Do not increment `artifact_revision`
+or delete build state solely for this migration.
 
 ### Serve Profiles (`profiles/serve.<name>.yaml`)
 

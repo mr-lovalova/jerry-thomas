@@ -72,7 +72,7 @@ def ensure_project_scaffold(
             project_yaml.parent.mkdir(parents=True, exist_ok=True)
             write_new_file(
                 project_yaml,
-                "schema_version: 3\n"
+                "schema_version: 4\n"
                 "artifact_revision: 1\n"
                 "name: default\n"
                 "paths:\n"

@@ -1,5 +1,5 @@
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import pytest
@@ -16,6 +16,7 @@ class _Record:
     station_id: object = None
     sensor: object = None
     time: datetime = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    _establishes_domain: bool = field(default=True, init=False, repr=False)
 
 
 def _projected_id(

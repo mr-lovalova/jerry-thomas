@@ -88,9 +88,7 @@ def test_as_of_stream_does_not_use_a_future_lookup() -> None:
         )
     )
 
-    assert [(primary.value, lookup) for primary, lookup in rows] == [
-        ("primary", None)
-    ]
+    assert [(primary.value, lookup) for primary, lookup in rows] == [("primary", None)]
 
 
 def test_as_of_stream_does_not_reuse_a_lookup_across_partitions() -> None:
@@ -109,8 +107,7 @@ def test_as_of_stream_does_not_reuse_a_lookup_across_partitions() -> None:
     )
 
     assert [
-        (primary.value, lookup.value if lookup else None)
-        for primary, lookup in rows
+        (primary.value, lookup.value if lookup else None) for primary, lookup in rows
     ] == [
         ("primary-A", "lookup-A"),
         ("primary-B", None),
@@ -305,9 +302,7 @@ def test_as_of_stream_requires_every_partition_field(missing_from: str) -> None:
 def test_as_of_stream_requires_matching_partition_types() -> None:
     with pytest.raises(
         TypeError,
-        match=(
-            "As-of lookup partition field 'id_' uses bool; primary uses int"
-        ),
+        match=("As-of lookup partition field 'id_' uses bool; primary uses int"),
     ):
         list(
             as_of_stream(

@@ -114,9 +114,7 @@ def test_dataset_rejects_positive_target_horizons_with_hash_splits() -> None:
         DatasetConfig.model_validate(
             {
                 "sample": {"cadence": "1d"},
-                "features": [
-                    {"id": "price", "stream": "prices", "field": "close"}
-                ],
+                "features": [{"id": "price", "stream": "prices", "field": "close"}],
                 "targets": [
                     {
                         "id": "return",

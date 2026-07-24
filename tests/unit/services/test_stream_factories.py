@@ -6,6 +6,10 @@ import pytest
 from datapipeline.config.streams import AlignedStreamConfig
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.services.streams.combine import build_combine_stage
+from datapipeline.transforms.utils import (
+    record_establishes_domain,
+    set_record_domain_anchor,
+)
 
 
 @dataclass
@@ -55,6 +59,42 @@ def test_combiner_drops_none(monkeypatch) -> None:
     combine = build_combine_stage(_config(), ("id_",))
 
     assert list(combine(iter([(_record(1, 1), _record(1, 10))]))) == []
+
+
+def test_aligned_combiner_uses_any_real_input_as_domain_anchor(monkeypatch) -> None:
+    def calculate(left, right, offset):
+        return _record(1, left.value + right.value + offset)
+
+    monkeypatch.setattr(
+        "datapipeline.services.streams.combine.load_ep",
+        lambda _group, _entrypoint: calculate,
+    )
+    combine = build_combine_stage(_config(), ("id_",))
+    primary = _record(1, 1)
+    set_record_domain_anchor(primary, False)
+
+    [record] = combine(iter([(primary, _record(1, 10))]))
+
+    assert record_establishes_domain(record)
+
+
+def test_aligned_combiner_preserves_placeholder_only_rows(monkeypatch) -> None:
+    def calculate(left, right, offset):
+        return _record(1, left.value + right.value + offset)
+
+    monkeypatch.setattr(
+        "datapipeline.services.streams.combine.load_ep",
+        lambda _group, _entrypoint: calculate,
+    )
+    combine = build_combine_stage(_config(), ("id_",))
+    left = _record(1, 1)
+    right = _record(1, 10)
+    set_record_domain_anchor(left, False)
+    set_record_domain_anchor(right, False)
+
+    [record] = combine(iter([(left, right)]))
+
+    assert not record_establishes_domain(record)
 
 
 def test_combiner_rejects_changed_time(monkeypatch) -> None:

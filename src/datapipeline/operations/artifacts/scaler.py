@@ -22,6 +22,7 @@ from datapipeline.pipelines.series.projector import SeriesProjector
 from datapipeline.pipelines.stream.pipeline import run_stream_pipeline
 from datapipeline.runtime import Runtime, require_runtime_stream
 from datapipeline.transforms.vector.scaler import ScalerAccumulator
+from datapipeline.transforms.utils import record_establishes_domain
 from datapipeline.utils.time import floor_time_to_cadence, parse_cadence
 
 
@@ -35,6 +36,8 @@ class _ScalerInput:
 class _FoldScalerState:
     accumulator: ScalerAccumulator
     expected_ids: set[str]
+    training_ids: set[str]
+    training_domain: set[tuple[tuple, str]]
     training_labels: frozenset[str]
     horizon_policy: TargetHorizonPolicy | None
 
@@ -44,11 +47,21 @@ class _FoldScalerState:
             item.group_key,
         ):
             return
-        self.expected_ids.update(record.id for record in item.records)
+        genuine_ids = {
+            record.id for record in item.records if record_establishes_domain(record)
+        }
+        self.expected_ids.update(genuine_ids)
         if label not in self.training_labels:
             return
+
+        self.training_ids.update(genuine_ids)
+        entity_key = item.group_key[1:]
+        self.training_domain.update(
+            (entity_key, series_id) for series_id in genuine_ids
+        )
         for record in item.records:
-            self.accumulator.observe(record.id, record.value)
+            if (entity_key, record.id) in self.training_domain:
+                self.accumulator.observe(record.id, record.value)
 
 
 def materialize_scaler_statistics(
@@ -94,12 +107,23 @@ def _fit_standard_scaler(
 ) -> StandardScalerArtifact:
     accumulator = _new_accumulator(task)
     expected_ids: set[str] = set()
+    established_series: set[tuple[tuple, str]] = set()
     inputs = _iter_scaler_inputs(runtime, configs)
     try:
         for item in inputs:
+            entity_key = item.group_key[1:]
+            genuine_ids = {
+                record.id
+                for record in item.records
+                if record_establishes_domain(record)
+            }
+            expected_ids.update(genuine_ids)
+            established_series.update(
+                (entity_key, series_id) for series_id in genuine_ids
+            )
             for record in item.records:
-                expected_ids.add(record.id)
-                accumulator.observe(record.id, record.value)
+                if (entity_key, record.id) in established_series:
+                    accumulator.observe(record.id, record.value)
     finally:
         _close_iterator(inputs)
     return _finish_scaler(accumulator, expected_ids, "dataset")
@@ -122,6 +146,8 @@ def _fit_folded_scaler(
         state = _FoldScalerState(
             accumulator=_new_accumulator(task),
             expected_ids=set(),
+            training_ids=set(),
+            training_domain=set(),
             training_labels=frozenset(fold.train),
             horizon_policy=(
                 TargetHorizonPolicy(time_split, fold, target_horizon)
@@ -145,9 +171,8 @@ def _fit_folded_scaler(
 
     return FoldedScalerArtifact(
         folds={
-            fold.id: _finish_scaler(
-                states[fold.id].accumulator,
-                states[fold.id].expected_ids,
+            fold.id: _finish_folded_scaler(
+                states[fold.id],
                 f"dataset fold {fold.id!r}",
             )
             for fold in folds
@@ -155,12 +180,25 @@ def _fit_folded_scaler(
     )
 
 
+def _finish_folded_scaler(
+    state: _FoldScalerState,
+    scope: str,
+) -> StandardScalerArtifact:
+    untrained_ids = state.expected_ids - state.training_ids
+    if untrained_ids:
+        raise RuntimeError(
+            f"Scaler fitting has no training observations for {scope} vector IDs: "
+            + ", ".join(sorted(untrained_ids))
+        )
+    return _finish_scaler(state.accumulator, state.training_ids, scope)
+
+
 def _finish_scaler(
     accumulator: ScalerAccumulator,
     expected_ids: set[str],
     scope: str,
 ) -> StandardScalerArtifact:
-    if accumulator.observations == 0:
+    if not expected_ids or accumulator.observations == 0:
         raise RuntimeError(f"Scaler fitting produced no observations for {scope}.")
     artifact = accumulator.artifact()
     missing = expected_ids - artifact.statistics.keys()
@@ -169,7 +207,16 @@ def _finish_scaler(
             f"Scaler fitting has no training observations for {scope} vector IDs: "
             + ", ".join(sorted(missing))
         )
-    return artifact
+    statistics = {
+        vector_id: artifact.statistics[vector_id] for vector_id in sorted(expected_ids)
+    }
+    return StandardScalerArtifact(
+        with_mean=artifact.with_mean,
+        with_std=artifact.with_std,
+        epsilon=artifact.epsilon,
+        observations=sum(entry.count for entry in statistics.values()),
+        statistics=statistics,
+    )
 
 
 def _new_accumulator(task: ScalerTask) -> ScalerAccumulator:

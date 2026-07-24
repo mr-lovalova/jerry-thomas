@@ -11,7 +11,11 @@ from datapipeline.domain.series_id import (
 )
 from datapipeline.domain.sample_key import SampleKeyContract
 from datapipeline.domain.value import normalize_data_value
-from datapipeline.transforms.utils import get_field, partition_key
+from datapipeline.transforms.utils import (
+    get_field,
+    partition_key,
+    record_establishes_domain,
+)
 
 
 @dataclass
@@ -53,4 +57,5 @@ class SeriesProjector:
                 time=record.time,
                 value=normalize_data_value(get_field(record, config.field)),
                 entity_key=entity_key,
+                _establishes_domain=record_establishes_domain(record),
             )

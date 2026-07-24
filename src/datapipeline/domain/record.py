@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 
@@ -12,6 +12,12 @@ class TemporalRecord(Record):
     """Canonical time-series payload used throughout the pipeline."""
 
     time: datetime
+    _establishes_domain: bool = field(
+        default=True,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         if self.time.tzinfo is None or self.time.utcoffset() is None:

@@ -14,6 +14,7 @@ from datapipeline.transforms.stream.ensure_ticks import (
     EnsureCadenceTransform,
     EnsureTicksTransform,
 )
+from datapipeline.transforms.utils import record_establishes_domain
 from tests.unit.transforms.helpers import make_time_record
 
 
@@ -37,15 +38,22 @@ def _global_ticks(*hours: int) -> TickGrid:
 
 
 def test_ensure_cadence_inserts_fixed_duration_ticks() -> None:
-    records = EnsureCadenceTransform(
-        cadence="1h",
-        partition_fields=(),
-    ).apply(iter([_record(1.0, 0), _record(2.0, 2)]))
+    records = list(
+        EnsureCadenceTransform(
+            cadence="1h",
+            partition_fields=(),
+        ).apply(iter([_record(1.0, 0), _record(2.0, 2)]))
+    )
 
     assert [(record.time.hour, record.value) for record in records] == [
         (0, 1.0),
         (1, None),
         (2, 2.0),
+    ]
+    assert [record_establishes_domain(record) for record in records] == [
+        True,
+        False,
+        True,
     ]
 
 
@@ -56,16 +64,24 @@ def test_ensure_cadence_rejects_nonpositive_duration(cadence: str) -> None:
 
 
 def test_ensure_ticks_fills_leading_internal_and_trailing_ticks() -> None:
-    records = EnsureTicksTransform(
-        ticks=_global_ticks(0, 1, 2, 3),
-        partition_fields=(),
-    ).apply(iter([_record(1.0, 0), _record(2.0, 2)]))
+    records = list(
+        EnsureTicksTransform(
+            ticks=_global_ticks(0, 1, 2, 3),
+            partition_fields=(),
+        ).apply(iter([_record(1.0, 0), _record(2.0, 2)]))
+    )
 
     assert [(record.time.hour, record.value) for record in records] == [
         (0, 1.0),
         (1, None),
         (2, 2.0),
         (3, None),
+    ]
+    assert [record_establishes_domain(record) for record in records] == [
+        True,
+        False,
+        True,
+        False,
     ]
 
 

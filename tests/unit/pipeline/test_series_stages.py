@@ -18,6 +18,10 @@ from datapipeline.pipelines.series.stages import (
 from datapipeline.pipelines.series.pipeline import build_series_stages
 from datapipeline.pipelines.series.projector import SeriesProjector
 from datapipeline.runtime import Runtime, SourceRuntimeStream
+from datapipeline.transforms.utils import (
+    record_establishes_domain,
+    set_record_domain_anchor,
+)
 
 
 class _EmptySource:
@@ -60,6 +64,7 @@ def _series_record(
         time=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=position),
         value=value,
         entity_key=entity_key,
+        _establishes_domain=True,
     )
 
 
@@ -154,6 +159,29 @@ def test_sequence_series_preserves_none_values() -> None:
     assert sequence.values == [1.0, None]
 
 
+def test_sequence_establishes_domain_when_any_input_record_does() -> None:
+    placeholder = _series_record(None, 0)
+    set_record_domain_anchor(placeholder, False)
+    observed = _series_record(1.0, 1)
+
+    [sequence] = sequence_series(
+        SequenceConfig(size=2),
+        iter([placeholder, observed]),
+    )
+
+    assert record_establishes_domain(sequence)
+
+
+def test_sequence_of_placeholders_does_not_establish_domain() -> None:
+    records = [_series_record(None, position) for position in range(2)]
+    for record in records:
+        set_record_domain_anchor(record, False)
+
+    [sequence] = sequence_series(SequenceConfig(size=2), iter(records))
+
+    assert not record_establishes_domain(sequence)
+
+
 def test_projected_series_does_not_retain_source_record() -> None:
     source_record = TemporalRecord(time=datetime(2024, 1, 1, tzinfo=timezone.utc))
     source_record.value = 1.0
@@ -168,6 +196,19 @@ def test_projected_series_does_not_retain_source_record() -> None:
 
     assert record_ref() is None
     assert projected.time == datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+
+def test_projected_series_preserves_domain_anchor() -> None:
+    source_record = TemporalRecord(time=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    source_record.value = None
+    set_record_domain_anchor(source_record, False)
+
+    [projected] = SeriesProjector((), SampleKeyContract(())).project(
+        source_record,
+        (SeriesConfig(stream="stream", id="x", field="value"),),
+    )
+
+    assert not record_establishes_domain(projected)
 
 
 def test_project_series_rejects_sample_key_type_drift() -> None:

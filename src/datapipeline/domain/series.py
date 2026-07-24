@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -9,6 +9,7 @@ class SeriesRecord:
     time: datetime
     value: Any
     entity_key: tuple = ()
+    _establishes_domain: bool = field(kw_only=True, repr=False, compare=False)
 
 
 @dataclass
@@ -17,3 +18,4 @@ class SeriesSequence:
     time: datetime
     values: list[Any]
     entity_key: tuple = ()
+    _establishes_domain: bool = field(kw_only=True, repr=False, compare=False)

@@ -38,7 +38,7 @@ Expected behavior:
 `project.yaml` is the root map for all dataset config.
 
 ```yaml
-schema_version: 3
+schema_version: 4
 artifact_revision: 1
 paths:
   sources: ./sources
