@@ -243,11 +243,11 @@ throttle_ms: null # milliseconds to sleep between emitted samples
 - Visuals: set `observability.visuals: ON|OFF` in the profile or use `--visuals on|off`.
 - Pipeline heartbeat: set `observability.heartbeat_interval_seconds` or use
   `--heartbeat-interval`; `0` disables logged heartbeats, not live
-  progress when visuals are enabled.
-- The shared artifact prerequisite phase uses only the CLI
-  `--heartbeat-interval` override. A profile heartbeat setting starts applying
-  when that profile itself runs; Jerry does not select one profile's setting for
-  shared prerequisite work.
+  progress when visuals are enabled. The built-in interval is 60 seconds.
+- The shared artifact prerequisite phase uses the command defaults and any CLI
+  `--heartbeat-interval` override. A concrete profile heartbeat setting starts
+  applying when that profile itself runs; Jerry does not select one profile's
+  setting for shared prerequisite work.
 - Add additional `serve.<name>.yaml` files under `profiles/`
   for distinct serve policies; `jerry serve` runs each enabled profile unless
   you pass `--profile <name>`.

@@ -6,7 +6,7 @@ from datapipeline.config.tasks import TicksTask
 from datapipeline.domain.value import normalize_data_value
 from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.observability import OperationProgressTracker
-from datapipeline.execution.runner import resolve_heartbeat_interval_seconds
+from datapipeline.execution.settings import resolve_heartbeat_interval_seconds
 from datapipeline.io.normalization import json_text
 from datapipeline.io.sinks.files import AtomicTextFileSink
 from datapipeline.operations.persistence import ArtifactOutput

@@ -31,7 +31,7 @@ from datapipeline.config.dataset.split import (
 from datapipeline.config.tasks import MetadataTask
 from datapipeline.domain.series_id import base_id
 from datapipeline.execution.observability import OperationProgressTracker
-from datapipeline.execution.runner import resolve_heartbeat_interval_seconds
+from datapipeline.execution.settings import resolve_heartbeat_interval_seconds
 from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.dataset.split import TargetHorizonPolicy, build_labeler
 from datapipeline.runtime import Runtime

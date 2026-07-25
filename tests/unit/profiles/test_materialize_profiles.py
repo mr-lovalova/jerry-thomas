@@ -8,6 +8,7 @@ import pytest
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.profiles import MaterializeProfile
 from datapipeline.execution.settings import (
+    DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,
     LogOutputSettings,
     ObservabilitySettings,
@@ -20,7 +21,7 @@ from datapipeline.services.materialize import resolve_materialize_output
 def _observability() -> ObservabilitySettings:
     return ObservabilitySettings(
         visuals="off",
-        heartbeat_interval_seconds=None,
+        heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
         log_decision=LogLevelDecision(name="INFO", value=logging.INFO),
         log_output=LogOutputSettings(outputs=()),
     )

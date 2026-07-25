@@ -424,6 +424,41 @@ def test_serve_profile_nested_observability_deep_merges_defaults(
     assert job.observability.log_output.outputs[0].transport == "stdout"
 
 
+def test_serve_heartbeat_preserves_prerequisite_and_profile_precedence(
+    tmp_path: Path,
+):
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir(parents=True, exist_ok=True)
+    (profiles / "serve.defaults.yaml").write_text(
+        "observability:\n  heartbeat_interval_seconds: 30\n",
+        encoding="utf-8",
+    )
+    (profiles / "serve.train.yaml").write_text(
+        ("operation: dataset\nobservability:\n  heartbeat_interval_seconds: 180\n"),
+        encoding="utf-8",
+    )
+
+    request = build_runtime_run_request(
+        command="serve",
+        project=str(project_yaml),
+        profile_name="train",
+    )
+    cli_override = build_runtime_run_request(
+        command="serve",
+        project=str(project_yaml),
+        profile_name="train",
+        cli_heartbeat_interval_seconds=0,
+    )
+
+    assert request is not None
+    assert request.artifact_settings.observability.heartbeat_interval_seconds == 30
+    assert request.jobs[0].observability.heartbeat_interval_seconds == 180
+    assert cli_override is not None
+    assert cli_override.artifact_settings.observability.heartbeat_interval_seconds == 0
+    assert cli_override.jobs[0].observability.heartbeat_interval_seconds == 0
+
+
 def test_build_defaults_apply_to_build_profiles(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"

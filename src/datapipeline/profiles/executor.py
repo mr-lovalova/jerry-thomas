@@ -1,7 +1,6 @@
 import logging
-from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass
-from typing import Any, Callable
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 
 from datapipeline.cli.logging_setup import root_logging_scope
 from datapipeline.cli.visuals.execution import (
@@ -17,23 +16,16 @@ from datapipeline.execution.settings import ObservabilitySettings
 from datapipeline.runtime import Runtime
 
 
-@dataclass(frozen=True)
-class ExecutionSpec:
-    observability: ObservabilitySettings
-    runtime: Runtime
+@contextmanager
+def execution_scope(
+    runtime: Runtime,
+    observability: ObservabilitySettings,
+) -> Iterator[None]:
+    level = observability.log_decision.value
+    with root_logging_scope(level, observability.log_output):
+        visuals_active = observability.visuals == "on" and rich_visuals_supported()
+        visuals = visual_execution(level) if visuals_active else nullcontext()
 
-
-def run_execution(spec: ExecutionSpec, work: Callable[[], Any]) -> Any:
-    level = spec.observability.log_decision.value
-    with root_logging_scope(level, spec.observability.log_output):
-        visuals_active = spec.observability.visuals == "on" and rich_visuals_supported()
-        visuals: AbstractContextManager[Any]
-        if visuals_active:
-            visuals = visual_execution(level)
-        else:
-            visuals = nullcontext()
-
-        runtime = spec.runtime
         previous_pipeline_observer = runtime.pipeline_observer
         previous_observe_node_events = runtime.observe_node_events
         if previous_pipeline_observer is None:
@@ -46,9 +38,8 @@ def run_execution(spec: ExecutionSpec, work: Callable[[], Any]) -> Any:
             observer = make_operation_observer(
                 logging.getLogger("datapipeline.operation.observer")
             )
-            with operation_observer(observer):
-                with visuals:
-                    return work()
+            with operation_observer(observer), visuals:
+                yield
         finally:
             if previous_pipeline_observer is None:
                 runtime.pipeline_observer = None

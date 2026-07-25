@@ -20,7 +20,7 @@ from datapipeline.io.runs import (
     set_latest_run,
     start_run,
 )
-from datapipeline.profiles.executor import ExecutionSpec, run_execution
+from datapipeline.profiles.executor import execution_scope
 from datapipeline.profiles.materialize import (
     execute_materialize_job,
     preflight_materialize_jobs,
@@ -118,12 +118,7 @@ def _run_build_profiles(request: BuildRunRequest) -> None:
     for job in jobs:
         runtime = compile_runtime(request.definition)
         runtime.execution = request.execution
-        spec = ExecutionSpec(
-            observability=job.settings.observability,
-            runtime=runtime,
-        )
-
-        def build() -> None:
+        with execution_scope(runtime, job.settings.observability):
             run_build_if_needed(
                 request.definition,
                 graph=graph,
@@ -132,8 +127,6 @@ def _run_build_profiles(request: BuildRunRequest) -> None:
                 runtime=runtime,
                 resolved_artifacts=resolved_artifacts,
             )
-
-        run_execution(spec, build)
 
 
 def _run_runtime_profiles(request: RuntimeRunRequest) -> None:
@@ -166,20 +159,13 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> None:
                 job.observability.heartbeat_interval_seconds
             )
             job.runtime.output_ids = job.output_ids
-            spec = ExecutionSpec(
-                observability=job.observability,
-                runtime=job.runtime,
-            )
-
-            def execute() -> None:
+            with execution_scope(job.runtime, job.observability):
                 execute_runtime_job(
                     request.command,
                     request.definition,
                     graph,
                     plan,
                 )
-
-            run_execution(spec, execute)
         succeeded = True
     finally:
         _finalize_serve_runs(started_runs, succeeded)
@@ -213,15 +199,8 @@ def _run_materialize_profiles(request: MaterializeRunRequest) -> None:
         request.runtime.heartbeat_interval_seconds = (
             job.observability.heartbeat_interval_seconds
         )
-        spec = ExecutionSpec(
-            observability=job.observability,
-            runtime=request.runtime,
-        )
-
-        def execute() -> None:
+        with execution_scope(request.runtime, job.observability):
             execute_materialize_job(job, request.runtime)
-
-        run_execution(spec, execute)
 
 
 def _validate_build_order(jobs: list[BuildJob], graph: ArtifactGraph) -> None:
@@ -285,12 +264,7 @@ def _prepare_runtime_artifacts(
     settings = request.artifact_settings
     runtime = compile_runtime(request.definition)
     runtime.execution = request.execution
-    spec = ExecutionSpec(
-        observability=settings.observability,
-        runtime=runtime,
-    )
-
-    def prepare() -> None:
+    with execution_scope(runtime, settings.observability):
         run_build_if_needed(
             request.definition,
             graph=graph,
@@ -298,8 +272,6 @@ def _prepare_runtime_artifacts(
             settings=settings,
             runtime=runtime,
         )
-
-    run_execution(spec, prepare)
 
 
 def _prepare_materialize_artifacts(
@@ -309,12 +281,10 @@ def _prepare_materialize_artifacts(
 ) -> None:
     if not required_artifacts:
         return
-    spec = ExecutionSpec(
-        observability=request.artifact_settings.observability,
-        runtime=request.runtime,
-    )
-
-    def prepare() -> None:
+    with execution_scope(
+        request.runtime,
+        request.artifact_settings.observability,
+    ):
         run_build_if_needed(
             request.definition,
             graph=graph,
@@ -322,5 +292,3 @@ def _prepare_materialize_artifacts(
             settings=request.artifact_settings,
             runtime=request.runtime,
         )
-
-    run_execution(spec, prepare)

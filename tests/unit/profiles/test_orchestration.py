@@ -38,6 +38,7 @@ from datapipeline.config.tasks import (
 )
 from datapipeline.execution.observability import CommandFinished
 from datapipeline.execution.settings import (
+    DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,
     LogOutputSettings,
     ObservabilitySettings,
@@ -59,7 +60,6 @@ from datapipeline.profiles.execution import (
     plan_runtime_job,
     run_runtime_operation,
 )
-from datapipeline.profiles.executor import ExecutionSpec
 from datapipeline.profiles.models import (
     BuildJob,
     BuildRunRequest,
@@ -77,9 +77,14 @@ _LOG_DECISION = LogLevelDecision(name="INFO", value=logging.INFO)
 _LOG_OUTPUT = LogOutputSettings(outputs=())
 
 
+@contextmanager
+def _passthrough_execution_scope(_runtime, _observability):
+    yield
+
+
 def _artifact_settings(
     mode: str = "AUTO",
-    heartbeat_interval_seconds: float | None = None,
+    heartbeat_interval_seconds: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     visuals: str = "off",
 ) -> BuildSettings:
     return BuildSettings(
@@ -89,7 +94,7 @@ def _artifact_settings(
 
 
 def _observability(
-    heartbeat_interval_seconds: float | None = None,
+    heartbeat_interval_seconds: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     visuals: str = "off",
 ) -> ObservabilitySettings:
     return ObservabilitySettings(
@@ -168,7 +173,7 @@ def _runtime_job(
     *,
     limit: int | None = None,
     preview: PreviewStage | None = None,
-    heartbeat_interval_seconds: float | None = None,
+    heartbeat_interval_seconds: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     output_ids: tuple[str, ...] = (),
     output: OutputTarget | None = None,
 ) -> RuntimeJob:
@@ -481,23 +486,24 @@ def test_build_jobs_keep_order_and_share_resolved_artifacts(
         execution,
     )
     calls: list[dict[str, object]] = []
-    execution_specs: list[ExecutionSpec] = []
+    execution_runtimes: list[object] = []
     runtimes = iter((vector_runtime, metadata_runtime, coverage_stats_runtime))
 
     def build(_project, **kwargs):
         calls.append(dict(kwargs))
         kwargs["resolved_artifacts"].update(kwargs["required_artifacts"])
 
-    def execute(spec, work):
-        execution_specs.append(spec)
-        return work()
+    @contextmanager
+    def execute(runtime, _observability):
+        execution_runtimes.append(runtime)
+        yield
 
     monkeypatch.setattr(
         "datapipeline.profiles.orchestration.compile_runtime",
         lambda _definition: next(runtimes),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_execution",
+        "datapipeline.profiles.orchestration.execution_scope",
         execute,
     )
     monkeypatch.setattr(
@@ -524,7 +530,7 @@ def test_build_jobs_keep_order_and_share_resolved_artifacts(
         VECTOR_METADATA,
         COVERAGE_STATS,
     }
-    assert [spec.runtime for spec in execution_specs] == [
+    assert execution_runtimes == [
         vector_runtime,
         metadata_runtime,
         coverage_stats_runtime,
@@ -569,18 +575,20 @@ def test_runtime_artifact_union_is_prepared_once_before_jobs(
     )
     events: list[tuple[str, object]] = []
     build_calls: list[dict[str, object]] = []
-    execution_specs: list[ExecutionSpec] = []
+    execution_runtimes: list[object] = []
 
     def build(_project, **kwargs):
         events.append(("build", kwargs["runtime"]))
         build_calls.append(dict(kwargs))
 
-    def execute(spec, work):
-        execution_specs.append(spec)
-        events.append(("execution started", spec.runtime))
-        result = work()
-        events.append(("execution finished", spec.runtime))
-        return result
+    @contextmanager
+    def execute(runtime, _observability):
+        execution_runtimes.append(runtime)
+        events.append(("execution started", runtime))
+        try:
+            yield
+        finally:
+            events.append(("execution finished", runtime))
 
     monkeypatch.setattr(
         "datapipeline.profiles.orchestration.compile_runtime",
@@ -591,7 +599,7 @@ def test_runtime_artifact_union_is_prepared_once_before_jobs(
         build,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_execution",
+        "datapipeline.profiles.orchestration.execution_scope",
         execute,
     )
     monkeypatch.setattr(
@@ -614,7 +622,7 @@ def test_runtime_artifact_union_is_prepared_once_before_jobs(
         ("job", second_runtime),
         ("execution finished", second_runtime),
     ]
-    assert [spec.runtime for spec in execution_specs] == [
+    assert execution_runtimes == [
         canonical_runtime,
         first_runtime,
         second_runtime,
@@ -661,8 +669,8 @@ def test_custom_runtime_artifact_requirement_is_prepared(
         lambda _project, **kwargs: build_calls.append(dict(kwargs)),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_execution",
-        lambda spec, work: work(),
+        "datapipeline.profiles.orchestration.execution_scope",
+        _passthrough_execution_scope,
     )
     monkeypatch.setattr(
         "datapipeline.profiles.orchestration.execute_runtime_job",
@@ -749,7 +757,7 @@ def test_runtime_jobs_keep_order_and_apply_execution_settings(
         for name, heartbeat, output_ids in (
             ("first", 10, ("train",)),
             ("second", 20, ("val",)),
-            ("third", None, ()),
+            ("third", DEFAULT_HEARTBEAT_INTERVAL_SECONDS, ()),
         )
     ]
     request = _runtime_request(
@@ -763,11 +771,12 @@ def test_runtime_jobs_keep_order_and_apply_execution_settings(
         execution=execution,
     )
     observed: list[tuple[str, object, object, object]] = []
-    execution_specs: list[ExecutionSpec] = []
+    execution_runtimes: list[object] = []
 
-    def execute(spec, work):
-        execution_specs.append(spec)
-        return work()
+    @contextmanager
+    def execute(runtime, _observability):
+        execution_runtimes.append(runtime)
+        yield
 
     def execute_job(_command, _project, _graph, plan):
         runtime = plan.job.runtime
@@ -781,7 +790,7 @@ def test_runtime_jobs_keep_order_and_apply_execution_settings(
         )
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_execution",
+        "datapipeline.profiles.orchestration.execution_scope",
         execute,
     )
     monkeypatch.setattr(
@@ -798,9 +807,9 @@ def test_runtime_jobs_keep_order_and_apply_execution_settings(
     assert observed == [
         ("first", 10, ("train",), execution),
         ("second", 20, ("val",), execution),
-        ("third", None, (), execution),
+        ("third", DEFAULT_HEARTBEAT_INTERVAL_SECONDS, (), execution),
     ]
-    assert [spec.runtime for spec in execution_specs] == [job.runtime for job in jobs]
+    assert execution_runtimes == [job.runtime for job in jobs]
 
 
 def test_runtime_job_emits_resolved_config_at_debug(
@@ -1034,8 +1043,8 @@ def test_shared_serve_run_is_finalized_once(monkeypatch, tmp_path: Path) -> None
     )
     calls = {"start": 0, "success": 0, "failed": 0, "latest": 0}
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_execution",
-        lambda spec, work: work(),
+        "datapipeline.profiles.orchestration.execution_scope",
+        _passthrough_execution_scope,
     )
     monkeypatch.setattr(
         "datapipeline.profiles.orchestration.execute_runtime_job",
@@ -1080,8 +1089,8 @@ def test_job_failure_marks_shared_run_failed(monkeypatch, tmp_path: Path) -> Non
             raise RuntimeError("boom")
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_execution",
-        lambda spec, work: work(),
+        "datapipeline.profiles.orchestration.execution_scope",
+        _passthrough_execution_scope,
     )
     monkeypatch.setattr(
         "datapipeline.profiles.orchestration.execute_runtime_job",
@@ -1120,8 +1129,8 @@ def test_latest_failure_still_finalizes_all_runs(
     latest: list[RunPaths] = []
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_execution",
-        lambda _spec, work: work(),
+        "datapipeline.profiles.orchestration.execution_scope",
+        _passthrough_execution_scope,
     )
     monkeypatch.setattr(
         "datapipeline.profiles.orchestration.execute_runtime_job",
@@ -1202,8 +1211,8 @@ def test_later_output_commit_failure_marks_run_failed_and_preserves_latest(
         serve_run_plans=(ServeRunPlan(current_paths, None),),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_execution",
-        lambda _spec, work: work(),
+        "datapipeline.profiles.orchestration.execution_scope",
+        _passthrough_execution_scope,
     )
     monkeypatch.setattr(
         "datapipeline.profiles.execution.load_ep",
@@ -1273,17 +1282,18 @@ def test_preview_run_exists_at_job_boundary_and_is_not_latest(
     )
     observed: dict[str, object] = {}
 
-    def execute(spec, work):
+    @contextmanager
+    def execute(runtime, _observability):
         run = json.loads(run_paths.metadata_path.read_text(encoding="utf-8"))
         observed.update(
             status=run["status"],
             preview=run["preview"],
-            heartbeat=spec.runtime.heartbeat_interval_seconds,
+            heartbeat=runtime.heartbeat_interval_seconds,
         )
-        return work()
+        yield
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_execution",
+        "datapipeline.profiles.orchestration.execution_scope",
         execute,
     )
     monkeypatch.setattr(
@@ -1394,8 +1404,8 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
         build,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_execution",
-        lambda spec, work: work(),
+        "datapipeline.profiles.orchestration.execution_scope",
+        _passthrough_execution_scope,
     )
     monkeypatch.setattr(
         "datapipeline.profiles.orchestration.execute_materialize_job",
@@ -1465,8 +1475,8 @@ def test_materialize_hydrates_current_tick_artifact_when_build_skips(
         lambda stream, streams: {"market_ticks"},
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_execution",
-        lambda spec, work: work(),
+        "datapipeline.profiles.orchestration.execution_scope",
+        _passthrough_execution_scope,
     )
     monkeypatch.setattr(
         "datapipeline.profiles.orchestration.execute_materialize_job",

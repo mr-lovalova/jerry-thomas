@@ -1,4 +1,6 @@
 import logging
+import math
+import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -6,6 +8,7 @@ from pathlib import Path
 from datapipeline.config.observability import LogOutputConfig, ObservabilityConfig
 from datapipeline.config.options import LOG_SCOPE_CHOICES, LOG_TRANSPORT_CHOICES
 
+DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60.0
 LOG_TRANSPORT_SET = set(LOG_TRANSPORT_CHOICES)
 LOG_SCOPE_SET = set(LOG_SCOPE_CHOICES)
 
@@ -39,19 +42,19 @@ def resolve_visuals(
 
 
 def resolve_heartbeat_interval_seconds(
-    cli_heartbeat_interval_seconds: float | None,
-    config_heartbeat_interval_seconds: float | None,
-) -> float | None:
-    value = (
-        cli_heartbeat_interval_seconds
-        if cli_heartbeat_interval_seconds is not None
-        else config_heartbeat_interval_seconds
-    )
+    value: float | None,
+) -> float:
     if value is None:
-        return None
+        return DEFAULT_HEARTBEAT_INTERVAL_SECONDS
     interval = float(value)
+    if not math.isfinite(interval):
+        raise ValueError("heartbeat_interval_seconds must be finite")
     if interval < 0:
         raise ValueError("heartbeat_interval_seconds must be non-negative")
+    if interval > threading.TIMEOUT_MAX:
+        raise ValueError(
+            f"heartbeat_interval_seconds must not exceed {threading.TIMEOUT_MAX:g}"
+        )
     return interval
 
 
@@ -96,7 +99,7 @@ class LogOutputSettings:
 @dataclass(frozen=True)
 class ObservabilitySettings:
     visuals: str
-    heartbeat_interval_seconds: float | None
+    heartbeat_interval_seconds: float
     log_decision: LogLevelDecision
     log_output: LogOutputSettings
 
@@ -260,6 +263,14 @@ def resolve_observability_settings(
         if project_path is not None
         else []
     )
+    configured_heartbeat_interval = (
+        observability.heartbeat_interval_seconds if observability is not None else None
+    )
+    heartbeat_interval = (
+        cli_heartbeat_interval_seconds
+        if cli_heartbeat_interval_seconds is not None
+        else configured_heartbeat_interval
+    )
 
     return ObservabilitySettings(
         visuals=resolve_visuals(
@@ -267,12 +278,7 @@ def resolve_observability_settings(
             observability.visuals if observability is not None else None,
         ),
         heartbeat_interval_seconds=resolve_heartbeat_interval_seconds(
-            cli_heartbeat_interval_seconds,
-            (
-                observability.heartbeat_interval_seconds
-                if observability is not None
-                else None
-            ),
+            heartbeat_interval,
         ),
         log_decision=resolve_log_level(
             cli_log_level,

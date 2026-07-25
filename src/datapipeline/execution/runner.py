@@ -1,4 +1,3 @@
-import math
 import threading
 import time
 from collections.abc import Generator, Iterable, Iterator
@@ -20,9 +19,9 @@ from datapipeline.execution.events import (
 )
 from datapipeline.execution.observer import PipelineObserver, ignore_pipeline_event
 from datapipeline.execution.pipeline import Input, Pipeline, ProgressReader, Stage
+from datapipeline.execution.settings import resolve_heartbeat_interval_seconds
 
 
-DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60.0
 _LIVE_PROGRESS_INTERVAL_SECONDS = 0.1
 _NOOP_OBSERVER = ignore_pipeline_event
 
@@ -173,21 +172,6 @@ def _close_iterator(iterator: Iterable[Any]) -> None:
 def _error_message(exc: BaseException) -> str | None:
     message = str(exc).strip()
     return message or None
-
-
-def resolve_heartbeat_interval_seconds(interval: float | None) -> float:
-    if interval is None:
-        return DEFAULT_HEARTBEAT_INTERVAL_SECONDS
-    interval = float(interval)
-    if not math.isfinite(interval):
-        raise ValueError("heartbeat_interval_seconds must be finite")
-    if interval < 0:
-        raise ValueError("heartbeat_interval_seconds must be non-negative")
-    if interval > threading.TIMEOUT_MAX:
-        raise ValueError(
-            f"heartbeat_interval_seconds must not exceed {threading.TIMEOUT_MAX:g}"
-        )
-    return interval
 
 
 def run_pipeline(

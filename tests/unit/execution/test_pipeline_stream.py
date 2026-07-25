@@ -838,32 +838,3 @@ def test_unobserved_run_uses_the_fast_path(
     )
 
     assert list(run_pipeline(_context(tmp_path), pipeline)) == [2, 4]
-
-
-def test_resolve_heartbeat_interval_accepts_supported_values() -> None:
-    assert (
-        pipeline_runner.resolve_heartbeat_interval_seconds(None)
-        == pipeline_runner.DEFAULT_HEARTBEAT_INTERVAL_SECONDS
-    )
-    assert pipeline_runner.resolve_heartbeat_interval_seconds(0) == 0
-    assert (
-        pipeline_runner.resolve_heartbeat_interval_seconds(threading.TIMEOUT_MAX)
-        == threading.TIMEOUT_MAX
-    )
-
-
-@pytest.mark.parametrize(
-    ("interval", "message"),
-    [
-        (-1, "non-negative"),
-        (float("nan"), "finite"),
-        (float("inf"), "finite"),
-        (threading.TIMEOUT_MAX + 1, "must not exceed"),
-    ],
-)
-def test_resolve_heartbeat_interval_rejects_invalid_values(
-    interval: float,
-    message: str,
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        pipeline_runner.resolve_heartbeat_interval_seconds(interval)

@@ -34,6 +34,7 @@ from datapipeline.config.tasks import (
     SeriesTask,
 )
 from datapipeline.execution.settings import (
+    DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,
     LogOutputSettings,
     LogOutputTarget,
@@ -204,7 +205,7 @@ def _build_settings(mode: str = "AUTO") -> BuildSettings:
         mode=mode,
         observability=ObservabilitySettings(
             visuals="on",
-            heartbeat_interval_seconds=None,
+            heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
             log_decision=LogLevelDecision(name="INFO", value=logging.INFO),
             log_output=LogOutputSettings(
                 outputs=(LogOutputTarget(transport="stderr"),)

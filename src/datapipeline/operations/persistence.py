@@ -7,12 +7,12 @@ from typing import Any, Callable, Iterable, Mapping, Sequence, TypeAlias
 
 from datapipeline.build.state import ArtifactFileFingerprint
 from datapipeline.domain.sample import Sample
-from datapipeline.execution.runner import resolve_heartbeat_interval_seconds
 from datapipeline.execution.observability import (
     OperationProgressTracker,
     emit_file_result,
     emit_rows_written,
 )
+from datapipeline.execution.settings import resolve_heartbeat_interval_seconds
 from datapipeline.io.factory import writer_factory
 from datapipeline.io.factory import dataset_writer_factory
 from datapipeline.io.dataset_table import DatasetTable

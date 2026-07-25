@@ -5,12 +5,13 @@ import pytest
 
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.execution.settings import (
+    DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,
     LogOutputSettings,
     LogOutputTarget,
     ObservabilitySettings,
 )
-from datapipeline.profiles.executor import ExecutionSpec, run_execution
+from datapipeline.profiles.executor import execution_scope
 from datapipeline.runtime import Runtime
 
 
@@ -26,7 +27,7 @@ def _runtime() -> Runtime:
     )
 
 
-def test_run_execution_configures_logging_and_runs_work_inside_visuals(monkeypatch):
+def test_execution_scope_configures_logging_and_runs_inside_visuals(monkeypatch):
     runtime = _runtime()
     runtime.observe_node_events = False
     calls = []
@@ -62,27 +63,20 @@ def test_run_execution_configures_logging_and_runs_work_inside_visuals(monkeypat
         visual_execution,
     )
 
-    def work():
+    log_output = _log_output()
+    with execution_scope(
+        runtime,
+        ObservabilitySettings(
+            visuals="on",
+            heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+            log_decision=LogLevelDecision(name="INFO", value=20),
+            log_output=log_output,
+        ),
+    ):
         assert runtime.pipeline_observer is not None
         assert runtime.observe_node_events
         calls.append(("work", inside_visual_context))
-        return "ok"
 
-    log_output = _log_output()
-    result = run_execution(
-        ExecutionSpec(
-            observability=ObservabilitySettings(
-                visuals="on",
-                heartbeat_interval_seconds=None,
-                log_decision=LogLevelDecision(name="INFO", value=20),
-                log_output=log_output,
-            ),
-            runtime=runtime,
-        ),
-        work,
-    )
-
-    assert result == "ok"
     assert calls == [
         ("logging", 20, log_output),
         ("visuals", 20),
@@ -96,7 +90,7 @@ def test_run_execution_configures_logging_and_runs_work_inside_visuals(monkeypat
     ("visuals", "rich_supported"),
     [("off", True), ("on", False)],
 )
-def test_run_execution_uses_plain_context_when_visuals_are_unavailable(
+def test_execution_scope_uses_plain_context_when_visuals_are_unavailable(
     monkeypatch,
     visuals,
     rich_supported,
@@ -115,30 +109,23 @@ def test_run_execution_uses_plain_context_when_visuals_are_unavailable(
         lambda _level: pytest.fail("Rich visuals must not start"),
     )
 
-    def work() -> str:
+    with execution_scope(
+        runtime,
+        ObservabilitySettings(
+            visuals=visuals,
+            heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+            log_decision=LogLevelDecision(name="INFO", value=20),
+            log_output=_log_output(),
+        ),
+    ):
         assert runtime.pipeline_observer is not None
         assert not runtime.observe_node_events
-        return "plain"
 
-    result = run_execution(
-        ExecutionSpec(
-            observability=ObservabilitySettings(
-                visuals=visuals,
-                heartbeat_interval_seconds=None,
-                log_decision=LogLevelDecision(name="INFO", value=20),
-                log_output=_log_output(),
-            ),
-            runtime=runtime,
-        ),
-        work,
-    )
-
-    assert result == "plain"
     assert runtime.pipeline_observer is None
     assert runtime.observe_node_events
 
 
-def test_run_execution_observes_nodes_for_debug_logging(monkeypatch) -> None:
+def test_execution_scope_observes_nodes_for_debug_logging(monkeypatch) -> None:
     runtime = _runtime()
     runtime.observe_node_events = False
     monkeypatch.setattr(
@@ -150,57 +137,126 @@ def test_run_execution_observes_nodes_for_debug_logging(monkeypatch) -> None:
         lambda: pytest.fail("visual support is irrelevant when visuals are off"),
     )
 
-    def work() -> None:
+    with execution_scope(
+        runtime,
+        ObservabilitySettings(
+            visuals="off",
+            heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+            log_decision=LogLevelDecision(name="DEBUG", value=10),
+            log_output=_log_output(),
+        ),
+    ):
         assert runtime.pipeline_observer is not None
         assert runtime.observe_node_events
-
-    run_execution(
-        ExecutionSpec(
-            observability=ObservabilitySettings(
-                visuals="off",
-                heartbeat_interval_seconds=None,
-                log_decision=LogLevelDecision(name="DEBUG", value=10),
-                log_output=_log_output(),
-            ),
-            runtime=runtime,
-        ),
-        work,
-    )
 
     assert runtime.pipeline_observer is None
     assert not runtime.observe_node_events
 
 
-def test_run_execution_restores_observation_after_failure(monkeypatch) -> None:
+def test_execution_scope_restores_observation_after_failure(monkeypatch) -> None:
     runtime = _runtime()
     monkeypatch.setattr(
         "datapipeline.profiles.executor.root_logging_scope",
         lambda *_args, **_kwargs: nullcontext(),
     )
 
-    def fail() -> None:
-        assert not runtime.observe_node_events
-        raise RuntimeError("failed")
-
     with pytest.raises(RuntimeError, match="failed"):
-        run_execution(
-            ExecutionSpec(
-                observability=ObservabilitySettings(
-                    visuals="off",
-                    heartbeat_interval_seconds=None,
-                    log_decision=LogLevelDecision(name="INFO", value=20),
-                    log_output=_log_output(),
-                ),
-                runtime=runtime,
+        with execution_scope(
+            runtime,
+            ObservabilitySettings(
+                visuals="off",
+                heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+                log_decision=LogLevelDecision(name="INFO", value=20),
+                log_output=_log_output(),
             ),
-            fail,
-        )
+        ):
+            assert not runtime.observe_node_events
+            raise RuntimeError("failed")
 
     assert runtime.pipeline_observer is None
     assert runtime.observe_node_events
 
 
-def test_run_execution_preserves_existing_pipeline_observer(monkeypatch) -> None:
+def test_execution_scope_restores_outer_state_after_visual_cleanup_failure(
+    monkeypatch,
+) -> None:
+    runtime = _runtime()
+    calls = []
+    operation_active = False
+
+    @contextmanager
+    def logging_scope(*_args):
+        calls.append("logging enter")
+        try:
+            yield
+        finally:
+            calls.append("logging exit")
+
+    @contextmanager
+    def observe_operation(_observer):
+        nonlocal operation_active
+        calls.append("operation enter")
+        operation_active = True
+        try:
+            yield
+        finally:
+            operation_active = False
+            calls.append("operation exit")
+
+    @contextmanager
+    def visuals(_level):
+        calls.append("visuals enter")
+        try:
+            yield
+        finally:
+            assert operation_active
+            assert runtime.pipeline_observer is not None
+            calls.append("visuals exit")
+            raise RuntimeError("visual cleanup failed")
+
+    monkeypatch.setattr(
+        "datapipeline.profiles.executor.root_logging_scope",
+        logging_scope,
+    )
+    monkeypatch.setattr(
+        "datapipeline.profiles.executor.operation_observer",
+        observe_operation,
+    )
+    monkeypatch.setattr(
+        "datapipeline.profiles.executor.rich_visuals_supported",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "datapipeline.profiles.executor.visual_execution",
+        visuals,
+    )
+
+    with pytest.raises(RuntimeError, match="visual cleanup failed"):
+        with execution_scope(
+            runtime,
+            ObservabilitySettings(
+                visuals="on",
+                heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+                log_decision=LogLevelDecision(name="INFO", value=20),
+                log_output=_log_output(),
+            ),
+        ):
+            calls.append("work")
+
+    assert calls == [
+        "logging enter",
+        "operation enter",
+        "visuals enter",
+        "work",
+        "visuals exit",
+        "operation exit",
+        "logging exit",
+    ]
+    assert runtime.pipeline_observer is None
+    assert runtime.observe_node_events
+
+
+def test_execution_scope_preserves_existing_pipeline_observer(monkeypatch) -> None:
     runtime = _runtime()
     existing_observer = object()
     runtime.pipeline_observer = existing_observer
@@ -214,18 +270,16 @@ def test_run_execution_preserves_existing_pipeline_observer(monkeypatch) -> None
         lambda: False,
     )
 
-    run_execution(
-        ExecutionSpec(
-            observability=ObservabilitySettings(
-                visuals="on",
-                heartbeat_interval_seconds=None,
-                log_decision=LogLevelDecision(name="INFO", value=20),
-                log_output=_log_output(),
-            ),
-            runtime=runtime,
+    with execution_scope(
+        runtime,
+        ObservabilitySettings(
+            visuals="on",
+            heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+            log_decision=LogLevelDecision(name="INFO", value=20),
+            log_output=_log_output(),
         ),
-        lambda: None,
-    )
+    ):
+        pass
 
     assert runtime.pipeline_observer is existing_observer
     assert not runtime.observe_node_events
