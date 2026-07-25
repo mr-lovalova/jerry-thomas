@@ -11,7 +11,7 @@ from datapipeline.artifacts.planning import (
 from datapipeline.artifacts.series import prune_series_cache
 from datapipeline.cli.visuals.execution import route_execution_event
 from datapipeline.cli.visuals.rich.progress import visual_summary
-from datapipeline.config.tasks import SeriesTask
+from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.execution.events import RunStatus
 from datapipeline.execution.observability import CommandFinished
 from datapipeline.io.runs import (

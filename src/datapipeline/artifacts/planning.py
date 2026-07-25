@@ -17,14 +17,11 @@ from datapipeline.build.state import BuildState
 from datapipeline.config.dataset.dataset import DatasetConfig
 from datapipeline.config.preview import PREVIEW_STAGES, PreviewStage
 from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks import (
-    ArtifactTask,
-    CoverageTask,
-    DatasetTask,
-    MatrixTask,
-    RuntimeTask,
-    TicksTask,
-)
+from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask
+from datapipeline.config.tasks.coverage import CoverageTask
+from datapipeline.config.tasks.dataset import DatasetTask
+from datapipeline.config.tasks.matrix import MatrixTask
+from datapipeline.config.tasks.ticks import TicksTask
 from datapipeline.config.transforms import EnsureTicksConfig
 from datapipeline.io.output import output_destination_key
 from datapipeline.services.definitions import ArtifactHashes

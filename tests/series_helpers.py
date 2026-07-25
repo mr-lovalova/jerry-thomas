@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datapipeline.artifacts.specs import SERIES
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
-from datapipeline.config.tasks import SeriesTask
+from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.operations.artifacts.series import build_series_artifact
 from datapipeline.runtime import Runtime
 

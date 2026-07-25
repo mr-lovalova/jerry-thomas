@@ -25,17 +25,14 @@ from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.preview import PreviewStage
 from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks import (
-    ArtifactTask,
-    CoverageTask,
-    DatasetTask,
-    MatrixTask,
-    MetadataTask,
-    RuntimeTask,
-    SeriesTask,
-    CoverageStatsTask,
-    TicksTask,
-)
+from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask
+from datapipeline.config.tasks.coverage import CoverageTask
+from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
+from datapipeline.config.tasks.dataset import DatasetTask
+from datapipeline.config.tasks.matrix import MatrixTask
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.series import SeriesTask
+from datapipeline.config.tasks.ticks import TicksTask
 from datapipeline.execution.observability import CommandFinished
 from datapipeline.execution.settings import (
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
@@ -258,7 +255,6 @@ def _run_paths(tmp_path: Path, run_id: str = "r1") -> RunPaths:
     run_root = tmp_path / "runs" / run_id
     return RunPaths(
         serve_root=tmp_path,
-        runs_root=tmp_path / "runs",
         run_id=run_id,
         run_root=run_root,
         dataset_dir=run_root / "dataset",

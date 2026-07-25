@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pyarrow.parquet as parquet
 
-from datapipeline.config.profiles import ServeOutputConfig
+from datapipeline.config.profiles.output import ServeOutputConfig
 from tests.helpers.regression import read_jsonl, serve_dataset
 
 

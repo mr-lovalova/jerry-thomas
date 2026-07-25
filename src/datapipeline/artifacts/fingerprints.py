@@ -17,14 +17,12 @@ from datapipeline.config.sources import (
     SourceConfig,
 )
 from datapipeline.config.streams import SourceStreamConfig, StreamsConfig
-from datapipeline.config.tasks import (
-    ArtifactTask,
-    MetadataTask,
-    ScalerTask,
-    CoverageStatsTask,
-    TicksTask,
-    SeriesTask,
-)
+from datapipeline.config.tasks.base import ArtifactTask
+from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.scaler import ScalerTask
+from datapipeline.config.tasks.series import SeriesTask
+from datapipeline.config.tasks.ticks import TicksTask
 from datapipeline.services.definitions import ArtifactHashes, ProjectManifest
 
 # Increment when Jerry's core artifact semantics change without a config change.

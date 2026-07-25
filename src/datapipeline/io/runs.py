@@ -28,7 +28,6 @@ class RunPaths:
     """
 
     serve_root: Path
-    runs_root: Path
     run_id: str
     run_root: Path
     dataset_dir: Path
@@ -68,7 +67,6 @@ def get_run_paths(serve_root: Path, run_id: str | None = None) -> RunPaths:
 
     return RunPaths(
         serve_root=serve_root,
-        runs_root=runs_root,
         run_id=run_id,
         run_root=run_root,
         dataset_dir=dataset_dir,

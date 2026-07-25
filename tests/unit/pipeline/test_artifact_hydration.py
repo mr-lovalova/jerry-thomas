@@ -18,12 +18,10 @@ from datapipeline.build.state import (
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks import (
-    ArtifactTask,
-    MetadataTask,
-    TicksTask,
-    SeriesTask,
-)
+from datapipeline.config.tasks.base import ArtifactTask
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.series import SeriesTask
+from datapipeline.config.tasks.ticks import TicksTask
 from datapipeline.runtime import Runtime
 from datapipeline.services.definitions import ArtifactHashes
 from datapipeline.services.project_definition import load_project_definition

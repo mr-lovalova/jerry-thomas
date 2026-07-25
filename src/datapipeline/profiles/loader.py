@@ -4,19 +4,18 @@ from typing import Annotated
 from pydantic import Field
 from pydantic.type_adapter import TypeAdapter
 
-from datapipeline.config.profiles import (
-    BuildProfile,
+from datapipeline.config.profiles.base import Profile, ProfileCommand
+from datapipeline.config.profiles.build import BuildProfile
+from datapipeline.config.profiles.defaults import (
     BuildProfileDefaults,
-    InspectProfile,
     InspectProfileDefaults,
-    MaterializeProfile,
     MaterializeProfileDefaults,
-    Profile,
-    ProfileCommand,
     ProfileDefaults,
-    ServeProfile,
     ServeProfileDefaults,
 )
+from datapipeline.config.profiles.inspect import InspectProfile
+from datapipeline.config.profiles.materialize import MaterializeProfile
+from datapipeline.config.profiles.serve import ServeProfile
 from datapipeline.services.definitions import ProjectManifest
 from datapipeline.utils.load import read_yaml_document
 
@@ -97,20 +96,20 @@ def _validate_profile_layout(root: Path) -> None:
 
 def _load_profile_specs(
     project: ProjectManifest,
-    command: ProfileCommand | None = None,
-) -> tuple[list[Profile], dict[str, ProfileDefaults]]:
+    command: ProfileCommand,
+) -> tuple[list[Profile], ProfileDefaults | None]:
     root = project.profiles_dir
     _validate_profile_layout(root)
     specs: list[Profile] = []
-    defaults_by_kind: dict[str, ProfileDefaults] = {}
-    default_paths: dict[str, Path] = {}
-    profile_paths: dict[tuple[str, str], Path] = {}
+    defaults: ProfileDefaults | None = None
+    defaults_path: Path | None = None
+    profile_paths: dict[str, Path] = {}
     for path in sorted(root.glob("*.y*ml")):
         identity = _profile_identity_from_filename(path)
         if identity is None:
             continue
         expected_kind, profile_name = identity
-        if command is not None and expected_kind != command:
+        if expected_kind != command:
             continue
         if profile_name.lower() == "defaults":
             doc = _load_profile_doc(path, project)
@@ -121,17 +120,16 @@ def _load_profile_specs(
                     "Profile command comes from the defaults filename; "
                     "remove the 'cmd' key."
                 )
-            defaults = PROFILE_DEFAULTS_ADAPTER.validate_python(
+            loaded_defaults = PROFILE_DEFAULTS_ADAPTER.validate_python(
                 {"cmd": expected_kind, **doc}
             )
-            existing = defaults_by_kind.get(expected_kind)
-            if existing is not None:
+            if defaults is not None:
                 raise ValueError(
                     f"Duplicate {expected_kind} defaults are not allowed: "
-                    f"{default_paths[expected_kind]}, {path}"
+                    f"{defaults_path}, {path}"
                 )
-            defaults_by_kind[expected_kind] = defaults
-            default_paths[expected_kind] = path
+            defaults = loaded_defaults
+            defaults_path = path
             continue
         doc = _load_profile_doc(path, project)
         if not isinstance(doc, dict):
@@ -144,41 +142,25 @@ def _load_profile_specs(
         spec = PROFILE_ADAPTER.validate_python(
             {"cmd": expected_kind, "name": profile_name, **doc}
         )
-        identity_key = (expected_kind, profile_name)
-        existing_path = profile_paths.get(identity_key)
+        existing_path = profile_paths.get(profile_name)
         if existing_path is not None:
             raise ValueError(
                 f"Duplicate {expected_kind} profile names are not allowed: "
                 f"{profile_name} ({existing_path}, {path})"
             )
-        profile_paths[identity_key] = path
+        profile_paths[profile_name] = path
         specs.append(spec)
-    return specs, defaults_by_kind
-
-
-def profile_specs(
-    project: ProjectManifest,
-    cmd: ProfileCommand | None = None,
-) -> list[Profile]:
-    if cmd is not None:
-        profiles, _ = profile_specs_with_defaults(project, cmd=cmd)
-        return profiles
-
-    specs, _ = _load_profile_specs(project)
-    grouped = _group_profiles(specs)
-    return [profile for kind in PROFILE_KINDS for profile in grouped[kind]]
+    return specs, defaults
 
 
 def profile_specs_with_defaults(
     project: ProjectManifest,
     cmd: ProfileCommand,
 ) -> tuple[list[Profile], ProfileDefaults]:
-    specs, defaults_by_kind = _load_profile_specs(project, command=cmd)
-    grouped = _group_profiles(specs)
-    defaults = defaults_by_kind.get(cmd)
+    specs, defaults = _load_profile_specs(project, command=cmd)
     if defaults is None:
         defaults = PROFILE_DEFAULTS_ADAPTER.validate_python({"cmd": cmd})
-    return list(grouped[cmd]), defaults
+    return _ordered_profiles(specs), defaults
 
 
 def apply_profile_defaults(
@@ -218,12 +200,3 @@ def _ordered_profiles(specs: list[Profile]) -> list[Profile]:
     unordered = [spec for spec in specs if spec.order is None]
     ordered.sort(key=lambda spec: (spec.order, spec.name))
     return ordered + unordered
-
-
-def _group_profiles(specs: list[Profile]) -> dict[str, list[Profile]]:
-    grouped: dict[str, list[Profile]] = {kind: [] for kind in PROFILE_KINDS}
-    for spec in specs:
-        grouped[spec.cmd].append(spec)
-    for kind_specs in grouped.values():
-        kind_specs[:] = _ordered_profiles(kind_specs)
-    return grouped

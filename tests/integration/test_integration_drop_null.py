@@ -3,10 +3,10 @@ from datetime import datetime, timezone
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import VECTOR_METADATA
-from datapipeline.config.tasks import MetadataTask
+from datapipeline.config.tasks.metadata import MetadataTask
 from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.artifacts.metadata import build_metadata_artifact
-from datapipeline.pipelines.dataset.postprocess import apply_postprocess
+from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.sample.input import open_samples
 from datapipeline.services.project_definition import load_project_definition
 from datapipeline.services.runtime_compiler import compile_runtime
@@ -45,11 +45,10 @@ def test_drop_with_metadata_and_partitioned_streams(copy_fixture):
         key_plan=None,
     )
     samples = list(
-        apply_postprocess(
+        build_postprocess_plan(
             dataset.postprocess,
             schema,
-            assembled_samples,
-        )
+        ).apply(assembled_samples)
     )
 
     # Source emits ticks every 2h; ensure_cadence fills 1h gaps with None.

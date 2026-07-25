@@ -30,7 +30,8 @@ from datapipeline.config.dataset.split import (
     TimeSplitConfig,
 )
 from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.tasks import MetadataTask, SeriesTask
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.config.transforms import (
     EnsureCadenceConfig,
     EnsureTicksConfig,
@@ -59,7 +60,7 @@ from datapipeline.operations.artifacts.metadata import build_metadata_artifact
 from datapipeline.operations.artifacts.series import build_series_artifact
 from datapipeline.operations.runtime.dataset import _record_preview_stream
 from datapipeline.parsers.identity import IdentityParser
-from datapipeline.pipelines.dataset.postprocess import apply_postprocess
+from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.dataset.pipeline import (
     build_dataset_pipeline,
     run_dataset_pipeline,
@@ -1239,11 +1240,10 @@ def test_postprocess_rejects_targets_absent_from_metadata(tmp_path: Path) -> Non
 
     with pytest.raises(RuntimeError, match="no target entries"):
         list(
-            apply_postprocess(
+            build_postprocess_plan(
                 runtime.dataset.postprocess,
                 schema,
-                iter(samples),
-            )
+            ).apply(iter(samples))
         )
 
 
@@ -1269,7 +1269,9 @@ def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -
     dataset_out = list(run_dataset_pipeline(ctx, schema, None))
 
     manual = open_samples(ctx, [cfg.id], "1h")
-    manual_out = list(apply_postprocess(runtime.dataset.postprocess, schema, manual))
+    manual_out = list(
+        build_postprocess_plan(runtime.dataset.postprocess, schema).apply(manual)
+    )
 
     assert dataset_out == manual_out
 

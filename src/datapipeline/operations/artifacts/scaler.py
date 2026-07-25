@@ -12,7 +12,7 @@ from datapipeline.artifacts.scaler import (
 from datapipeline.artifacts.specs import dataset_requires_scaler
 from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.dataset.split import DatasetFold, TimeSplitConfig
-from datapipeline.config.tasks import ScalerTask
+from datapipeline.config.tasks.scaler import ScalerTask
 from datapipeline.domain.series import SeriesRecord
 from datapipeline.domain.sample_key import SampleKeyContract
 from datapipeline.execution.context import PipelineContext

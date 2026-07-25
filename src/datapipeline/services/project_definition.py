@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from datapipeline.artifacts.fingerprints import calculate_artifact_hashes
-from datapipeline.config.tasks import ArtifactTask, RuntimeTask
+from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask
 from datapipeline.services.dataset import (
     dataset_from_document,
     validate_dataset_streams,

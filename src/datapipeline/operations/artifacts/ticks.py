@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-from datapipeline.config.tasks import TicksTask
+from datapipeline.config.tasks.ticks import TicksTask
 from datapipeline.domain.value import normalize_data_value
 from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.observability import OperationProgressTracker

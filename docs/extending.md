@@ -35,7 +35,7 @@ belong to `datapipeline.combiners`, not the iterator-oriented
 A custom runtime operation receives exactly three positional arguments:
 
 ```python
-from datapipeline.config.tasks import RuntimeTask
+from datapipeline.config.tasks.base import RuntimeTask
 from datapipeline.operations.persistence import (
     RoutedRuntimeOutput,
     RuntimeOutput,

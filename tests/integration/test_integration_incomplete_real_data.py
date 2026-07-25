@@ -7,11 +7,9 @@ from datapipeline.artifacts.specs import (
     SERIES,
     VECTOR_METADATA,
 )
-from datapipeline.config.tasks import (
-    MetadataTask,
-    ScalerTask,
-    SeriesTask,
-)
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.scaler import ScalerTask
+from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.artifacts.metadata import build_metadata_artifact
 from datapipeline.operations.artifacts.scaler import build_scaler_artifact

@@ -7,7 +7,7 @@ import pytest
 from datapipeline.cli.command_router import execute_command
 from datapipeline.cli.output_options import build_cli_output_config
 from datapipeline.cli.parser_builder import build_parser
-from datapipeline.config.profiles import ServeOutputConfig
+from datapipeline.config.profiles.output import ServeOutputConfig
 
 
 def _serve_args() -> SimpleNamespace:

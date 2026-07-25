@@ -4,12 +4,11 @@ from typing import Sequence
 
 from datapipeline.config.dataset.split import split_output_ids
 from datapipeline.config.preview import PreviewStage
-from datapipeline.config.profiles import (
-    InspectProfile,
-    ServeOutputConfig,
-    ServeProfile,
-)
-from datapipeline.config.tasks import DatasetTask, RuntimeTask
+from datapipeline.config.profiles.inspect import InspectProfile
+from datapipeline.config.profiles.output import ServeOutputConfig
+from datapipeline.config.profiles.serve import ServeProfile
+from datapipeline.config.tasks.base import RuntimeTask
+from datapipeline.config.tasks.dataset import DatasetTask
 from datapipeline.execution.settings import (
     LogOutputTarget,
     ObservabilitySettings,

@@ -12,13 +12,12 @@ from datapipeline.config.dataset.split import (
     TimeSplitConfig,
 )
 from datapipeline.config.preview import PreviewStage
-from datapipeline.config.profiles import (
-    BuildProfile,
-    InspectProfile,
-    ServeOutputConfig,
-    ServeProfile,
-)
-from datapipeline.config.tasks import DatasetTask, RuntimeTask
+from datapipeline.config.profiles.build import BuildProfile
+from datapipeline.config.profiles.inspect import InspectProfile
+from datapipeline.config.profiles.output import ServeOutputConfig
+from datapipeline.config.profiles.serve import ServeProfile
+from datapipeline.config.tasks.base import RuntimeTask
+from datapipeline.config.tasks.dataset import DatasetTask
 from datapipeline.execution.settings import LogOutputTarget
 from datapipeline.profiles.runtime_profiles import (
     resolve_inspect_profiles,

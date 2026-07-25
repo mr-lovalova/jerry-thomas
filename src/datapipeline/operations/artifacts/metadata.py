@@ -28,7 +28,7 @@ from datapipeline.config.dataset.split import (
     FoldRole,
     TimeSplitConfig,
 )
-from datapipeline.config.tasks import MetadataTask
+from datapipeline.config.tasks.metadata import MetadataTask
 from datapipeline.domain.series_id import base_id
 from datapipeline.execution.observability import OperationProgressTracker
 from datapipeline.execution.settings import resolve_heartbeat_interval_seconds

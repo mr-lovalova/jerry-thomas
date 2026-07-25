@@ -3,7 +3,7 @@ from pathlib import Path
 from datapipeline.analysis.vector.coverage_stats import CoverageStatsAccumulator
 from datapipeline.artifacts.models import CoverageStatsArtifact
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
-from datapipeline.config.tasks import CoverageStatsTask
+from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
 from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan

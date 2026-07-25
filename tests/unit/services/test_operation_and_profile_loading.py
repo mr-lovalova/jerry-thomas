@@ -2,18 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.profiles import MaterializeProfile
-from datapipeline.config.tasks import (
-    ArtifactTask,
-    CoverageTask,
-    DatasetTask,
-    MatrixOptions,
-    MatrixTask,
-    RuntimeTask,
-)
+from datapipeline.config.profiles.materialize import MaterializeProfile
+from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask
+from datapipeline.config.tasks.coverage import CoverageTask
+from datapipeline.config.tasks.dataset import DatasetTask
+from datapipeline.config.tasks.matrix import MatrixOptions, MatrixTask
 from datapipeline.profiles.loader import (
     apply_profile_defaults,
-    profile_specs,
     profile_specs_with_defaults,
 )
 from datapipeline.services.operations import (
@@ -37,19 +32,19 @@ def _all_tasks(project_yaml: Path):
 
 
 def _serve_profiles(project_yaml: Path):
-    return list(profile_specs(load_project(project_yaml), cmd="serve"))
+    return profile_specs_with_defaults(load_project(project_yaml), cmd="serve")[0]
 
 
 def _build_profiles(project_yaml: Path):
-    return list(profile_specs(load_project(project_yaml), cmd="build"))
+    return profile_specs_with_defaults(load_project(project_yaml), cmd="build")[0]
 
 
 def _inspect_profiles(project_yaml: Path):
-    return list(profile_specs(load_project(project_yaml), cmd="inspect"))
+    return profile_specs_with_defaults(load_project(project_yaml), cmd="inspect")[0]
 
 
 def _materialize_profiles(project_yaml: Path):
-    return list(profile_specs(load_project(project_yaml), cmd="materialize"))
+    return profile_specs_with_defaults(load_project(project_yaml), cmd="materialize")[0]
 
 
 def _serve_defaults(project_yaml: Path):
@@ -917,7 +912,7 @@ def test_command_load_ignores_malformed_other_profile_kinds(tmp_path):
 
     assert [profile.name for profile in _serve_profiles(project_yaml)] == ["train"]
     with pytest.raises(TypeError, match="one mapping profile"):
-        profile_specs(load_project(project_yaml))
+        _build_profiles(project_yaml)
 
 
 def test_execution_policy_is_not_allowed_on_concrete_profiles(tmp_path):

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Sequence
 
 from datapipeline.cli.visuals.execution import emit_execution_message
-from datapipeline.config.profiles import MaterializeProfile
+from datapipeline.config.profiles.materialize import MaterializeProfile
 from datapipeline.execution.settings import (
     LogOutputTarget,
     resolve_execution_log_outputs,

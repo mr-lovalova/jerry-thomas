@@ -8,21 +8,22 @@ from pydantic import ValidationError
 
 from datapipeline.artifacts.settings import BuildSettings
 from datapipeline.config.preview import PreviewStage
-from datapipeline.config.profiles import (
+from datapipeline.config.profiles.base import Profile, ProfileCommand
+from datapipeline.config.profiles.build import (
     BuildProfile,
-    BuildProfileDefaults,
-    InspectProfile,
-    InspectProfileDefaults,
-    MaterializeProfile,
-    MaterializeProfileDefaults,
-    Profile,
-    ProfileCommand,
-    ProfileDefaults,
-    ServeOutputConfig,
-    ServeProfile,
-    ServeProfileDefaults,
     normalize_artifact_mode,
 )
+from datapipeline.config.profiles.defaults import (
+    BuildProfileDefaults,
+    InspectProfileDefaults,
+    MaterializeProfileDefaults,
+    ProfileDefaults,
+    ServeProfileDefaults,
+)
+from datapipeline.config.profiles.inspect import InspectProfile
+from datapipeline.config.profiles.materialize import MaterializeProfile
+from datapipeline.config.profiles.output import ServeOutputConfig
+from datapipeline.config.profiles.serve import ServeProfile
 from datapipeline.execution.settings import (
     LogOutputTarget,
     resolve_execution_log_outputs,

@@ -4,7 +4,7 @@ from pathlib import Path
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.project import ProjectConfig
 from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks import ArtifactTask, RuntimeTask
+from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask
 from datapipeline.services.definitions import (
     ArtifactHashes,
     ProjectDefinition,

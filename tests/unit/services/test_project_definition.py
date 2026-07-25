@@ -15,13 +15,11 @@ from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
 from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks import (
-    ArtifactTask,
-    CoverageStatsTask,
-    MetadataTask,
-    ScalerTask,
-    SeriesTask,
-)
+from datapipeline.config.tasks.base import ArtifactTask
+from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.scaler import ScalerTask
+from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.services import config_inventory
 from datapipeline.services.project_definition import load_project_definition
 from datapipeline.services.runtime_compiler import compile_runtime

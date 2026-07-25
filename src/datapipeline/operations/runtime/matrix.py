@@ -2,7 +2,7 @@ from itertools import islice
 
 from datapipeline.analysis.vector.matrix import MatrixBuilder, render_matrix_html
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
-from datapipeline.config.tasks import MatrixTask
+from datapipeline.config.tasks.matrix import MatrixTask
 from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.persistence import RuntimeOutput
 from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan

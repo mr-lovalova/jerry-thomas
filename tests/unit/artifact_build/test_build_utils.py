@@ -16,7 +16,7 @@ from datapipeline.config.dataset.split import (
     TimeInterval,
     TimeSplitConfig,
 )
-from datapipeline.config.tasks import MetadataTask
+from datapipeline.config.tasks.metadata import MetadataTask
 from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.artifacts import metadata as artifact_metadata
 from datapipeline.operations.artifacts.metadata import (

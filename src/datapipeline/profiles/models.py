@@ -4,7 +4,7 @@ from typing import Literal, Sequence
 from datapipeline.artifacts.settings import BuildSettings
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.preview import PreviewStage
-from datapipeline.config.tasks import ArtifactTask, RuntimeTask
+from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask
 from datapipeline.execution.settings import (
     ObservabilitySettings,
 )

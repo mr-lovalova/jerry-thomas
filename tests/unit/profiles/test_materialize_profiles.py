@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.profiles import MaterializeProfile
+from datapipeline.config.profiles.materialize import MaterializeProfile
 from datapipeline.execution.settings import (
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,

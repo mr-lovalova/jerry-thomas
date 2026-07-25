@@ -7,7 +7,7 @@ from datapipeline.artifacts.models import (
     ListCoverageColumnStats,
 )
 from datapipeline.artifacts.registry import COVERAGE_STATS_SPEC
-from datapipeline.config.tasks import CoverageTask
+from datapipeline.config.tasks.coverage import CoverageTask
 from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.persistence import RuntimeOutput
 from datapipeline.runtime import Runtime

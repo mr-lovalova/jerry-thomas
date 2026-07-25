@@ -3,12 +3,7 @@ from datetime import datetime, timezone
 
 
 @dataclass
-class Record:
-    pass
-
-
-@dataclass
-class TemporalRecord(Record):
+class TemporalRecord:
     """Canonical time-series payload used throughout the pipeline."""
 
     time: datetime

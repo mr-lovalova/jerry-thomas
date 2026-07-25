@@ -16,8 +16,8 @@ from datapipeline.build.state import (
     save_build_state,
 )
 from datapipeline.cli.visuals.execution import emit_execution_message
-from datapipeline.config.profiles import ArtifactMode
-from datapipeline.config.tasks import ArtifactTask
+from datapipeline.config.profiles.build import ArtifactMode
+from datapipeline.config.tasks.base import ArtifactTask
 from datapipeline.execution.observability import emit_file_result, operation_scope
 from datapipeline.operations.persistence import persist_artifact_output
 from datapipeline.plugins import BUILD_OPERATIONS_EP

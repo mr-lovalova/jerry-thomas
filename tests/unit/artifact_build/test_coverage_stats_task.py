@@ -5,7 +5,7 @@ from datapipeline.artifacts.models import VectorMetadata
 from datapipeline.artifacts.specs import VECTOR_METADATA
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
-from datapipeline.config.tasks import CoverageStatsTask
+from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
 from datapipeline.execution.pipeline import Stage

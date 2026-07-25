@@ -20,7 +20,7 @@ from datapipeline.config.dataset.split import (
     TimeInterval,
     TimeSplitConfig,
 )
-from datapipeline.config.tasks import ScalerTask
+from datapipeline.config.tasks.scaler import ScalerTask
 from datapipeline.config.transforms import EnsureCadenceConfig, ForwardFillConfig
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.operations.artifacts.scaler import build_scaler_artifact

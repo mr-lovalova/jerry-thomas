@@ -8,10 +8,7 @@ from datapipeline.config.dataset.postprocess import PostprocessConfig
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
 from datapipeline.execution.context import PipelineContext
-from datapipeline.pipelines.dataset.postprocess import (
-    apply_postprocess,
-    build_postprocess_plan,
-)
+from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.dataset.pipeline import build_dataset_pipeline
 from datapipeline.runtime import Runtime
 
@@ -125,7 +122,7 @@ def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
 
     schema = _catalog(runtime)
     plan = build_postprocess_plan(runtime.dataset.postprocess, schema)
-    output = list(apply_postprocess(runtime.dataset.postprocess, schema, iter(samples)))
+    output = list(plan.apply(iter(samples)))
 
     assert [stage.name for stage in plan.stages] == [
         "conform_features",
@@ -179,11 +176,10 @@ def test_postprocess_applies_explicit_target_policies(tmp_path) -> None:
     )
 
     output = list(
-        apply_postprocess(
+        build_postprocess_plan(
             runtime.dataset.postprocess,
             _catalog(runtime),
-            iter([sample]),
-        )
+        ).apply(iter([sample]))
     )
 
     assert output[0].features.values == {"feature": 2.0}
@@ -230,11 +226,10 @@ def test_metadata_coverage_counts_never_change_the_dataset_schema(
     )
 
     output = list(
-        apply_postprocess(
+        build_postprocess_plan(
             runtime.dataset.postprocess,
             _catalog(runtime),
-            iter([sample]),
-        )
+        ).apply(iter([sample]))
     )
 
     assert output[0].features.values == {"sparse": 1.0, "complete": 2.0}

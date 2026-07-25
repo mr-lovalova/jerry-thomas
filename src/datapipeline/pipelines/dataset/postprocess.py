@@ -90,16 +90,6 @@ def build_postprocess_plan(
     return PostprocessPlan(stages=tuple(stages))
 
 
-def apply_postprocess(
-    config: PostprocessConfig,
-    schema: VectorSchema,
-    samples: Iterator[Sample],
-) -> Iterator[Sample]:
-    """Apply the same ordered postprocess stages used by the dataset pipeline."""
-
-    return build_postprocess_plan(config, schema).apply(samples)
-
-
 def _reject_undeclared_targets(stream: Iterator[Sample]) -> Iterator[Sample]:
     for sample in stream:
         if sample.targets is not None:

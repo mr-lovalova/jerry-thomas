@@ -26,13 +26,11 @@ from datapipeline.build.state import (
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.tasks import (
-    ArtifactTask,
-    MetadataTask,
-    ScalerTask,
-    CoverageStatsTask,
-    SeriesTask,
-)
+from datapipeline.config.tasks.base import ArtifactTask
+from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.scaler import ScalerTask
+from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.execution.settings import (
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,

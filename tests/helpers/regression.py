@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from datapipeline.config.profiles import ServeOutputConfig
+from datapipeline.config.profiles.output import ServeOutputConfig
 from datapipeline.config.preview import PreviewStage
 from datapipeline.profiles.models import RuntimeRunRequest
 from datapipeline.profiles.orchestration import run_profiles

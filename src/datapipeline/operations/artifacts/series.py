@@ -18,7 +18,7 @@ from datapipeline.artifacts.series import (
     write_series_rows,
 )
 from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.config.tasks import SeriesTask
+from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.domain.sample_key import SampleKeyContract
 from datapipeline.domain.series import SeriesSequence
 from datapipeline.domain.series_id import base_id

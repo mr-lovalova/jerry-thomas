@@ -1,18 +1,14 @@
 from typing import Any
 
-from datapipeline.config.tasks import (
-    ArtifactTask,
-    CoverageStatsTask,
-    CoverageTask,
-    DatasetTask,
-    MatrixTask,
-    MetadataTask,
-    RuntimeTask,
-    ScalerTask,
-    SeriesTask,
-    Task,
-    TicksTask,
-)
+from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask, Task
+from datapipeline.config.tasks.coverage import CoverageTask
+from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
+from datapipeline.config.tasks.dataset import DatasetTask
+from datapipeline.config.tasks.matrix import MatrixTask
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.scaler import ScalerTask
+from datapipeline.config.tasks.series import SeriesTask
+from datapipeline.config.tasks.ticks import TicksTask
 from datapipeline.services.config_inventory import pipeline_yaml_files
 from datapipeline.services.definitions import ProjectManifest
 from datapipeline.utils.load import YamlDocument, read_yaml_document

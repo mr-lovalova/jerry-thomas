@@ -8,12 +8,10 @@ from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipel
 from datapipeline.artifacts.planning import ArtifactGraph
 from datapipeline.artifacts.validation import validate_artifact_plan
 from datapipeline.cli.visuals.execution import emit_execution_message
-from datapipeline.config.tasks import (
-    ArtifactTask,
-    CoverageTask,
-    DatasetTask,
-    MatrixTask,
-)
+from datapipeline.config.tasks.base import ArtifactTask
+from datapipeline.config.tasks.coverage import CoverageTask
+from datapipeline.config.tasks.dataset import DatasetTask
+from datapipeline.config.tasks.matrix import MatrixTask
 from datapipeline.execution.observability import operation_scope
 from datapipeline.operations.persistence import persist_runtime_result
 from datapipeline.operations.runtime.coverage import run_coverage_operation
