@@ -1,3 +1,4 @@
+import gzip
 import heapq
 import pickle
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
@@ -12,6 +13,7 @@ T = TypeVar("T")
 _BufferedItem = tuple[Any, bytes]
 _MAX_OPEN_RUNS = 64
 _MERGE_PROGRESS_INTERVAL = 100_000
+_SPILL_COMPRESSION_LEVEL = 1
 
 
 @dataclass(frozen=True)
@@ -149,10 +151,14 @@ def _write_serialized_run(
     run_id: int,
     items: Iterable[_BufferedItem],
 ) -> Path:
-    path = temp_dir / f"run-{run_id}.pickle"
-    with path.open("wb") as fh:
+    path = temp_dir / f"run-{run_id}.pickle.gz"
+    with gzip.open(
+        path,
+        "wb",
+        compresslevel=_SPILL_COMPRESSION_LEVEL,
+    ) as output:
         for _, payload in items:
-            fh.write(payload)
+            output.write(payload)
     return path
 
 
@@ -170,10 +176,14 @@ def _merge_pass(
     progress.merging(0, input_items, pass_id)
     for start in range(0, len(run_paths), _MAX_OPEN_RUNS):
         group = run_paths[start : start + _MAX_OPEN_RUNS]
-        merged_path = temp_dir / f"merged-{pass_id}-{len(merged_paths)}.pickle"
-        with merged_path.open("wb") as fh:
+        merged_path = temp_dir / f"merged-{pass_id}-{len(merged_paths)}.pickle.gz"
+        with gzip.open(
+            merged_path,
+            "wb",
+            compresslevel=_SPILL_COMPRESSION_LEVEL,
+        ) as output:
             for item in _merge_runs(group, key):
-                pickle.dump(item, fh, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(item, output, protocol=pickle.HIGHEST_PROTOCOL)
                 merged_items += 1
                 pending_progress += 1
                 if pending_progress == _MERGE_PROGRESS_INTERVAL:
@@ -219,7 +229,7 @@ def _merge_runs(run_paths: Sequence[Path], key: Callable[[T], Any]) -> Iterator[
 
 
 def _read_run(path: Path) -> Generator[T, None, None]:
-    with path.open("rb") as fh:
+    with gzip.open(path, "rb") as fh:
         while True:
             try:
                 yield pickle.load(fh)

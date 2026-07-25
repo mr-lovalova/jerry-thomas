@@ -19,6 +19,12 @@ class StableSortItem:
     position: int
 
 
+@dataclass
+class CompressibleSortItem:
+    value: int
+    padding: str
+
+
 class UnpickleableSortItem:
     def __init__(self, value: int) -> None:
         self.value = value
@@ -47,6 +53,23 @@ def test_batch_sort_orders_items_across_merge_passes(monkeypatch) -> None:
     ordered = list(batch_sort(items, buffer_bytes=1, key=lambda item: item.value))
 
     assert [item.value for item in ordered] == [1, 2, 3, 4, 5]
+
+
+def test_spill_run_is_compressed_and_readable(tmp_path) -> None:
+    items = [
+        CompressibleSortItem(value=index, padding="repeated-value-" * 100)
+        for index in range(100)
+    ]
+    serialized = [
+        (item.value, pickle.dumps(item, protocol=pickle.HIGHEST_PROTOCOL))
+        for item in items
+    ]
+
+    path = sort_module._write_serialized_run(tmp_path, 0, serialized)
+
+    assert path.name == "run-0.pickle.gz"
+    assert list(sort_module._read_run(path)) == items
+    assert path.stat().st_size < sum(len(payload) for _, payload in serialized) // 4
 
 
 def test_batch_sort_reports_buffered_and_merged_work(monkeypatch) -> None:
