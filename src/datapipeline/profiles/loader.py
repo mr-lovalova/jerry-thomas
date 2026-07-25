@@ -17,10 +17,6 @@ from datapipeline.config.profiles import (
     ServeProfile,
     ServeProfileDefaults,
 )
-from datapipeline.services.config_refs import (
-    interpolate_config_vars,
-    resolve_config_refs,
-)
 from datapipeline.services.definitions import ProjectManifest
 from datapipeline.utils.load import read_yaml_document
 
@@ -50,12 +46,7 @@ PROFILE_DEFAULTS_ADAPTER: TypeAdapter[ProfileDefaultsModel] = TypeAdapter(
 
 def _load_profile_doc(path: Path, project: ProjectManifest):
     document = read_yaml_document(path, require_mapping=False)
-    doc = resolve_config_refs(
-        document.data,
-        project_yaml=project.path,
-        env=project.environment,
-    )
-    return interpolate_config_vars(doc, project.variables)
+    return project.resolve_config(document.data)
 
 
 def _profile_identity_from_filename(

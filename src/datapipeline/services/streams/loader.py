@@ -5,10 +5,6 @@ from pydantic import TypeAdapter
 from datapipeline.config.sources import SourceConfig
 from datapipeline.config.streams import StreamConfig, StreamsConfig
 from datapipeline.services.config_inventory import pipeline_yaml_files
-from datapipeline.services.config_refs import (
-    interpolate_config_vars,
-    resolve_config_refs,
-)
 from datapipeline.services.definitions import ProjectManifest
 from datapipeline.services.streams.validation import validate_stream_configs
 from datapipeline.utils.load import YamlDocument, read_yaml_document
@@ -43,12 +39,7 @@ def _source_from_document(
     project: ProjectManifest,
     document: YamlDocument,
 ) -> SourceConfig:
-    data = resolve_config_refs(
-        document.data,
-        project_yaml=project.path,
-        env=project.environment,
-    )
-    data = interpolate_config_vars(data, project.variables)
+    data = project.resolve_config(document.data)
     if not data.get("id"):
         raise ValueError(f"Missing 'id' in source file: {document.path}")
     return SourceConfig.model_validate(data)
@@ -58,12 +49,7 @@ def _stream_from_document(
     project: ProjectManifest,
     document: YamlDocument,
 ) -> StreamConfig:
-    data = resolve_config_refs(
-        document.data,
-        project_yaml=project.path,
-        env=project.environment,
-    )
-    data = interpolate_config_vars(data, project.variables)
+    data = project.resolve_config(document.data)
     if not data.get("id"):
         raise ValueError(f"Missing 'id' in stream file: {document.path}")
     return _STREAM_CONFIG_ADAPTER.validate_python(data)
@@ -78,12 +64,7 @@ def _declared_ids(
         raw_id = document.data.get("id")
         if raw_id is None:
             raise ValueError(f"Missing 'id' in config file: {document.path}")
-        resolved_id = resolve_config_refs(
-            raw_id,
-            project_yaml=project.path,
-            env=project.environment,
-        )
-        resolved_id = interpolate_config_vars(resolved_id, project.variables)
+        resolved_id = project.resolve_config(raw_id)
         if not isinstance(resolved_id, str) or not resolved_id.strip():
             raise ValueError(f"Invalid 'id' in config file: {document.path}")
         resolved_id = resolved_id.strip()

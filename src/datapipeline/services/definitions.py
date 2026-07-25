@@ -7,6 +7,10 @@ from datapipeline.config.dataset.dataset import DatasetConfig
 from datapipeline.config.project import ProjectConfig
 from datapipeline.config.streams import StreamsConfig
 from datapipeline.config.tasks import ArtifactTask, RuntimeTask
+from datapipeline.services.config_refs import (
+    interpolate_config_vars,
+    resolve_config_refs,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +25,14 @@ class ProjectManifest:
     artifacts_root: Path
     operations_dir: Path | None
     profiles_dir: Path
+
+    def resolve_config(self, value: Any) -> Any:
+        value = resolve_config_refs(
+            value,
+            project_yaml=self.path,
+            env=self.environment,
+        )
+        return interpolate_config_vars(value, self.variables)
 
 
 @dataclass(frozen=True, slots=True)

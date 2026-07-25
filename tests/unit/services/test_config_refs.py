@@ -179,6 +179,33 @@ def test_config_refs_resolve_full_and_embedded_env_values(tmp_path: Path) -> Non
     }
 
 
+def test_project_manifest_resolves_env_before_project_variables(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CONFIG_VALUE", "${window}")
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    _write_project_files(project_root)
+    project = load_project(
+        _write_project_yaml(
+            project_root,
+            globals_lines=["window: 21"],
+        )
+    )
+    monkeypatch.setenv("CONFIG_VALUE", "999")
+
+    assert project.resolve_config(
+        {
+            "embedded": "raw/${env:CONFIG_VALUE}",
+            "typed": "${env:CONFIG_VALUE}",
+        }
+    ) == {
+        "embedded": "raw/21",
+        "typed": 21,
+    }
+
+
 def test_config_refs_reject_unsupported_schemes(tmp_path: Path) -> None:
     with pytest.raises(
         ValueError,

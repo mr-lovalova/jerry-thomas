@@ -14,10 +14,6 @@ from datapipeline.config.tasks import (
     TicksTask,
 )
 from datapipeline.services.config_inventory import pipeline_yaml_files
-from datapipeline.services.config_refs import (
-    interpolate_config_vars,
-    resolve_config_refs,
-)
 from datapipeline.services.definitions import ProjectManifest
 from datapipeline.utils.load import YamlDocument, read_yaml_document
 
@@ -100,12 +96,7 @@ def _operation_from_document(
         raise ValueError(
             f"Operation filename '{path.name}' must use a lowercase operation ID."
         )
-    entry = resolve_config_refs(
-        document.data,
-        project_yaml=project.path,
-        env=project.environment,
-    )
-    entry = interpolate_config_vars(entry, project.variables)
+    entry = project.resolve_config(document.data)
     if "id" in entry:
         raise ValueError(
             f"{path} must not define id; the filename supplies '{operation_id}'."
