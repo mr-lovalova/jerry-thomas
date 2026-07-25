@@ -89,10 +89,7 @@ def test_iter_samples_runs_selected_fold_and_hydrates_artifacts(
 
     def run_fold(
         _context: object,
-        _features: object,
-        _cadence: object,
         output: FoldOutputPlan,
-        **_kwargs: object,
     ) -> Iterator[Sample]:
         calls.append(
             (

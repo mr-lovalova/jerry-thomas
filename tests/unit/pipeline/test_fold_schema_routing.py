@@ -124,8 +124,6 @@ def test_shared_fold_scan_projects_each_sample_to_its_training_schema(
     output = list(
         run_fold_outputs_pipeline(
             PipelineContext(runtime),
-            [feature],
-            "1d",
             (early, later),
         )
     )

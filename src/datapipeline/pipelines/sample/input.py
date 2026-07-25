@@ -50,14 +50,12 @@ def open_samples(
 def build_sample_input(
     context: PipelineContext,
     feature_ids: Collection[str],
-    group_by_cadence: str,
     target_ids: Collection[str] = (),
-    sample_keys: Sequence[str] = (),
     key_plan: RectangularKeyPlan | None = None,
 ) -> Input:
+    sample = context.runtime.dataset.sample
     selected_feature_ids = frozenset(feature_ids)
     selected_target_ids = frozenset(target_ids)
-    sample_key_fields = tuple(sample_keys)
     progress = None
     if key_plan is not None:
         progress = partial(
@@ -68,40 +66,15 @@ def build_sample_input(
     return Input(
         name="assemble_samples",
         open=partial(
-            _open_samples,
+            open_samples,
             context,
             selected_feature_ids,
-            group_by_cadence,
+            sample.cadence,
             selected_target_ids,
-            sample_key_fields,
+            tuple(sample.keys),
             key_plan,
         ),
         progress=progress,
-    )
-
-
-def _open_samples(
-    context: PipelineContext,
-    feature_ids: frozenset[str],
-    group_by_cadence: str,
-    target_ids: frozenset[str],
-    sample_keys: Sequence[str],
-    key_plan: RectangularKeyPlan | None,
-) -> Iterator[Sample]:
-    if not feature_ids and not target_ids:
-        return iter(())
-
-    manifest_path, manifest = _require_series(
-        context,
-        group_by_cadence,
-        sample_keys,
-    )
-    return _samples_from_series(
-        manifest_path,
-        manifest,
-        feature_ids,
-        target_ids,
-        key_plan,
     )
 
 

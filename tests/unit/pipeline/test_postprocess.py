@@ -75,8 +75,6 @@ def test_dataset_pipeline_assembles_before_postprocess(tmp_path) -> None:
 
     pipeline = build_dataset_pipeline(
         PipelineContext(runtime),
-        [],
-        "1h",
         _catalog(runtime),
         None,
     )

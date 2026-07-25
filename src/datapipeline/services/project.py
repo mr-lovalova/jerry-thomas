@@ -15,14 +15,7 @@ from datapipeline.utils.load import read_yaml_document
 
 def _config_roots(project_yaml: Path, value: str | list[str]) -> tuple[Path, ...]:
     paths = value if isinstance(value, list) else [value]
-    return tuple(_pipeline_config_path(project_yaml, path) for path in paths)
-
-
-def _pipeline_config_path(project_yaml: Path, value: str) -> Path:
-    path = Path(value)
-    if not path.is_absolute():
-        path = project_yaml.parent / path
-    return path.resolve()
+    return tuple(resolve_project_path(project_yaml, path) for path in paths)
 
 
 def load_project(project_yaml: Path) -> ProjectManifest:
@@ -48,7 +41,7 @@ def load_project(project_yaml: Path) -> ProjectManifest:
     config = ProjectConfig.model_validate(data)
 
     operations_dir = (
-        _pipeline_config_path(path, config.paths.operations)
+        resolve_project_path(path, config.paths.operations)
         if config.paths.operations is not None
         else None
     )
@@ -59,7 +52,7 @@ def load_project(project_yaml: Path) -> ProjectManifest:
         environment=MappingProxyType(environment),
         stream_dirs=_config_roots(path, config.paths.streams),
         source_dirs=_config_roots(path, config.paths.sources),
-        dataset_path=_pipeline_config_path(path, config.paths.dataset),
+        dataset_path=resolve_project_path(path, config.paths.dataset),
         artifacts_root=resolve_project_path(path, config.paths.artifacts),
         operations_dir=operations_dir,
         profiles_dir=resolve_project_path(path, config.paths.profiles or "./profiles"),

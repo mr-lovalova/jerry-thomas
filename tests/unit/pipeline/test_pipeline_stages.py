@@ -77,7 +77,7 @@ from datapipeline.pipelines.sample.keys import (
     sample_domain_key_plan,
     window_key_plan,
 )
-from datapipeline.pipelines.sample.input import open_samples
+from datapipeline.pipelines.sample.input import build_sample_input, open_samples
 from datapipeline.runtime import (
     AlignedRuntimeStream,
     AsOfRuntimeStream,
@@ -1260,15 +1260,13 @@ def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -
 
     pipeline = build_dataset_pipeline(
         ctx,
-        [cfg],
-        "1h",
         schema,
         None,
     )
     assert isinstance(pipeline.input, Input)
     assert pipeline.input.progress is None
 
-    dataset_out = list(run_dataset_pipeline(ctx, [cfg], "1h", schema, None))
+    dataset_out = list(run_dataset_pipeline(ctx, schema, None))
 
     manual = open_samples(ctx, [cfg.id], "1h")
     manual_out = list(apply_postprocess(runtime.dataset.postprocess, schema, manual))
@@ -1291,12 +1289,9 @@ def test_rectangular_dataset_source_reuses_its_key_plan(
     assert key_plan is not None
     pipeline = build_dataset_pipeline(
         context,
-        feature_configs,
-        "1h",
         schema,
         key_plan,
     )
-    feature_configs.clear()
 
     assert isinstance(pipeline.input, Input)
     assert pipeline.input.progress is not None
@@ -1311,6 +1306,22 @@ def test_rectangular_dataset_source_reuses_its_key_plan(
         total=len(samples),
         unit="samples",
     )
+
+
+def test_sample_input_snapshots_selected_ids(tmp_path: Path) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [{"time": _ts(0), "value": 1.0}],
+    )
+    context = PipelineContext(runtime)
+    config = SeriesConfig(stream="stream", id="price", field="value")
+    register_series(runtime, [config], "1h")
+    feature_ids = [config.id]
+
+    sample_input = build_sample_input(context, feature_ids)
+    feature_ids.clear()
+
+    assert list(sample_input.open()) == list(open_samples(context, [config.id], "1h"))
 
 
 def test_rectangular_features_and_targets_share_every_planned_key(

@@ -25,7 +25,6 @@ def _dataset_samples(project_yaml):
     definition = load_project_definition(project_yaml)
     runtime = compile_runtime(definition)
     hydrate_runtime_artifacts_for_pipeline(runtime, definition)
-    dataset = definition.dataset
     context = PipelineContext(runtime)
 
     # Ensure artifacts are materialized for the test run.
@@ -57,11 +56,8 @@ def _dataset_samples(project_yaml):
     return list(
         run_scaled_dataset_pipeline(
             context,
-            dataset.features,
-            dataset.sample.cadence,
             schema=metadata.catalog,
             key_plan=None,
-            target_configs=dataset.targets,
         )
     )
 

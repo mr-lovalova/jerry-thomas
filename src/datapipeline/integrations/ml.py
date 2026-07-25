@@ -141,11 +141,7 @@ class _SampleSource:
         if self.fold_output is not None:
             samples = run_fold_dataset_pipeline(
                 context,
-                dataset.features,
-                dataset.sample.cadence,
                 self.fold_output,
-                target_configs=dataset.targets,
-                sample_keys=dataset.sample.keys,
             )
         else:
             run = (
@@ -155,12 +151,8 @@ class _SampleSource:
             )
             samples = run(
                 context,
-                dataset.features,
-                dataset.sample.cadence,
                 self.schema,
                 self.key_plan,
-                target_configs=dataset.targets,
-                sample_keys=dataset.sample.keys,
             )
 
         try:

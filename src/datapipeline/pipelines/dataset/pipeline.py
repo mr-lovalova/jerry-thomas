@@ -1,5 +1,5 @@
 from collections.abc import Generator, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 from itertools import islice
 
@@ -15,7 +15,6 @@ from datapipeline.artifacts.scaler import (
     StandardScalerArtifact,
 )
 from datapipeline.artifacts.specs import dataset_requires_scaler
-from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.dataset.split import resolve_fold_output
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
@@ -142,35 +141,23 @@ class _FoldRoute:
 
 def run_dataset_pipeline(
     context: PipelineContext,
-    feature_configs: Sequence[SeriesConfig],
-    group_by_cadence: str,
     schema: VectorSchema,
     key_plan: RectangularKeyPlan | None,
-    target_configs: Sequence[SeriesConfig] | None = None,
-    sample_keys: Sequence[str] = (),
 ) -> Generator[Sample, None, None]:
     return run_pipeline(
         context,
         build_dataset_pipeline(
             context,
-            feature_configs,
-            group_by_cadence,
             schema,
             key_plan,
-            target_configs=target_configs,
-            sample_keys=sample_keys,
         ),
     )
 
 
 def build_dataset_pipeline(
     context: PipelineContext,
-    feature_configs: Sequence[SeriesConfig],
-    group_by_cadence: str,
     schema: VectorSchema,
     key_plan: RectangularKeyPlan | None,
-    target_configs: Sequence[SeriesConfig] | None = None,
-    sample_keys: Sequence[str] = (),
 ) -> Pipeline:
     postprocess = build_postprocess_plan(
         context.runtime.dataset.postprocess,
@@ -181,9 +168,7 @@ def build_dataset_pipeline(
         input=build_sample_input(
             context,
             tuple(entry.id for entry in schema.features),
-            group_by_cadence,
             tuple(entry.id for entry in schema.targets),
-            sample_keys,
             key_plan,
         ),
         stages=postprocess.stages,
@@ -192,38 +177,23 @@ def build_dataset_pipeline(
 
 def run_scaled_dataset_pipeline(
     context: PipelineContext,
-    feature_configs: Sequence[SeriesConfig],
-    group_by_cadence: str,
     schema: VectorSchema,
     key_plan: RectangularKeyPlan | None,
-    target_configs: Sequence[SeriesConfig] | None = None,
-    sample_keys: Sequence[str] = (),
 ) -> Generator[Sample, None, None]:
     artifact = context.require_artifact(SCALER_SPEC)
     if not isinstance(artifact, StandardScalerArtifact):
         raise RuntimeError(
             "A dataset without folds requires a standard scaler artifact."
         )
-    scaler = _sample_scaler(artifact, feature_configs, target_configs)
-    postprocess = build_postprocess_plan(
-        context.runtime.dataset.postprocess,
-        schema,
-    )
+    scaler = _sample_scaler(context, artifact)
+    pipeline = build_dataset_pipeline(context, schema, key_plan)
     return run_pipeline(
         context,
-        Pipeline(
-            name="dataset",
-            input=build_sample_input(
-                context,
-                tuple(entry.id for entry in schema.features),
-                group_by_cadence,
-                tuple(entry.id for entry in schema.targets),
-                sample_keys,
-                key_plan,
-            ),
+        replace(
+            pipeline,
             stages=(
                 Stage(name="scale_samples", apply=scaler.apply),
-                *postprocess.stages,
+                *pipeline.stages,
             ),
         ),
     )
@@ -231,19 +201,11 @@ def run_scaled_dataset_pipeline(
 
 def run_fold_dataset_pipeline(
     context: PipelineContext,
-    feature_configs: Sequence[SeriesConfig],
-    group_by_cadence: str,
     output: FoldOutputPlan,
-    target_configs: Sequence[SeriesConfig] | None = None,
-    sample_keys: Sequence[str] = (),
 ) -> Generator[Sample, None, None]:
     routed = run_fold_outputs_pipeline(
         context,
-        feature_configs,
-        group_by_cadence,
         (output,),
-        target_configs=target_configs,
-        sample_keys=sample_keys,
     )
     try:
         for _output_id, sample in routed:
@@ -256,13 +218,10 @@ def run_fold_dataset_pipeline(
 
 def run_fold_outputs_pipeline(
     context: PipelineContext,
-    feature_configs: Sequence[SeriesConfig],
-    group_by_cadence: str,
     outputs: Sequence[FoldOutputPlan],
-    target_configs: Sequence[SeriesConfig] | None = None,
-    sample_keys: Sequence[str] = (),
 ) -> Iterator[tuple[str, Sample]]:
-    split = context.runtime.dataset.split
+    dataset = context.runtime.dataset
+    split = dataset.split
     if split is None:
         raise ValueError("Fold dataset output requires dataset split configuration.")
     plans = tuple(outputs)
@@ -270,7 +229,7 @@ def run_fold_outputs_pipeline(
         raise ValueError("Fold dataset output requires at least one selected fold.")
 
     scaler_artifact: FoldedScalerArtifact | None = None
-    if dataset_requires_scaler(context.runtime.dataset):
+    if dataset_requires_scaler(dataset):
         artifact = context.require_artifact(SCALER_SPEC)
         if not isinstance(artifact, FoldedScalerArtifact):
             raise RuntimeError("A split dataset requires a folded scaler artifact.")
@@ -284,8 +243,8 @@ def run_fold_outputs_pipeline(
                 key_plan := metadata_key_plan(
                     metadata.window,
                     metadata.sample,
-                    group_by_cadence,
-                    sample_keys,
+                    dataset.sample.cadence,
+                    dataset.sample.keys,
                 )
             )
             is not None
@@ -309,17 +268,13 @@ def run_fold_outputs_pipeline(
             feature_ids=frozenset(entry.id for entry in plan.schema.features),
             target_ids=frozenset(entry.id for entry in plan.schema.targets),
             postprocess=build_postprocess_plan(
-                context.runtime.dataset.postprocess,
+                dataset.postprocess,
                 plan.schema,
             ),
             scaler=(
                 None
                 if scaler_artifact is None
-                else _sample_scaler(
-                    scaler_artifact.for_fold(plan.fold_id),
-                    feature_configs,
-                    target_configs,
-                )
+                else _sample_scaler(context, scaler_artifact.for_fold(plan.fold_id))
             ),
         )
         for plan, key_plans in zip(plans, route_key_plans, strict=True)
@@ -331,9 +286,7 @@ def run_fold_outputs_pipeline(
             input=build_sample_input(
                 context,
                 {entry.id for plan in plans for entry in plan.schema.features},
-                group_by_cadence,
                 {entry.id for plan in plans for entry in plan.schema.targets},
-                sample_keys,
                 merge_rectangular_key_plans(selected_key_plans),
             ),
             stages=(
@@ -369,18 +322,16 @@ def _prepare_fold_outputs(
 
 
 def _sample_scaler(
+    context: PipelineContext,
     artifact: StandardScalerArtifact,
-    feature_configs: Sequence[SeriesConfig],
-    target_configs: Sequence[SeriesConfig] | None,
 ) -> SampleScaler:
+    dataset = context.runtime.dataset
     return SampleScaler(
         artifact,
         scaled_feature_ids=tuple(
-            config.id for config in feature_configs if config.scale
+            config.id for config in dataset.features if config.scale
         ),
         scaled_target_ids=tuple(
-            config.id
-            for config in (() if target_configs is None else target_configs)
-            if config.scale
+            config.id for config in dataset.targets if config.scale
         ),
     )
