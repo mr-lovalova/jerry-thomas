@@ -1323,6 +1323,22 @@ def test_nested_profile_files_are_rejected(tmp_path):
         _serve_profiles(project_yaml)
 
 
+def test_missing_profile_directory_uses_empty_profiles_and_defaults(tmp_path):
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+
+    assert _serve_profiles(project_yaml) == []
+    assert _serve_defaults(project_yaml).cmd == "serve"
+
+
+def test_profile_path_must_be_a_directory(tmp_path):
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    profiles_root = project_yaml.parent / "profiles"
+    profiles_root.write_text("not a directory\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Profiles path must be a directory"):
+        _serve_profiles(project_yaml)
+
+
 def test_profile_filename_rejects_reserved_path_component(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_root = _profiles_dir(project_yaml)

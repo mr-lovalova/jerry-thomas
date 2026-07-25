@@ -1,5 +1,4 @@
 import logging
-from dataclasses import dataclass
 from functools import partial
 
 from datapipeline.cli.visuals.execution_context import (
@@ -20,8 +19,10 @@ from datapipeline.execution.events import (
 from datapipeline.execution.observer import PipelineObserver
 from datapipeline.execution.observability import (
     CommandFinished,
+    ExecutionEvent,
+    ExecutionMessage,
+    ExecutionObserver,
     FileResult,
-    OperationObserver,
     OperationFinished,
     OperationProgress,
     OperationStarted,
@@ -29,22 +30,7 @@ from datapipeline.execution.observability import (
 )
 
 
-@dataclass(frozen=True, kw_only=True)
-class ExecutionMessage:
-    message: str
-    log_level: int = logging.INFO
-
-
-ExecutionLogEvent = (
-    ExecutionMessage
-    | CommandFinished
-    | FileResult
-    | PipelineEvent
-    | OperationStarted
-    | OperationFinished
-    | OperationProgress
-    | RowsWritten
-)
+ExecutionLogEvent = ExecutionEvent | PipelineEvent
 
 
 class ExecutionEventFormatter:
@@ -172,21 +158,9 @@ def route_execution_event(
         handler(event)
 
 
-def emit_execution_message(
-    message: str,
-    level: int = logging.INFO,
+def make_execution_observer(
     logger: logging.Logger | None = None,
-) -> None:
-    event = ExecutionMessage(
-        message=message,
-        log_level=int(level),
-    )
-    route_execution_event(event, logger)
-
-
-def make_operation_observer(
-    logger: logging.Logger | None = None,
-) -> OperationObserver:
+) -> ExecutionObserver:
     return partial(
         route_execution_event,
         logger=logger or logging.getLogger(__name__),

@@ -4,14 +4,17 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Sequence
 
-from datapipeline.cli.visuals.execution import emit_execution_message
 from datapipeline.config.profiles.materialize import MaterializeProfile
 from datapipeline.execution.settings import (
     LogOutputTarget,
     resolve_execution_log_outputs,
     resolve_observability_settings,
 )
-from datapipeline.execution.observability import emit_file_result, operation_scope
+from datapipeline.execution.observability import (
+    emit_execution_message,
+    emit_file_result,
+    operation_scope,
+)
 from datapipeline.io.output import output_destination_key
 from datapipeline.profiles.models import MaterializeJob
 from datapipeline.runtime import Runtime

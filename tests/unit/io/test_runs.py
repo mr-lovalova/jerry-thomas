@@ -76,6 +76,29 @@ def test_latest_run_is_a_replaceable_symlink(
     assert not (serve_root / ".latest-second").exists()
 
 
+def test_latest_run_resolves_relative_serve_root(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    probe_target = tmp_path / "probe-target"
+    probe_target.mkdir()
+    probe_link = tmp_path / "probe-link"
+    try:
+        probe_link.symlink_to(probe_target, target_is_directory=True)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"Symbolic links are unavailable: {exc}")
+    probe_link.unlink()
+
+    monkeypatch.chdir(tmp_path)
+    paths = runs.get_run_paths(Path("serve"), "run")
+    paths.run_root.mkdir(parents=True)
+
+    runs.set_latest_run(paths)
+
+    assert paths.serve_root == (tmp_path / "serve").resolve()
+    assert (tmp_path / "serve" / "latest").resolve() == paths.run_root
+
+
 def test_latest_run_does_not_copy_when_symlinks_fail(
     tmp_path: Path,
     monkeypatch,

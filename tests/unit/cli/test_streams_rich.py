@@ -13,9 +13,6 @@ from rich.table import Column
 from rich.text import Text
 
 import datapipeline.cli.visuals.rich.progress as rich_progress
-from datapipeline.cli.visuals.execution import (
-    ExecutionMessage,
-)
 from datapipeline.cli.visuals.execution_context import (
     current_execution_event_handler,
     current_terminal_log_handler,
@@ -24,6 +21,7 @@ from datapipeline.cli.visuals.execution_context import (
     set_current_execution_event_handler,
     set_current_terminal_log_handler,
 )
+from datapipeline.execution.observability import ExecutionMessage
 from datapipeline.cli.visuals.rich.progress import (
     _ExecutionProgress,
     _ProgressRowColumn,

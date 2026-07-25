@@ -66,8 +66,10 @@ def _profile_identity_from_filename(
 
 
 def _validate_profile_layout(root: Path) -> None:
-    if not root.exists() or root.is_file():
+    if not root.exists():
         return
+    if not root.is_dir():
+        raise ValueError(f"Profiles path must be a directory: {root}")
     nested_files = sorted(
         path for path in root.rglob("*.y*ml") if path.is_file() and path.parent != root
     )

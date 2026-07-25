@@ -7,12 +7,14 @@ from datapipeline.artifacts.errors import ArtifactResolutionError
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
 from datapipeline.artifacts.planning import ArtifactGraph
 from datapipeline.artifacts.validation import validate_artifact_plan
-from datapipeline.cli.visuals.execution import emit_execution_message
 from datapipeline.config.tasks.base import ArtifactTask
 from datapipeline.config.tasks.coverage import CoverageTask
 from datapipeline.config.tasks.dataset import DatasetTask
 from datapipeline.config.tasks.matrix import MatrixTask
-from datapipeline.execution.observability import operation_scope
+from datapipeline.execution.observability import (
+    emit_execution_message,
+    operation_scope,
+)
 from datapipeline.operations.persistence import persist_runtime_result
 from datapipeline.operations.runtime.coverage import run_coverage_operation
 from datapipeline.operations.runtime.dataset import run_dataset_operation
@@ -150,7 +152,6 @@ def execute_runtime_job(
                 indent=2,
             ),
             level=logging.DEBUG,
-            logger=logger,
         )
         result = run_runtime_operation(job)
         persist_runtime_result(

@@ -60,6 +60,7 @@ def get_run_paths(serve_root: Path, run_id: str | None = None) -> RunPaths:
     if run_id is None:
         run_id = make_run_id()
 
+    serve_root = serve_root.resolve()
     runs_root = serve_root / "runs"
     run_root = runs_root / run_id
     dataset_dir = run_root / "dataset"

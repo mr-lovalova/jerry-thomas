@@ -823,7 +823,7 @@ def test_runtime_job_emits_resolved_config_at_debug(
     )
     monkeypatch.setattr(
         "datapipeline.profiles.execution.emit_execution_message",
-        lambda message, level, logger: messages.append((message, level)),
+        lambda message, level: messages.append((message, level)),
     )
     monkeypatch.setattr(
         "datapipeline.profiles.execution.load_ep",

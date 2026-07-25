@@ -1,3 +1,4 @@
+import logging
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from datapipeline.execution.settings import (
     LogOutputTarget,
     ObservabilitySettings,
 )
+from datapipeline.execution.observability import emit_execution_message
 from datapipeline.profiles.executor import execution_scope
 from datapipeline.runtime import Runtime
 
@@ -84,6 +86,25 @@ def test_execution_scope_configures_logging_and_runs_inside_visuals(monkeypatch)
     ]
     assert runtime.pipeline_observer is None
     assert not runtime.observe_node_events
+
+
+def test_execution_scope_routes_messages_to_file(tmp_path: Path) -> None:
+    log_path = tmp_path / "execution.log"
+
+    with execution_scope(
+        _runtime(),
+        ObservabilitySettings(
+            visuals="off",
+            heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+            log_decision=LogLevelDecision(name="DEBUG", value=logging.DEBUG),
+            log_output=LogOutputSettings(
+                outputs=(LogOutputTarget(transport="fs", destination=log_path),)
+            ),
+        ),
+    ):
+        assert emit_execution_message("Config:\n{}", logging.DEBUG)
+
+    assert "Config:" in log_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -219,7 +240,7 @@ def test_execution_scope_restores_outer_state_after_visual_cleanup_failure(
         logging_scope,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.operation_observer",
+        "datapipeline.profiles.executor.execution_observer",
         observe_operation,
     )
     monkeypatch.setattr(

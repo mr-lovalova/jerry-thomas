@@ -15,10 +15,13 @@ from datapipeline.build.state import (
     load_build_state,
     save_build_state,
 )
-from datapipeline.cli.visuals.execution import emit_execution_message
 from datapipeline.config.profiles.build import ArtifactMode
 from datapipeline.config.tasks.base import ArtifactTask
-from datapipeline.execution.observability import emit_file_result, operation_scope
+from datapipeline.execution.observability import (
+    emit_execution_message,
+    emit_file_result,
+    operation_scope,
+)
 from datapipeline.operations.persistence import persist_artifact_output
 from datapipeline.plugins import BUILD_OPERATIONS_EP
 from datapipeline.runtime import Runtime
@@ -88,7 +91,6 @@ def _report_artifact_plan(
             indent=2,
         ),
         level=logging.DEBUG,
-        logger=logger,
     )
 
 
@@ -240,7 +242,6 @@ def _execute_build_jobs(
                     indent=2,
                 ),
                 level=logging.DEBUG,
-                logger=logger,
             )
             for key in job.invalidated_artifacts:
                 current_state.artifacts.pop(key, None)

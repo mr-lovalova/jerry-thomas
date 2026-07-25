@@ -6,10 +6,8 @@ import pytest
 import datapipeline.execution.observability as observability
 from datapipeline.cli.visuals.execution import (
     ExecutionEventFormatter,
-    ExecutionMessage,
-    emit_execution_message,
+    make_execution_observer,
     make_pipeline_observer,
-    make_operation_observer,
 )
 from datapipeline.cli.visuals.execution_context import (
     reset_current_execution_event_handler,
@@ -28,14 +26,16 @@ from datapipeline.execution.events import (
 )
 from datapipeline.execution.observability import (
     CommandFinished,
+    ExecutionMessage,
     FileResult,
     OperationFinished,
     OperationProgress,
     OperationStarted,
     RowsWritten,
+    emit_execution_message,
     emit_file_result,
     emit_operation_progress,
-    operation_observer,
+    execution_observer,
     operation_scope,
 )
 
@@ -407,29 +407,21 @@ def test_context_handler_is_resolved_when_each_event_is_emitted(caplog) -> None:
     assert caplog.records[-1].getMessage().startswith("[dataset] finished")
 
 
-def test_emit_execution_message_uses_context_and_logger(caplog) -> None:
+def test_execution_message_uses_execution_observer_and_logger(caplog) -> None:
     capture = _CaptureHandler()
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.message")
     token = set_current_execution_event_handler(capture)
     try:
         with caplog.at_level(logging.INFO, logger=logger.name):
-            emit_execution_message("Saved 2 items", logger=logger)
+            observer = make_execution_observer(logger)
+            with execution_observer(observer):
+                assert emit_execution_message("Saved 2 items")
     finally:
         reset_current_execution_event_handler(token)
 
     assert len(capture.events) == 1
     assert capture.events[0] == ExecutionMessage(message="Saved 2 items")
     assert caplog.records[-1].getMessage() == "Saved 2 items"
-
-
-def test_emit_execution_message_logs_without_context_handler(caplog) -> None:
-    logger = logging.getLogger("datapipeline.cli.visuals.execution.test.default")
-
-    with caplog.at_level(logging.INFO, logger=logger.name):
-        emit_execution_message("Saved 3 items", logger=logger)
-
-    assert caplog.records[-1].getMessage() == "Saved 3 items"
-    assert getattr(caplog.records[-1], "dp_event_kind", None) == "execution"
 
 
 def test_operation_scope_emits_flat_lifecycle_result_and_progress(
@@ -443,8 +435,8 @@ def test_operation_scope_emits_flat_lifecycle_result_and_progress(
     token = set_current_execution_event_handler(capture)
     try:
         with caplog.at_level(logging.INFO, logger=logger.name):
-            observer = make_operation_observer(logger)
-            with operation_observer(observer), operation_scope("build:model_grid"):
+            observer = make_execution_observer(logger)
+            with execution_observer(observer), operation_scope("build:model_grid"):
                 assert emit_file_result("Model grid", Path("/tmp/model_grid.jsonl"))
                 assert emit_operation_progress(
                     "write_artifact",

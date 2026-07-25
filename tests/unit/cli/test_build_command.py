@@ -233,9 +233,7 @@ def test_report_artifact_plan_logs_current_roots(monkeypatch) -> None:
     monkeypatch.setattr(
         build_exec,
         "emit_execution_message",
-        lambda message, level=logging.INFO, logger=None: captured.append(
-            (message, level)
-        ),
+        lambda message, level=logging.INFO: captured.append((message, level)),
     )
 
     build_exec._report_artifact_plan(
@@ -267,9 +265,7 @@ def test_report_artifact_plan_logs_not_required(monkeypatch) -> None:
     monkeypatch.setattr(
         build_exec,
         "emit_execution_message",
-        lambda message, level=logging.INFO, logger=None: captured.append(
-            (message, level)
-        ),
+        lambda message, level=logging.INFO: captured.append((message, level)),
     )
 
     build_exec._report_artifact_plan(
@@ -299,9 +295,7 @@ def test_report_artifact_plan_keeps_run_details_at_debug(monkeypatch) -> None:
     monkeypatch.setattr(
         build_exec,
         "emit_execution_message",
-        lambda message, level=logging.INFO, logger=None: captured.append(
-            (message, level)
-        ),
+        lambda message, level=logging.INFO: captured.append((message, level)),
     )
 
     build_exec._report_artifact_plan(
@@ -913,7 +907,7 @@ def test_execute_build_job_invalidates_only_graph_descendants(
     monkeypatch.setattr(
         build_exec,
         "emit_execution_message",
-        lambda message, level, logger: messages.append((message, level)),
+        lambda message, level: messages.append((message, level)),
     )
     previous_state = BuildState()
     for task in graph.tasks_by_id.values():

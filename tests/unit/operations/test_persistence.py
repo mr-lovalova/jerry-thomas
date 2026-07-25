@@ -11,14 +11,14 @@ import pyarrow.parquet as parquet
 import datapipeline.operations.persistence as persistence
 from datapipeline.artifacts.registry import ArtifactRegistry
 from datapipeline.artifacts.models import ScalarVectorMetadataEntry
-from datapipeline.cli.visuals.execution import make_operation_observer
+from datapipeline.cli.visuals.execution import make_execution_observer
 from datapipeline.cli.visuals.execution_context import (
     reset_current_execution_event_handler,
     set_current_execution_event_handler,
 )
 from datapipeline.execution.observability import (
     FileResult,
-    operation_observer,
+    execution_observer,
     operation_scope,
 )
 from datapipeline.io.output import OutputTarget
@@ -518,8 +518,8 @@ def test_runtime_persistence_emits_flat_output(tmp_path) -> None:
     token = set_current_execution_event_handler(capture)
     try:
         logger = logging.getLogger(__name__)
-        observer = make_operation_observer(logger)
-        with operation_observer(observer):
+        observer = make_execution_observer(logger)
+        with execution_observer(observer):
             with operation_scope("serve:train"):
                 persist_runtime_result(
                     RuntimeOutput(rows=iter([{"value": 1}])),
