@@ -4,10 +4,12 @@ import shutil
 import pytest
 
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
+from datapipeline.artifacts.models import FoldedMetadataLayout
 from datapipeline.artifacts.registry import (
     SCALER_SPEC,
     VECTOR_METADATA_SPEC,
 )
+from datapipeline.artifacts.scaler import FoldedScalerArtifact
 from datapipeline.artifacts.specs import SERIES
 from datapipeline.services.runtime_compiler import compile_runtime
 from datapipeline.artifacts.series import load_series_manifest
@@ -154,15 +156,25 @@ def test_long_and_hybrid_identity_with_aligned_derived_stream(copy_fixture) -> N
         assert sample["targets"] is None
 
 
-def test_validation_values_do_not_change_hybrid_wide_training_output(
+def test_validation_availability_does_not_change_hybrid_wide_training_contract(
     copy_fixture,
     tmp_path,
 ) -> None:
     project_root = copy_fixture("identity_alignment_project")
     changed_root = tmp_path / "identity_alignment_changed_validation"
     shutil.copytree(project_root, changed_root)
-    split = """
-
+    dataset = """sample:
+  cadence: 1d
+  keys: [ticker]
+features:
+  - id: price
+    stream: market.price
+    field: value
+    scale: true
+  - id: fundamental
+    stream: company.fundamental
+    field: value
+    scale: true
 split:
   mode: time
   intervals:
@@ -174,18 +186,29 @@ split:
       validation: [validation]
 """
     for root in (project_root, changed_root):
-        dataset_path = root / "dataset.yaml"
-        dataset_path.write_text(
-            dataset_path.read_text(encoding="utf-8") + split,
+        (root / "dataset.yaml").write_text(dataset, encoding="utf-8")
+        (root / "operations/metadata.yaml").write_text(
+            "window_mode: intersection\n",
             encoding="utf-8",
         )
 
-    fundamentals_path = changed_root / "data" / "fundamentals.jsonl"
-    fundamentals_path.write_text(
-        fundamentals_path.read_text(encoding="utf-8").replace(
-            '"ticker":"A","metric":"revenue","value":120',
-            '"ticker":"A","metric":"revenue","value":null',
-        ),
+    fundamentals_path = project_root / "data" / "fundamentals.jsonl"
+    training_gap = (
+        "\n".join(
+            line
+            for line in fundamentals_path.read_text(encoding="utf-8").splitlines()
+            if '"time":"2024-01-02T00:00:00Z"' not in line
+        )
+        + "\n"
+    )
+    fundamentals_path.write_text(training_gap, encoding="utf-8")
+    (changed_root / "data/fundamentals.jsonl").write_text(
+        "\n".join(
+            line
+            for line in training_gap.splitlines()
+            if '"time":"2024-01-03T00:00:00Z"' not in line
+        )
+        + "\n",
         encoding="utf-8",
     )
 
@@ -193,8 +216,6 @@ split:
     changed_request = serve_dataset(changed_root)
     baseline_outputs = baseline_request.serve_run_plans[0].paths.dataset_dir
     changed_outputs = changed_request.serve_run_plans[0].paths.dataset_dir
-    baseline_train = read_jsonl(baseline_outputs / "dataset.holdout.train.jsonl")
-    changed_train = read_jsonl(changed_outputs / "dataset.holdout.train.jsonl")
     baseline_validation = read_jsonl(
         baseline_outputs / "dataset.holdout.validation.jsonl"
     )
@@ -202,8 +223,55 @@ split:
         changed_outputs / "dataset.holdout.validation.jsonl"
     )
 
-    assert changed_train == baseline_train
-    assert changed_validation != baseline_validation
-    assert [set(row["features"]["values"]) for row in changed_validation] == [
-        set(row["features"]["values"]) for row in baseline_validation
+    baseline_train_path = baseline_outputs / "dataset.holdout.train.jsonl"
+    changed_train_path = changed_outputs / "dataset.holdout.train.jsonl"
+    baseline_train = read_jsonl(baseline_train_path)
+    assert [row["key"] for row in baseline_train] == [
+        ["2024-01-01 00:00:00+00:00", "A"],
+        ["2024-01-01 00:00:00+00:00", "B"],
     ]
+    assert changed_train_path.read_bytes() == baseline_train_path.read_bytes()
+
+    fundamental_ids = (
+        "fundamental__@metric:debt",
+        "fundamental__@metric:revenue",
+    )
+    assert [row["key"] for row in changed_validation] == [
+        row["key"] for row in baseline_validation
+    ]
+    assert all(
+        row["features"]["values"][feature_id] is not None
+        for row in baseline_validation
+        for feature_id in fundamental_ids
+    )
+    assert all(
+        row["features"]["values"][feature_id] is None
+        for row in changed_validation
+        for feature_id in fundamental_ids
+    )
+
+    baseline_runtime = compile_runtime(baseline_request.definition)
+    hydrate_runtime_artifacts_for_pipeline(
+        baseline_runtime,
+        baseline_request.definition,
+    )
+    changed_runtime = compile_runtime(changed_request.definition)
+    hydrate_runtime_artifacts_for_pipeline(
+        changed_runtime,
+        changed_request.definition,
+    )
+
+    baseline_scaler = baseline_runtime.artifacts.load(SCALER_SPEC)
+    changed_scaler = changed_runtime.artifacts.load(SCALER_SPEC)
+    assert isinstance(baseline_scaler, FoldedScalerArtifact)
+    assert isinstance(changed_scaler, FoldedScalerArtifact)
+    assert changed_scaler.for_fold("holdout") == baseline_scaler.for_fold("holdout")
+
+    baseline_metadata = baseline_runtime.artifacts.load(VECTOR_METADATA_SPEC)
+    changed_metadata = changed_runtime.artifacts.load(VECTOR_METADATA_SPEC)
+    assert isinstance(baseline_metadata.layout, FoldedMetadataLayout)
+    assert isinstance(changed_metadata.layout, FoldedMetadataLayout)
+    assert (
+        changed_metadata.layout.folds[0].training_schema
+        == baseline_metadata.layout.folds[0].training_schema
+    )

@@ -1625,6 +1625,66 @@ def test_series_store_sequence_values_unscaled(
     assert row.targets == {}
 
 
+def test_series_artifact_rejects_multiple_sequences_in_one_sample_bucket(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0, 0), "value": 1.0},
+            {"time": _ts(0, 15), "value": 2.0},
+            {"time": _ts(0, 30), "value": 3.0},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="history",
+                field="value",
+                sequence=SequenceConfig(size=2, stride=1),
+            )
+        ],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"history.*multiple sequences.*stride.*sample cadence",
+    ):
+        build_series_artifact(runtime, SeriesTask())
+
+
+def test_series_artifact_preserves_scalar_aggregation_within_sample_bucket(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0, 0), "value": 1.0},
+            {"time": _ts(0, 15), "value": 2.0},
+            {"time": _ts(0, 30), "value": 3.0},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+            )
+        ],
+    )
+
+    result = build_series_artifact(runtime, SeriesTask())
+    manifest_path = runtime.artifacts_root / result.relative_path
+    manifest = load_series_manifest(manifest_path)
+    [row] = open_series(manifest_path, manifest)
+
+    assert row.features == {"price": [1.0, 2.0, 3.0]}
+
+
 def test_series_manifest_counts_empty_series_from_a_shared_stream(
     tmp_path: Path,
 ) -> None:

@@ -359,18 +359,25 @@ def _assemble_values(
     sequence_ids: set[str] = set()
     established: set[str] = set()
     for record in records:
-        if record.id in values_by_id and isinstance(record, _ProjectedSequence) != (
-            record.id in sequence_ids
-        ):
-            raise ValueError(
-                f"Series {record.id!r} contains both scalar and sequence values."
-            )
-        record_values = values_by_id.setdefault(record.id, [])
         if isinstance(record, _ProjectedSequence):
+            if record.id in values_by_id:
+                if record.id in sequence_ids:
+                    raise ValueError(
+                        f"Series {record.id!r} emits multiple sequences in one "
+                        "sample cadence bucket; increase sequence stride or use a "
+                        "finer dataset sample cadence."
+                    )
+                raise ValueError(
+                    f"Series {record.id!r} contains both scalar and sequence values."
+                )
             sequence_ids.add(record.id)
-            record_values.extend(record.values)
+            values_by_id[record.id] = list(record.values)
         else:
-            record_values.append(record.value)
+            if record.id in sequence_ids:
+                raise ValueError(
+                    f"Series {record.id!r} contains both scalar and sequence values."
+                )
+            values_by_id.setdefault(record.id, []).append(record.value)
         if record.establishes_domain:
             established.add(record.id)
 

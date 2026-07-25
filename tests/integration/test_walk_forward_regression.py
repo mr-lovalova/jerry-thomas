@@ -217,6 +217,60 @@ def test_target_horizon_removes_each_fold_role_tail(copy_fixture) -> None:
     assert scaler.folds["fold_1"].statistics["outcome"].count == 4
 
 
+def test_target_horizon_protects_future_derived_values(copy_fixture) -> None:
+    project_root = copy_fixture("walk_forward_project")
+    stream_path = project_root / "streams" / "regression.outcome.yaml"
+    stream_path.write_text(
+        stream_path.read_text(encoding="utf-8")
+        + "\ntransforms:\n"
+        + "  - { operation: forward_sum, field: value, window: 2, to: future_2 }\n",
+        encoding="utf-8",
+    )
+
+    dataset_path = project_root / "dataset.yaml"
+    dataset_path.write_text(
+        dataset_path.read_text(encoding="utf-8").replace(
+            "  - id: outcome\n"
+            "    stream: regression.outcome\n"
+            "    field: value\n"
+            "    scale: true\n"
+            "    horizon: 0s",
+            "  - id: outcome\n"
+            "    stream: regression.outcome\n"
+            "    field: future_2\n"
+            "    scale: false\n"
+            "    horizon: 2d",
+        ),
+        encoding="utf-8",
+    )
+
+    output_dir, _ = _serve(project_root)
+
+    fold_0_train = _read_output(output_dir, "fold_0.train")
+    assert [row["key"][0] for row in fold_0_train] == ["2024-01-01 00:00:00+00:00"]
+    assert fold_0_train[0]["targets"]["values"]["outcome"] == 1014.0
+    assert _read_output(output_dir, "fold_0.validation") == []
+    assert (
+        _read_output(output_dir, "fold_0.test")[0]["targets"]["values"]["outcome"]
+        == 208.0
+    )
+
+    fold_1_train = _read_output(output_dir, "fold_1.train")
+    assert [row["key"][0] for row in fold_1_train] == [
+        "2024-01-01 00:00:00+00:00",
+        "2024-01-02 00:00:00+00:00",
+        "2024-01-04 00:00:00+00:00",
+        "2024-01-06 00:00:00+00:00",
+    ]
+    assert [row["targets"]["values"]["outcome"] for row in fold_1_train] == [
+        1014.0,
+        1018.0,
+        120.0,
+        10108.0,
+    ]
+    assert _read_output(output_dir, "fold_1.validation") == []
+
+
 def test_walk_forward_serve_opens_series_once(
     copy_fixture,
     monkeypatch,
@@ -237,6 +291,41 @@ def test_walk_forward_serve_opens_series_once(
     serve_dataset(project_root, "AUTO")
 
     assert calls == 1
+
+
+def test_shared_fold_scan_matches_separate_output_serves(
+    copy_fixture,
+    tmp_path: Path,
+) -> None:
+    shared_root = copy_fixture("walk_forward_project")
+    separate_root = tmp_path / "walk_forward_separate_outputs"
+    shutil.copytree(shared_root, separate_root)
+
+    shared_output, _ = _serve(shared_root)
+    profile_path = separate_root / "profiles" / "serve.dataset.yaml"
+    profile = profile_path.read_text(encoding="utf-8")
+    output_ids = (
+        "fold_0.train",
+        "fold_0.validation",
+        "fold_0.test",
+        "fold_1.train",
+        "fold_1.validation",
+        "fold_1.test",
+    )
+
+    for output_id in output_ids:
+        profile_path.write_text(
+            profile + f"include_outputs: [{output_id}]\n",
+            encoding="utf-8",
+        )
+        request = serve_dataset(separate_root, "AUTO")
+        separate_output = request.serve_run_plans[0].paths.dataset_dir
+        filename = f"dataset.{output_id}.jsonl"
+
+        assert {path.name for path in separate_output.iterdir()} == {filename}
+        assert (separate_output / filename).read_bytes() == (
+            shared_output / filename
+        ).read_bytes()
 
 
 def test_walk_forward_limit_applies_to_each_output(copy_fixture) -> None:
