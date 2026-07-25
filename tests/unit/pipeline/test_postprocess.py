@@ -127,8 +127,6 @@ def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
     plan = build_postprocess_plan(runtime.dataset.postprocess, schema)
     output = list(apply_postprocess(runtime.dataset.postprocess, schema, iter(samples)))
 
-    assert [entry.id for entry in plan.feature_entries] == ["sparse", "value"]
-    assert plan.target_entries == ()
     assert [stage.name for stage in plan.stages] == [
         "conform_features",
         "reject_undeclared_targets",

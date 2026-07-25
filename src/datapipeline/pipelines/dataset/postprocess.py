@@ -1,7 +1,7 @@
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from datapipeline.artifacts.models import VectorMetadataEntry, VectorSchema
+from datapipeline.artifacts.models import VectorSchema
 from datapipeline.config.dataset.postprocess import PostprocessConfig
 from datapipeline.domain.sample import Sample
 from datapipeline.execution.pipeline import Stage
@@ -17,8 +17,6 @@ from datapipeline.transforms.vector.conform import (
 
 @dataclass(frozen=True)
 class PostprocessPlan:
-    feature_entries: tuple[VectorMetadataEntry, ...]
-    target_entries: tuple[VectorMetadataEntry, ...]
     stages: tuple[Stage, ...]
 
     def apply(self, samples: Iterator[Sample]) -> Iterator[Sample]:
@@ -89,11 +87,7 @@ def build_postprocess_plan(
             )
         )
 
-    return PostprocessPlan(
-        feature_entries=feature_entries,
-        target_entries=target_entries,
-        stages=tuple(stages),
-    )
+    return PostprocessPlan(stages=tuple(stages))
 
 
 def apply_postprocess(

@@ -62,13 +62,3 @@ class PipelineContext:
             self.runtime.window_bounds = bounds
         self._window_bounds_cache[rectangular_required] = bounds
         return bounds
-
-    @property
-    def start_time(self) -> datetime | None:
-        start, _ = self.window_bounds()
-        return start
-
-    @property
-    def end_time(self) -> datetime | None:
-        _, end = self.window_bounds()
-        return end

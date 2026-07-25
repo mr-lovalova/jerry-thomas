@@ -40,8 +40,6 @@ def run_matrix_operation(
     target_entries = schema.targets
     if options.stage == "postprocessed":
         plan = build_postprocess_plan(dataset.postprocess, schema)
-        feature_entries = plan.feature_entries
-        target_entries = plan.target_entries
         samples = plan.apply(samples)
 
     builder = MatrixBuilder(feature_entries, target_entries, options.max_cells)

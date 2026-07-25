@@ -452,14 +452,6 @@ def _install_batch_pipeline(
     schema = _schema(tuple(feature_entries), tuple(target_entries))
     source = ml._SampleSource(_runtime(tmp_path, dataset), None, schema, None)
     _use_source(monkeypatch, source)
-    monkeypatch.setattr(
-        ml,
-        "build_postprocess_plan",
-        lambda _config, _schema: SimpleNamespace(
-            feature_entries=tuple(feature_entries),
-            target_entries=tuple(target_entries),
-        ),
-    )
 
     def run_dataset(*_args: object, **_kwargs: object) -> Iterator[Sample]:
         yield from sample_stream()

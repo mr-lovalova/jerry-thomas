@@ -40,8 +40,6 @@ def build_coverage_stats_artifact(
     target_entries = schema.targets
     if task_cfg.stage == "postprocessed":
         plan = build_postprocess_plan(dataset.postprocess, schema)
-        feature_entries = plan.feature_entries
-        target_entries = plan.target_entries
         samples = plan.apply(samples)
 
     feature_accumulator = CoverageStatsAccumulator(feature_entries)

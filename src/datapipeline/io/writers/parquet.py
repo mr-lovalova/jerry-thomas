@@ -20,16 +20,18 @@ class ParquetFileWriter:
         if row_group_rows <= 0:
             raise ValueError("Parquet row group size must be positive.")
         try:
+            import pyarrow as arrow  # type: ignore[import-untyped]
             import pyarrow.parquet as parquet  # type: ignore[import-untyped]
         except ImportError as exc:
             raise RuntimeError(
                 "Parquet output requires pyarrow; install jerry-thomas[parquet]."
             ) from exc
 
+        self._arrow = arrow
         self._table = table
         self._row_group_rows = row_group_rows
         self._rows: list[dict[str, Any]] = []
-        self._schema = _arrow_schema(table.columns)
+        self._schema = _arrow_schema(arrow, table.columns)
         self._sink = AtomicBinaryFileSink(destination, overwrite=overwrite)
         try:
             self._writer = parquet.ParquetWriter(
@@ -69,13 +71,7 @@ class ParquetFileWriter:
     def _flush(self) -> None:
         if not self._rows:
             return
-        try:
-            import pyarrow as arrow  # type: ignore[import-untyped]
-        except ImportError as exc:  # pragma: no cover - checked in __init__
-            raise RuntimeError(
-                "Parquet output requires pyarrow; install jerry-thomas[parquet]."
-            ) from exc
-        batch = arrow.Table.from_pylist(self._rows, schema=self._schema)
+        batch = self._arrow.Table.from_pylist(self._rows, schema=self._schema)
         writer = self._writer
         if writer is None:
             raise RuntimeError("Parquet writer is closed.")
@@ -83,14 +79,7 @@ class ParquetFileWriter:
         self._rows.clear()
 
 
-def _arrow_schema(columns: tuple[TableColumn, ...]) -> Any:
-    try:
-        import pyarrow as arrow  # type: ignore[import-untyped]
-    except ImportError as exc:
-        raise RuntimeError(
-            "Parquet output requires pyarrow; install jerry-thomas[parquet]."
-        ) from exc
-
+def _arrow_schema(arrow: Any, columns: tuple[TableColumn, ...]) -> Any:
     arrow_types = {
         "null": arrow.null(),
         "boolean": arrow.bool_(),

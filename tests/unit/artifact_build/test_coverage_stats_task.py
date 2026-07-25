@@ -93,12 +93,7 @@ class _Context:
 
 
 def _postprocess_plan(*stages: Stage) -> PostprocessPlan:
-    metadata = _metadata()
-    return PostprocessPlan(
-        feature_entries=metadata.catalog.features,
-        target_entries=metadata.catalog.targets,
-        stages=stages,
-    )
+    return PostprocessPlan(stages=stages)
 
 
 def test_build_coverage_stats_artifact_writes_bounded_v3_summary(

@@ -107,7 +107,6 @@ def _matrix_runtime():
 
 
 def _patch_matrix(monkeypatch) -> None:
-    metadata = _metadata()
     monkeypatch.setattr(matrix_ops, "PipelineContext", _MatrixContext)
     monkeypatch.setattr(
         matrix_ops,
@@ -119,11 +118,7 @@ def _patch_matrix(monkeypatch) -> None:
     monkeypatch.setattr(
         matrix_ops,
         "build_postprocess_plan",
-        lambda *_args: PostprocessPlan(
-            feature_entries=metadata.catalog.features,
-            target_entries=metadata.catalog.targets,
-            stages=(),
-        ),
+        lambda *_args: PostprocessPlan(stages=()),
     )
 
 
@@ -266,7 +261,6 @@ def test_assembled_matrix_does_not_postprocess(monkeypatch) -> None:
 
 def test_matrix_limit_caps_samples_after_postprocess(monkeypatch) -> None:
     _patch_matrix(monkeypatch)
-    metadata = _metadata()
     samples = [
         Sample(key=f"g{index}", features=Vector(values={"speed": float(index)}))
         for index in range(3)
@@ -286,8 +280,6 @@ def test_matrix_limit_caps_samples_after_postprocess(monkeypatch) -> None:
         matrix_ops,
         "build_postprocess_plan",
         lambda *_args: PostprocessPlan(
-            feature_entries=metadata.catalog.features,
-            target_entries=metadata.catalog.targets,
             stages=(Stage(name="drop_first", apply=drop_first),),
         ),
     )
@@ -307,16 +299,11 @@ def test_postprocessed_matrix_keeps_headers_when_every_sample_is_dropped(
     tmp_path,
 ) -> None:
     _patch_matrix(monkeypatch)
-    metadata = _metadata()
     drop_all = Stage(name="drop_all", apply=lambda _samples: iter(()))
     monkeypatch.setattr(
         matrix_ops,
         "build_postprocess_plan",
-        lambda *_args: PostprocessPlan(
-            feature_entries=metadata.catalog.features,
-            target_entries=metadata.catalog.targets,
-            stages=(drop_all,),
-        ),
+        lambda *_args: PostprocessPlan(stages=(drop_all,)),
     )
     destination = (tmp_path / "empty-matrix.html").resolve()
 

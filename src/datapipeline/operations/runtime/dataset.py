@@ -26,7 +26,6 @@ from datapipeline.operations.persistence import (
     RuntimeOutput,
     RuntimeOutputBatch,
 )
-from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.dataset.pipeline import (
     build_dataset_pipeline,
     resolve_fold_output_plans,
@@ -200,16 +199,10 @@ def _serve_preview(
         )
         sample_stream = run_pipeline(context, selected_pipeline)
         if target.format == "parquet":
-            table = (
-                _assembled_dataset_table(
-                    context,
-                    metadata.catalog,
-                )
-                if preview == "samples"
-                else _postprocessed_dataset_table(
-                    context,
-                    metadata.catalog,
-                )
+            table = _dataset_table(
+                context,
+                metadata.catalog.features,
+                metadata.catalog.targets,
             )
             return RuntimeOutputBatch(
                 outputs=(
@@ -364,45 +357,15 @@ def _serve_fold_outputs(
     return RuntimeOutputBatch(outputs=(output,))
 
 
-def _assembled_dataset_table(
-    context: PipelineContext,
-    schema: VectorSchema,
-) -> DatasetTable:
-    return _dataset_table(
-        context,
-        schema.features,
-        schema.targets,
-    )
-
-
-def _postprocessed_dataset_table(
-    context: PipelineContext,
-    schema: VectorSchema,
-) -> DatasetTable:
-    plan = build_postprocess_plan(
-        context.runtime.dataset.postprocess,
-        schema,
-    )
-    return _dataset_table(
-        context,
-        plan.feature_entries,
-        plan.target_entries,
-    )
-
-
 def _served_dataset_table(
     context: PipelineContext,
     schema: VectorSchema,
 ) -> DatasetTable:
     dataset = context.runtime.dataset
-    plan = build_postprocess_plan(
-        dataset.postprocess,
-        schema,
-    )
     return _dataset_table(
         context,
-        plan.feature_entries,
-        plan.target_entries,
+        schema.features,
+        schema.targets,
         scaled_feature_ids=tuple(cfg.id for cfg in dataset.features if cfg.scale),
         scaled_target_ids=tuple(cfg.id for cfg in dataset.targets if cfg.scale),
     )

@@ -30,7 +30,6 @@ from datapipeline.pipelines.dataset.pipeline import (
     run_fold_dataset_pipeline,
     run_scaled_dataset_pipeline,
 )
-from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.sample.keys import (
     RectangularKeyPlan,
     require_metadata_key_plan,
@@ -199,12 +198,10 @@ def iter_model_batches(
         ) from exc
 
     source = _SampleSource.from_project(project_yaml, output_id)
-    plan = build_postprocess_plan(
-        source.runtime.dataset.postprocess,
-        source.schema,
-    )
-    feature_columns = _columns(plan.feature_entries)
-    target_columns = _columns(plan.target_entries)
+    feature_entries = source.schema.features
+    target_entries = source.schema.targets
+    feature_columns = _columns(feature_entries)
+    target_columns = _columns(target_entries)
     if len(feature_columns) != len(set(feature_columns)):
         raise ValueError("Postprocessed features produce duplicate model columns.")
     if len(target_columns) != len(set(target_columns)):
@@ -219,8 +216,8 @@ def iter_model_batches(
                 yield _model_batch(
                     np,
                     pending,
-                    plan.feature_entries,
-                    plan.target_entries,
+                    feature_entries,
+                    target_entries,
                     feature_columns,
                     target_columns,
                     dtype,
@@ -233,8 +230,8 @@ def iter_model_batches(
         yield _model_batch(
             np,
             pending,
-            plan.feature_entries,
-            plan.target_entries,
+            feature_entries,
+            target_entries,
             feature_columns,
             target_columns,
             dtype,

@@ -459,7 +459,7 @@ def test_samples_preview_writes_schema_aware_parquet(monkeypatch, tmp_path):
         lambda *args, **kwargs: pipeline,
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset._assembled_dataset_table",
+        "datapipeline.operations.runtime.dataset._dataset_table",
         lambda *args: _parquet_table(),
     )
     target = _parquet_target(tmp_path / "samples.parquet")
