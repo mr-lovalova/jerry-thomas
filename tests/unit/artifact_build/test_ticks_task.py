@@ -9,7 +9,7 @@ from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.tasks import TicksTask
 from datapipeline.config.transforms import WhereConfig
 from datapipeline.domain.record import TemporalRecord
-from datapipeline.operations.artifacts.ticks import materialize_ticks
+from datapipeline.operations.artifacts.ticks import build_ticks_artifact
 from datapipeline.runtime import (
     AlignedRuntimeStream,
     DerivedRuntimeStream,
@@ -98,10 +98,10 @@ def test_ticks_task_rejects_time_as_grid_field() -> None:
         )
 
 
-def test_materialize_ticks_writes_sorted_unique_tick_rows(tmp_path) -> None:
+def test_build_ticks_artifact_writes_sorted_unique_tick_rows(tmp_path) -> None:
     runtime = _runtime(tmp_path)
 
-    result = materialize_ticks(
+    result = build_ticks_artifact(
         runtime,
         TicksTask(
             id="dataset_ticks",
@@ -120,7 +120,7 @@ def test_materialize_ticks_writes_sorted_unique_tick_rows(tmp_path) -> None:
     assert result.meta == {"rows": 2, "stream": "source.stream", "grid_by": []}
 
 
-def test_materialize_ticks_writes_keyed_grid_rows(tmp_path) -> None:
+def test_build_ticks_artifact_writes_keyed_grid_rows(tmp_path) -> None:
     runtime = _runtime(
         tmp_path,
         [
@@ -131,7 +131,7 @@ def test_materialize_ticks_writes_keyed_grid_rows(tmp_path) -> None:
         ],
     )
 
-    result = materialize_ticks(
+    result = build_ticks_artifact(
         runtime,
         TicksTask(
             id="model_grid",
@@ -156,7 +156,9 @@ def test_materialize_ticks_writes_keyed_grid_rows(tmp_path) -> None:
     }
 
 
-def test_materialize_ticks_reuses_matching_stream_order(monkeypatch, tmp_path) -> None:
+def test_build_ticks_artifact_reuses_matching_stream_order(
+    monkeypatch, tmp_path
+) -> None:
     runtime = _runtime(
         tmp_path,
         [
@@ -173,7 +175,7 @@ def test_materialize_ticks_reuses_matching_stream_order(monkeypatch, tmp_path) -
         lambda *_args, **_kwargs: pytest.fail("ordered ticks were sorted again"),
     )
 
-    result = materialize_ticks(
+    result = build_ticks_artifact(
         runtime,
         TicksTask(
             id="model_grid",
@@ -193,7 +195,9 @@ def test_materialize_ticks_reuses_matching_stream_order(monkeypatch, tmp_path) -
     ]
 
 
-def test_materialize_ticks_reuses_aligned_stream_order(monkeypatch, tmp_path) -> None:
+def test_build_ticks_artifact_reuses_aligned_stream_order(
+    monkeypatch, tmp_path
+) -> None:
     runtime = _runtime(
         tmp_path,
         [_record(1, "MSFT"), _record(0, "AAPL")],
@@ -219,7 +223,7 @@ def test_materialize_ticks_reuses_aligned_stream_order(monkeypatch, tmp_path) ->
         lambda *_args, **_kwargs: pytest.fail("ordered ticks were sorted again"),
     )
 
-    result = materialize_ticks(
+    result = build_ticks_artifact(
         runtime,
         TicksTask(
             id="model_grid",
@@ -238,7 +242,7 @@ def test_materialize_ticks_reuses_aligned_stream_order(monkeypatch, tmp_path) ->
     ]
 
 
-def test_materialize_ticks_rejects_broken_matching_order_atomically(
+def test_build_ticks_artifact_rejects_broken_matching_order_atomically(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -258,7 +262,7 @@ def test_materialize_ticks_rejects_broken_matching_order_atomically(
     )
 
     with pytest.raises(ValueError, match="violates canonical grid order"):
-        materialize_ticks(
+        build_ticks_artifact(
             runtime,
             TicksTask(
                 id="model_grid",
@@ -273,14 +277,14 @@ def test_materialize_ticks_rejects_broken_matching_order_atomically(
     assert list(destination.parent.iterdir()) == [destination]
 
 
-def test_materialize_ticks_rejects_missing_key_field(tmp_path) -> None:
+def test_build_ticks_artifact_rejects_missing_key_field(tmp_path) -> None:
     runtime = _runtime(tmp_path, [_record(0)])
     destination = runtime.artifacts_root / "build/model_grid.jsonl"
     destination.parent.mkdir(parents=True)
     destination.write_text("previous\n", encoding="utf-8")
 
     with pytest.raises(KeyError, match="security_id"):
-        materialize_ticks(
+        build_ticks_artifact(
             runtime,
             TicksTask(
                 id="model_grid",
@@ -303,7 +307,7 @@ def test_materialize_ticks_rejects_missing_key_field(tmp_path) -> None:
         (float("-inf"), "must not contain infinity"),
     ],
 )
-def test_materialize_ticks_rejects_non_finite_grid_values_atomically(
+def test_build_ticks_artifact_rejects_non_finite_grid_values_atomically(
     tmp_path,
     value: float,
     message: str,
@@ -313,7 +317,7 @@ def test_materialize_ticks_rejects_non_finite_grid_values_atomically(
     runtime = _runtime(tmp_path, [record])
 
     with pytest.raises(ValueError, match=message):
-        materialize_ticks(
+        build_ticks_artifact(
             runtime,
             TicksTask(
                 id="model_grid",
@@ -327,7 +331,7 @@ def test_materialize_ticks_rejects_non_finite_grid_values_atomically(
     assert not (runtime.artifacts_root / "build/model_grid.jsonl").exists()
 
 
-def test_materialize_ticks_uses_stream_transforms(
+def test_build_ticks_artifact_uses_stream_transforms(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -341,7 +345,7 @@ def test_materialize_ticks_uses_stream_transforms(
         lambda *_args, **_kwargs: pytest.fail("ordered ticks were sorted again"),
     )
 
-    result = materialize_ticks(
+    result = build_ticks_artifact(
         runtime,
         TicksTask(
             id="derived_ticks",

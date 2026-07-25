@@ -5,7 +5,7 @@ from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import VECTOR_METADATA
 from datapipeline.config.tasks import MetadataTask
 from datapipeline.execution.context import PipelineContext
-from datapipeline.operations.artifacts.metadata import materialize_metadata
+from datapipeline.operations.artifacts.metadata import build_metadata_artifact
 from datapipeline.pipelines.dataset.postprocess import apply_postprocess
 from datapipeline.pipelines.sample.input import open_samples
 from datapipeline.services.project_definition import load_project_definition
@@ -27,7 +27,7 @@ def test_drop_with_metadata_and_partitioned_streams(copy_fixture):
         dataset.sample.cadence,
         targets=dataset.targets,
     )
-    metadata = materialize_metadata(
+    metadata = build_metadata_artifact(
         runtime,
         MetadataTask(id="metadata", output="metadata.json"),
     )

@@ -21,7 +21,7 @@ from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.artifacts import metadata as artifact_metadata
 from datapipeline.operations.artifacts.metadata import (
     _window_bounds_from_stats,
-    materialize_metadata,
+    build_metadata_artifact,
 )
 from datapipeline.operations.artifacts.utils import (
     VectorMetadataStats,
@@ -198,7 +198,7 @@ def test_metadata_materialization_writes_keyed_sample_domain(
         ],
     )
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
@@ -247,7 +247,7 @@ def test_unsplit_domain_starts_at_first_genuine_observation(
         ],
     )
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
@@ -293,7 +293,7 @@ def test_metadata_materialization_preserves_one_timestamp_window(
         [SeriesRow(observed_at, (), {"price": 1.0}, {}, frozenset())],
     )
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     path = runtime.artifacts_root / "metadata.json"
     first = path.read_bytes()
@@ -307,7 +307,7 @@ def test_metadata_materialization_preserves_one_timestamp_window(
     }
     assert "generated_at" not in payload
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     assert path.read_bytes() == first
 
@@ -360,7 +360,7 @@ def test_metadata_materialization_scans_features_and_targets_once(
     monkeypatch.setattr(artifact_metadata, "open_series", open_rows)
     monkeypatch.setattr(artifact_metadata, "OperationProgressTracker", Progress)
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
@@ -425,7 +425,7 @@ def test_metadata_rejects_wide_feature_missing_from_fold_training(
         RuntimeError,
         match=r"fold 'holdout'.*feature series IDs.*metric__@name:future",
     ):
-        materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
 
 def test_metadata_validates_wide_schema_for_each_fold(
@@ -502,7 +502,7 @@ def test_metadata_validates_wide_schema_for_each_fold(
         RuntimeError,
         match=r"fold 'fold_1'.*configured feature series.*metric",
     ):
-        materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
 
 def test_metadata_accepts_wide_feature_present_in_fold_training(
@@ -545,7 +545,7 @@ def test_metadata_accepts_wide_feature_present_in_fold_training(
         ],
     )
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
@@ -599,7 +599,7 @@ def test_metadata_rejects_wide_shape_not_established_by_fold_training(
         RuntimeError,
         match=r"fold 'holdout'.*feature series IDs.*metric__@name:known",
     ):
-        materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
 
 def test_metadata_rejects_static_shape_not_established_by_fold_training(
@@ -639,7 +639,7 @@ def test_metadata_rejects_static_shape_not_established_by_fold_training(
         RuntimeError,
         match=r"fold 'holdout'.*feature series IDs.*metric",
     ):
-        materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
 
 def test_hash_fold_domain_does_not_synthesize_holdout_entity_into_training(
@@ -705,7 +705,7 @@ def test_hash_fold_domain_does_not_synthesize_holdout_entity_into_training(
         ],
     )
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
@@ -801,7 +801,7 @@ def test_ensure_ticks_placeholder_does_not_establish_training_membership(
         ],
     )
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
@@ -875,7 +875,7 @@ def test_fold_domain_starts_at_first_genuine_observation(
         ],
     )
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
@@ -949,7 +949,7 @@ def test_fold_domain_continues_after_training_observation(
         ],
     )
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
@@ -1012,7 +1012,7 @@ def test_fold_window_uses_feature_base_ranges(
         ],
     )
 
-    materialize_metadata(
+    build_metadata_artifact(
         runtime,
         MetadataTask(output="metadata.json", window_mode=window_mode),
     )
@@ -1070,7 +1070,7 @@ def test_fold_strict_window_uses_each_wide_series_id(
         ],
     )
 
-    materialize_metadata(
+    build_metadata_artifact(
         runtime,
         MetadataTask(output="metadata.json", window_mode="strict"),
     )
@@ -1135,7 +1135,7 @@ def test_hash_fold_validation_cannot_establish_training_domain(
         ],
     )
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
@@ -1208,7 +1208,7 @@ def test_fold_metadata_normalizes_interval_offsets_to_utc(
         ],
     )
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
@@ -1292,7 +1292,7 @@ def test_metadata_excludes_target_horizon_boundary_from_wide_training_schema(
         RuntimeError,
         match=r"fold 'holdout'.*feature series IDs.*metric__@name:future",
     ):
-        materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
 
 def test_metadata_rejects_wide_target_missing_from_fold_training(
@@ -1353,7 +1353,7 @@ def test_metadata_rejects_wide_target_missing_from_fold_training(
         RuntimeError,
         match=r"fold 'holdout'.*target series IDs.*return__@name:future",
     ):
-        materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
 
 def test_metadata_materialization_closes_rows_after_collection_error(
@@ -1393,7 +1393,7 @@ def test_metadata_materialization_closes_rows_after_collection_error(
     _mock_series_rows(monkeypatch, runtime, failing_rows())
 
     with pytest.raises(ValueError, match="different lengths"):
-        materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     assert closed
 

@@ -64,7 +64,7 @@ class _FoldScalerState:
                 self.accumulator.observe(record.id, record.value)
 
 
-def materialize_scaler_statistics(
+def build_scaler_artifact(
     runtime: Runtime,
     task_cfg: ScalerTask,
 ) -> ArtifactOutput | None:

@@ -93,10 +93,10 @@ identity = "datapipeline.parsers.identity:IdentityParser"
 
 [project.entry-points."datapipeline.operations.build"]
 "core.artifact.series" = "datapipeline.operations.artifacts.series:build_series_artifact"
-"core.artifact.metadata" = "datapipeline.operations.artifacts.metadata:materialize_metadata"
-"core.artifact.scaler" = "datapipeline.operations.artifacts.scaler:materialize_scaler_statistics"
+"core.artifact.metadata" = "datapipeline.operations.artifacts.metadata:build_metadata_artifact"
+"core.artifact.scaler" = "datapipeline.operations.artifacts.scaler:build_scaler_artifact"
 "core.artifact.coverage_stats" = "datapipeline.operations.artifacts.coverage_stats:build_coverage_stats_artifact"
-"core.artifact.ticks" = "datapipeline.operations.artifacts.ticks:materialize_ticks"
+"core.artifact.ticks" = "datapipeline.operations.artifacts.ticks:build_ticks_artifact"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

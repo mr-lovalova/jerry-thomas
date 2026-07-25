@@ -64,7 +64,7 @@ def _unique_ticks(rows) -> Iterator[tuple]:
         previous_key = current_key
 
 
-def materialize_ticks(
+def build_ticks_artifact(
     runtime: Runtime,
     task_cfg: TicksTask,
 ) -> ArtifactOutput:

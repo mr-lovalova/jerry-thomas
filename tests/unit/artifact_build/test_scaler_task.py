@@ -23,7 +23,7 @@ from datapipeline.config.dataset.split import (
 from datapipeline.config.tasks import ScalerTask
 from datapipeline.config.transforms import EnsureCadenceConfig, ForwardFillConfig
 from datapipeline.domain.record import TemporalRecord
-from datapipeline.operations.artifacts.scaler import materialize_scaler_statistics
+from datapipeline.operations.artifacts.scaler import build_scaler_artifact
 from datapipeline.runtime import Runtime, SourceRuntimeStream
 from datapipeline.transforms.utils import set_record_domain_anchor
 
@@ -118,7 +118,7 @@ def test_materialize_standard_scaler_uses_all_scalar_observations(
         rows=[_record(1, 1.0), _record(3, 3.0)],
     )
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(output="scaler.json"),
     )
@@ -140,7 +140,7 @@ def test_materialize_standard_scaler_persists_build_options(
 ) -> None:
     runtime = _runtime(tmp_path, _dataset(), rows=[_record(1, 4.0)])
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(
             output="scaler.json",
@@ -179,7 +179,7 @@ def test_standard_scaler_excludes_placeholder_only_wide_ids(
         lambda *_args: iter((genuine, placeholder)),
     )
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(output="scaler.json"),
     )
@@ -239,7 +239,7 @@ def test_scaler_excludes_leading_placeholders_for_later_entities(
         ),
     )
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(output="scaler.json"),
     )
@@ -259,7 +259,7 @@ def test_materialize_scaler_skips_dataset_without_scaled_features(
     runtime = _runtime(tmp_path, _dataset(scale=False))
 
     assert (
-        materialize_scaler_statistics(
+        build_scaler_artifact(
             runtime,
             ScalerTask(output="scaler.json"),
         )
@@ -274,7 +274,7 @@ def test_scaler_fitting_observes_scalars_before_sequence(tmp_path) -> None:
         rows=[_record(1, 1.0), _record(2, 3.0)],
     )
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(output="scaler.json"),
     )
@@ -331,7 +331,7 @@ def test_target_horizon_trims_pre_sequence_feature_scaler_origins(tmp_path) -> N
         ],
     )
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(output="scaler.json"),
     )
@@ -389,7 +389,7 @@ def test_materialize_folded_scaler_uses_dataset_owned_expanding_train_roles(
         ],
     )
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(output="scaler.json"),
     )
@@ -442,7 +442,7 @@ def test_folded_scaler_assigns_records_by_floored_sample_time(tmp_path) -> None:
         rows=[train_record, validation_record],
     )
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(output="scaler.json"),
     )
@@ -480,7 +480,7 @@ def test_scaler_opens_a_shared_stream_once_for_all_scaled_fields(tmp_path) -> No
     )
     source = runtime.streams["stream"].source
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(output="scaler.json"),
     )
@@ -522,7 +522,7 @@ def test_grouped_scaler_preserves_global_scalar_statistics_across_sample_keys(
         partition_by=("security_id",),
     )
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(output="scaler.json"),
     )
@@ -563,7 +563,7 @@ def test_scaler_validates_excluded_split_records_before_filtering(tmp_path) -> N
     assert isinstance(source, _CountingSource)
 
     with pytest.raises(KeyError, match="Record field 'other'"):
-        materialize_scaler_statistics(
+        build_scaler_artifact(
             runtime,
             ScalerTask(output="scaler.json"),
         )
@@ -578,7 +578,7 @@ def test_scaler_closes_shared_stream_after_invalid_value(tmp_path) -> None:
     assert isinstance(source, _CountingSource)
 
     with pytest.raises(TypeError, match="numeric or None"):
-        materialize_scaler_statistics(
+        build_scaler_artifact(
             runtime,
             ScalerTask(output="scaler.json"),
         )
@@ -625,7 +625,7 @@ def test_folded_scaler_requires_training_statistics_for_all_output_vectors(
         RuntimeError,
         match=r"no training observations.*x__@bucket:B",
     ):
-        materialize_scaler_statistics(
+        build_scaler_artifact(
             runtime,
             ScalerTask(output="scaler.json"),
         )
@@ -653,7 +653,7 @@ def test_folded_scaler_includes_filled_training_placeholders(
         ),
     )
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(output="scaler.json"),
     )
@@ -695,7 +695,7 @@ def test_folded_scaler_excludes_placeholder_only_wide_ids(
         lambda *_args: iter((genuine, placeholder)),
     )
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(output="scaler.json"),
     )
@@ -720,7 +720,7 @@ def test_materialize_folded_scaler_supports_hash_splits(tmp_path) -> None:
         rows=[_record(1, 2.0), _record(2, 4.0)],
     )
 
-    result = materialize_scaler_statistics(
+    result = build_scaler_artifact(
         runtime,
         ScalerTask(output="scaler.json"),
     )

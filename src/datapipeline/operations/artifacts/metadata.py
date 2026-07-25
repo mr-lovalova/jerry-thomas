@@ -622,7 +622,7 @@ def _folded_layout(
     )
 
 
-def materialize_metadata(
+def build_metadata_artifact(
     runtime: Runtime,
     task_cfg: MetadataTask,
 ) -> ArtifactOutput:

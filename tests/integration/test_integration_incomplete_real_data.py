@@ -13,8 +13,8 @@ from datapipeline.config.tasks import (
     SeriesTask,
 )
 from datapipeline.execution.context import PipelineContext
-from datapipeline.operations.artifacts.metadata import materialize_metadata
-from datapipeline.operations.artifacts.scaler import materialize_scaler_statistics
+from datapipeline.operations.artifacts.metadata import build_metadata_artifact
+from datapipeline.operations.artifacts.scaler import build_scaler_artifact
 from datapipeline.operations.artifacts.series import build_series_artifact
 from datapipeline.pipelines.dataset.pipeline import run_scaled_dataset_pipeline
 from datapipeline.services.project_definition import load_project_definition
@@ -28,7 +28,7 @@ def _dataset_samples(project_yaml):
     context = PipelineContext(runtime)
 
     # Ensure artifacts are materialized for the test run.
-    scaler_rel = materialize_scaler_statistics(
+    scaler_rel = build_scaler_artifact(
         runtime,
         ScalerTask(id="scaler", output="scaler.json"),
     )
@@ -44,7 +44,7 @@ def _dataset_samples(project_yaml):
         SERIES,
         relative_path=series_rel.relative_path,
     )
-    metadata_rel = materialize_metadata(
+    metadata_rel = build_metadata_artifact(
         runtime,
         MetadataTask(id="metadata", output="metadata.json"),
     )

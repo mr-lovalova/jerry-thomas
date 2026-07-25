@@ -55,7 +55,7 @@ from datapipeline.execution.events import (
 )
 from datapipeline.execution.pipeline import Input
 from datapipeline.execution.runner import run_pipeline
-from datapipeline.operations.artifacts.metadata import materialize_metadata
+from datapipeline.operations.artifacts.metadata import build_metadata_artifact
 from datapipeline.operations.artifacts.series import build_series_artifact
 from datapipeline.operations.runtime.dataset import _record_preview_stream
 from datapipeline.parsers.identity import IdentityParser
@@ -1502,7 +1502,7 @@ def test_metadata_rejects_projected_wide_id_outside_fold_training(
         RuntimeError,
         match=r"fold 'holdout'.*feature series IDs.*metric__@bucket:future",
     ):
-        materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
 
 def test_series_shared_stream_matches_independent_series_pipelines(
@@ -1810,7 +1810,7 @@ def test_collected_series_produces_fixed_list_metadata(
     series = build_series_artifact(runtime, SeriesTask())
     runtime.artifacts.register(SERIES, series.relative_path, meta=series.meta)
 
-    metadata = materialize_metadata(
+    metadata = build_metadata_artifact(
         runtime,
         MetadataTask(output="metadata.json"),
     )
