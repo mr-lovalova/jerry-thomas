@@ -168,6 +168,35 @@ def test_dataset_accepts_zero_target_horizon_with_hash_split() -> None:
     assert dataset.targets[0].horizon == "0s"
 
 
+def test_dataset_accepts_collected_series_with_hash_split() -> None:
+    dataset = DatasetConfig.model_validate(
+        {
+            "sample": {"cadence": "1d"},
+            "features": [
+                {
+                    "id": "intraday_price",
+                    "stream": "prices.hourly",
+                    "field": "close",
+                    "collect": 24,
+                }
+            ],
+            "split": {
+                "mode": "hash",
+                "ratios": {"train": 0.8, "test": 0.2},
+                "folds": [
+                    {
+                        "id": "holdout",
+                        "train": ["train"],
+                        "test": ["test"],
+                    }
+                ],
+            },
+        }
+    )
+
+    assert dataset.features[0].collect == 24
+
+
 def test_dataset_rejects_a_future_target_field_as_a_feature() -> None:
     with pytest.raises(
         ValidationError,

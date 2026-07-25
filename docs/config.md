@@ -218,9 +218,10 @@ throttle_ms: null # milliseconds to sleep between emitted samples
   outputs; Jerry does not infer compression from a filename.
 - Dataset Parquet output is filesystem-only and schema-aware. It uses bounded
   Zstandard-compressed row groups and the stable columns `sample.time`,
-  `sample.<key>`, `features.<id>`, and `targets.<id>`; fixed sequences expand
-  to numbered columns. It is supported for full datasets and the `samples` and
-  `postprocess` preview stages. Install `jerry-thomas[parquet]` to enable it.
+  `sample.<key>`, `features.<id>`, and `targets.<id>`; fixed-length lists
+  expand to numbered columns. It is supported for full datasets and the
+  `samples` and `postprocess` preview stages. Install
+  `jerry-thomas[parquet]` to enable it.
 - Output values use `None` as the canonical missing value. A transient floating
   `NaN` is emitted as null (`None` in pickle and an empty CSV cell); positive
   and negative infinity fail the output operation.
@@ -725,7 +726,7 @@ Defines which canonical streams become features and targets and how samples are 
 
 ```yaml
 sample:
-  cadence: 1h
+  cadence: 1d
   keys: [security_id]
 
 features:
@@ -734,6 +735,10 @@ features:
     field: close
     scale: true
     sequence: { size: 6, stride: 1 }
+  - id: intraday_volume
+    stream: equity.volume.hourly
+    field: volume
+    collect: 24
 
 targets:
   - id: forward_return_1d
@@ -797,19 +802,27 @@ postprocess:
 - Every `id` must be unique across both `features` and `targets`. Scaler and
   metadata operations plus postprocess policies use this shared vector-ID
   space.
-- `scale: true` scales assembled scalar or sequence values with the managed
-  `build/scaler.json` artifact when a dataset output is produced. Fitting
-  options belong to the scaler operation and cannot be overridden per vector.
-  `None` and transient `NaN` remain missing; other nonnumeric values and
-  infinity fail.
+- `scale: true` scales assembled scalar or fixed-length list values with the
+  managed `build/scaler.json` artifact when a dataset output is produced.
+  Fitting options belong to the scaler operation and cannot be overridden per
+  vector. `None` and transient `NaN` remain missing; other nonnumeric values
+  and infinity fail.
 - `sequence` emits `SeriesSequence` windows and accepts `size` plus
   optional `stride` (default `1`). Regularize cadence with ordered transforms
   before series projection when contiguous ticks are required. The resolved
   stream partition keeps every independent series in one contiguous ordered
   group.
-- Feature and target series support `scale` and `sequence`; targets additionally
-  require `horizon`. Series configuration does not accept arbitrary transform
-  entry-point clauses.
+- `collect` requires exactly `size` ordered scalar values in each populated
+  `sample.cadence` bucket. Zero values leave that series absent. `None` and
+  cadence placeholders count as positions; underfilled and overfilled buckets
+  fail. Collection validates cardinality, not temporal spacing, so regularize
+  the stream first when positions must follow a fixed grid.
+- `sequence` and `collect` are mutually exclusive. Without either policy, each
+  concrete series ID may emit at most one value per sample bucket.
+- Feature and target series support `scale`, `sequence`, and `collect`; targets
+  additionally require `horizon`. A collected target's horizon must cover its
+  latest supporting observation. Series configuration does not accept
+  arbitrary transform entry-point clauses.
 - `split` first assigns each sample one primitive label. Hash splits assign from
   the complete sample key and require `ratios`. Time splits require ordered
   `intervals` with unique IDs and strictly increasing endpoints. Every interval

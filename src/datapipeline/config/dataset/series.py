@@ -1,7 +1,14 @@
 from datetime import timedelta
-from typing import Annotated
+from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from datapipeline.domain.series_id import SERIES_ID_SEPARATOR
 from datapipeline.utils.time import parse_timecode
@@ -28,6 +35,7 @@ class SeriesConfig(BaseModel):
     field: NonEmptyString
     scale: bool = Field(default=False, strict=True)
     sequence: SequenceConfig | None = None
+    collect: int | None = Field(default=None, gt=0, strict=True)
 
     @field_validator("id")
     @classmethod
@@ -37,6 +45,12 @@ class SeriesConfig(BaseModel):
                 f"series id must not contain reserved separator {SERIES_ID_SEPARATOR!r}"
             )
         return series_id
+
+    @model_validator(mode="after")
+    def validate_shaping(self) -> Self:
+        if self.sequence is not None and self.collect is not None:
+            raise ValueError("sequence and collect are mutually exclusive")
+        return self
 
 
 class TargetSeriesConfig(SeriesConfig):

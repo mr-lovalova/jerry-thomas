@@ -151,9 +151,11 @@ These live under `lib/<plugin>/src/<package>/`:
 
 - **Preprocess transforms** run on mapped domain records before ordering. Each transform operates on one record at a time. Configure source-backed streams under `preprocess:`.
 - **Ordered transforms** run after ordering (dedupe, cadence enforcement, lag/lead, rolling, derive, fills). These operate across a sequence of records for a partition because they depend on sorted partition/time order and cadence. Configure streams under `transforms:`.
-- **Series shaping** runs after stream regularization. `sequence` shapes the
-  per-series payload for vectorization; `scale` marks feature or target
-  vectors that receive the selected dataset fold's scaler during full serving.
+- **Series shaping** runs after stream regularization. `sequence` creates
+  rolling windows; `collect` requires a fixed number of values inside each
+  sample-cadence bucket. Without either policy, a series must emit at most one
+  value per bucket. `scale` marks feature or target vectors that receive the
+  selected dataset fold's scaler during full serving.
   Each target also declares its maximum elapsed `horizon`, which time folds use
   to remove boundary samples whose future support reaches the next role.
 - **Postprocess policies** filter assembled samples by feature or target coverage. Configure them under `postprocess:` in `dataset.yaml`.

@@ -324,6 +324,11 @@ def _group_series_rows(
 ) -> Iterator[SeriesRow]:
     feature_order = {config.id: index for index, config in enumerate(feature_configs)}
     target_order = {config.id: index for index, config in enumerate(target_configs)}
+    collection_sizes = {
+        config.id: config.collect
+        for config in (*feature_configs, *target_configs)
+        if config.collect is not None
+    }
 
     for key, group in groupby(projected, key=lambda row: row.key):
         feature_records: list[_ProjectedValue] = []
@@ -335,10 +340,12 @@ def _group_series_rows(
         features, feature_placeholders = _assemble_values(
             feature_records,
             feature_order,
+            collection_sizes,
         )
         targets, target_placeholders = _assemble_values(
             target_records,
             target_order,
+            collection_sizes,
         )
         feature_counts.update({base_id(series_id) for series_id in features})
         target_counts.update({base_id(series_id) for series_id in targets})
@@ -354,45 +361,49 @@ def _group_series_rows(
 def _assemble_values(
     records: Iterable[_ProjectedValue],
     config_order: dict[str, int],
+    collection_sizes: dict[str, int],
 ) -> tuple[dict[str, Any], frozenset[str]]:
-    values_by_id: dict[str, list[Any]] = {}
-    sequence_ids: set[str] = set()
+    values_by_id: dict[str, Any] = {}
+    collections: dict[str, list[Any]] = {}
     established: set[str] = set()
     for record in records:
         if isinstance(record, _ProjectedSequence):
             if record.id in values_by_id:
-                if record.id in sequence_ids:
-                    raise ValueError(
-                        f"Series {record.id!r} emits multiple sequences in one "
-                        "sample cadence bucket; increase sequence stride or use a "
-                        "finer dataset sample cadence."
-                    )
                 raise ValueError(
-                    f"Series {record.id!r} contains both scalar and sequence values."
+                    f"Series {record.id!r} emits multiple sequences in one "
+                    "sample cadence bucket; increase sequence stride or use a "
+                    "finer dataset sample cadence."
                 )
-            sequence_ids.add(record.id)
             values_by_id[record.id] = list(record.values)
+        elif base_id(record.id) in collection_sizes:
+            if isinstance(record.value, list):
+                raise TypeError(f"Series {record.id!r} collect requires scalar values.")
+            collections.setdefault(record.id, []).append(record.value)
         else:
-            if record.id in sequence_ids:
+            if record.id in values_by_id:
                 raise ValueError(
-                    f"Series {record.id!r} contains both scalar and sequence values."
+                    f"Series {record.id!r} emits multiple values in one sample "
+                    "cadence bucket; configure collect explicitly or use a finer "
+                    "dataset sample cadence."
                 )
-            values_by_id.setdefault(record.id, []).append(record.value)
+            values_by_id[record.id] = record.value
         if record.establishes_domain:
             established.add(record.id)
+
+    for series_id, values in collections.items():
+        required = collection_sizes[base_id(series_id)]
+        if len(values) != required:
+            raise ValueError(
+                f"Series {series_id!r} collect requires {required} values in each "
+                f"populated sample cadence bucket; got {len(values)}."
+            )
+        values_by_id[series_id] = values
 
     ordered_ids = sorted(
         values_by_id,
         key=lambda series_id: (config_order[base_id(series_id)], series_id),
     )
-    assembled = {
-        series_id: (
-            values_by_id[series_id]
-            if series_id in sequence_ids or len(values_by_id[series_id]) != 1
-            else values_by_id[series_id][0]
-        )
-        for series_id in ordered_ids
-    }
+    assembled = {series_id: values_by_id[series_id] for series_id in ordered_ids}
     return assembled, frozenset(values_by_id.keys() - established)
 
 

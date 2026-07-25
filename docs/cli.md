@@ -24,9 +24,9 @@ phase has visuals enabled.
   - `canonical`: domain records after source mapping or fan-in combining;
     derived streams pass their input through unchanged at this boundary.
   - `records`: records after configured transforms and ordering.
-  - `series`: ordered feature/target records after sequence construction.
-    Values remain unscaled because scaling is selected by the full dataset
-    output's fold.
+  - `series`: ordered feature/target records after sequence construction and
+    before `collect` assembly. Values remain unscaled because scaling is
+    selected by the full dataset output's fold.
   - `samples`: assembled samples before postprocess.
   - `postprocess`: samples after the configured postprocess pipeline.
     Preview stages remain unscaled; omit `--preview` to apply each selected

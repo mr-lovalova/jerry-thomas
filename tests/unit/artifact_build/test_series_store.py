@@ -349,7 +349,7 @@ def test_series_writer_removes_temp_file_on_interrupt(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "version",
-    [None, 1, 2, 3, 4, 5, 6, 7, 8, 8.0, True],
+    [None, 1, 2, 3, 4, 5, 6, 7, 8, 9, 8.0, True],
 )
 def test_series_manifest_rejects_incompatible_version(
     tmp_path: Path,

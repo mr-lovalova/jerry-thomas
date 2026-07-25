@@ -42,7 +42,7 @@ from datapipeline.cli.visuals.rich.progress import (
     _ExecutionProgress,
     _RichExecutionRenderer,
 )
-from datapipeline.domain.series import SeriesSequence
+from datapipeline.domain.series import SeriesRecord, SeriesSequence
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
@@ -1088,6 +1088,34 @@ def test_series_pipeline_wraps_record_values(tmp_path: Path) -> None:
     assert record.id == "price__@symbol:X"
 
 
+def test_series_preview_keeps_collection_values_unassembled(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "value": 1.0},
+            {"time": _ts(0, 30), "value": 2.0},
+        ],
+    )
+    config = SeriesConfig(
+        stream="stream",
+        id="price",
+        field="value",
+        collect=2,
+    )
+
+    records = list(
+        run_series_pipeline(
+            PipelineContext(runtime),
+            config,
+        )
+    )
+
+    assert all(isinstance(record, SeriesRecord) for record in records)
+    assert [record.value for record in records] == [1.0, 2.0]
+
+
 def test_unpartitioned_series_pipeline_preserves_time_order(tmp_path: Path) -> None:
     rows = [
         {"time": _ts(2), "value": 3.0},
@@ -1655,7 +1683,7 @@ def test_series_artifact_rejects_multiple_sequences_in_one_sample_bucket(
         build_series_artifact(runtime, SeriesTask())
 
 
-def test_series_artifact_preserves_scalar_aggregation_within_sample_bucket(
+def test_series_artifact_rejects_duplicate_scalars_within_sample_bucket(
     tmp_path: Path,
 ) -> None:
     runtime = _runtime_with_rows(
@@ -1677,12 +1705,306 @@ def test_series_artifact_preserves_scalar_aggregation_within_sample_bucket(
         ],
     )
 
+    with pytest.raises(
+        ValueError,
+        match=r"price.*multiple values.*collect.*sample cadence",
+    ):
+        build_series_artifact(runtime, SeriesTask())
+
+
+def test_series_artifact_collects_an_explicit_fixed_size_bucket(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0, 30), "value": 3.0},
+            {"time": _ts(1, 15), "value": 5.0},
+            {"time": _ts(0, 0), "value": 1.0},
+            {"time": _ts(1, 30), "value": 6.0},
+            {"time": _ts(0, 15), "value": 2.0},
+            {"time": _ts(1, 0), "value": 4.0},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+                collect=3,
+            )
+        ],
+    )
+
+    result = build_series_artifact(runtime, SeriesTask())
+    manifest_path = runtime.artifacts_root / result.relative_path
+    manifest = load_series_manifest(manifest_path)
+    rows = list(open_series(manifest_path, manifest))
+
+    assert [(row.time, row.features) for row in rows] == [
+        (_ts(0), {"price": [1.0, 2.0, 3.0]}),
+        (_ts(1), {"price": [4.0, 5.0, 6.0]}),
+    ]
+
+
+def test_series_artifact_collect_size_one_remains_a_list(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [{"time": _ts(0), "value": None}],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+                collect=1,
+            )
+        ],
+    )
+
+    result = build_series_artifact(runtime, SeriesTask())
+    manifest_path = runtime.artifacts_root / result.relative_path
+    [row] = open_series(manifest_path)
+
+    assert row.features == {"price": [None]}
+
+
+def test_collected_series_produces_fixed_list_metadata(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "value": 1.0},
+            {"time": _ts(0, 30), "value": 2.0},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+                collect=2,
+            )
+        ],
+    )
+    series = build_series_artifact(runtime, SeriesTask())
+    runtime.artifacts.register(SERIES, series.relative_path, meta=series.meta)
+
+    metadata = materialize_metadata(
+        runtime,
+        MetadataTask(output="metadata.json"),
+    )
+    payload = json.loads(
+        (runtime.artifacts_root / metadata.relative_path).read_text(encoding="utf-8")
+    )
+
+    [entry] = payload["catalog"]["features"]
+    assert entry["id"] == "price"
+    assert entry["kind"] == "list"
+    assert entry["length"] == 2
+    assert entry["element_types"] == ["float"]
+
+
+@pytest.mark.parametrize("count", [2, 4])
+def test_series_artifact_requires_the_declared_collection_size(
+    tmp_path: Path,
+    count: int,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [{"time": _ts(0, index * 10), "value": float(index)} for index in range(count)],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+                collect=3,
+            )
+        ],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=rf"price.*collect requires 3 values.*got {count}",
+    ):
+        build_series_artifact(runtime, SeriesTask())
+
+
+def test_series_artifact_preserves_a_list_valued_scalar(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [{"time": _ts(0), "value": [1.0, 2.0]}],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="embedding",
+                field="value",
+            )
+        ],
+    )
+
     result = build_series_artifact(runtime, SeriesTask())
     manifest_path = runtime.artifacts_root / result.relative_path
     manifest = load_series_manifest(manifest_path)
     [row] = open_series(manifest_path, manifest)
 
-    assert row.features == {"price": [1.0, 2.0, 3.0]}
+    assert row.features == {"embedding": [1.0, 2.0]}
+
+
+def test_series_artifact_rejects_collecting_list_valued_records(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "value": [1.0, 2.0]},
+            {"time": _ts(0, 30), "value": [3.0, 4.0]},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="embedding",
+                field="value",
+                collect=2,
+            )
+        ],
+    )
+
+    with pytest.raises(TypeError, match=r"embedding.*collect requires scalar"):
+        build_series_artifact(runtime, SeriesTask())
+
+
+def test_series_artifact_collects_each_wide_series_independently(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "symbol": "AAPL", "value": 1.0},
+            {"time": _ts(0), "symbol": "MSFT", "value": 10.0},
+            {"time": _ts(1), "symbol": "AAPL", "value": 2.0},
+            {"time": _ts(1), "symbol": "MSFT", "value": 20.0},
+        ],
+        partition_by=("symbol",),
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1d"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+                collect=2,
+            )
+        ],
+    )
+
+    result = build_series_artifact(runtime, SeriesTask())
+    manifest_path = runtime.artifacts_root / result.relative_path
+    [row] = open_series(manifest_path)
+
+    assert row.features == {
+        "price__@symbol:AAPL": [1.0, 2.0],
+        "price__@symbol:MSFT": [10.0, 20.0],
+    }
+
+
+def test_series_artifact_collects_targets(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "price": 10.0, "return": 0.1},
+            {"time": _ts(0, 30), "price": 11.0, "return": 0.2},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="price",
+                collect=2,
+            )
+        ],
+        targets=[
+            TargetSeriesConfig(
+                stream="stream",
+                id="return",
+                field="return",
+                horizon="1h",
+                collect=2,
+            )
+        ],
+    )
+
+    result = build_series_artifact(runtime, SeriesTask())
+    manifest_path = runtime.artifacts_root / result.relative_path
+    [row] = open_series(manifest_path)
+
+    assert row.features == {"price": [10.0, 11.0]}
+    assert row.targets == {"return": [0.1, 0.2]}
+
+
+def test_series_artifact_collect_counts_and_tracks_cadence_placeholders(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "value": 1.0},
+            {"time": _ts(2, 30), "value": 2.0},
+        ],
+        transforms=[EnsureCadenceConfig(cadence="30m")],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+                collect=2,
+            )
+        ],
+    )
+
+    result = build_series_artifact(runtime, SeriesTask())
+    manifest_path = runtime.artifacts_root / result.relative_path
+    rows = list(open_series(manifest_path))
+
+    assert [row.features for row in rows] == [
+        {"price": [1.0, None]},
+        {"price": [None, None]},
+        {"price": [None, 2.0]},
+    ]
+    assert [row.placeholder_ids for row in rows] == [
+        frozenset(),
+        frozenset({"price"}),
+        frozenset(),
+    ]
 
 
 def test_series_manifest_counts_empty_series_from_a_shared_stream(

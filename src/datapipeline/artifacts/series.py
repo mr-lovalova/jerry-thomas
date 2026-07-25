@@ -29,7 +29,7 @@ from datapipeline.io.sinks.files import GzipBinarySink
 from datapipeline.services.path_policy import resolve_artifact_output_path
 from datapipeline.utils.time import CADENCE_PATTERN, parse_datetime
 
-SERIES_MANIFEST_VERSION: Final = 9
+SERIES_MANIFEST_VERSION: Final = 10
 _JSON_SCALAR_TYPES = {type(None), bool, int, float, str}
 _NonEmptyString = Annotated[
     str,
@@ -48,7 +48,7 @@ class SeriesEntry(BaseModel):
 class SeriesManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    version: Literal[9] = SERIES_MANIFEST_VERSION
+    version: Literal[10] = SERIES_MANIFEST_VERSION
     format: Literal["jsonl.gz"] = "jsonl.gz"
     cadence: str = Field(pattern=CADENCE_PATTERN)
     sample_keys: tuple[_NonEmptyString, ...] = ()

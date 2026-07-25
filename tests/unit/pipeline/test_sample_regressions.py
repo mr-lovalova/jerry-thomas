@@ -99,7 +99,8 @@ def _register_scaler(
     runtime: Runtime, configs: list[SeriesConfig], group_by: str
 ) -> None:
     sanitized = [
-        cfg.model_copy(update={"scale": False, "sequence": None}) for cfg in configs
+        cfg.model_copy(update={"scale": False, "sequence": None, "collect": None})
+        for cfg in configs
     ]
     context = PipelineContext(runtime)
     accumulator = ScalerAccumulator()
@@ -289,17 +290,24 @@ def test_samples_keep_entity_buckets_contiguous(tmp_path) -> None:
         ],
     }
     runtime = _runtime_with_streams(tmp_path, streams)
+    for stream_id in streams:
+        runtime.streams[stream_id] = replace(
+            runtime.streams[stream_id],
+            partition_by=("security_id",),
+        )
     context = PipelineContext(runtime)
     feature_cfgs = [
         SeriesConfig(
             stream="momentum_stream",
             id="momentum",
             field="value",
+            collect=2,
         ),
         SeriesConfig(
             stream="volume_stream",
             id="volume",
             field="value",
+            collect=2,
         ),
     ]
     register_series(
@@ -513,6 +521,7 @@ def test_regression_scaled_shapes_airpressure_high_freq_and_windspeed_hourly(
         _record(_ts(0, 55), 1000.0),
         _record(_ts(1, 5), 1005.0),
         _record(_ts(1, 15), 1007.0),
+        _record(_ts(1, 45), 1009.0),
     ]
     # hourly mock series (single sample per hour)
     hourly_raw = [
@@ -533,6 +542,7 @@ def test_regression_scaled_shapes_airpressure_high_freq_and_windspeed_hourly(
             id="air_pressure",
             field="value",
             scale=True,
+            collect=3,
         ),
         SeriesConfig(
             stream="wind_speed",
@@ -567,7 +577,7 @@ def test_regression_scaled_shapes_airpressure_high_freq_and_windspeed_hourly(
     v1 = out[1].features.values
 
     assert isinstance(v0["air_pressure"], list) and len(v0["air_pressure"]) == 3
-    assert isinstance(v1["air_pressure"], list) and len(v1["air_pressure"]) == 2
+    assert isinstance(v1["air_pressure"], list) and len(v1["air_pressure"]) == 3
     assert not isinstance(v0["wind_speed"], list)
     assert not isinstance(v1["wind_speed"], list)
 
@@ -628,6 +638,7 @@ def test_regression_fill_then_scale_with_missing_values(tmp_path) -> None:
             id="air_pressure",
             field="value",
             scale=True,
+            collect=3,
         ),
         SeriesConfig(
             stream="ws",

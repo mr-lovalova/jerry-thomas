@@ -39,7 +39,7 @@ yet representable safely.
 
 Coverage treats null values as uncovered. Base and scalar-column coverage is
 the number of non-null samples divided by total samples. List-column coverage
-is observed non-null elements divided by `total_samples * sequence_length`, so
+is observed non-null elements divided by `total_samples * list_length`, so
 absent samples and null list elements share the same explicit denominator.
 
 Build state lives at `artifacts/_system/build/state.json`. An entry is current
@@ -65,12 +65,21 @@ same eligible sample origins; an unsplit dataset has no role boundary to
 enforce. A horizon change does not change the grouped series values, but it does
 change folded scaler eligibility and the fold contracts stored in metadata.
 
-Jerry 8 series manifests use format version 9 to preserve whether a value came
-from a genuine source record or a cadence placeholder. Metadata format version
-4 stores the global catalog plus the explicit unsplit or folded layout. The
-artifact cache generation is also incremented for the new folded-scaler
-semantics. `AUTO` therefore rebuilds stale v7 series, scaler, metadata, and
-dependent coverage artifacts; `OFF` requires a v8 build first.
+Jerry 8 series manifests use format version 10. Version 9 introduced source
+record versus cadence-placeholder provenance; version 10 replaces implicit
+scalar-to-list aggregation with explicit fixed-size `collect`. The series
+format version participates in artifact fingerprints, so `AUTO` rebuilds
+series, metadata, and dependent coverage artifacts created with version 9.
+Projects that relied on multiple scalar values in one sample bucket must first
+declare `collect: N` or use a finer `sample.cadence`; otherwise the rebuild
+fails instead of silently changing shape. `OFF` requires those artifacts to be
+rebuilt first. Scaler artifacts remain current because collection shapes
+already-fitted scalar observations.
+
+Metadata format version 4 stores the global catalog plus the explicit unsplit
+or folded layout. The artifact cache generation is also incremented for the new
+folded-scaler semantics. `AUTO` therefore rebuilds stale v7 series, scaler,
+metadata, and dependent coverage artifacts; `OFF` requires a v8 build first.
 
 Jerry 7 renames the v6 `variable_records` artifact to `series`:
 

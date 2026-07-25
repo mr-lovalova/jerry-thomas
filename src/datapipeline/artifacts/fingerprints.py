@@ -173,7 +173,7 @@ def _artifact_inputs(
             "scaled_vectors": [
                 config.model_dump(
                     mode="json",
-                    exclude={"horizon", "sequence"},
+                    exclude={"collect", "horizon", "sequence"},
                 )
                 for config in scaled
             ],

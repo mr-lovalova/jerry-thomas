@@ -9,6 +9,7 @@ from datapipeline.artifacts.specs import (
     SCALER_STATISTICS,
     SERIES,
     VECTOR_METADATA,
+    COVERAGE_STATS,
 )
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
@@ -16,6 +17,7 @@ from datapipeline.config.dataset.split import DatasetFold, TimeInterval, TimeSpl
 from datapipeline.config.streams import StreamsConfig
 from datapipeline.config.tasks import (
     ArtifactTask,
+    CoverageStatsTask,
     MetadataTask,
     ScalerTask,
     SeriesTask,
@@ -507,6 +509,57 @@ def test_scaling_policy_does_not_invalidate_unscaled_series(
     assert scaled_hashes.for_artifact(SCALER_STATISTICS) != (
         unscaled_hashes.for_artifact(SCALER_STATISTICS)
     )
+
+
+def test_collection_policy_invalidates_series_but_not_scaler(
+    tmp_path: Path,
+) -> None:
+    definition = load_project_definition(_write_project(tmp_path))
+    streams = _single_stream_catalog()
+    operations = (
+        ScalerTask(),
+        SeriesTask(),
+        MetadataTask(),
+        CoverageStatsTask(),
+    )
+    feature = SeriesConfig(
+        id="price",
+        stream="prices",
+        field="close",
+        scale=True,
+    )
+    scalar = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[feature],
+    )
+    collected = scalar.model_copy(
+        update={
+            "features": [
+                feature.model_copy(update={"collect": 2}),
+            ]
+        }
+    )
+
+    scalar_hashes = calculate_artifact_hashes(
+        definition.project,
+        scalar,
+        streams,
+        operations,
+    )
+    collected_hashes = calculate_artifact_hashes(
+        definition.project,
+        collected,
+        streams,
+        operations,
+    )
+
+    assert collected_hashes.for_artifact(SCALER_STATISTICS) == (
+        scalar_hashes.for_artifact(SCALER_STATISTICS)
+    )
+    for artifact in (SERIES, VECTOR_METADATA, COVERAGE_STATS):
+        assert collected_hashes.for_artifact(artifact) != (
+            scalar_hashes.for_artifact(artifact)
+        )
 
 
 def test_scaler_and_metadata_hashes_track_every_fold_role(tmp_path: Path) -> None:
