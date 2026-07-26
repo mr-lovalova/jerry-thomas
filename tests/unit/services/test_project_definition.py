@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -84,10 +83,6 @@ def test_compile_runtime_uses_the_loaded_definition(tmp_path: Path) -> None:
 
     first = compile_runtime(definition)
     second = compile_runtime(definition)
-    first.window_bounds = (
-        datetime(2020, 1, 1, tzinfo=timezone.utc),
-        datetime(2021, 1, 1, tzinfo=timezone.utc),
-    )
     first.dataset.features.append(
         SeriesConfig(id="local", stream="local", field="value")
     )
@@ -102,7 +97,6 @@ def test_compile_runtime_uses_the_loaded_definition(tmp_path: Path) -> None:
     assert first.streams is not second.streams
     assert definition.dataset.features == []
     assert second.dataset.features == []
-    assert second.window_bounds is None
 
 
 def test_load_project_definition_rejects_legacy_scaler_fold_config(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -94,7 +94,6 @@ class Runtime:
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     streams: dict[str, RuntimeStream] = field(default_factory=dict)
     output_ids: tuple[str, ...] = ()
-    window_bounds: tuple[datetime | None, datetime | None] | None = None
     heartbeat_interval_seconds: float | None = None
     pipeline_observer: PipelineObserver | None = None
     observe_node_events: bool = True

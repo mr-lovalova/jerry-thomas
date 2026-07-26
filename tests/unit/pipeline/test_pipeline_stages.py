@@ -1280,7 +1280,6 @@ def test_rectangular_dataset_source_reuses_its_key_plan(
     tmp_path: Path,
 ) -> None:
     runtime = _runtime_with_rows(tmp_path, [])
-    runtime.window_bounds = (_ts(0, 10), _ts(2, 50))
     schema = _register_price_metadata(runtime)
     context = PipelineContext(runtime)
     cfg = SeriesConfig(stream="stream", id="price", field="value")
@@ -1336,7 +1335,6 @@ def test_rectangular_features_and_targets_share_every_planned_key(
             {"time": _ts(2), "value": 3.0, "target": 30.0},
         ],
     )
-    runtime.window_bounds = (_ts(0), _ts(2))
     feature = SeriesConfig(stream="stream", id="price", field="value")
     target = TargetSeriesConfig(
         stream="stream",

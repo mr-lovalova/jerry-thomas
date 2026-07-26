@@ -74,8 +74,6 @@ def _runtime_with_streams(
     )
 
     stream_transforms = stream_transforms or {}
-    start_time: datetime | None = None
-    end_time: datetime | None = None
     for alias, rows in streams.items():
         runtime.streams[alias] = SourceRuntimeStream(
             source=_StubSource(rows),
@@ -85,13 +83,7 @@ def _runtime_with_streams(
             presorted=False,
             transforms=tuple(stream_transforms.get(alias, ())),
         )
-        for rec in rows:
-            ts = getattr(rec, "time", None)
-            if isinstance(ts, datetime):
-                start_time = ts if start_time is None else min(start_time, ts)
-                end_time = ts if end_time is None else max(end_time, ts)
 
-    runtime.window_bounds = (start_time, end_time)
     return runtime
 
 
