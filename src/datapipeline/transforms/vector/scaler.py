@@ -59,10 +59,14 @@ class ScalerAccumulator:
     def observe(self, vector_id: str, value: object) -> None:
         if not vector_id.strip():
             raise ValueError("vector_id must not be empty")
-        if value is None:
+        values = value if isinstance(value, list) else (value,)
+        numbers = tuple(_finite_number(item) for item in values if item is not None)
+        if not numbers:
             return
-        self._statistics[vector_id].observe(_finite_number(value))
-        self.observations += 1
+        statistics = self._statistics[vector_id]
+        for number in numbers:
+            statistics.observe(number)
+        self.observations += len(numbers)
 
     def artifact(self) -> StandardScalerArtifact:
         if not self._statistics:

@@ -66,6 +66,20 @@ def test_accumulator_ignores_none() -> None:
     assert accumulator.artifact().statistics["x"].count == 1
 
 
+def test_accumulator_fits_list_elements_as_scalar_observations() -> None:
+    accumulator = ScalerAccumulator()
+
+    accumulator.observe("x", [1.0, None, 3.0])
+    accumulator.observe("x", [5.0])
+
+    artifact = accumulator.artifact()
+    statistics = artifact.statistics["x"]
+    assert statistics.count == 3
+    assert statistics.mean == 3.0
+    assert statistics.std == pytest.approx((8 / 3) ** 0.5)
+    assert artifact.observations == 3
+
+
 def test_accumulator_requires_an_observation() -> None:
     with pytest.raises(RuntimeError, match="no numeric observations"):
         ScalerAccumulator().artifact()
@@ -90,10 +104,26 @@ def test_accumulator_rejects_invalid_epsilon(
         ScalerAccumulator(epsilon=epsilon)  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("value", [True, "1.0", [1.0]])
+@pytest.mark.parametrize("value", [True, "1.0", [1.0, "2.0"], [[1.0]]])
 def test_accumulator_rejects_non_numeric_values(value: object) -> None:
     with pytest.raises(TypeError, match="numeric or None"):
         ScalerAccumulator().observe("x", value)
+
+
+def test_accumulator_does_not_partially_observe_an_invalid_list() -> None:
+    accumulator = ScalerAccumulator()
+    accumulator.observe("x", 1.0)
+
+    with pytest.raises(TypeError, match="numeric or None"):
+        accumulator.observe("x", [3.0, "invalid"])
+
+    artifact = accumulator.artifact()
+    assert artifact.observations == 1
+    assert artifact.statistics["x"] == ScalerStatistics(
+        mean=1.0,
+        std=1e-12,
+        count=1,
+    )
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])

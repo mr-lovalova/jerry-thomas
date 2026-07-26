@@ -135,6 +135,37 @@ def test_materialize_standard_scaler_uses_all_scalar_observations(
     }
 
 
+def test_materialize_standard_scaler_uses_intrinsic_list_elements(
+    tmp_path,
+) -> None:
+    runtime = _runtime(
+        tmp_path,
+        _dataset(),
+        rows=[
+            _record(1, [1.0, None]),
+            _record(3, [3.0, 5.0]),
+        ],
+    )
+
+    result = build_scaler_artifact(
+        runtime,
+        ScalerTask(output="scaler.json"),
+    )
+
+    assert result is not None
+    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    assert isinstance(artifact, StandardScalerArtifact)
+    statistics = artifact.statistics["x"]
+    assert statistics.count == 3
+    assert statistics.mean == 3.0
+    assert statistics.std == pytest.approx((8 / 3) ** 0.5)
+    assert artifact.observations == 3
+    assert result.meta == {
+        "series": 1,
+        "observations": 3,
+    }
+
+
 def test_materialize_standard_scaler_persists_build_options(
     tmp_path,
 ) -> None:
