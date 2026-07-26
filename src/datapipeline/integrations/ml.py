@@ -251,39 +251,14 @@ def _columns(entries: Sequence[VectorMetadataEntry]) -> tuple[str, ...]:
 def _model_row(
     vector: Vector,
     entries: Sequence[VectorMetadataEntry],
-    columns: Sequence[str],
-    key: tuple[Any, ...],
-) -> list[Real]:
-    row: list[Real] = []
-    column_index = 0
+) -> list[Any]:
+    row: list[Any] = []
     for entry in entries:
         value = vector.values[entry.id]
-        values = value if entry.kind == "list" else (value,)
-        for item in values:
-            column = columns[column_index]
-            column_index += 1
-            if item is None:
-                raise ValueError(
-                    f"Model column {column!r} is missing at sample {key!r}. "
-                    "Fill or filter missing values before model batching."
-                )
-            if isinstance(item, bool) or not isinstance(item, Real):
-                raise TypeError(
-                    f"Model column {column!r} at sample {key!r} must be numeric; "
-                    f"got {type(item).__name__}."
-                )
-            try:
-                finite = math.isfinite(item)
-            except OverflowError as exc:
-                raise ValueError(
-                    f"Model column {column!r} at sample {key!r} is outside the "
-                    "supported floating-point range."
-                ) from exc
-            if not finite:
-                raise ValueError(
-                    f"Model column {column!r} at sample {key!r} must be finite."
-                )
-            row.append(item)
+        if entry.kind == "list":
+            row.extend(value)
+        else:
+            row.append(value)
     return row
 
 
@@ -297,11 +272,8 @@ def _model_batch(
     dtype: Literal["float32", "float64"],
 ) -> ModelBatch:
     keys = tuple(tuple(sample.key) for sample in samples)
-    feature_rows = [
-        _model_row(sample.features, feature_entries, feature_columns, key)
-        for sample, key in zip(samples, keys)
-    ]
-    target_rows: list[list[Real]] | None = None
+    feature_rows = [_model_row(sample.features, feature_entries) for sample in samples]
+    target_rows: list[list[Any]] | None = None
     if target_entries:
         target_rows = []
         for sample, key in zip(samples, keys):
@@ -309,17 +281,20 @@ def _model_batch(
                 raise RuntimeError(
                     f"Sample {key!r} has no targets, but target columns are declared."
                 )
-            target_rows.append(
-                _model_row(sample.targets, target_entries, target_columns, key)
-            )
+            target_rows.append(_model_row(sample.targets, target_entries))
 
-    with np.errstate(over="ignore", invalid="ignore"):
-        features = np.asarray(feature_rows, dtype=dtype)
-        targets = None if target_rows is None else np.asarray(target_rows, dtype=dtype)
-
-    _require_finite_array(np, features, keys, feature_columns, dtype)
-    if targets is not None:
-        _require_finite_array(np, targets, keys, target_columns, dtype)
+    features = _numeric_array(
+        np,
+        feature_rows,
+        keys,
+        feature_columns,
+        dtype,
+    )
+    targets = (
+        None
+        if target_rows is None
+        else _numeric_array(np, target_rows, keys, target_columns, dtype)
+    )
 
     return ModelBatch(
         keys=keys,
@@ -330,17 +305,80 @@ def _model_batch(
     )
 
 
-def _require_finite_array(
+def _numeric_array(
     np: Any,
-    values: _FloatArray,
+    rows: Sequence[Sequence[Any]],
     keys: Sequence[tuple[Any, ...]],
     columns: Sequence[str],
     dtype: str,
-) -> None:
-    invalid = np.argwhere(~np.isfinite(values))
+) -> _FloatArray:
+    expected_shape = (len(rows), len(columns))
+    try:
+        values = np.asarray(rows)
+    except ValueError as exc:
+        _validate_model_rows(rows, keys, columns)
+        raise ValueError("Model batch rows do not match the declared columns.") from exc
+
+    wrong_shape = values.ndim != 2 or values.shape != expected_shape
+    value_types = {type(value) for row in rows for value in row}
+    contains_invalid_type = any(
+        value_type is bool or not issubclass(value_type, Real)
+        for value_type in value_types
+    )
+    if wrong_shape or contains_invalid_type or values.dtype.kind not in "iuf":
+        _validate_model_rows(rows, keys, columns)
+    if wrong_shape:
+        raise ValueError("Model batch rows do not match the declared columns.")
+
+    with np.errstate(over="ignore", invalid="ignore"):
+        converted = values.astype(dtype, copy=False)
+
+    invalid = np.argwhere(~np.isfinite(converted))
     if invalid.size:
         row_index, column_index = invalid[0]
+        _validate_model_value(
+            rows[row_index][column_index],
+            columns[column_index],
+            keys[row_index],
+        )
         raise ValueError(
             f"Model column {columns[column_index]!r} at sample "
             f"{keys[row_index]!r} cannot be represented as {dtype}."
         )
+    return converted
+
+
+def _validate_model_rows(
+    rows: Sequence[Sequence[Any]],
+    keys: Sequence[tuple[Any, ...]],
+    columns: Sequence[str],
+) -> None:
+    for row, key in zip(rows, keys):
+        for column, value in zip(columns, row):
+            _validate_model_value(value, column, key)
+
+
+def _validate_model_value(
+    value: Any,
+    column: str,
+    key: tuple[Any, ...],
+) -> None:
+    if value is None:
+        raise ValueError(
+            f"Model column {column!r} is missing at sample {key!r}. "
+            "Fill or filter missing values before model batching."
+        )
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TypeError(
+            f"Model column {column!r} at sample {key!r} must be numeric; "
+            f"got {type(value).__name__}."
+        )
+    try:
+        finite = math.isfinite(value)
+    except OverflowError as exc:
+        raise ValueError(
+            f"Model column {column!r} at sample {key!r} is outside the "
+            "supported floating-point range."
+        ) from exc
+    if not finite:
+        raise ValueError(f"Model column {column!r} at sample {key!r} must be finite.")

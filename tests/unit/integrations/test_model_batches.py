@@ -302,8 +302,26 @@ def test_model_batches_use_none_for_feature_only_targets(
     [
         (None, ValueError, r"history\[1\].*missing.*sample \('row',\)"),
         (True, TypeError, r"history\[1\].*sample \('row',\).*numeric"),
+        (np.bool_(True), TypeError, r"history\[1\].*sample \('row',\).*numeric"),
+        (np.array(1.0), TypeError, r"history\[1\].*sample \('row',\).*numeric"),
         ("bad", TypeError, r"history\[1\].*sample \('row',\).*numeric"),
+        ("1.0", TypeError, r"history\[1\].*sample \('row',\).*numeric"),
+        (1.0 + 2.0j, TypeError, r"history\[1\].*sample \('row',\).*numeric"),
+        ([1.0, 2.0], TypeError, r"history\[1\].*sample \('row',\).*numeric"),
+        (float("nan"), ValueError, r"history\[1\].*sample \('row',\).*finite"),
         (float("inf"), ValueError, r"history\[1\].*sample \('row',\).*finite"),
+    ],
+    ids=[
+        "missing",
+        "boolean",
+        "numpy-boolean",
+        "zero-dimensional-array",
+        "string",
+        "numeric-string",
+        "complex",
+        "nested-list",
+        "nan",
+        "infinity",
     ],
 )
 def test_model_batches_reject_invalid_values_with_column_and_sample(
@@ -377,6 +395,23 @@ def test_model_batches_reject_values_not_representable_by_dtype(
                 dtype="float32",
             )
         )
+
+
+@pytest.mark.parametrize("values", [[1.0], [1.0, 2.0, 3.0]])
+def test_model_batches_reject_rows_that_do_not_match_declared_columns(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    values: list[float],
+) -> None:
+    _install_batch_pipeline(
+        monkeypatch,
+        tmp_path,
+        lambda: iter([_sample(("row",), {"history": values})]),
+        (_sequence("history", 2),),
+    )
+
+    with pytest.raises(ValueError, match="rows do not match the declared columns"):
+        list(ml.iter_model_batches("project.yaml", batch_size=1))
 
 
 def test_closing_model_batches_closes_dataset_pipeline(
