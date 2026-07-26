@@ -154,15 +154,19 @@ def run_dataset_pipeline(
     )
 
 
-def build_dataset_pipeline(
+def run_sample_pipeline(
+    context: PipelineContext,
+    schema: VectorSchema,
+    key_plan: RectangularKeyPlan | None,
+) -> Generator[Sample, None, None]:
+    return run_pipeline(context, build_sample_pipeline(context, schema, key_plan))
+
+
+def build_sample_pipeline(
     context: PipelineContext,
     schema: VectorSchema,
     key_plan: RectangularKeyPlan | None,
 ) -> Pipeline:
-    postprocess = build_postprocess_plan(
-        context.runtime.dataset.postprocess,
-        schema,
-    )
     return Pipeline(
         name="dataset",
         input=build_sample_input(
@@ -171,6 +175,21 @@ def build_dataset_pipeline(
             tuple(entry.id for entry in schema.targets),
             key_plan,
         ),
+    )
+
+
+def build_dataset_pipeline(
+    context: PipelineContext,
+    schema: VectorSchema,
+    key_plan: RectangularKeyPlan | None,
+) -> Pipeline:
+    pipeline = build_sample_pipeline(context, schema, key_plan)
+    postprocess = build_postprocess_plan(
+        context.runtime.dataset.postprocess,
+        schema,
+    )
+    return replace(
+        pipeline,
         stages=postprocess.stages,
     )
 

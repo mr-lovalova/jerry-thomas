@@ -16,7 +16,6 @@ from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.preview import PreviewStage
 from datapipeline.domain.sample import Sample
 from datapipeline.execution.context import PipelineContext
-from datapipeline.execution.runner import run_pipeline
 from datapipeline.io.dataset_table import DatasetTable
 from datapipeline.io.output import OutputTarget, output_destination_key
 from datapipeline.operations.persistence import (
@@ -27,21 +26,16 @@ from datapipeline.operations.persistence import (
     RuntimeOutputBatch,
 )
 from datapipeline.pipelines.dataset.pipeline import (
-    build_dataset_pipeline,
     resolve_fold_output_plans,
     run_dataset_pipeline,
     run_fold_outputs_pipeline,
+    run_sample_pipeline,
     run_scaled_dataset_pipeline,
 )
 from datapipeline.pipelines.series.pipeline import run_series_pipeline
 from datapipeline.pipelines.sample.keys import require_metadata_key_plan
-from datapipeline.pipelines.stream.pipeline import build_stream_pipeline
-from datapipeline.runtime import (
-    CombinedRuntimeStream,
-    DerivedRuntimeStream,
-    Runtime,
-    require_runtime_stream,
-)
+from datapipeline.pipelines.stream.pipeline import run_stream_preview_pipeline
+from datapipeline.runtime import Runtime
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -137,38 +131,6 @@ def _preview_plan(
     return plan
 
 
-def _record_preview_stream(
-    context: PipelineContext,
-    stream_id: str,
-    preview: PreviewStage,
-) -> Iterator[object]:
-    pipeline = build_stream_pipeline(context, stream_id)
-    stream = require_runtime_stream(context.runtime, stream_id)
-    if preview == "input":
-        if isinstance(stream, DerivedRuntimeStream):
-            upstream = build_stream_pipeline(context, stream.input_stream)
-            return run_pipeline(
-                context,
-                pipeline.through_stage_count(len(upstream.stages)),
-            )
-        return run_pipeline(context, pipeline.input_only())
-    if preview == "canonical":
-        if isinstance(stream, DerivedRuntimeStream):
-            upstream = build_stream_pipeline(context, stream.input_stream)
-            return run_pipeline(
-                context,
-                pipeline.through_stage_count(len(upstream.stages)),
-            )
-        if isinstance(stream, CombinedRuntimeStream):
-            node_name = "combine_records"
-        else:
-            node_name = "map_records"
-        return run_pipeline(context, pipeline.through_stage_named(node_name))
-    if preview == "records":
-        return run_pipeline(context, pipeline)
-    raise ValueError(f"Preview stage {preview!r} does not produce records")
-
-
 def _serve_preview(
     context: PipelineContext,
     limit: int | None,
@@ -189,15 +151,18 @@ def _serve_preview(
             dataset.sample.cadence,
             dataset.sample.keys,
         )
-        dataset_pipeline = build_dataset_pipeline(
-            context,
-            metadata.catalog,
-            key_plan,
-        )
-        selected_pipeline = (
-            dataset_pipeline.input_only() if preview == "samples" else dataset_pipeline
-        )
-        sample_stream = run_pipeline(context, selected_pipeline)
+        if preview == "samples":
+            sample_stream = run_sample_pipeline(
+                context,
+                metadata.catalog,
+                key_plan,
+            )
+        else:
+            sample_stream = run_dataset_pipeline(
+                context,
+                metadata.catalog,
+                key_plan,
+            )
         if target.format == "parquet":
             table = _dataset_table(
                 context,
@@ -238,21 +203,23 @@ def _serve_preview(
         resolved_outputs.append((output_id, cfg, output_target))
 
     for output_id, cfg, output_target in resolved_outputs:
-        if preview in _RECORD_PREVIEWS:
-            stream = _record_preview_stream(
-                context,
-                str(output_id),
-                preview,
-            )
-        elif preview == "series":
-            stream = run_series_pipeline(
-                context,
-                cfg,
-                sample_keys=dataset.sample.keys,
-                group_by_cadence=dataset.sample.cadence,
-            )
-        else:
-            raise ValueError(f"Unsupported preview stage: {preview!r}")
+        stream: Iterator[object]
+        match preview:
+            case "input" | "canonical" | "records":
+                stream = run_stream_preview_pipeline(
+                    context,
+                    output_id,
+                    preview,
+                )
+            case "series":
+                stream = run_series_pipeline(
+                    context,
+                    cfg,
+                    sample_keys=dataset.sample.keys,
+                    group_by_cadence=dataset.sample.cadence,
+                )
+            case _:
+                raise ValueError(f"Unsupported preview stage: {preview!r}")
         outputs.append(_runtime_output(stream, output_target, limit))
     return RuntimeOutputBatch(outputs=tuple(outputs))
 

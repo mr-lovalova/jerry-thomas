@@ -20,6 +20,7 @@ from datapipeline.artifacts.specs import (
     VECTOR_METADATA,
 )
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
+from datapipeline.config.dataset.postprocess import PostprocessConfig
 from datapipeline.config.dataset.series import (
     SeriesConfig,
     SequenceConfig,
@@ -59,12 +60,12 @@ from datapipeline.execution.pipeline import Input
 from datapipeline.execution.runner import run_pipeline
 from datapipeline.operations.artifacts.metadata import build_metadata_artifact
 from datapipeline.operations.artifacts.series import build_series_artifact
-from datapipeline.operations.runtime.dataset import _record_preview_stream
 from datapipeline.parsers.identity import IdentityParser
 from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.dataset.pipeline import (
     build_dataset_pipeline,
     run_dataset_pipeline,
+    run_sample_pipeline,
 )
 from datapipeline.pipelines.series.pipeline import (
     build_series_pipeline,
@@ -72,6 +73,7 @@ from datapipeline.pipelines.series.pipeline import (
 )
 from datapipeline.pipelines.stream.pipeline import (
     build_stream_pipeline,
+    run_stream_preview_pipeline,
     run_stream_pipeline,
 )
 from datapipeline.pipelines.sample import input as sample_input
@@ -523,7 +525,7 @@ def test_derived_record_previews_use_records_before_derived_transforms(
         "ensure_cadence",
     ]
 
-    records = _record_preview_stream(
+    records = run_stream_preview_pipeline(
         PipelineContext(runtime),
         "derived",
         preview,
@@ -800,9 +802,9 @@ def test_broadcast_record_previews_preserve_stage_boundaries(tmp_path: Path) -> 
     }
     context = PipelineContext(runtime)
 
-    input_rows = list(_record_preview_stream(context, "enriched", "input"))
-    canonical = list(_record_preview_stream(context, "enriched", "canonical"))
-    records = list(_record_preview_stream(context, "enriched", "records"))
+    input_rows = list(run_stream_preview_pipeline(context, "enriched", "input"))
+    canonical = list(run_stream_preview_pipeline(context, "enriched", "canonical"))
+    records = list(run_stream_preview_pipeline(context, "enriched", "records"))
 
     assert [
         (primary.time.hour, broadcast.time.hour) for primary, broadcast in input_rows
@@ -825,17 +827,14 @@ def test_source_pipeline_runs_map_then_preprocess(
     )
     ctx = PipelineContext(runtime)
 
-    pipeline = build_stream_pipeline(ctx, "stream")
-    input_rows = list(run_pipeline(ctx, pipeline.input_only()))
+    input_rows = list(run_stream_preview_pipeline(ctx, "stream", "input"))
     assert input_rows == rows
 
-    mapped = list(run_pipeline(ctx, pipeline.through_stage_count(1)))
+    mapped = list(run_stream_preview_pipeline(ctx, "stream", "canonical"))
     assert all(isinstance(record, TemporalRecord) for record in mapped)
     assert [record.time for record in mapped] == [rows[0]["time"], rows[1]["time"]]
 
-    preprocessed = list(
-        run_pipeline(ctx, pipeline.through_stage_named("preprocess_floor_time"))
-    )
+    preprocessed = list(run_stream_preview_pipeline(ctx, "stream", "records"))
     assert all(record.time.minute == 0 for record in preprocessed)
 
 
@@ -1271,6 +1270,13 @@ def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -
         {"time": _ts(1), "value": 2.0},
     ]
     runtime = _runtime_with_rows(tmp_path, rows)
+    runtime.dataset = runtime.dataset.model_copy(
+        update={
+            "postprocess": PostprocessConfig.model_validate(
+                {"samples": {"features": {"threshold": 1.0}}}
+            )
+        }
+    )
     schema = _register_price_metadata(runtime)
     ctx = PipelineContext(runtime)
     cfg = SeriesConfig(stream="stream", id="price", field="value")
@@ -1284,6 +1290,8 @@ def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -
     assert isinstance(pipeline.input, Input)
     assert pipeline.input.progress is None
 
+    samples_preview = list(run_sample_pipeline(ctx, schema, None))
+    postprocess_preview = list(run_dataset_pipeline(ctx, schema, None))
     dataset_out = list(run_dataset_pipeline(ctx, schema, None))
 
     manual = open_samples(ctx, [cfg.id], "1h")
@@ -1291,7 +1299,14 @@ def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -
         build_postprocess_plan(runtime.dataset.postprocess, schema).apply(manual)
     )
 
-    assert dataset_out == manual_out
+    assert [sample.features.values for sample in samples_preview] == [
+        {"price": None},
+        {"price": 2.0},
+    ]
+    assert postprocess_preview == dataset_out == manual_out
+    assert [sample.features.values for sample in postprocess_preview] == [
+        {"price": 2.0}
+    ]
 
 
 def test_rectangular_dataset_source_reuses_its_key_plan(

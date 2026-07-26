@@ -25,7 +25,6 @@ from datapipeline.config.dataset.split import DatasetFold, TimeInterval, TimeSpl
 from datapipeline.config.preview import PreviewStage
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.pipeline import Input, Pipeline, Stage
 from datapipeline.io.dataset_table import DatasetTable
 from datapipeline.io.output import OutputTarget
 from datapipeline.operations.persistence import (
@@ -212,46 +211,6 @@ def _serve(
     )
 
 
-def _sample_preview_pipeline():
-    return Pipeline(
-        name="dataset",
-        input=Input(
-            name="assemble_samples",
-            open=lambda: iter(["sample"]),
-        ),
-        stages=(
-            Stage(
-                name="conform_features",
-                apply=lambda stream: (f"post:{item}" for item in stream),
-            ),
-        ),
-    )
-
-
-def _record_preview_pipeline():
-    return Pipeline(
-        name="stream:prices",
-        input=Input(
-            name="open_source",
-            open=lambda: iter(["source"]),
-        ),
-        stages=(
-            Stage(
-                name="map_records",
-                apply=lambda rows: (f"mapped:{row}" for row in rows),
-            ),
-            Stage(
-                name="floor_time",
-                apply=lambda rows: (f"transformed:{row}" for row in rows),
-            ),
-            Stage(
-                name="ensure_record_order",
-                apply=lambda rows: (f"records:{row}" for row in rows),
-            ),
-        ),
-    )
-
-
 def test_dataset_operation_reraises_keyboard_interrupt_and_marks_run_failed(
     monkeypatch,
 ):
@@ -434,8 +393,8 @@ def test_samples_preview_stops_before_postprocess(monkeypatch):
     )
     target = _target()
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_dataset_pipeline",
-        lambda *args, **kwargs: _sample_preview_pipeline(),
+        "datapipeline.operations.runtime.dataset.run_sample_pipeline",
+        lambda *args, **kwargs: iter(["sample"]),
     )
 
     result = _serve(runtime, dataset, target, preview="samples")
@@ -450,13 +409,9 @@ def test_samples_preview_writes_schema_aware_parquet(monkeypatch, tmp_path):
         key=(datetime(2024, 1, 1, tzinfo=timezone.utc),),
         features=Vector(values={"price": 10.0}),
     )
-    pipeline = Pipeline(
-        name="dataset",
-        input=Input(name="assemble_samples", open=lambda: iter((sample,))),
-    )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_dataset_pipeline",
-        lambda *args, **kwargs: pipeline,
+        "datapipeline.operations.runtime.dataset.run_sample_pipeline",
+        lambda *args, **kwargs: iter((sample,)),
     )
     monkeypatch.setattr(
         "datapipeline.operations.runtime.dataset._dataset_table",
@@ -482,7 +437,7 @@ def test_parquet_preview_rejects_non_dataset_stage_before_opening_stream(
     tmp_path,
 ) -> None:
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_stream_pipeline",
+        "datapipeline.operations.runtime.dataset.run_stream_preview_pipeline",
         lambda *args, **kwargs: pytest.fail("record preview must not be opened"),
     )
 
@@ -503,16 +458,17 @@ def test_parquet_preview_rejects_non_dataset_stage_before_opening_stream(
         ("records", "records:transformed:mapped:source"),
     ],
 )
-def test_record_previews_stop_at_the_named_stage(monkeypatch, preview, expected):
+def test_record_previews_use_stream_preview_pipeline(monkeypatch, preview, expected):
     captured = {}
 
-    def build_pipeline(context, stream_id):
+    def run_preview(context, stream_id, selected_preview):
         captured["stream_id"] = stream_id
-        return _record_preview_pipeline()
+        captured["preview"] = selected_preview
+        return iter((expected,))
 
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_stream_pipeline",
-        build_pipeline,
+        "datapipeline.operations.runtime.dataset.run_stream_preview_pipeline",
+        run_preview,
     )
     result = _serve(
         _runtime({"derived.prices": object()}),
@@ -521,7 +477,7 @@ def test_record_previews_stop_at_the_named_stage(monkeypatch, preview, expected)
         preview=preview,
     )
 
-    assert captured == {"stream_id": "derived.prices"}
+    assert captured == {"stream_id": "derived.prices", "preview": preview}
     assert list(result.outputs[0].rows) == [expected]
 
 
@@ -579,8 +535,8 @@ def test_postprocess_preview_runs_postprocess(monkeypatch):
     target = _target()
 
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_dataset_pipeline",
-        lambda *args, **kwargs: _sample_preview_pipeline(),
+        "datapipeline.operations.runtime.dataset.run_dataset_pipeline",
+        lambda *args, **kwargs: iter(["post:sample"]),
     )
 
     result = _serve(runtime, dataset, target, preview="postprocess")
@@ -607,16 +563,28 @@ def test_all_preview_stages_write_gzip_through_the_shared_output_path(
     output_id,
 ) -> None:
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_stream_pipeline",
-        lambda *args, **kwargs: _record_preview_pipeline(),
+        "datapipeline.operations.runtime.dataset.run_stream_preview_pipeline",
+        lambda _context, _stream_id, selected_preview: iter(
+            (
+                {
+                    "input": "source",
+                    "canonical": "mapped:source",
+                    "records": "records:transformed:mapped:source",
+                }[selected_preview],
+            )
+        ),
     )
     monkeypatch.setattr(
         "datapipeline.operations.runtime.dataset.run_series_pipeline",
         lambda *args, **kwargs: iter(["series"]),
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_dataset_pipeline",
-        lambda *args, **kwargs: _sample_preview_pipeline(),
+        "datapipeline.operations.runtime.dataset.run_sample_pipeline",
+        lambda _context, _schema, _key_plan: iter(("sample",)),
+    )
+    monkeypatch.setattr(
+        "datapipeline.operations.runtime.dataset.run_dataset_pipeline",
+        lambda _context, _schema, _key_plan: iter(("post:sample",)),
     )
 
     target = _fs_target(tmp_path / "preview.jsonl.gz", compression="gzip")

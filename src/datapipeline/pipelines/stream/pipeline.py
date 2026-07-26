@@ -8,6 +8,7 @@ from datapipeline.alignment.as_of import as_of_stream
 from datapipeline.alignment.broadcast import broadcast_stream
 from datapipeline.alignment.broadcast_as_of import broadcast_as_of_stream
 from datapipeline.alignment.engine import align_streams
+from datapipeline.config.preview import RecordPreviewStage
 from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.observer import ignore_pipeline_event
 from datapipeline.execution.pipeline import Input, Pipeline, Stage
@@ -37,6 +38,31 @@ def run_stream_pipeline(
     stream_id: str,
 ) -> Generator[Any, None, None]:
     return run_pipeline(context, build_stream_pipeline(context, stream_id))
+
+
+def run_stream_preview_pipeline(
+    context: PipelineContext,
+    stream_id: str,
+    preview: RecordPreviewStage,
+) -> Generator[Any, None, None]:
+    pipeline = build_stream_pipeline(context, stream_id)
+    stream = require_runtime_stream(context.runtime, stream_id)
+    if preview in {"input", "canonical"} and isinstance(
+        stream,
+        DerivedRuntimeStream,
+    ):
+        upstream = build_stream_pipeline(context, stream.input_stream)
+        pipeline = pipeline.through_stage_count(len(upstream.stages))
+    elif preview == "input":
+        pipeline = pipeline.input_only()
+    elif preview == "canonical":
+        stage_name = (
+            "combine_records"
+            if isinstance(stream, CombinedRuntimeStream)
+            else "map_records"
+        )
+        pipeline = pipeline.through_stage_named(stage_name)
+    return run_pipeline(context, pipeline)
 
 
 def build_stream_pipeline(
