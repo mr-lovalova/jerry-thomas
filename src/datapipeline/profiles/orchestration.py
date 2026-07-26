@@ -1,3 +1,5 @@
+import logging
+
 from datapipeline.artifacts.errors import ArtifactResolutionError
 from datapipeline.artifacts.executor import run_build_if_needed
 from datapipeline.artifacts.planning import (
@@ -40,6 +42,8 @@ from .models import (
     ServeRunPlan,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def run_profiles(request: ProfileRunRequest) -> None:
     try:
@@ -54,7 +58,14 @@ def run_profiles(request: ProfileRunRequest) -> None:
                 raise TypeError(
                     f"Unsupported profile request: {type(request).__name__}"
                 )
-            _prune_series_caches(request)
+            try:
+                _prune_series_caches(request)
+            except OSError as exc:
+                logger.warning(
+                    "Series cache cleanup skipped under '%s': %s",
+                    request.definition.project.artifacts_root,
+                    exc,
+                )
     except (ArtifactResolutionError, ProjectExecutionBusyError) as exc:
         error = ProfileCommandError(str(exc))
         for note in getattr(exc, "__notes__", ()):

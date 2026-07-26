@@ -66,7 +66,11 @@ from datapipeline.profiles.models import (
     ServeRunPlan,
 )
 from datapipeline.profiles.errors import ProfileCommandError
-from datapipeline.profiles.orchestration import _validate_build_order, run_profiles
+from datapipeline.profiles.orchestration import (
+    _prune_series_caches,
+    _validate_build_order,
+    run_profiles,
+)
 from datapipeline.services.materialize import resolve_materialize_output
 from tests.unit.profiles.helpers import project_definition
 
@@ -937,6 +941,78 @@ def test_shared_serve_run_is_finalized_once(monkeypatch, tmp_path: Path) -> None
     run_profiles(request)
 
     assert calls == {"start": 1, "success": 1, "failed": 0, "latest": 1}
+
+
+def test_series_cache_filesystem_failure_does_not_fail_published_run(
+    monkeypatch,
+    tmp_path: Path,
+    caplog,
+) -> None:
+    series = SeriesTask(id="series")
+    task = RuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    run_paths = _run_paths(tmp_path)
+    request = _runtime_request(
+        tmp_path,
+        command="serve",
+        artifact_tasks=[series],
+        jobs=[_runtime_job("serve", task, _runtime(tmp_path))],
+        serve_run_plans=(ServeRunPlan(run_paths, None),),
+    )
+
+    monkeypatch.setattr(
+        "datapipeline.profiles.orchestration.execution_scope",
+        _passthrough_execution_scope,
+    )
+    monkeypatch.setattr(
+        "datapipeline.profiles.orchestration.execute_runtime_job",
+        lambda *_args: None,
+    )
+
+    def fail_pruning(*_args) -> None:
+        raise PermissionError("cache is read-only")
+
+    monkeypatch.setattr(
+        "datapipeline.profiles.orchestration.prune_series_cache",
+        fail_pruning,
+    )
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="datapipeline.profiles.orchestration",
+    ):
+        run_profiles(request)
+
+    metadata = json.loads(run_paths.metadata_path.read_text(encoding="utf-8"))
+    assert metadata["status"] == "success"
+    assert (run_paths.serve_root / "latest").resolve() == run_paths.run_root.resolve()
+    assert "Series cache cleanup skipped" in caplog.text
+    assert "cache is read-only" in caplog.text
+
+
+def test_series_cache_programming_error_remains_strict(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    series = SeriesTask(id="series")
+    request = _build_request(
+        tmp_path,
+        [series],
+        [],
+    )
+    error = RuntimeError("invalid cache layout")
+
+    def fail_pruning(*_args) -> None:
+        raise error
+
+    monkeypatch.setattr(
+        "datapipeline.profiles.orchestration.prune_series_cache",
+        fail_pruning,
+    )
+
+    with pytest.raises(RuntimeError, match="invalid cache layout") as raised:
+        _prune_series_caches(request)
+
+    assert raised.value is error
 
 
 def test_job_failure_marks_shared_run_failed(monkeypatch, tmp_path: Path) -> None:
