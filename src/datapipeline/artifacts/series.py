@@ -30,6 +30,7 @@ from datapipeline.services.path_policy import resolve_artifact_output_path
 from datapipeline.utils.time import CADENCE_PATTERN, parse_datetime
 
 SERIES_MANIFEST_VERSION: Final = 10
+_SERIES_COMPRESSION_LEVEL: Final = 3
 _JSON_SCALAR_TYPES = {type(None), bool, int, float, str}
 _NonEmptyString = Annotated[
     str,
@@ -132,7 +133,7 @@ def _require_json_value(value: Any) -> None:
 
 
 def write_series_rows(path: Path, rows: Iterable[SeriesRow]) -> SeriesWriteResult:
-    sink = GzipBinarySink(path)
+    sink = GzipBinarySink(path, compression_level=_SERIES_COMPRESSION_LEVEL)
     hasher = hashlib.sha256()
     count = 0
     try:

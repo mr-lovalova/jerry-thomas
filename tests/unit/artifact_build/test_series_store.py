@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import pytest
 
+import datapipeline.artifacts.series as series_store
 from datapipeline.artifacts.series import (
     SERIES_MANIFEST_VERSION,
     SeriesRow,
@@ -153,6 +154,31 @@ def test_series_gzip_is_reproducible(tmp_path: Path) -> None:
     assert first.read_bytes() == second.read_bytes()
     assert first_result == second_result
     assert first_result.rows == 1
+
+
+def test_series_writer_uses_compression_level_three(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    compression_levels = []
+    sink_type = series_store.GzipBinarySink
+
+    def open_sink(
+        path: Path,
+        compression_level: int,
+        overwrite: bool = True,
+    ) -> series_store.GzipBinarySink:
+        compression_levels.append(compression_level)
+        return sink_type(path, compression_level, overwrite)
+
+    monkeypatch.setattr(series_store, "GzipBinarySink", open_sink)
+
+    write_series_rows(
+        tmp_path / "series.jsonl.gz",
+        [_row(0, features={"price": 1.0})],
+    )
+
+    assert compression_levels == [3]
 
 
 def test_series_writer_aborts_when_atomic_commit_fails(
