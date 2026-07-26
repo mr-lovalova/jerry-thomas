@@ -16,21 +16,18 @@ from datapipeline.runtime import Runtime
 def _runtime(
     tmp_path,
     catalog: dict,
-    postprocess: PostprocessConfig | None = None,
+    dataset: DatasetConfig | None = None,
 ) -> Runtime:
     artifacts_root = tmp_path / "artifacts"
     artifacts_root.mkdir()
     project = tmp_path / "project.yaml"
     project.write_text("schema_version: 4\nartifact_revision: 1\n", encoding="utf-8")
-    if postprocess is None:
-        postprocess = PostprocessConfig()
+    if dataset is None:
+        dataset = DatasetConfig(sample=SampleConfig(cadence="1h"))
     runtime = Runtime(
         project_yaml=project,
         artifacts_root=artifacts_root,
-        dataset=DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
-            postprocess=postprocess,
-        ),
+        dataset=dataset,
     )
 
     metadata_path = artifacts_root / "metadata.json"
@@ -108,8 +105,11 @@ def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
             ],
             "targets": [],
         },
-        postprocess=PostprocessConfig.model_validate(
-            {"samples": {"features": {"threshold": 1.0, "ids": ["value"]}}}
+        dataset=DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            postprocess=PostprocessConfig.model_validate(
+                {"samples": {"features": {"threshold": 1.0, "ids": ["value"]}}}
+            ),
         ),
     )
     samples = [
@@ -165,8 +165,28 @@ def test_postprocess_applies_explicit_target_policies(tmp_path) -> None:
                 },
             ],
         },
-        postprocess=PostprocessConfig.model_validate(
-            {"samples": {"targets": {"threshold": 1.0, "ids": ["target"]}}}
+        dataset=DatasetConfig.model_validate(
+            {
+                "sample": {"cadence": "1h"},
+                "features": [{"id": "feature", "stream": "features", "field": "value"}],
+                "targets": [
+                    {
+                        "id": "sparse",
+                        "stream": "targets",
+                        "field": "sparse",
+                        "horizon": "0s",
+                    },
+                    {
+                        "id": "target",
+                        "stream": "targets",
+                        "field": "value",
+                        "horizon": "0s",
+                    },
+                ],
+                "postprocess": {
+                    "samples": {"targets": {"threshold": 1.0, "ids": ["target"]}}
+                },
+            }
         ),
     )
     sample = Sample(

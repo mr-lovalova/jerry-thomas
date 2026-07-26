@@ -39,6 +39,28 @@ def test_dataset_rejects_targets_without_features() -> None:
         )
 
 
+def test_dataset_rejects_target_coverage_without_targets() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="postprocess.samples.targets requires at least one dataset target",
+    ):
+        DatasetConfig.model_validate(
+            {
+                "sample": {"cadence": "1d"},
+                "features": [
+                    {
+                        "id": "price",
+                        "stream": "prices",
+                        "field": "close",
+                    }
+                ],
+                "postprocess": {
+                    "samples": {"targets": {"threshold": 1.0}},
+                },
+            }
+        )
+
+
 def test_dataset_requires_an_explicit_target_horizon() -> None:
     with pytest.raises(ValidationError, match="horizon"):
         DatasetConfig.model_validate(
