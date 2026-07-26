@@ -51,11 +51,11 @@ def test_walk_forward_scaling_and_routed_outputs(copy_fixture, tmp_path: Path) -
     }
     assert scaler.model_dump(mode="json") == {
         "kind": "folded_scaler",
-        "version": 3,
+        "version": 4,
         "folds": {
             "fold_0": {
                 "kind": "standard_scaler",
-                "version": 3,
+                "version": 4,
                 "with_mean": True,
                 "with_std": True,
                 "epsilon": 1e-12,
@@ -67,7 +67,7 @@ def test_walk_forward_scaling_and_routed_outputs(copy_fixture, tmp_path: Path) -
             },
             "fold_1": {
                 "kind": "standard_scaler",
-                "version": 3,
+                "version": 4,
                 "with_mean": True,
                 "with_std": True,
                 "epsilon": 1e-12,

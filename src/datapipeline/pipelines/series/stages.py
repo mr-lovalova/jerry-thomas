@@ -39,6 +39,9 @@ class SeriesSequencer:
         self._position = 0
 
     def append(self, record: SeriesRecord) -> SeriesSequence | None:
+        if isinstance(record.value, list):
+            raise TypeError(f"Series {record.id!r} sequence requires scalar values.")
+
         key = record.id, record.entity_key
         if key != self._active_key:
             self._active_key = key

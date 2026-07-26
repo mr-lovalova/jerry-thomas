@@ -1014,3 +1014,45 @@ def test_metadata_format_version_invalidates_only_metadata_and_dependents(
     assert changed.for_artifact(VECTOR_METADATA) != current.for_artifact(
         VECTOR_METADATA
     )
+
+
+def test_scaler_format_version_invalidates_only_scaler(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    definition = load_project_definition(_write_project(tmp_path))
+    dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                id="price",
+                stream="prices",
+                field="close",
+                scale=True,
+            )
+        ],
+    )
+    tasks = (ScalerTask(), SeriesTask())
+    current = calculate_artifact_hashes(
+        definition.project,
+        dataset,
+        _single_stream_catalog(),
+        tasks,
+    )
+
+    monkeypatch.setattr(
+        fingerprints,
+        "SCALER_ARTIFACT_VERSION",
+        fingerprints.SCALER_ARTIFACT_VERSION + 1,
+    )
+    changed = calculate_artifact_hashes(
+        definition.project,
+        dataset,
+        _single_stream_catalog(),
+        tasks,
+    )
+
+    assert changed.for_artifact(SCALER_STATISTICS) != current.for_artifact(
+        SCALER_STATISTICS
+    )
+    assert changed.for_artifact(SERIES) == current.for_artifact(SERIES)

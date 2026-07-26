@@ -159,6 +159,18 @@ def test_sequence_series_preserves_none_values() -> None:
     assert sequence.values == [1.0, None]
 
 
+def test_sequence_series_rejects_intrinsic_list_values() -> None:
+    records = iter(
+        [
+            _series_record([1.0, 2.0], 0),
+            _series_record([3.0, 4.0], 1),
+        ]
+    )
+
+    with pytest.raises(TypeError, match=r"sequence requires scalar values"):
+        list(sequence_series(SequenceConfig(size=2), records))
+
+
 def test_sequence_establishes_domain_when_any_input_record_does() -> None:
     placeholder = _series_record(None, 0)
     set_record_domain_anchor(placeholder, False)

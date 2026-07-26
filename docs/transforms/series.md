@@ -39,7 +39,9 @@ value in one fold output is scaled with that fold's scaler. `with_mean`,
 recorded in the managed artifact; individual features cannot override them.
 `None` is the canonical missing value. A transient floating `NaN` is converted
 to `None` when the field is projected; other nonnumeric values and infinity are
-rejected.
+rejected. Intrinsically list-valued fields are fitted independently by position.
+Lists produced from scalar `sequence` or `collect` inputs apply the same scalar
+series statistics to every position.
 
 `sequence` accepts strictly positive integer `size` and optional `stride`
 (default `1`). It creates independent windows per series ID and entity from
@@ -47,7 +49,8 @@ the source stream's record order. The stream's complete `partition_by` identity
 keeps each series contiguous and sequence memory bounded to one window. Dataset
 `sample.keys` select the partition fields represented in each row; remaining
 partition fields are appended to the series ID. Cadence regularization belongs
-in that stream's `transforms:` when it is required.
+in that stream's `transforms:` when it is required. Sequence inputs must be
+scalar; nested list values are rejected rather than implicitly flattened.
 
 `collect` is a strictly positive integer. Zero records leave the series absent
 from a sample. Every populated bucket must contain exactly that many values;

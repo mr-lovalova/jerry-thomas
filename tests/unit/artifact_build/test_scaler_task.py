@@ -5,6 +5,8 @@ import pytest
 
 from datapipeline.artifacts.scaler import (
     FoldedScalerArtifact,
+    PositionalScalerStatistics,
+    ScalerStatistics,
     StandardScalerArtifact,
     load_scaler_artifact,
 )
@@ -126,7 +128,7 @@ def test_materialize_standard_scaler_uses_all_scalar_observations(
     assert result is not None
     artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
     assert isinstance(artifact, StandardScalerArtifact)
-    assert artifact.version == 3
+    assert artifact.version == 4
     assert artifact.observations == 2
     assert artifact.statistics["x"].mean == 2.0
     assert result.meta == {
@@ -135,7 +137,7 @@ def test_materialize_standard_scaler_uses_all_scalar_observations(
     }
 
 
-def test_materialize_standard_scaler_uses_intrinsic_list_elements(
+def test_materialize_standard_scaler_fits_intrinsic_list_positions(
     tmp_path,
 ) -> None:
     runtime = _runtime(
@@ -156,14 +158,65 @@ def test_materialize_standard_scaler_uses_intrinsic_list_elements(
     artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
     assert isinstance(artifact, StandardScalerArtifact)
     statistics = artifact.statistics["x"]
+    assert isinstance(statistics, PositionalScalerStatistics)
+    first, second = statistics.positions
+    assert first.count == 2
+    assert first.mean == 2.0
+    assert first.std == 1.0
+    assert second.count == 1
+    assert second.mean == 5.0
+    assert second.std == pytest.approx(1e-12)
     assert statistics.count == 3
-    assert statistics.mean == 3.0
-    assert statistics.std == pytest.approx((8 / 3) ** 0.5)
     assert artifact.observations == 3
     assert result.meta == {
         "series": 1,
         "observations": 3,
     }
+
+
+def test_folded_scaler_fits_list_positions_from_training_rows_only(
+    tmp_path,
+) -> None:
+    runtime = _runtime(
+        tmp_path,
+        _dataset(
+            cadence="1d",
+            split=TimeSplitConfig(
+                intervals=[
+                    TimeInterval(
+                        id="train",
+                        until="2024-01-02T00:00:00Z",
+                    ),
+                    TimeInterval(id="validation"),
+                ],
+                folds=[
+                    DatasetFold(
+                        id="fold",
+                        train=["train"],
+                        validation=["validation"],
+                    )
+                ],
+            ),
+        ),
+        rows=[
+            _record(1, [1.0, 100.0]),
+            _record(2, [1_000.0, 10_000.0]),
+        ],
+    )
+
+    result = build_scaler_artifact(
+        runtime,
+        ScalerTask(output="scaler.json"),
+    )
+
+    assert result is not None
+    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    assert isinstance(artifact, FoldedScalerArtifact)
+    statistics = artifact.for_fold("fold").statistics["x"]
+    assert isinstance(statistics, PositionalScalerStatistics)
+    first, second = statistics.positions
+    assert first == ScalerStatistics(mean=1.0, std=1e-12, count=1)
+    assert second == ScalerStatistics(mean=100.0, std=1e-12, count=1)
 
 
 def test_materialize_standard_scaler_persists_build_options(
@@ -428,7 +481,7 @@ def test_materialize_folded_scaler_uses_dataset_owned_expanding_train_roles(
     assert result is not None
     artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
     assert isinstance(artifact, FoldedScalerArtifact)
-    assert artifact.version == 3
+    assert artifact.version == 4
     assert artifact.for_fold("fold_0").statistics["x"].mean == 1.0
     assert artifact.for_fold("fold_0").observations == 1
     assert artifact.for_fold("fold_1").statistics["x"].mean == 3.0

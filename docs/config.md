@@ -806,12 +806,15 @@ postprocess:
   managed `build/scaler.json` artifact when a dataset output is produced.
   Fitting options belong to the scaler operation and cannot be overridden per
   vector. `None` and transient `NaN` remain missing; other nonnumeric values
-  and infinity fail.
+  and infinity fail. Intrinsically list-valued fields are fitted independently
+  by position. Lists created from scalar `sequence` or `collect` inputs use the
+  scalar series' shared statistics at every position.
 - `sequence` emits `SeriesSequence` windows and accepts `size` plus
   optional `stride` (default `1`). Regularize cadence with ordered transforms
   before series projection when contiguous ticks are required. The resolved
   stream partition keeps every independent series in one contiguous ordered
-  group.
+  group. Sequence inputs must be scalar; Jerry does not implicitly create or
+  flatten nested list values.
 - `collect` requires exactly `size` ordered scalar values in each populated
   `sample.cadence` bucket. Zero values leave that series absent. `None` and
   cadence placeholders count as positions; underfilled and overfilled buckets

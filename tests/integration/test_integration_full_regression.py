@@ -138,7 +138,7 @@ def test_full_regression_project_through_serve(copy_fixture) -> None:
                 "std": 3.415650255319866,
             }
         },
-        "version": 3,
+        "version": 4,
         "with_mean": True,
         "with_std": True,
     }

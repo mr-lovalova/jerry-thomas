@@ -8,6 +8,7 @@ from pathlib import Path
 
 from datapipeline.artifacts.models import VECTOR_METADATA_VERSION
 from datapipeline.artifacts.planning import build_artifact_graph
+from datapipeline.artifacts.scaler import SCALER_ARTIFACT_VERSION
 from datapipeline.artifacts.series import SERIES_MANIFEST_VERSION
 from datapipeline.artifacts.specs import dataset_requires_scaler
 from datapipeline.config.dataset.dataset import DatasetConfig
@@ -168,7 +169,7 @@ def _artifact_inputs(
                 if dataset.split is not None
                 else None
             ),
-            "scaled_vectors": [
+            "scaled_series": [
                 config.model_dump(
                     mode="json",
                     exclude={"collect", "horizon", "sequence"},
@@ -183,6 +184,7 @@ def _artifact_inputs(
             )
         return (
             {
+                "scaler_format_version": SCALER_ARTIFACT_VERSION,
                 "dataset": dataset_inputs,
                 "streams": stream_config,
             },
