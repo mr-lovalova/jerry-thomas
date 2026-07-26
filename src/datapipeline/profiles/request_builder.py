@@ -1,4 +1,3 @@
-import logging
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +30,7 @@ from datapipeline.execution.settings import (
 )
 from datapipeline.io.output import OutputResolutionError
 from datapipeline.io.runs import RunPaths
+from datapipeline.profiles.errors import ProfileCommandError
 from datapipeline.profiles.loader import (
     apply_profile_defaults,
     profile_specs_with_defaults,
@@ -53,8 +53,6 @@ from datapipeline.services.path_policy import sanitize_path_segment
 from datapipeline.services.project_definition import load_project_definition
 from datapipeline.services.runtime_compiler import compile_runtime
 
-logger = logging.getLogger(__name__)
-
 
 def _validation_error_without_inputs(exc: ValidationError) -> str:
     count = exc.error_count()
@@ -76,14 +74,12 @@ def _load_definition(project: str) -> ProjectDefinition:
     try:
         return load_project_definition(Path(project))
     except ValidationError as exc:
-        logger.error(
-            "Failed to load project definition: %s",
-            _validation_error_without_inputs(exc),
-        )
-        raise SystemExit(2) from exc
-    except (OSError, RuntimeError, TypeError, ValueError) as exc:
-        logger.error("Failed to load project definition: %s", exc)
-        raise SystemExit(2) from exc
+        raise ProfileCommandError(
+            "Failed to load project definition: "
+            f"{_validation_error_without_inputs(exc)}"
+        ) from exc
+    except (OSError, TypeError, ValueError) as exc:
+        raise ProfileCommandError(f"Failed to load project definition: {exc}") from exc
 
 
 def _select_profiles(
@@ -97,40 +93,34 @@ def _select_profiles(
             cmd=command,
         )
     except ValidationError as exc:
-        logger.error(
-            "Failed to load %s profiles: %s",
-            command,
-            _validation_error_without_inputs(exc),
-        )
-        raise SystemExit(2) from exc
+        raise ProfileCommandError(
+            f"Failed to load {command} profiles: "
+            f"{_validation_error_without_inputs(exc)}"
+        ) from exc
     except (OSError, TypeError, ValueError) as exc:
-        logger.error("Failed to load %s profiles: %s", command, exc)
-        raise SystemExit(2) from exc
+        raise ProfileCommandError(f"Failed to load {command} profiles: {exc}") from exc
     if not profiles:
-        logger.error("Project does not define %s profiles.", command)
-        raise SystemExit(2)
+        raise ProfileCommandError(f"Project does not define {command} profiles.")
     if profile_name is None:
         selected = [profile for profile in profiles if profile.enabled]
     else:
         normalized_name = profile_name.strip()
         if not normalized_name:
-            logger.error("%s profile name must not be empty.", command.capitalize())
-            raise SystemExit(2)
+            raise ProfileCommandError(
+                f"{command.capitalize()} profile name must not be empty."
+            )
         selected = [profile for profile in profiles if profile.name == normalized_name]
         if not selected:
-            logger.error("Unknown %s profile '%s'", command, normalized_name)
-            raise SystemExit(2)
+            raise ProfileCommandError(f"Unknown {command} profile '{normalized_name}'")
     try:
         return (
             [apply_profile_defaults(profile, defaults) for profile in selected],
             defaults,
         )
     except ValidationError as exc:
-        logger.error("%s", _validation_error_without_inputs(exc))
-        raise SystemExit(2) from exc
+        raise ProfileCommandError(_validation_error_without_inputs(exc)) from exc
     except ValueError as exc:
-        logger.error("%s", exc)
-        raise SystemExit(2) from exc
+        raise ProfileCommandError(str(exc)) from exc
 
 
 def _serve_run_plans(
@@ -179,19 +169,14 @@ def build_build_run_request(
         task = artifact_tasks_by_id.get(profile.operation)
         if task is None:
             if profile.operation in runtime_task_ids:
-                logger.error(
-                    "Build profile '%s' must reference an artifact operation; '%s' "
-                    "is a runtime operation.",
-                    profile.name,
-                    profile.operation,
+                raise ProfileCommandError(
+                    f"Build profile '{profile.name}' must reference an artifact "
+                    f"operation; '{profile.operation}' is a runtime operation."
                 )
-                raise SystemExit(2)
-            logger.error(
-                "Build profile '%s' references unknown operation '%s'.",
-                profile.name,
-                profile.operation,
+            raise ProfileCommandError(
+                f"Build profile '{profile.name}' references unknown operation "
+                f"'{profile.operation}'."
             )
-            raise SystemExit(2)
         build_profiles.append(profile)
 
     execution_dir = _execution_root(definition.project.artifacts_root)
@@ -208,8 +193,7 @@ def build_build_run_request(
                 base_log_level=base_log_level,
             )
         except ValueError as exc:
-            logger.error("Invalid build configuration: %s", exc)
-            raise SystemExit(2) from exc
+            raise ProfileCommandError(f"Invalid build configuration: {exc}") from exc
         build_jobs.append(
             BuildJob(
                 task=artifact_tasks_by_id[profile.operation].model_copy(deep=True),
@@ -288,29 +272,22 @@ def build_runtime_run_request(
         task = runtime_tasks_by_id.get(profile.operation)
         if task is None:
             if profile.operation in artifact_task_ids:
-                logger.error(
-                    "%s profile '%s' must reference a runtime operation; '%s' is "
-                    "an artifact operation.",
-                    command.capitalize(),
-                    profile.name,
-                    profile.operation,
+                raise ProfileCommandError(
+                    f"{command.capitalize()} profile '{profile.name}' must reference "
+                    f"a runtime operation; '{profile.operation}' is an artifact "
+                    "operation."
                 )
-                raise SystemExit(2)
-            logger.error(
-                "%s profile '%s' references unknown operation '%s'.",
-                command.capitalize(),
-                profile.name,
-                profile.operation,
+            raise ProfileCommandError(
+                f"{command.capitalize()} profile '{profile.name}' references unknown "
+                f"operation '{profile.operation}'."
             )
-            raise SystemExit(2)
 
     try:
         resolved_artifact_mode = (
             normalize_artifact_mode(artifact_mode) or defaults.artifact_mode or "AUTO"
         )
     except ValueError as exc:
-        logger.error("Invalid artifact mode: %s", exc)
-        raise SystemExit(2) from exc
+        raise ProfileCommandError(f"Invalid artifact mode: {exc}") from exc
 
     execution_dir = _execution_root(definition.project.artifacts_root)
     try:
@@ -324,8 +301,7 @@ def build_runtime_run_request(
             base_log_level=base_log_level,
         )
     except ValueError as exc:
-        logger.error("Invalid prerequisite observability: %s", exc)
-        raise SystemExit(2) from exc
+        raise ProfileCommandError(f"Invalid prerequisite observability: {exc}") from exc
     artifact_settings = BuildSettings(
         mode=resolved_artifact_mode,
         observability=replace(
@@ -391,11 +367,9 @@ def build_runtime_run_request(
             for profile in resolved_profiles
         ]
     except OutputResolutionError as exc:
-        logger.error("Invalid output configuration: %s", exc)
-        raise SystemExit(2) from exc
+        raise ProfileCommandError(f"Invalid output configuration: {exc}") from exc
     except ValueError as exc:
-        logger.error("%s", exc)
-        raise SystemExit(2) from exc
+        raise ProfileCommandError(str(exc)) from exc
 
     return RuntimeRunRequest(
         command=command,
@@ -466,8 +440,7 @@ def build_materialize_run_request(
         )
         runtime = compile_runtime(definition)
     except (OSError, TypeError, ValueError) as exc:
-        logger.error("Invalid materialize configuration: %s", exc)
-        raise SystemExit(2) from exc
+        raise ProfileCommandError(f"Invalid materialize configuration: {exc}") from exc
 
     artifact_settings = BuildSettings(
         mode=resolved_artifact_mode,

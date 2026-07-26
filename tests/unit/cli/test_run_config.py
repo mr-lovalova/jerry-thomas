@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from datapipeline.profiles.errors import ProfileCommandError
 from datapipeline.profiles.request_builder import (
     build_build_run_request,
     build_runtime_run_request,
@@ -87,7 +88,7 @@ def test_inspect_request_defaults_to_enabled_profiles(tmp_path: Path):
     assert job.limit == 7
 
 
-def test_inspect_request_rejects_preview(tmp_path: Path, caplog) -> None:
+def test_inspect_request_rejects_preview(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
@@ -96,18 +97,17 @@ def test_inspect_request_rejects_preview(tmp_path: Path, caplog) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_runtime_run_request(
             command="inspect",
             project=str(project_yaml),
             preview="input",
         )
 
-    assert exc.value.code == 2
-    assert "Inspect profiles do not support previews" in caplog.text
+    assert "Inspect profiles do not support previews" in str(exc.value)
 
 
-def test_serve_profile_rejects_artifact_operation(tmp_path: Path, caplog):
+def test_serve_profile_rejects_artifact_operation(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
@@ -116,21 +116,20 @@ def test_serve_profile_rejects_artifact_operation(tmp_path: Path, caplog):
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_runtime_run_request(
             command="serve",
             project=str(project_yaml),
             profile_name="metadata",
         )
 
-    assert exc.value.code == 2
     assert (
         "must reference a runtime operation; 'metadata' is an artifact operation"
-        in caplog.text
+        in str(exc.value)
     )
 
 
-def test_inspect_profile_rejects_artifact_operation(tmp_path: Path, caplog):
+def test_inspect_profile_rejects_artifact_operation(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
@@ -139,17 +138,16 @@ def test_inspect_profile_rejects_artifact_operation(tmp_path: Path, caplog):
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_runtime_run_request(command="inspect", project=str(project_yaml))
 
-    assert exc.value.code == 2
     assert (
         "must reference a runtime operation; 'coverage_stats' is an artifact operation"
-        in caplog.text
+        in str(exc.value)
     )
 
 
-def test_build_profile_rejects_runtime_operation(tmp_path: Path, caplog):
+def test_build_profile_rejects_runtime_operation(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
@@ -158,17 +156,16 @@ def test_build_profile_rejects_runtime_operation(tmp_path: Path, caplog):
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_build_run_request(project=str(project_yaml))
 
-    assert exc.value.code == 2
     assert (
         "must reference an artifact operation; 'dataset' is a runtime operation"
-        in caplog.text
+        in str(exc.value)
     )
 
 
-def test_build_profile_rejects_unknown_operation(tmp_path: Path, caplog):
+def test_build_profile_rejects_unknown_operation(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
@@ -177,14 +174,13 @@ def test_build_profile_rejects_unknown_operation(tmp_path: Path, caplog):
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_build_run_request(project=str(project_yaml))
 
-    assert exc.value.code == 2
-    assert "references unknown operation 'scheam'" in caplog.text
+    assert "references unknown operation 'scheam'" in str(exc.value)
 
 
-def test_serve_profile_rejects_removed_pipeline_operation_id(tmp_path: Path, caplog):
+def test_serve_profile_rejects_removed_pipeline_operation_id(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
@@ -193,11 +189,10 @@ def test_serve_profile_rejects_removed_pipeline_operation_id(tmp_path: Path, cap
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_runtime_run_request(command="serve", project=str(project_yaml))
 
-    assert exc.value.code == 2
-    assert "references unknown operation 'pipeline'" in caplog.text
+    assert "references unknown operation 'pipeline'" in str(exc.value)
 
 
 def test_serve_request_orders_enabled_profiles_and_run_selects_named_profile(

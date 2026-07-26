@@ -4,6 +4,7 @@ import pytest
 
 from datapipeline.cli.command_router import execute_command
 from datapipeline.cli.parser_builder import build_parser
+from datapipeline.profiles.errors import ProfileCommandError
 
 
 def _execute(args, workspace=None) -> None:
@@ -109,7 +110,7 @@ def test_materialize_resolves_profile_output_from_workspace(
     )
     executed = []
     monkeypatch.setattr(
-        "datapipeline.cli.commands.materialize.run_profiles",
+        "datapipeline.cli.commands.materialize.execute_profile_request",
         executed.append,
     )
     workspace = SimpleNamespace(root=tmp_path)
@@ -142,7 +143,7 @@ def test_materialize_passes_gzip_output_to_profile_resolution(monkeypatch) -> No
         lambda **kwargs: captured.update(kwargs) or request,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.materialize.run_profiles",
+        "datapipeline.cli.commands.materialize.execute_profile_request",
         lambda selected: None,
     )
     args = build_parser().parse_args(
@@ -170,7 +171,7 @@ def test_materialize_allows_global_overrides_without_profile(monkeypatch) -> Non
         lambda **kwargs: captured.update(kwargs) or request,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.materialize.run_profiles",
+        "datapipeline.cli.commands.materialize.execute_profile_request",
         lambda selected: None,
     )
     args = build_parser().parse_args(
@@ -191,9 +192,9 @@ def test_materialize_allows_global_overrides_without_profile(monkeypatch) -> Non
     assert captured["cli_visuals"] == "off"
 
 
-def test_materialize_profile_validation_error_exits_cleanly(monkeypatch) -> None:
+def test_materialize_profile_validation_error_reaches_cli_boundary(monkeypatch) -> None:
     def fail(**kwargs):
-        raise SystemExit(2)
+        raise ProfileCommandError("Unknown materialize profile 'missing'")
 
     monkeypatch.setattr(
         "datapipeline.cli.commands.materialize.build_materialize_run_request",
@@ -209,7 +210,5 @@ def test_materialize_profile_validation_error_exits_cleanly(monkeypatch) -> None
         ]
     )
 
-    with pytest.raises(SystemExit) as exc_info:
+    with pytest.raises(ProfileCommandError, match="Unknown materialize profile"):
         _execute(args)
-
-    assert exc_info.value.code == 2

@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -6,6 +5,7 @@ import pytest
 
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.execution.settings import LogOutputTarget
+from datapipeline.profiles.errors import ProfileCommandError
 from datapipeline.profiles.request_builder import (
     build_build_run_request,
     build_materialize_run_request,
@@ -45,11 +45,11 @@ def test_build_request_requires_declared_build_profiles(tmp_path: Path):
     (tmp_path / "operations").mkdir(parents=True, exist_ok=True)
     (tmp_path / "profiles").mkdir(parents=True, exist_ok=True)
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_build_run_request(
             project=str(project_yaml),
         )
-    assert exc.value.code == 2
+    assert "Project does not define build profiles" in str(exc.value)
 
 
 def test_inspect_request_requires_declared_inspect_profiles(tmp_path: Path):
@@ -57,18 +57,34 @@ def test_inspect_request_requires_declared_inspect_profiles(tmp_path: Path):
     (tmp_path / "operations").mkdir(parents=True, exist_ok=True)
     (tmp_path / "profiles").mkdir(parents=True, exist_ok=True)
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_runtime_run_request(
             command="inspect",
             project=str(project_yaml),
         )
-    assert exc.value.code == 2
+    assert "Project does not define inspect profiles" in str(exc.value)
+
+
+def test_project_definition_unexpected_runtime_error_propagates(monkeypatch) -> None:
+    error = RuntimeError("unexpected loader bug")
+
+    def fail(_path: Path):
+        raise error
+
+    monkeypatch.setattr(
+        "datapipeline.profiles.request_builder.load_project_definition",
+        fail,
+    )
+
+    with pytest.raises(RuntimeError) as raised:
+        build_build_run_request(project="project.yaml")
+
+    assert raised.value is error
 
 
 def test_project_definition_validation_does_not_log_secret_inputs(
     tmp_path: Path,
     monkeypatch,
-    caplog,
 ) -> None:
     project_yaml = _write_project(tmp_path)
     secret = "do-not-log-this-secret"
@@ -81,23 +97,23 @@ def test_project_definition_validation_does_not_log_secret_inputs(
         encoding="utf-8",
     )
 
-    with caplog.at_level(logging.ERROR), pytest.raises(SystemExit):
+    with pytest.raises(ProfileCommandError) as raised:
         build_runtime_run_request(
             command="serve",
             project=str(project_yaml),
         )
 
-    assert secret not in caplog.text
-    assert "input_value" not in caplog.text
-    assert "input_type" not in caplog.text
-    assert "artifact_revision" in caplog.text
-    assert "Input should be a valid integer" in caplog.text
+    message = str(raised.value)
+    assert secret not in message
+    assert "input_value" not in message
+    assert "input_type" not in message
+    assert "artifact_revision" in message
+    assert "Input should be a valid integer" in message
 
 
 def test_profile_validation_does_not_log_secret_inputs(
     tmp_path: Path,
     monkeypatch,
-    caplog,
 ) -> None:
     project_yaml = _write_project(tmp_path)
     secret = "do-not-log-this-secret"
@@ -114,23 +130,23 @@ observability:
         encoding="utf-8",
     )
 
-    with caplog.at_level(logging.ERROR), pytest.raises(SystemExit):
+    with pytest.raises(ProfileCommandError) as raised:
         build_runtime_run_request(
             command="serve",
             project=str(project_yaml),
         )
 
-    assert secret not in caplog.text
-    assert "input_value" not in caplog.text
-    assert "input_type" not in caplog.text
-    assert "logging.level" in caplog.text
-    assert "Invalid configuration value" in caplog.text
+    message = str(raised.value)
+    assert secret not in message
+    assert "input_value" not in message
+    assert "input_type" not in message
+    assert "logging.level" in message
+    assert "Invalid configuration value" in message
 
 
 def test_custom_validation_message_does_not_log_resolved_secret(
     tmp_path: Path,
     monkeypatch,
-    caplog,
 ) -> None:
     project_yaml = _write_project(tmp_path)
     secret = "do-not-log-this-output-id"
@@ -145,15 +161,16 @@ def test_custom_validation_message_does_not_log_resolved_secret(
         encoding="utf-8",
     )
 
-    with caplog.at_level(logging.ERROR), pytest.raises(SystemExit):
+    with pytest.raises(ProfileCommandError) as raised:
         build_runtime_run_request(
             command="serve",
             project=str(project_yaml),
         )
 
-    assert secret not in caplog.text
-    assert "include_outputs" in caplog.text
-    assert "Invalid configuration value" in caplog.text
+    message = str(raised.value)
+    assert secret not in message
+    assert "include_outputs" in message
+    assert "Invalid configuration value" in message
 
 
 def test_inspect_request_materializes_execution_scoped_log_output(

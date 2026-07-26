@@ -5,6 +5,7 @@ import pytest
 from datapipeline.cli import app
 from datapipeline.cli.workspace import WorkspaceContext
 from datapipeline.config.workspace import WorkspaceConfig
+from datapipeline.profiles.errors import ProfileCommandError
 
 
 def test_source_add_skips_dataset_resolution(monkeypatch, tmp_path):
@@ -169,6 +170,35 @@ def test_main_handles_keyboard_interrupt_at_top_level(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert exc.value.code == 130
     assert "Serve interrupted by user" in captured.err
+
+
+def test_main_converts_profile_error_to_cli_exit(monkeypatch):
+    error = ProfileCommandError("invalid serve profile")
+    error.add_note("additional profile detail")
+    messages: list[str] = []
+
+    def fail(**_kwargs) -> None:
+        raise error
+
+    monkeypatch.setattr(app, "load_workspace_context", lambda _cwd: None)
+    monkeypatch.setattr(app, "execute_command", fail)
+    monkeypatch.setattr(
+        app.logger,
+        "error",
+        lambda message, *args: messages.append(message % args),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["jerry", "serve", "--project", "project.yaml"],
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        app.main()
+
+    assert raised.value.code == 2
+    assert raised.value.__cause__ is error
+    assert messages == ["invalid serve profile", "additional profile detail"]
 
 
 def test_main_parses_help_before_loading_workspace(monkeypatch, capsys):

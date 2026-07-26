@@ -1,6 +1,3 @@
-import logging
-import time
-
 from datapipeline.artifacts.errors import ArtifactResolutionError
 from datapipeline.artifacts.executor import run_build_if_needed
 from datapipeline.artifacts.planning import (
@@ -9,17 +6,14 @@ from datapipeline.artifacts.planning import (
     required_tick_artifacts,
 )
 from datapipeline.artifacts.series import prune_series_cache
-from datapipeline.cli.visuals.execution import route_execution_event
-from datapipeline.cli.visuals.rich.progress import visual_summary
 from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.execution.events import RunStatus
-from datapipeline.execution.observability import CommandFinished
 from datapipeline.io.runs import (
     finish_run_failed,
     finish_run_success,
     set_latest_run,
     start_run,
 )
+from datapipeline.profiles.errors import ProfileCommandError
 from datapipeline.profiles.executor import execution_scope
 from datapipeline.profiles.materialize import (
     execute_materialize_job,
@@ -46,20 +40,8 @@ from .models import (
     ServeRunPlan,
 )
 
-logger = logging.getLogger(__name__)
-
-
-def _command_uses_visuals(request: ProfileRunRequest) -> bool:
-    if isinstance(request, BuildRunRequest):
-        return any(job.settings.observability.visuals == "on" for job in request.jobs)
-    return request.artifact_settings.observability.visuals == "on" or any(
-        job.observability.visuals == "on" for job in request.jobs
-    )
-
 
 def run_profiles(request: ProfileRunRequest) -> None:
-    started_at = time.perf_counter()
-    status: RunStatus = "error"
     try:
         with project_execution_lock(request.definition.project.artifacts_root):
             if isinstance(request, BuildRunRequest):
@@ -74,20 +56,10 @@ def run_profiles(request: ProfileRunRequest) -> None:
                 )
             _prune_series_caches(request)
     except (ArtifactResolutionError, ProjectExecutionBusyError) as exc:
-        logger.error("%s", exc)
-        raise SystemExit(2) from exc
-    else:
-        status = "success"
-    finally:
-        with visual_summary(logger.getEffectiveLevel(), _command_uses_visuals(request)):
-            route_execution_event(
-                CommandFinished(
-                    command=request.command,
-                    status=status,
-                    elapsed_seconds=time.perf_counter() - started_at,
-                ),
-                logger,
-            )
+        error = ProfileCommandError(str(exc))
+        for note in getattr(exc, "__notes__", ()):
+            error.add_note(note)
+        raise error from exc
 
 
 def _prune_series_caches(request: ProfileRunRequest) -> None:
@@ -110,9 +82,8 @@ def _run_build_profiles(request: BuildRunRequest) -> None:
         _validate_build_order(jobs, graph)
         for job in jobs:
             validate_build_job(job.task, graph, request.definition)
-    except (OSError, RuntimeError, ValueError) as exc:
-        logger.error("%s", exc)
-        raise SystemExit(2) from exc
+    except ValueError as exc:
+        raise ProfileCommandError(str(exc)) from exc
 
     resolved_artifacts: set[str] = set()
     for job in jobs:
@@ -140,12 +111,10 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> None:
             request.definition.streams,
         )
         plans = [plan_runtime_job(job, graph, request.definition) for job in jobs]
-    except (OSError, RuntimeError, ValueError) as exc:
-        logger.error("%s", exc)
-        raise SystemExit(2) from exc
+    except ValueError as exc:
+        raise ProfileCommandError(str(exc)) from exc
 
     started_runs: list[ServeRunPlan] = []
-    succeeded = False
     try:
         _prepare_runtime_artifacts(request, graph, plans)
         for run_plan in request.serve_run_plans:
@@ -166,9 +135,11 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> None:
                     graph,
                     plan,
                 )
-        succeeded = True
-    finally:
-        _finalize_serve_runs(started_runs, succeeded)
+    except BaseException as exc:
+        _mark_serve_runs_failed(started_runs, exc)
+        raise
+    else:
+        _publish_serve_runs(started_runs)
 
 
 def _run_materialize_profiles(request: MaterializeRunRequest) -> None:
@@ -190,9 +161,8 @@ def _run_materialize_profiles(request: MaterializeRunRequest) -> None:
                 graph.tasks_by_id,
             )
         )
-    except (FileExistsError, OSError, RuntimeError, ValueError) as exc:
-        logger.error("%s", exc)
-        raise SystemExit(2) from exc
+    except (OSError, ValueError) as exc:
+        raise ProfileCommandError(str(exc)) from exc
 
     _prepare_materialize_artifacts(request, graph, required_artifacts)
     for job in jobs:
@@ -219,18 +189,20 @@ def _validate_build_order(jobs: list[BuildJob], graph: ArtifactGraph) -> None:
                 )
 
 
-def _finalize_serve_runs(plans: list[ServeRunPlan], succeeded: bool) -> None:
-    if not succeeded:
-        for plan in plans:
-            try:
-                finish_run_failed(plan.paths)
-            except Exception:
-                logger.exception(
-                    "Failed to finalize serve run '%s' after command failure.",
-                    plan.paths.run_id,
-                )
-        return
+def _mark_serve_runs_failed(
+    plans: list[ServeRunPlan],
+    command_error: BaseException,
+) -> None:
+    for plan in plans:
+        try:
+            finish_run_failed(plan.paths)
+        except Exception as exc:
+            command_error.add_note(
+                f"Failed to finalize serve run '{plan.paths.run_id}': {exc}"
+            )
 
+
+def _publish_serve_runs(plans: list[ServeRunPlan]) -> None:
     first_error: Exception | None = None
     for plan in plans:
         try:
@@ -241,10 +213,8 @@ def _finalize_serve_runs(plans: list[ServeRunPlan], succeeded: bool) -> None:
             if first_error is None:
                 first_error = exc
             else:
-                logger.exception(
-                    "Failed to finalize serve run '%s' after an earlier "
-                    "finalization failure.",
-                    plan.paths.run_id,
+                first_error.add_note(
+                    f"Also failed to finalize serve run '{plan.paths.run_id}': {exc}"
                 )
     if first_error is not None:
         raise first_error

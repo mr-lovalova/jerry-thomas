@@ -1,4 +1,5 @@
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -14,7 +15,11 @@ from datapipeline.execution.settings import (
     resolve_log_level,
     resolve_log_output,
 )
+from datapipeline.profiles.errors import ProfileCommandError
 from datapipeline.services.path_policy import resolve_workspace_path, workspace_cwd
+
+
+logger = logging.getLogger(__name__)
 
 
 def _dataset_to_project_path(
@@ -149,6 +154,11 @@ def main() -> None:
             base_level_name=base_level_name,
             cli_log_outputs=cli_log_outputs,
         )
+    except ProfileCommandError as exc:
+        logger.error("%s", exc)
+        for note in getattr(exc, "__notes__", ()):
+            logger.error("%s", note)
+        raise SystemExit(2) from exc
     except KeyboardInterrupt:
         message = (
             "Serve interrupted by user"

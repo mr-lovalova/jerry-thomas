@@ -33,7 +33,6 @@ from datapipeline.config.tasks.matrix import MatrixTask
 from datapipeline.config.tasks.metadata import MetadataTask
 from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.config.tasks.ticks import TicksTask
-from datapipeline.execution.observability import CommandFinished
 from datapipeline.execution.settings import (
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,
@@ -66,6 +65,7 @@ from datapipeline.profiles.models import (
     RuntimeRunRequest,
     ServeRunPlan,
 )
+from datapipeline.profiles.errors import ProfileCommandError
 from datapipeline.profiles.orchestration import _validate_build_order, run_profiles
 from datapipeline.services.materialize import resolve_materialize_output
 from tests.unit.profiles.helpers import project_definition
@@ -263,51 +263,11 @@ def _run_paths(tmp_path: Path, run_id: str = "r1") -> RunPaths:
 
 
 def _assert_preflight_rejected(request: BuildRunRequest | RuntimeRunRequest) -> None:
-    with pytest.raises(SystemExit) as exc:
-        run_profiles(request)
-    assert exc.value.code == 2
-
-
-def test_run_profiles_emits_one_command_summary(monkeypatch, tmp_path: Path) -> None:
-    requests = (
-        _build_request(tmp_path, [], []),
-        _runtime_request(
-            tmp_path,
-            command="serve",
-            artifact_tasks=[],
-            jobs=[],
-        ),
-        _runtime_request(
-            tmp_path,
-            command="inspect",
-            artifact_tasks=[],
-            jobs=[],
-        ),
-        _materialize_request(tmp_path, [], [], _runtime(tmp_path)),
-    )
-    times = iter((0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0))
-    events: list[CommandFinished] = []
-    monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.time.perf_counter",
-        lambda: next(times),
-    )
-    monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.route_execution_event",
-        lambda event, _logger: events.append(event),
-    )
-
-    for request in requests:
+    with pytest.raises(ProfileCommandError):
         run_profiles(request)
 
-    assert events == [
-        CommandFinished("build", "success", 1.0),
-        CommandFinished("serve", "success", 1.0),
-        CommandFinished("inspect", "success", 1.0),
-        CommandFinished("materialize", "success", 1.0),
-    ]
 
-
-def test_run_profiles_renders_command_summary_inside_command_visuals(
+def test_unexpected_planning_runtime_error_propagates(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -315,105 +275,22 @@ def test_run_profiles_renders_command_summary_inside_command_visuals(
     request = _build_request(
         tmp_path,
         [task],
-        [BuildJob(task, _artifact_settings(visuals="on"))],
+        [BuildJob(task, _artifact_settings())],
     )
-    times = iter((0.0, 1.0))
-    calls = []
+    error = RuntimeError("unexpected planner bug")
 
-    @contextmanager
-    def visual_summary(_level, enabled):
-        assert enabled
-        calls.append("enter")
-        yield
-        calls.append("exit")
-
-    monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.time.perf_counter",
-        lambda: next(times),
-    )
-    monkeypatch.setattr(
-        "datapipeline.profiles.orchestration._run_build_profiles",
-        lambda _request: None,
-    )
-    monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.visual_summary",
-        visual_summary,
-    )
-    monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.route_execution_event",
-        lambda event, _logger: calls.append(event),
-    )
-
-    run_profiles(request)
-
-    assert calls == [
-        "enter",
-        CommandFinished("build", "success", 1.0),
-        "exit",
-    ]
-
-
-def test_run_profiles_reports_failure_after_cleanup_error(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    request = _build_request(tmp_path, [], [])
-    times = iter((10.0, 11.0))
-    events: list[CommandFinished] = []
-
-    def fail_prune(_request) -> None:
-        raise RuntimeError("prune failed")
-
-    monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.time.perf_counter",
-        lambda: next(times),
-    )
-    monkeypatch.setattr(
-        "datapipeline.profiles.orchestration._prune_series_caches",
-        fail_prune,
-    )
-    monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.route_execution_event",
-        lambda event, _logger: events.append(event),
-    )
-
-    with pytest.raises(RuntimeError, match="prune failed"):
-        run_profiles(request)
-
-    assert events == [CommandFinished("build", "error", 1.0)]
-
-
-@pytest.mark.parametrize("error", [SystemExit(2), KeyboardInterrupt()])
-def test_run_profiles_preserves_process_control_exceptions(
-    monkeypatch,
-    tmp_path: Path,
-    error: BaseException,
-) -> None:
-    request = _build_request(tmp_path, [], [])
-    times = iter((10.0, 11.0))
-    events: list[CommandFinished] = []
-
-    def fail(_request) -> None:
+    def fail(*_args, **_kwargs):
         raise error
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.time.perf_counter",
-        lambda: next(times),
-    )
-    monkeypatch.setattr(
-        "datapipeline.profiles.orchestration._run_build_profiles",
+        "datapipeline.profiles.orchestration.build_artifact_graph",
         fail,
     )
-    monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.route_execution_event",
-        lambda event, _logger: events.append(event),
-    )
 
-    with pytest.raises(type(error)) as raised:
+    with pytest.raises(RuntimeError) as raised:
         run_profiles(request)
 
     assert raised.value is error
-    assert events == [CommandFinished("build", "error", 1.0)]
 
 
 def test_build_order_accepts_configured_dependency_order() -> None:
@@ -1107,14 +984,56 @@ def test_job_failure_marks_shared_run_failed(monkeypatch, tmp_path: Path) -> Non
     assert failed == [run_paths]
 
 
+def test_cleanup_failure_does_not_replace_job_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    task = RuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    run_paths = _run_paths(tmp_path)
+    request = _runtime_request(
+        tmp_path,
+        command="serve",
+        artifact_tasks=[],
+        jobs=[_runtime_job("serve", task, _runtime(tmp_path))],
+        serve_run_plans=(ServeRunPlan(run_paths, None),),
+    )
+    job_error = RuntimeError("job failed")
+
+    def fail_job(*_args) -> None:
+        raise job_error
+
+    def fail_cleanup(_paths: RunPaths) -> None:
+        raise OSError("cleanup failed")
+
+    monkeypatch.setattr(
+        "datapipeline.profiles.orchestration.execution_scope",
+        _passthrough_execution_scope,
+    )
+    monkeypatch.setattr(
+        "datapipeline.profiles.orchestration.execute_runtime_job",
+        fail_job,
+    )
+    monkeypatch.setattr(
+        "datapipeline.profiles.orchestration.finish_run_failed",
+        fail_cleanup,
+    )
+
+    with pytest.raises(RuntimeError, match="job failed") as raised:
+        run_profiles(request)
+
+    assert raised.value is job_error
+    assert raised.value.__notes__ == [
+        "Failed to finalize serve run 'r1': cleanup failed"
+    ]
+
+
 def test_latest_failure_still_finalizes_all_runs(
     monkeypatch,
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     task = RuntimeTask(id="pipeline", entrypoint="plugin.runtime")
-    first = _run_paths(tmp_path / "first")
-    second = _run_paths(tmp_path / "second")
+    first = _run_paths(tmp_path / "first", "first")
+    second = _run_paths(tmp_path / "second", "second")
     request = _runtime_request(
         tmp_path,
         command="serve",
@@ -1144,9 +1063,8 @@ def test_latest_failure_still_finalizes_all_runs(
         set_latest,
     )
 
-    with caplog.at_level(logging.ERROR):
-        with pytest.raises(OSError, match="latest failed"):
-            run_profiles(request)
+    with pytest.raises(OSError, match="latest failed") as raised:
+        run_profiles(request)
 
     metadata = [
         json.loads(paths.metadata_path.read_text(encoding="utf-8"))
@@ -1155,7 +1073,9 @@ def test_latest_failure_still_finalizes_all_runs(
     assert [item["status"] for item in metadata] == ["success", "success"]
     assert all(item["finished_at"] is not None for item in metadata)
     assert latest == [first, second]
-    assert "second latest failed" in caplog.text
+    assert raised.value.__notes__ == [
+        "Also failed to finalize serve run 'second': second latest failed"
+    ]
 
 
 def test_later_output_commit_failure_marks_run_failed_and_preserves_latest(
@@ -1227,10 +1147,9 @@ def test_later_output_commit_failure_marks_run_failed_and_preserves_latest(
     assert (serve_root / "latest").resolve() == previous_paths.run_root.resolve()
 
 
-def test_artifact_resolution_failure_exits_at_profile_boundary(
+def test_artifact_resolution_failure_becomes_profile_error(
     monkeypatch,
     tmp_path: Path,
-    caplog,
 ) -> None:
     request = _runtime_request(
         tmp_path,
@@ -1240,18 +1159,23 @@ def test_artifact_resolution_failure_exits_at_profile_boundary(
     )
 
     def fail(_request) -> None:
-        raise ArtifactResolutionError("required artifact is unavailable")
+        error = ArtifactResolutionError("required artifact is unavailable")
+        error.add_note("failed to finalize run")
+        raise error
 
     monkeypatch.setattr(
         "datapipeline.profiles.orchestration._run_runtime_profiles",
         fail,
     )
 
-    with caplog.at_level(logging.ERROR), pytest.raises(SystemExit) as exc:
+    with pytest.raises(
+        ProfileCommandError,
+        match="required artifact is unavailable",
+    ) as raised:
         run_profiles(request)
 
-    assert exc.value.code == 2
-    assert "required artifact is unavailable" in caplog.text
+    assert isinstance(raised.value.__cause__, ArtifactResolutionError)
+    assert raised.value.__notes__ == ["failed to finalize run"]
 
 
 def test_preview_run_exists_at_job_boundary_and_is_not_latest(
@@ -1487,7 +1411,7 @@ def test_materialize_hydrates_current_tick_artifact_when_build_skips(
 @pytest.mark.parametrize(
     ("artifact_tasks", "message"),
     [
-        ([], "requires a declared ticks task"),
+        ([], "requires a declared ticks operation"),
         (
             [
                 ArtifactTask(
@@ -1496,7 +1420,7 @@ def test_materialize_hydrates_current_tick_artifact_when_build_skips(
                     output="snapshot.json",
                 )
             ],
-            "not a ticks task",
+            "not a ticks operation",
         ),
     ],
 )
@@ -1525,5 +1449,5 @@ def test_materialize_rejects_invalid_tick_artifact_producer(
         lambda stream, streams: {"market_ticks"},
     )
 
-    with pytest.raises(SystemExit, match="2"):
+    with pytest.raises(ProfileCommandError, match=message):
         run_profiles(request)

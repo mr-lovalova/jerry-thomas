@@ -1,8 +1,8 @@
 import logging
 
+from datapipeline.cli.commands.profile_runner import execute_profile_request
 from datapipeline.cli.workspace import WorkspaceContext
 from datapipeline.execution.settings import LogOutputTarget
-from datapipeline.profiles.orchestration import run_profiles
 from datapipeline.profiles.request_builder import build_materialize_run_request
 from datapipeline.services.path_policy import resolve_workspace_path
 
@@ -50,4 +50,4 @@ def handle(
     if request is None:
         logger.info("No enabled materialize profiles; skipping materialize.")
         return
-    run_profiles(request)
+    execute_profile_request(request)

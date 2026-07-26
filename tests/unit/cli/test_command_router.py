@@ -9,6 +9,7 @@ from datapipeline.cli.parser_builder import build_parser
 from datapipeline.cli.workspace import WorkspaceContext
 from datapipeline.config.preview import PREVIEW_STAGES
 from datapipeline.config.workspace import WorkspaceConfig
+from datapipeline.profiles.errors import ProfileCommandError
 
 
 def _execute(args, *, plugin_root=None, workspace=None) -> None:
@@ -123,6 +124,34 @@ def test_execution_commands_accept_observability_flags(command) -> None:
 
     assert args.visuals == "off"
     assert args.heartbeat_interval_seconds == 5
+
+
+def test_profile_request_builder_error_reaches_cli_boundary_without_lifecycle(
+    monkeypatch,
+) -> None:
+    executed: list[object] = []
+    error = ProfileCommandError("invalid serve profile")
+
+    def fail(**_kwargs):
+        raise error
+
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.build_runtime_run_request",
+        fail,
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.execute_profile_request",
+        executed.append,
+    )
+    with pytest.raises(ProfileCommandError) as raised:
+        _execute(
+            build_parser().parse_args(
+                ["serve", "--project", "project.yaml"],
+            )
+        )
+
+    assert raised.value is error
+    assert executed == []
 
 
 def test_heartbeat_is_an_execution_command_option() -> None:
