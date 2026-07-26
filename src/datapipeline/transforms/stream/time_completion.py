@@ -2,7 +2,7 @@ from collections.abc import Iterator
 from datetime import datetime
 from itertools import chain, groupby
 
-from datapipeline.artifacts.ticks import TickGrid
+from datapipeline.artifacts.schedule import Schedule
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.transforms.utils import (
     clone_record,
@@ -43,57 +43,58 @@ class EnsureCadenceTransform:
                 previous = record
 
 
-class EnsureTicksTransform:
-    """Reindex each input partition against a resolved tick grid."""
+class EnsureScheduleTransform:
+    """Insert missing records at every scheduled time in each partition."""
 
     def __init__(
         self,
-        ticks: TickGrid,
+        schedule: Schedule,
         partition_fields: tuple[str, ...],
     ) -> None:
         self.partition_fields = partition_fields
-        if ticks.grid_by != self.partition_fields:
+        if schedule.partition_by != self.partition_fields:
             raise ValueError(
-                f"Tick grid fields {list(ticks.grid_by)!r} must match stream "
+                f"Schedule partition fields {list(schedule.partition_by)!r} "
+                "must match stream "
                 f"partition_by {list(self.partition_fields)!r}."
             )
-        self.ticks = ticks
+        self.schedule = schedule
 
     def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
         partition_fields = self.partition_fields
 
         for key, records in groupby(
             stream,
-            key=lambda record: partition_key(record, self.partition_fields),
+            key=lambda record: partition_key(record, partition_fields),
         ):
             source = iter(records)
             first = next(source, None)
             if first is None:
                 continue
 
-            ticks = self.ticks.ticks_for(key)
-            tick_index = 0
+            times = self.schedule.times_for(key)
+            time_index = 0
             template = first
             for record in chain((first,), source):
-                while tick_index < len(ticks) and ticks[tick_index] < record.time:
+                while time_index < len(times) and times[time_index] < record.time:
                     yield _placeholder_record(
                         record,
-                        ticks[tick_index],
+                        times[time_index],
                         partition_fields,
                     )
-                    tick_index += 1
-                if tick_index < len(ticks) and ticks[tick_index] == record.time:
-                    tick_index += 1
+                    time_index += 1
+                if time_index < len(times) and times[time_index] == record.time:
+                    time_index += 1
                 yield record
                 template = record
 
-            while tick_index < len(ticks):
+            while time_index < len(times):
                 yield _placeholder_record(
                     template,
-                    ticks[tick_index],
+                    times[time_index],
                     partition_fields,
                 )
-                tick_index += 1
+                time_index += 1
 
 
 def _placeholder_record(

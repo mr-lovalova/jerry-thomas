@@ -3,13 +3,13 @@ from datetime import datetime, timezone
 
 import pytest
 
-import datapipeline.operations.artifacts.ticks as ticks_module
+import datapipeline.operations.artifacts.schedule as schedule_module
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.tasks.ticks import TicksTask
+from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.config.transforms import WhereConfig
 from datapipeline.domain.record import TemporalRecord
-from datapipeline.operations.artifacts.ticks import build_ticks_artifact
+from datapipeline.operations.artifacts.schedule import build_schedule_artifact
 from datapipeline.runtime import (
     AlignedRuntimeStream,
     DerivedRuntimeStream,
@@ -88,26 +88,27 @@ def _stream_runtime(tmp_path, rows=None) -> Runtime:
     return runtime
 
 
-def test_ticks_task_rejects_time_as_grid_field() -> None:
+def test_schedule_task_rejects_time_as_partition_field() -> None:
     with pytest.raises(ValueError, match="reserved field 'time'"):
-        TicksTask(
-            id="model_grid",
+        ScheduleTask(
+            id="schedule",
             stream="source.stream",
-            grid_by=["time"],
-            output="build/model_grid.jsonl",
+            partition_by=["time"],
+            output="build/schedule.jsonl",
         )
 
 
-def test_build_ticks_artifact_writes_sorted_unique_tick_rows(tmp_path) -> None:
+def test_build_schedule_artifact_writes_sorted_unique_rows(tmp_path) -> None:
     runtime = _runtime(tmp_path)
 
-    result = build_ticks_artifact(
+    result = build_schedule_artifact(
         runtime,
-        TicksTask(
-            id="dataset_ticks",
-            entrypoint="core.artifact.ticks",
+        ScheduleTask(
+            id="schedule",
+            entrypoint="core.artifact.schedule",
             stream="source.stream",
-            output="build/dataset_ticks.jsonl",
+            partition_by=[],
+            output="build/schedule.jsonl",
         ),
     )
 
@@ -117,10 +118,14 @@ def test_build_ticks_artifact_writes_sorted_unique_tick_rows(tmp_path) -> None:
         {"time": "2024-01-01T00:00:00Z"},
         {"time": "2024-01-01T02:00:00Z"},
     ]
-    assert result.meta == {"rows": 2, "stream": "source.stream", "grid_by": []}
+    assert result.meta == {
+        "rows": 2,
+        "stream": "source.stream",
+        "partition_by": [],
+    }
 
 
-def test_build_ticks_artifact_writes_keyed_grid_rows(tmp_path) -> None:
+def test_build_schedule_artifact_writes_partitioned_rows(tmp_path) -> None:
     runtime = _runtime(
         tmp_path,
         [
@@ -131,14 +136,14 @@ def test_build_ticks_artifact_writes_keyed_grid_rows(tmp_path) -> None:
         ],
     )
 
-    result = build_ticks_artifact(
+    result = build_schedule_artifact(
         runtime,
-        TicksTask(
-            id="model_grid",
-            entrypoint="core.artifact.ticks",
+        ScheduleTask(
+            id="schedule",
+            entrypoint="core.artifact.schedule",
             stream="source.stream",
-            grid_by=["security_id"],
-            output="build/model_grid.jsonl",
+            partition_by=["security_id"],
+            output="build/schedule.jsonl",
         ),
     )
 
@@ -152,11 +157,11 @@ def test_build_ticks_artifact_writes_keyed_grid_rows(tmp_path) -> None:
     assert result.meta == {
         "rows": 3,
         "stream": "source.stream",
-        "grid_by": ["security_id"],
+        "partition_by": ["security_id"],
     }
 
 
-def test_build_ticks_artifact_reuses_matching_stream_order(
+def test_build_schedule_artifact_reuses_matching_stream_order(
     monkeypatch, tmp_path
 ) -> None:
     runtime = _runtime(
@@ -170,19 +175,19 @@ def test_build_ticks_artifact_reuses_matching_stream_order(
         partition_by=("security_id",),
     )
     monkeypatch.setattr(
-        ticks_module,
+        schedule_module,
         "batch_sort",
-        lambda *_args, **_kwargs: pytest.fail("ordered ticks were sorted again"),
+        lambda *_args, **_kwargs: pytest.fail("ordered schedule was sorted again"),
     )
 
-    result = build_ticks_artifact(
+    result = build_schedule_artifact(
         runtime,
-        TicksTask(
-            id="model_grid",
-            entrypoint="core.artifact.ticks",
+        ScheduleTask(
+            id="schedule",
+            entrypoint="core.artifact.schedule",
             stream="source.stream",
-            grid_by=["security_id"],
-            output="build/model_grid.jsonl",
+            partition_by=["security_id"],
+            output="build/schedule.jsonl",
         ),
     )
 
@@ -195,7 +200,7 @@ def test_build_ticks_artifact_reuses_matching_stream_order(
     ]
 
 
-def test_build_ticks_artifact_reuses_aligned_stream_order(
+def test_build_schedule_artifact_reuses_aligned_stream_order(
     monkeypatch, tmp_path
 ) -> None:
     runtime = _runtime(
@@ -218,19 +223,19 @@ def test_build_ticks_artifact_reuses_aligned_stream_order(
         partition_by=("security_id",),
     )
     monkeypatch.setattr(
-        ticks_module,
+        schedule_module,
         "batch_sort",
-        lambda *_args, **_kwargs: pytest.fail("ordered ticks were sorted again"),
+        lambda *_args, **_kwargs: pytest.fail("ordered schedule was sorted again"),
     )
 
-    result = build_ticks_artifact(
+    result = build_schedule_artifact(
         runtime,
-        TicksTask(
-            id="model_grid",
-            entrypoint="core.artifact.ticks",
+        ScheduleTask(
+            id="schedule",
+            entrypoint="core.artifact.schedule",
             stream="aligned.stream",
-            grid_by=["security_id"],
-            output="build/model_grid.jsonl",
+            partition_by=["security_id"],
+            output="build/schedule.jsonl",
         ),
     )
 
@@ -242,34 +247,34 @@ def test_build_ticks_artifact_reuses_aligned_stream_order(
     ]
 
 
-def test_build_ticks_artifact_rejects_broken_matching_order_atomically(
+def test_build_schedule_artifact_rejects_broken_matching_order_atomically(
     monkeypatch,
     tmp_path,
 ) -> None:
     runtime = _runtime(tmp_path, partition_by=("security_id",))
-    destination = runtime.artifacts_root / "build/model_grid.jsonl"
+    destination = runtime.artifacts_root / "build/schedule.jsonl"
     destination.parent.mkdir(parents=True)
     destination.write_text("previous\n", encoding="utf-8")
     monkeypatch.setattr(
-        ticks_module,
+        schedule_module,
         "run_stream_pipeline",
         lambda *_args, **_kwargs: iter([_record(0, "MSFT"), _record(0, "AAPL")]),
     )
     monkeypatch.setattr(
-        ticks_module,
+        schedule_module,
         "batch_sort",
-        lambda *_args, **_kwargs: pytest.fail("matching ticks were sorted"),
+        lambda *_args, **_kwargs: pytest.fail("matching schedule was sorted"),
     )
 
-    with pytest.raises(ValueError, match="violates canonical grid order"):
-        build_ticks_artifact(
+    with pytest.raises(ValueError, match="violates canonical order"):
+        build_schedule_artifact(
             runtime,
-            TicksTask(
-                id="model_grid",
-                entrypoint="core.artifact.ticks",
+            ScheduleTask(
+                id="schedule",
+                entrypoint="core.artifact.schedule",
                 stream="source.stream",
-                grid_by=["security_id"],
-                output="build/model_grid.jsonl",
+                partition_by=["security_id"],
+                output="build/schedule.jsonl",
             ),
         )
 
@@ -277,21 +282,21 @@ def test_build_ticks_artifact_rejects_broken_matching_order_atomically(
     assert list(destination.parent.iterdir()) == [destination]
 
 
-def test_build_ticks_artifact_rejects_missing_key_field(tmp_path) -> None:
+def test_build_schedule_artifact_rejects_missing_partition_field(tmp_path) -> None:
     runtime = _runtime(tmp_path, [_record(0)])
-    destination = runtime.artifacts_root / "build/model_grid.jsonl"
+    destination = runtime.artifacts_root / "build/schedule.jsonl"
     destination.parent.mkdir(parents=True)
     destination.write_text("previous\n", encoding="utf-8")
 
     with pytest.raises(KeyError, match="security_id"):
-        build_ticks_artifact(
+        build_schedule_artifact(
             runtime,
-            TicksTask(
-                id="model_grid",
-                entrypoint="core.artifact.ticks",
+            ScheduleTask(
+                id="schedule",
+                entrypoint="core.artifact.schedule",
                 stream="source.stream",
-                grid_by=["security_id"],
-                output="build/model_grid.jsonl",
+                partition_by=["security_id"],
+                output="build/schedule.jsonl",
             ),
         )
 
@@ -302,12 +307,12 @@ def test_build_ticks_artifact_rejects_missing_key_field(tmp_path) -> None:
 @pytest.mark.parametrize(
     ("value", "message"),
     [
-        (float("nan"), "missing grid_by field"),
+        (float("nan"), "missing partition_by field"),
         (float("inf"), "must not contain infinity"),
         (float("-inf"), "must not contain infinity"),
     ],
 )
-def test_build_ticks_artifact_rejects_non_finite_grid_values_atomically(
+def test_build_schedule_artifact_rejects_non_finite_partition_values_atomically(
     tmp_path,
     value: float,
     message: str,
@@ -317,21 +322,21 @@ def test_build_ticks_artifact_rejects_non_finite_grid_values_atomically(
     runtime = _runtime(tmp_path, [record])
 
     with pytest.raises(ValueError, match=message):
-        build_ticks_artifact(
+        build_schedule_artifact(
             runtime,
-            TicksTask(
-                id="model_grid",
-                entrypoint="core.artifact.ticks",
+            ScheduleTask(
+                id="schedule",
+                entrypoint="core.artifact.schedule",
                 stream="source.stream",
-                grid_by=["security_id"],
-                output="build/model_grid.jsonl",
+                partition_by=["security_id"],
+                output="build/schedule.jsonl",
             ),
         )
 
-    assert not (runtime.artifacts_root / "build/model_grid.jsonl").exists()
+    assert not (runtime.artifacts_root / "build/schedule.jsonl").exists()
 
 
-def test_build_ticks_artifact_uses_stream_transforms(
+def test_build_schedule_artifact_uses_stream_transforms(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -340,18 +345,19 @@ def test_build_ticks_artifact_uses_stream_transforms(
         [_record(2, minute=30), _record(0, minute=30)],
     )
     monkeypatch.setattr(
-        ticks_module,
+        schedule_module,
         "batch_sort",
-        lambda *_args, **_kwargs: pytest.fail("ordered ticks were sorted again"),
+        lambda *_args, **_kwargs: pytest.fail("ordered schedule was sorted again"),
     )
 
-    result = build_ticks_artifact(
+    result = build_schedule_artifact(
         runtime,
-        TicksTask(
-            id="derived_ticks",
-            entrypoint="core.artifact.ticks",
+        ScheduleTask(
+            id="derived_schedule",
+            entrypoint="core.artifact.schedule",
             stream="derived.stream",
-            output="build/derived_ticks.jsonl",
+            partition_by=[],
+            output="build/derived_schedule.jsonl",
         ),
     )
 

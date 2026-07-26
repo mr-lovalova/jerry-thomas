@@ -721,7 +721,7 @@ def test_hash_fold_domain_does_not_synthesize_holdout_entity_into_training(
     ]
 
 
-def test_ensure_ticks_placeholder_does_not_establish_training_membership(
+def test_schedule_placeholder_does_not_establish_training_membership(
     monkeypatch,
     tmp_path,
 ) -> None:

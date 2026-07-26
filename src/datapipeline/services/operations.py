@@ -7,8 +7,8 @@ from datapipeline.config.tasks.dataset import DatasetTask
 from datapipeline.config.tasks.matrix import MatrixTask
 from datapipeline.config.tasks.metadata import MetadataTask
 from datapipeline.config.tasks.scaler import ScalerTask
+from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.config.tasks.ticks import TicksTask
 from datapipeline.services.config_inventory import pipeline_yaml_files
 from datapipeline.services.definitions import ProjectManifest
 from datapipeline.utils.load import YamlDocument, read_yaml_document
@@ -67,8 +67,8 @@ def _custom_operation(operation_id: str, entry: dict[str, object]) -> Task:
         raise ValueError(
             f"Custom operation '{operation_id}' must set kind to artifact or runtime."
         )
-    if entrypoint == "core.artifact.ticks":
-        return TicksTask.model_validate({"id": operation_id, **entry})
+    if entrypoint == "core.artifact.schedule":
+        return ScheduleTask.model_validate({"id": operation_id, **entry})
     core_operation_id = (
         CORE_ARTIFACT_IDS_BY_ENTRYPOINT.get(entrypoint)
         if isinstance(entrypoint, str)

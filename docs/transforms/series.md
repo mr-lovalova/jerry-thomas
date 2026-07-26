@@ -60,7 +60,7 @@ order, and collection is applied independently to each concrete partitioned
 series ID and sample key.
 
 Collection does not infer cadence or repair timestamps. Use `ensure_cadence` or
-`ensure_ticks` upstream when positions must represent a regular grid. A single
+`ensure_schedule` upstream when positions must represent a regular grid. A single
 source value that is already a list remains valid without `collect`, but
 collecting list-valued records is rejected because it would create nested
 vectors. `sequence` and `collect` are mutually exclusive. Without either,

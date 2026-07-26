@@ -436,8 +436,8 @@ def test_operation_scope_emits_flat_lifecycle_result_and_progress(
     try:
         with caplog.at_level(logging.INFO, logger=logger.name):
             observer = make_execution_observer(logger)
-            with execution_observer(observer), operation_scope("build:model_grid"):
-                assert emit_file_result("Model grid", Path("/tmp/model_grid.jsonl"))
+            with execution_observer(observer), operation_scope("build:schedule"):
+                assert emit_file_result("Schedule", Path("/tmp/schedule.jsonl"))
                 assert emit_operation_progress(
                     "write_artifact",
                     3,
@@ -452,13 +452,13 @@ def test_operation_scope_emits_flat_lifecycle_result_and_progress(
         OperationProgress,
         OperationFinished,
     ]
-    assert capture.events[1].path == Path("/tmp/model_grid.jsonl")
+    assert capture.events[1].path == Path("/tmp/schedule.jsonl")
     assert capture.events[2].step == "write_artifact"
     messages = [record.getMessage() for record in caplog.records]
-    assert "Operation build:model_grid started" in messages
-    assert "Model grid: /tmp/model_grid.jsonl" in messages
+    assert "Operation build:schedule started" in messages
+    assert "Schedule: /tmp/schedule.jsonl" in messages
     assert (
-        "Operation build:model_grid · write_artifact · running "
+        "Operation build:schedule · write_artifact · running "
         "reported_at=1.0s rows=3" in messages
     )
-    assert messages[-1].startswith("Operation build:model_grid finished status=success")
+    assert messages[-1].startswith("Operation build:schedule finished status=success")

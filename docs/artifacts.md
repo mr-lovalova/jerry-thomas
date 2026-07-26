@@ -4,8 +4,8 @@ Core artifact operations are registered by Jerry and use these default outputs.
 Projects declare YAML only for overrides and custom operations:
 
 An artifact's registry key is its operation ID (`scaler`, `series`,
-`metadata`, or `coverage_stats`). Custom operation IDs come from their YAML
-filenames, such as `operations/model_grid.yaml`.
+`metadata`, or `coverage_stats`). Configured operation IDs come from their YAML
+filenames, such as `operations/schedule.yaml`.
 
 - `build/series/manifest.json` plus one compressed, globally ordered companion
   under `build/series/manifest.data/`: durable sparse sample inputs consumed
@@ -27,15 +27,43 @@ filenames, such as `operations/model_grid.yaml`.
   store one training-owned schema and one output-domain contract per fold.
 - `build/coverage_stats.json`: bounded assembled or postprocessed availability
   counters used by coverage inspection. It never stores per-sample status maps.
-- Tick operation outputs: named timestamp grids used by `ensure_ticks`
-  transforms. Their output paths are operation-defined.
+- Schedule operation outputs: named expected-timestamp sets used by
+  `ensure_schedule` transforms. Their output paths are operation-defined.
 
-The dependency graph is explicit: tick artifacts referenced by configured
+The dependency graph is explicit: schedule artifacts referenced by configured
 dataset streams feed the scaler and series artifacts; series feeds metadata;
 `coverage_stats` depends on metadata. Matrix inspection reads series directly
 and enforces a configured cell bound instead of expanding the `coverage_stats`
-artifact. Nested tick artifacts are rejected because that dependency is not
+artifact. Nested schedule artifacts are rejected because that dependency is not
 yet representable safely.
+
+A schedule operation is explicit:
+
+```yaml
+# operations/schedule.yaml
+kind: artifact
+entrypoint: core.artifact.schedule
+stream: exchange.sessions
+partition_by: []
+output: build/schedule.jsonl
+```
+
+`partition_by` is required. An empty list declares one global schedule; named
+fields declare one schedule per partition. A stream opts into that schedule
+where timestamp completion belongs:
+
+```yaml
+transforms:
+  - { operation: ensure_schedule, schedule: schedule }
+```
+
+Without `ensure_schedule`, a stream keeps its observed timestamps unchanged.
+A schedule defines expected timestamps, not fields or value shapes; those
+contracts belong to `metadata`, not to a schema-like schedule artifact. The
+schedule partition fields must exactly match the consuming stream. Completion
+preserves source records outside the schedule and inserts placeholders only for
+partitions present in the source. A placeholder keeps its timestamp and
+partition identity while clearing payload fields.
 
 Coverage treats null values as uncovered. Base and scalar-column coverage is
 the number of non-null samples divided by total samples. List-column coverage
@@ -55,6 +83,25 @@ catalog. Runtime hydration registers only current artifacts;
 orphaned, missing, altered, stale, and incomplete chains are left unavailable.
 Commands targeting the same artifacts root cannot overlap; a second command
 fails before reading or mutating managed artifacts.
+
+Jerry 8 uses `schedule` consistently for the expected-timestamp artifact:
+
+- `operations/model_grid.yaml` becomes `operations/schedule.yaml`.
+- `core.artifact.ticks` becomes `core.artifact.schedule`.
+- `grid_by` becomes the required `partition_by`; use `partition_by: []` for
+  one global schedule.
+- `build/model_grid.jsonl` becomes `build/schedule.jsonl`.
+- Stream transforms replace
+  `{ operation: ensure_ticks, artifact: model_grid }` with
+  `{ operation: ensure_schedule, schedule: schedule }`.
+- Python integrations replace `TicksTask` with `ScheduleTask`, `TickGrid` with
+  `Schedule`, `read_tick_grid` with `read_schedule`, `EnsureTicksConfig` with
+  `EnsureScheduleConfig`, and `EnsureTicksTransform` with
+  `EnsureScheduleTransform`.
+
+The old operation and transform names are removed. Reinstall an editable
+checkout after upgrading so its entry-point metadata exposes
+`core.artifact.schedule`, then rebuild the renamed artifact and its dependents.
 
 Jerry 8 requires every target in `dataset.yaml` to declare `horizon`. Add
 `horizon: 0s` for contemporaneous targets. Future-derived targets must declare
@@ -163,7 +210,7 @@ always available.
 
 Before any selected materialize profile runs, Jerry similarly unions the
 artifact requirements of its selected streams and prepares them once.
-For built-in transforms, these are tick IDs referenced by `ensure_ticks`
+For built-in transforms, these are schedule IDs referenced by `ensure_schedule`
 operations on the selected or upstream streams. Dependencies
 hidden inside plugin code are not inferred. Materialize profiles do not carry
 individual artifact modes.

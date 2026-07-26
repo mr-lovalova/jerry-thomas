@@ -121,10 +121,10 @@ class EnsureCadenceConfig(_TransformConfig):
         return cadence
 
 
-class EnsureTicksConfig(_TransformConfig):
-    operation: Literal["ensure_ticks"] = "ensure_ticks"
+class EnsureScheduleConfig(_TransformConfig):
+    operation: Literal["ensure_schedule"] = "ensure_schedule"
 
-    artifact: NonEmptyString
+    schedule: NonEmptyString
 
 
 class FillConfig(_TransformConfig):
@@ -238,7 +238,7 @@ TransformConfig = Annotated[
     | LeadConfig
     | ForwardSumConfig
     | EnsureCadenceConfig
-    | EnsureTicksConfig
+    | EnsureScheduleConfig
     | FillConfig
     | ForwardFillConfig
     | CollapseConfig

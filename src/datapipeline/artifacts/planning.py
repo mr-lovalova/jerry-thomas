@@ -21,8 +21,8 @@ from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask
 from datapipeline.config.tasks.coverage import CoverageTask
 from datapipeline.config.tasks.dataset import DatasetTask
 from datapipeline.config.tasks.matrix import MatrixTask
-from datapipeline.config.tasks.ticks import TicksTask
-from datapipeline.config.transforms import EnsureTicksConfig
+from datapipeline.config.tasks.schedule import ScheduleTask
+from datapipeline.config.transforms import EnsureScheduleConfig
 from datapipeline.io.output import output_destination_key
 from datapipeline.services.definitions import ArtifactHashes
 
@@ -116,12 +116,12 @@ class ArtifactGraph:
                 config.stream for config in dataset.series if config.scale
             }
             input_streams = {config.stream for config in dataset.series}
-            scaler_ticks = required_tick_artifacts(
+            scaler_schedules = required_schedule_artifacts(
                 scaler_streams,
                 streams,
                 tasks_by_id,
             )
-            input_ticks = required_tick_artifacts(
+            input_schedules = required_schedule_artifacts(
                 input_streams,
                 streams,
                 tasks_by_id,
@@ -131,8 +131,12 @@ class ArtifactGraph:
                     definition,
                     dependencies=(
                         *definition.dependencies,
-                        *(scaler_ticks if definition.key == SCALER_STATISTICS else ()),
-                        *(input_ticks if definition.key == SERIES else ()),
+                        *(
+                            scaler_schedules
+                            if definition.key == SCALER_STATISTICS
+                            else ()
+                        ),
+                        *(input_schedules if definition.key == SERIES else ()),
                     ),
                 )
                 if definition.key in {SCALER_STATISTICS, SERIES}
@@ -183,10 +187,10 @@ class ArtifactGraph:
         preview: PreviewStage | None,
     ) -> set[str]:
         declared = set(task.requires)
-        dataset_tick_artifacts = {
+        dataset_schedule_artifacts = {
             dependency
             for dependency in self.definition(SERIES).dependencies
-            if isinstance(self.tasks_by_id.get(dependency), TicksTask)
+            if isinstance(self.tasks_by_id.get(dependency), ScheduleTask)
         }
         if isinstance(task, DatasetTask):
             if preview is None:
@@ -195,7 +199,7 @@ class ArtifactGraph:
                 expected = ", ".join(PREVIEW_STAGES)
                 raise ValueError(f"preview must be one of: {expected}")
             if preview in {"input", "canonical", "records", "series"}:
-                return declared | dataset_tick_artifacts
+                return declared | dataset_schedule_artifacts
             return declared | {VECTOR_METADATA}
         if isinstance(task, CoverageTask):
             return declared | {COVERAGE_STATS}
@@ -419,7 +423,7 @@ class ArtifactGraph:
         )
 
 
-def stream_tick_artifacts(
+def stream_schedule_artifacts(
     stream_id: str,
     streams: StreamsConfig,
 ) -> set[str]:
@@ -437,8 +441,8 @@ def stream_tick_artifacts(
                 f"Unknown stream '{current_stream_id}' in artifact dependency graph."
             ) from exc
         for operation in stream.transforms:
-            if isinstance(operation, EnsureTicksConfig):
-                artifacts.add(operation.artifact)
+            if isinstance(operation, EnsureScheduleConfig):
+                artifacts.add(operation.schedule)
         for input_stream_id in stream.input_streams():
             visit(input_stream_id)
 
@@ -446,7 +450,7 @@ def stream_tick_artifacts(
     return artifacts
 
 
-def required_tick_artifacts(
+def required_schedule_artifacts(
     stream_ids: Iterable[str],
     streams: StreamsConfig,
     tasks_by_id: Mapping[str, ArtifactTask],
@@ -454,19 +458,20 @@ def required_tick_artifacts(
     artifact_ids = {
         artifact_id
         for stream_id in stream_ids
-        for artifact_id in stream_tick_artifacts(stream_id, streams)
+        for artifact_id in stream_schedule_artifacts(stream_id, streams)
     }
     for artifact_id in sorted(artifact_ids):
         task = tasks_by_id.get(artifact_id)
         if task is None:
             raise ValueError(
-                f"Tick artifact '{artifact_id}' requires a declared ticks operation "
+                f"Schedule artifact '{artifact_id}' requires a declared schedule "
+                "operation "
                 "with the same id."
             )
-        if not isinstance(task, TicksTask):
+        if not isinstance(task, ScheduleTask):
             raise ValueError(
-                f"Tick artifact '{artifact_id}' references operation entrypoint "
-                f"'{task.entrypoint}', not a ticks operation."
+                f"Schedule artifact '{artifact_id}' references operation entrypoint "
+                f"'{task.entrypoint}', not a schedule operation."
             )
     return tuple(sorted(artifact_ids))
 

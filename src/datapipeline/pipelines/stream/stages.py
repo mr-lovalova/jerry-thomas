@@ -3,16 +3,18 @@ from collections.abc import Iterator, Sequence
 from functools import partial
 from typing import Any
 
-from datapipeline.artifacts.ticks import (
-    read_tick_grid,
-    tick_grid_by_from_metadata,
+from datapipeline.artifacts.registry import ArtifactSpec
+from datapipeline.artifacts.schedule import (
+    Schedule,
+    read_schedule,
+    schedule_partition_by_from_metadata,
 )
 from datapipeline.config.transforms import (
     CollapseConfig,
     DedupeConfig,
     DeriveConfig,
     EnsureCadenceConfig,
-    EnsureTicksConfig,
+    EnsureScheduleConfig,
     FillConfig,
     FloorTimeConfig,
     ForwardFillConfig,
@@ -32,10 +34,6 @@ from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.pipeline import Stage, StageOp
 from datapipeline.transforms.stream.dedupe import DedupeTransform
 from datapipeline.transforms.stream.derive import DeriveTransform
-from datapipeline.transforms.stream.ensure_ticks import (
-    EnsureCadenceTransform,
-    EnsureTicksTransform,
-)
 from datapipeline.transforms.stream.fill import (
     ForwardFillTransform,
     StatisticalFillTransform,
@@ -47,6 +45,10 @@ from datapipeline.transforms.stream.lead import LeadTransform
 from datapipeline.transforms.stream.logarithm import Log1pTransform, LogTransform
 from datapipeline.transforms.stream.rolling import RollingTransform
 from datapipeline.transforms.stream.rolling_slope import RollingSlopeTransform
+from datapipeline.transforms.stream.time_completion import (
+    EnsureCadenceTransform,
+    EnsureScheduleTransform,
+)
 from datapipeline.transforms.time import FloorTimeTransform, ShiftTimeTransform
 from datapipeline.transforms.where import WhereTransform
 
@@ -138,9 +140,9 @@ def build_transform_stages(
                 operation.cadence,
                 partition_by,
             ).apply
-        elif isinstance(operation, EnsureTicksConfig):
+        elif isinstance(operation, EnsureScheduleConfig):
             stage_op = partial(
-                apply_tick_grid,
+                apply_schedule,
                 context,
                 operation,
                 partition_by,
@@ -214,19 +216,23 @@ def build_transform_stages(
     return tuple(stages)
 
 
-def apply_tick_grid(
+def apply_schedule(
     context: PipelineContext,
-    operation: EnsureTicksConfig,
+    operation: EnsureScheduleConfig,
     partition_fields: tuple[str, ...],
     records: Iterator[Any],
 ) -> Iterator[Any]:
-    path = context.resolve_artifact_path(operation.artifact)
-    grid_by = tick_grid_by_from_metadata(
-        operation.artifact,
-        context.artifact_metadata(operation.artifact),
+    partition_by = schedule_partition_by_from_metadata(
+        operation.schedule,
+        context.artifact_metadata(operation.schedule),
     )
-    ticks = read_tick_grid(path, grid_by)
-    return EnsureTicksTransform(
-        ticks,
+    schedule = context.require_artifact(
+        ArtifactSpec[Schedule](
+            key=operation.schedule,
+            loader=partial(read_schedule, partition_by=partition_by),
+        )
+    )
+    return EnsureScheduleTransform(
+        schedule,
         partition_fields,
     ).apply(records)

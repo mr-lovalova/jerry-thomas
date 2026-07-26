@@ -4,15 +4,15 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.artifacts.ticks import (
-    TickGrid,
-    read_tick_grid,
-    tick_grid_by_from_metadata,
+from datapipeline.artifacts.schedule import (
+    Schedule,
+    read_schedule,
+    schedule_partition_by_from_metadata,
 )
 from datapipeline.config.transforms import EnsureCadenceConfig
-from datapipeline.transforms.stream.ensure_ticks import (
+from datapipeline.transforms.stream.time_completion import (
     EnsureCadenceTransform,
-    EnsureTicksTransform,
+    EnsureScheduleTransform,
 )
 from datapipeline.transforms.utils import record_establishes_domain
 from tests.unit.transforms.helpers import make_time_record
@@ -33,11 +33,11 @@ def _record(
     return record
 
 
-def _global_ticks(*hours: int) -> TickGrid:
-    return TickGrid(grid_by=(), ticks={(): [_time(hour) for hour in hours]})
+def _global_schedule(*hours: int) -> Schedule:
+    return Schedule(partition_by=(), times={(): [_time(hour) for hour in hours]})
 
 
-def test_ensure_cadence_inserts_fixed_duration_ticks() -> None:
+def test_ensure_cadence_inserts_fixed_duration_records() -> None:
     records = list(
         EnsureCadenceTransform(
             cadence="1h",
@@ -63,10 +63,10 @@ def test_ensure_cadence_rejects_nonpositive_duration(cadence: str) -> None:
         EnsureCadenceConfig(cadence=cadence)
 
 
-def test_ensure_ticks_fills_leading_internal_and_trailing_ticks() -> None:
+def test_ensure_schedule_fills_leading_internal_and_trailing_times() -> None:
     records = list(
-        EnsureTicksTransform(
-            ticks=_global_ticks(0, 1, 2, 3),
+        EnsureScheduleTransform(
+            schedule=_global_schedule(0, 1, 2, 3),
             partition_fields=(),
         ).apply(iter([_record(1.0, 0), _record(2.0, 2)]))
     )
@@ -85,18 +85,18 @@ def test_ensure_ticks_fills_leading_internal_and_trailing_ticks() -> None:
     ]
 
 
-def test_ensure_ticks_uses_each_partition_grid() -> None:
-    ticks = TickGrid(
-        grid_by=("security_id",),
-        ticks={
+def test_ensure_schedule_uses_each_partition() -> None:
+    schedule = Schedule(
+        partition_by=("security_id",),
+        times={
             ("AAPL",): [_time(0), _time(1), _time(2)],
             ("MSFT",): [_time(0), _time(1), _time(2)],
         },
     )
     source = [_record(10.0, 1, "AAPL"), _record(20.0, 1, "MSFT")]
 
-    records = EnsureTicksTransform(
-        ticks=ticks,
+    records = EnsureScheduleTransform(
+        schedule=schedule,
         partition_fields=("security_id",),
     ).apply(iter(source))
 
@@ -112,19 +112,19 @@ def test_ensure_ticks_uses_each_partition_grid() -> None:
     ]
 
 
-def test_ensure_ticks_requires_grid_fields_to_match_partition_fields() -> None:
-    ticks = TickGrid(grid_by=(), ticks={(): [_time(0)]})
+def test_ensure_schedule_requires_partition_fields_to_match() -> None:
+    schedule = Schedule(partition_by=(), times={(): [_time(0)]})
 
     with pytest.raises(ValueError, match="must match stream partition_by"):
-        EnsureTicksTransform(
-            ticks=ticks,
+        EnsureScheduleTransform(
+            schedule=schedule,
             partition_fields=("security_id",),
         )
 
 
-def test_ensure_ticks_keeps_records_outside_grid() -> None:
-    records = EnsureTicksTransform(
-        ticks=_global_ticks(0, 1),
+def test_ensure_schedule_keeps_records_outside_schedule() -> None:
+    records = EnsureScheduleTransform(
+        schedule=_global_schedule(0, 1),
         partition_fields=(),
     ).apply(iter([_record(3.0, 3)]))
 
@@ -135,26 +135,26 @@ def test_ensure_ticks_keeps_records_outside_grid() -> None:
     ]
 
 
-def test_ensure_ticks_does_not_create_records_without_a_source_record() -> None:
-    records = EnsureTicksTransform(
-        ticks=_global_ticks(0, 1),
+def test_ensure_schedule_does_not_create_records_without_a_source_record() -> None:
+    records = EnsureScheduleTransform(
+        schedule=_global_schedule(0, 1),
         partition_fields=(),
     ).apply(iter([]))
 
     assert list(records) == []
 
 
-def test_ensure_ticks_placeholders_clear_unrelated_payload() -> None:
+def test_ensure_schedule_placeholders_clear_unrelated_payload() -> None:
     record = _record(3.0, 1, "AAPL")
     record.volume = 100
-    ticks = TickGrid(
-        grid_by=("security_id",),
-        ticks={("AAPL",): [_time(0), _time(1)]},
+    schedule = Schedule(
+        partition_by=("security_id",),
+        times={("AAPL",): [_time(0), _time(1)]},
     )
 
     records = list(
-        EnsureTicksTransform(
-            ticks=ticks,
+        EnsureScheduleTransform(
+            schedule=schedule,
             partition_fields=("security_id",),
         ).apply(iter([record]))
     )
@@ -164,20 +164,20 @@ def test_ensure_ticks_placeholders_clear_unrelated_payload() -> None:
     assert records[0].volume is None
 
 
-def test_ensure_ticks_does_not_slice_the_grid() -> None:
+def test_ensure_schedule_does_not_slice_times() -> None:
     class NoSliceList(list[datetime]):
         def __getitem__(self, index):
             if isinstance(index, slice):
-                raise AssertionError("tick grid must not be sliced")
+                raise AssertionError("schedule must not be sliced")
             return super().__getitem__(index)
 
-    ticks = TickGrid(
-        grid_by=(),
-        ticks={(): NoSliceList([_time(0), _time(1), _time(2)])},
+    schedule = Schedule(
+        partition_by=(),
+        times={(): NoSliceList([_time(0), _time(1), _time(2)])},
     )
 
-    records = EnsureTicksTransform(
-        ticks=ticks,
+    records = EnsureScheduleTransform(
+        schedule=schedule,
         partition_fields=(),
     ).apply(iter([_record(1.0, 0), _record(2.0, 2)]))
 
@@ -188,8 +188,8 @@ def test_ensure_ticks_does_not_slice_the_grid() -> None:
     ]
 
 
-def test_read_tick_grid_keeps_canonical_rows(tmp_path) -> None:
-    path = tmp_path / "ticks.jsonl"
+def test_read_schedule_keeps_canonical_rows(tmp_path) -> None:
+    path = tmp_path / "schedule.jsonl"
     rows = [
         {"time": _time(0).isoformat()},
         {"time": _time(1).isoformat()},
@@ -200,9 +200,9 @@ def test_read_tick_grid_keeps_canonical_rows(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    ticks = read_tick_grid(path, ())
+    schedule = read_schedule(path, ())
 
-    assert ticks.ticks_for(()) == [_time(0), _time(1), _time(2)]
+    assert schedule.times_for(()) == [_time(0), _time(1), _time(2)]
 
 
 @pytest.mark.parametrize(
@@ -212,19 +212,19 @@ def test_read_tick_grid_keeps_canonical_rows(tmp_path) -> None:
         (1, 0),
     ],
 )
-def test_read_tick_grid_rejects_noncanonical_order(tmp_path, hours) -> None:
-    path = tmp_path / "ticks.jsonl"
+def test_read_schedule_rejects_noncanonical_order(tmp_path, hours) -> None:
+    path = tmp_path / "schedule.jsonl"
     path.write_text(
         "".join(json.dumps({"time": _time(hour).isoformat()}) + "\n" for hour in hours),
         encoding="utf-8",
     )
 
     with pytest.raises(ValueError, match="strictly ordered"):
-        read_tick_grid(path, ())
+        read_schedule(path, ())
 
 
-def test_read_tick_grid_rejects_partition_that_reappears(tmp_path) -> None:
-    path = tmp_path / "ticks.jsonl"
+def test_read_schedule_rejects_partition_that_reappears(tmp_path) -> None:
+    path = tmp_path / "schedule.jsonl"
     rows = [
         {"time": _time(0).isoformat(), "security_id": "AAPL"},
         {"time": _time(0).isoformat(), "security_id": "MSFT"},
@@ -236,33 +236,33 @@ def test_read_tick_grid_rejects_partition_that_reappears(tmp_path) -> None:
     )
 
     with pytest.raises(ValueError, match="strictly ordered"):
-        read_tick_grid(path, ("security_id",))
+        read_schedule(path, ("security_id",))
 
 
-def test_read_tick_grid_rejects_unexpected_fields(tmp_path) -> None:
-    path = tmp_path / "ticks.jsonl"
+def test_read_schedule_rejects_unexpected_fields(tmp_path) -> None:
+    path = tmp_path / "schedule.jsonl"
     path.write_text(
         json.dumps({"time": _time(0).isoformat(), "security_id": "AAPL"}) + "\n",
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="row grid fields"):
-        read_tick_grid(path, ())
+    with pytest.raises(ValueError, match="row partition fields"):
+        read_schedule(path, ())
 
 
-def test_read_tick_grid_requires_time(tmp_path) -> None:
-    path = tmp_path / "ticks.jsonl"
+def test_read_schedule_requires_time(tmp_path) -> None:
+    path = tmp_path / "schedule.jsonl"
     path.write_text(json.dumps({"security_id": "AAPL"}) + "\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="without time"):
-        read_tick_grid(path, ("security_id",))
+        read_schedule(path, ("security_id",))
 
 
-def test_tick_grid_metadata_requires_a_string_list() -> None:
+def test_schedule_metadata_requires_a_string_list() -> None:
     with pytest.raises(RuntimeError, match="must be a list of strings"):
-        tick_grid_by_from_metadata("model_grid", {"grid_by": "security_id"})
+        schedule_partition_by_from_metadata("schedule", {"partition_by": "security_id"})
 
 
-def test_tick_grid_metadata_is_required() -> None:
-    with pytest.raises(RuntimeError, match="metadata field 'grid_by' is required"):
-        tick_grid_by_from_metadata("model_grid", {})
+def test_schedule_metadata_is_required() -> None:
+    with pytest.raises(RuntimeError, match="metadata field 'partition_by' is required"):
+        schedule_partition_by_from_metadata("schedule", {})

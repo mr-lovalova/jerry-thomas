@@ -5,7 +5,7 @@ from datapipeline.artifacts.executor import run_build_if_needed
 from datapipeline.artifacts.planning import (
     ArtifactGraph,
     build_artifact_graph,
-    required_tick_artifacts,
+    required_schedule_artifacts,
 )
 from datapipeline.artifacts.series import prune_series_cache
 from datapipeline.config.tasks.series import SeriesTask
@@ -166,7 +166,7 @@ def _run_materialize_profiles(request: MaterializeRunRequest) -> None:
             request.definition.streams,
         )
         required_artifacts = set(
-            required_tick_artifacts(
+            required_schedule_artifacts(
                 (job.stream for job in jobs),
                 request.definition.streams,
                 graph.tasks_by_id,

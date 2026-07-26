@@ -371,6 +371,13 @@ options:
 # operations/coverage_stats.yaml — optional summary-stage override
 stage: assembled
 
+# operations/schedule.yaml — explicit expected-timestamp artifact
+kind: artifact
+entrypoint: core.artifact.schedule
+stream: exchange.sessions
+partition_by: []
+output: build/schedule.jsonl
+
 # operations/custom_report.yaml — custom operation
 kind: runtime
 entrypoint: my_plugin.report
@@ -379,6 +386,12 @@ options: {}
 ```
 
 - Stable core operations are registered by Jerry and need no YAML declarations.
+- A schedule is source-specific and therefore remains an explicit artifact
+  operation rather than a core override. Its required `partition_by` must match
+  each consuming stream; an empty list means one global schedule. Streams
+  reference it with
+  `{ operation: ensure_schedule, schedule: schedule }`. See
+  [Artifacts](artifacts.md) for completion behavior and migration details.
 - Each file contains one mapping, and its filename supplies the operation ID.
   Do not repeat `id`. Core overrides also omit `kind` and `entrypoint`.
 - Custom operations declare `kind: artifact|runtime` and an `entrypoint`.

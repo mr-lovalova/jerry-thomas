@@ -40,27 +40,27 @@ def test_observer_routes_operation_lifecycle_results_and_progress(monkeypatch) -
         assert emit_execution_message("details", logging.DEBUG)
         assert emit_rows_written("train", 3)
         assert emit_file_result(
-            "Model grid",
-            Path("/tmp/model_grid.jsonl"),
+            "Schedule",
+            Path("/tmp/schedule.jsonl"),
         )
-        with operation_scope("build:model_grid"):
+        with operation_scope("build:schedule"):
             assert emit_operation_progress("write", 3, "rows")
 
     assert current_execution_observer() is None
     assert events == [
         ExecutionMessage(message="details", log_level=logging.DEBUG),
         RowsWritten("train", 3),
-        FileResult("Model grid", Path("/tmp/model_grid.jsonl")),
-        OperationStarted("build:model_grid"),
+        FileResult("Schedule", Path("/tmp/schedule.jsonl")),
+        OperationStarted("build:schedule"),
         OperationProgress(
-            name="build:model_grid",
+            name="build:schedule",
             step="write",
             reported_at_seconds=1,
             completed=3,
             unit="rows",
         ),
         OperationFinished(
-            "build:model_grid",
+            "build:schedule",
             "success",
             elapsed_seconds=1.25,
         ),

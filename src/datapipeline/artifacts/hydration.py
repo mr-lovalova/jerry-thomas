@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 
 from datapipeline.artifacts.planning import ArtifactGraph, build_artifact_graph
-from datapipeline.artifacts.validation import nested_tick_dependencies
+from datapipeline.artifacts.validation import nested_schedule_dependencies
 from datapipeline.build.state import BuildState, load_build_state
 from datapipeline.runtime import Runtime
 from datapipeline.services.definitions import ArtifactHashes, ProjectDefinition
@@ -70,16 +70,16 @@ def hydrate_runtime_artifacts_for_pipeline(
         artifact_keys = set(
             graph.active_dependency_closure(artifact_roots, definition.dataset)
         )
-    nested_ticks = {
+    nested_schedules = {
         dependency.task.id
-        for dependency in nested_tick_dependencies(
+        for dependency in nested_schedule_dependencies(
             definition.streams,
             graph,
             artifact_keys,
         )
     }
-    artifact_keys -= nested_ticks | graph.dependents_of(
-        nested_ticks,
+    artifact_keys -= nested_schedules | graph.dependents_of(
+        nested_schedules,
         active_keys=artifact_keys,
     )
     return hydrate_runtime_artifacts(

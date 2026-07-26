@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.progress import Progress
 
 import datapipeline.operations.artifacts.series as series_operation
+import datapipeline.pipelines.stream.stages as stream_stages
 from datapipeline.artifacts.models import SampleDomainEntry, VectorMetadataCatalog
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import (
@@ -34,7 +35,7 @@ from datapipeline.config.tasks.metadata import MetadataTask
 from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.config.transforms import (
     EnsureCadenceConfig,
-    EnsureTicksConfig,
+    EnsureScheduleConfig,
     FloorTimeConfig,
     PreprocessConfig,
     TransformConfig,
@@ -1022,7 +1023,8 @@ def test_ensure_cadence_placeholders_do_not_copy_payload_fields(
     assert placeholder.volume is None
 
 
-def test_ensure_ticks_uses_stream_partition_for_tick_artifact(
+def test_ensure_schedule_uses_stream_partition_and_caches_artifact(
+    monkeypatch,
     tmp_path: Path,
 ) -> None:
     rows = [
@@ -1032,9 +1034,9 @@ def test_ensure_ticks_uses_stream_partition_for_tick_artifact(
         tmp_path,
         rows,
         partition_by=("symbol",),
-        transforms=[EnsureTicksConfig(artifact="model_grid")],
+        transforms=[EnsureScheduleConfig(schedule="schedule")],
     )
-    artifact_path = runtime.artifacts_root / "model_grid.jsonl"
+    artifact_path = runtime.artifacts_root / "schedule.jsonl"
     artifact_path.write_text(
         "\n".join(
             [
@@ -1047,19 +1049,35 @@ def test_ensure_ticks_uses_stream_partition_for_tick_artifact(
         encoding="utf-8",
     )
     runtime.artifacts.register(
-        "model_grid",
+        "schedule",
         artifact_path.name,
-        meta={"grid_by": ["symbol"]},
+        meta={"partition_by": ["symbol"]},
     )
+    read_count = 0
+    original_read_schedule = stream_stages.read_schedule
+
+    def counted_read_schedule(path, partition_by):
+        nonlocal read_count
+        read_count += 1
+        return original_read_schedule(path, partition_by)
+
+    monkeypatch.setattr(stream_stages, "read_schedule", counted_read_schedule)
     ctx = PipelineContext(runtime)
 
-    transformed = list(run_stream_pipeline(ctx, "stream"))
+    first = list(run_stream_pipeline(ctx, "stream"))
+    second = list(run_stream_pipeline(ctx, "stream"))
 
-    assert [(rec.symbol, rec.time.hour, rec.value) for rec in transformed] == [
+    assert [(rec.symbol, rec.time.hour, rec.value) for rec in first] == [
         ("A", 0, None),
         ("A", 1, 1.0),
         ("A", 2, None),
     ]
+    assert [(rec.symbol, rec.time.hour, rec.value) for rec in second] == [
+        ("A", 0, None),
+        ("A", 1, 1.0),
+        ("A", 2, None),
+    ]
+    assert read_count == 1
 
 
 def test_series_pipeline_wraps_record_values(tmp_path: Path) -> None:

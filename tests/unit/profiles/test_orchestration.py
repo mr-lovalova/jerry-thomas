@@ -32,7 +32,7 @@ from datapipeline.config.tasks.dataset import DatasetTask
 from datapipeline.config.tasks.matrix import MatrixTask
 from datapipeline.config.tasks.metadata import MetadataTask
 from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.config.tasks.ticks import TicksTask
+from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.execution.settings import (
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,
@@ -1353,7 +1353,12 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    ticks = TicksTask(id="market_ticks", stream="prices", output="ticks.jsonl")
+    schedule = ScheduleTask(
+        id="market_schedule",
+        stream="prices",
+        partition_by=[],
+        output="schedule.jsonl",
+    )
     execution = ExecutionConfig(sort_buffer_mb=32)
     runtime = SimpleNamespace(
         execution=ExecutionConfig(),
@@ -1379,14 +1384,14 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
     ]
     request = _materialize_request(
         tmp_path,
-        [ticks],
+        [schedule],
         jobs,
         runtime,
         execution,
     )
     monkeypatch.setattr(
-        "datapipeline.artifacts.planning.stream_tick_artifacts",
-        lambda stream, streams: {"market_ticks"},
+        "datapipeline.artifacts.planning.stream_schedule_artifacts",
+        lambda stream, streams: {"market_schedule"},
     )
     build_calls: list[dict] = []
     materialized: list[tuple[str, float | None]] = []
@@ -1413,17 +1418,22 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
     run_profiles(request)
 
     assert len(build_calls) == 1
-    assert build_calls[0]["required_artifacts"] == {"market_ticks"}
+    assert build_calls[0]["required_artifacts"] == {"market_schedule"}
     assert materialized == [("adv-20", 10), ("adv-63", 20)]
 
 
 @pytest.mark.parametrize("mode", ["AUTO", "OFF"])
-def test_materialize_hydrates_current_tick_artifact_when_build_skips(
+def test_materialize_hydrates_current_schedule_when_build_skips(
     monkeypatch,
     tmp_path: Path,
     mode: str,
 ) -> None:
-    ticks = TicksTask(id="market_ticks", stream="prices", output="ticks.jsonl")
+    schedule = ScheduleTask(
+        id="market_schedule",
+        stream="prices",
+        partition_by=[],
+        output="schedule.jsonl",
+    )
     job = MaterializeJob(
         name="adv-20",
         stream="adv.20",
@@ -1435,18 +1445,18 @@ def test_materialize_hydrates_current_tick_artifact_when_build_skips(
         tmp_path / "project.yaml",
         dataset=_dataset(),
         streams=_stream_catalog(),
-        artifact_operations=[ticks],
+        artifact_operations=[schedule],
     )
     artifacts_root = definition.project.artifacts_root
-    artifact_path = artifacts_root / ticks.output
+    artifact_path = artifacts_root / schedule.output
     artifact_path.parent.mkdir(parents=True)
     artifact_path.write_text("{}\n", encoding="utf-8")
     state = BuildState()
     state.register(
-        ticks.id,
-        ticks.output,
-        artifact_hash=definition.artifact_hashes.for_artifact(ticks.id),
-        files=(ArtifactFileFingerprint.from_path(ticks.output, artifact_path),),
+        schedule.id,
+        schedule.output,
+        artifact_hash=definition.artifact_hashes.for_artifact(schedule.id),
+        files=(ArtifactFileFingerprint.from_path(schedule.output, artifact_path),),
     )
     save_build_state(
         state,
@@ -1467,8 +1477,8 @@ def test_materialize_hydrates_current_tick_artifact_when_build_skips(
         runtime=runtime,
     )
     monkeypatch.setattr(
-        "datapipeline.artifacts.planning.stream_tick_artifacts",
-        lambda stream, streams: {"market_ticks"},
+        "datapipeline.artifacts.planning.stream_schedule_artifacts",
+        lambda stream, streams: {"market_schedule"},
     )
     monkeypatch.setattr(
         "datapipeline.profiles.orchestration.execution_scope",
@@ -1476,31 +1486,31 @@ def test_materialize_hydrates_current_tick_artifact_when_build_skips(
     )
     monkeypatch.setattr(
         "datapipeline.profiles.orchestration.execute_materialize_job",
-        lambda job, active_runtime: active_runtime.artifacts.require("market_ticks"),
+        lambda job, active_runtime: active_runtime.artifacts.require("market_schedule"),
     )
 
     run_profiles(request)
 
-    assert runtime.artifacts.has("market_ticks")
+    assert runtime.artifacts.has("market_schedule")
 
 
 @pytest.mark.parametrize(
     ("artifact_tasks", "message"),
     [
-        ([], "requires a declared ticks operation"),
+        ([], "requires a declared schedule operation"),
         (
             [
                 ArtifactTask(
-                    id="market_ticks",
+                    id="market_schedule",
                     entrypoint="plugin.snapshot",
                     output="snapshot.json",
                 )
             ],
-            "not a ticks operation",
+            "not a schedule operation",
         ),
     ],
 )
-def test_materialize_rejects_invalid_tick_artifact_producer(
+def test_materialize_rejects_invalid_schedule_artifact_producer(
     monkeypatch,
     tmp_path: Path,
     artifact_tasks,
@@ -1521,8 +1531,8 @@ def test_materialize_rejects_invalid_tick_artifact_producer(
     )
     request = _materialize_request(tmp_path, artifact_tasks, [job], runtime)
     monkeypatch.setattr(
-        "datapipeline.artifacts.planning.stream_tick_artifacts",
-        lambda stream, streams: {"market_ticks"},
+        "datapipeline.artifacts.planning.stream_schedule_artifacts",
+        lambda stream, streams: {"market_schedule"},
     )
 
     with pytest.raises(ProfileCommandError, match=message):

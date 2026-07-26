@@ -176,69 +176,87 @@ def test_legacy_series_override_is_not_a_core_operation(
         _tasks(project_yaml)
 
 
-def test_ticks_artifact_task_loads_arbitrary_id(tmp_path):
+def test_schedule_artifact_task_loads_arbitrary_id(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
-    (config_dir / "dataset_ticks.yaml").write_text(
+    (config_dir / "dataset_schedule.yaml").write_text(
         (
             "kind: artifact\n"
-            "entrypoint: core.artifact.ticks\n"
+            "entrypoint: core.artifact.schedule\n"
             "stream: reference.stream\n"
-            "output: build/dataset_ticks.jsonl\n"
+            "partition_by: []\n"
+            "output: build/dataset_schedule.jsonl\n"
         ),
         encoding="utf-8",
     )
 
     tasks = _artifact_tasks(project_yaml)
 
-    task = next(task for task in tasks if task.id == "dataset_ticks")
-    assert task.id == "dataset_ticks"
-    assert task.entrypoint == "core.artifact.ticks"
+    task = next(task for task in tasks if task.id == "dataset_schedule")
+    assert task.id == "dataset_schedule"
+    assert task.entrypoint == "core.artifact.schedule"
     assert task.stream == "reference.stream"
-    assert task.grid_by == []
-    assert task.output == "build/dataset_ticks.jsonl"
+    assert task.partition_by == []
+    assert task.output == "build/dataset_schedule.jsonl"
 
 
-def test_ticks_artifact_task_loads_grid_by(tmp_path):
+def test_schedule_artifact_task_loads_partition_by(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
-    (config_dir / "model_grid.yaml").write_text(
+    (config_dir / "schedule.yaml").write_text(
         (
             "kind: artifact\n"
-            "entrypoint: core.artifact.ticks\n"
+            "entrypoint: core.artifact.schedule\n"
             "stream: reference.stream\n"
-            "grid_by: [security_id]\n"
-            "output: build/model_grid.jsonl\n"
+            "partition_by: [security_id]\n"
+            "output: build/schedule.jsonl\n"
         ),
         encoding="utf-8",
     )
 
     tasks = _artifact_tasks(project_yaml)
 
-    task = next(task for task in tasks if task.id == "model_grid")
-    assert task.grid_by == ["security_id"]
+    task = next(task for task in tasks if task.id == "schedule")
+    assert task.partition_by == ["security_id"]
+
+
+def test_schedule_artifact_requires_explicit_partition_by(tmp_path) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    config_dir = _operations_dir(project_yaml)
+    (config_dir / "schedule.yaml").write_text(
+        (
+            "kind: artifact\n"
+            "entrypoint: core.artifact.schedule\n"
+            "stream: reference.stream\n"
+            "output: build/schedule.jsonl\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="partition_by"):
+        _artifact_tasks(project_yaml)
 
 
 @pytest.mark.parametrize(
     "body",
     [
         "stream: '   '\n",
-        "stream: reference.stream\ngrid_by: ['']\n",
-        "stream: reference.stream\ngrid_by: [security_id, security_id]\n",
+        "stream: reference.stream\npartition_by: ['']\n",
+        "stream: reference.stream\npartition_by: [security_id, security_id]\n",
     ],
 )
-def test_ticks_artifact_rejects_invalid_identity_fields(
+def test_schedule_artifact_rejects_invalid_identity_fields(
     tmp_path: Path,
     body: str,
 ) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
-    (config_dir / "model_grid.yaml").write_text(
+    (config_dir / "schedule.yaml").write_text(
         (
             "kind: artifact\n"
-            "entrypoint: core.artifact.ticks\n"
+            "entrypoint: core.artifact.schedule\n"
             f"{body}"
-            "output: build/model_grid.jsonl\n"
+            "output: build/schedule.jsonl\n"
         ),
         encoding="utf-8",
     )
@@ -268,9 +286,10 @@ def test_core_operation_rejects_entrypoint_override(tmp_path):
     config_dir = _operations_dir(project_yaml)
     (config_dir / "metadata.yaml").write_text(
         (
-            "entrypoint: core.artifact.ticks\n"
+            "entrypoint: core.artifact.schedule\n"
             "stream: reference.stream\n"
-            "output: build/metadata_ticks.jsonl\n"
+            "partition_by: []\n"
+            "output: build/metadata_schedule.jsonl\n"
         ),
         encoding="utf-8",
     )

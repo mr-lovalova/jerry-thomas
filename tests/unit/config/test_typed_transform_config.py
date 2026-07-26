@@ -7,7 +7,7 @@ from datapipeline.config.transforms import (
     CollapseConfig,
     DedupeConfig,
     EnsureCadenceConfig,
-    EnsureTicksConfig,
+    EnsureScheduleConfig,
     FillConfig,
     ForwardFillConfig,
     ForwardSumConfig,
@@ -59,7 +59,7 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
             },
             {"operation": "forward_fill", "field": "close", "to": "close_asof"},
             {"operation": "collapse", "keep": "last"},
-            {"operation": "ensure_ticks", "artifact": "model_grid"},
+            {"operation": "ensure_schedule", "schedule": "schedule"},
         ]
     )
 
@@ -70,7 +70,7 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
         FillConfig(field="close", window=5, statistic="median"),
         ForwardFillConfig(field="close", to="close_asof"),
         CollapseConfig(keep="last"),
-        EnsureTicksConfig(artifact="model_grid"),
+        EnsureScheduleConfig(schedule="schedule"),
     ]
     assert stream.model_dump()["transforms"] == [
         {"operation": "dedupe"},
@@ -96,7 +96,7 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
             "to": "close_asof",
         },
         {"operation": "collapse", "keep": "last"},
-        {"operation": "ensure_ticks", "artifact": "model_grid"},
+        {"operation": "ensure_schedule", "schedule": "schedule"},
     ]
 
 
@@ -241,7 +241,7 @@ def test_rolling_slope_requires_at_least_two_records(window: object) -> None:
         )
 
 
-@pytest.mark.parametrize("cadence", [None, "", "ticks", "0m", "-1h"])
+@pytest.mark.parametrize("cadence", [None, "", "schedule", "0m", "-1h"])
 def test_ensure_cadence_requires_a_positive_duration(cadence: object) -> None:
     with pytest.raises(ValidationError):
         _stream(transforms=[{"operation": "ensure_cadence", "cadence": cadence}])

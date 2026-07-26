@@ -23,7 +23,7 @@ from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
 from datapipeline.config.tasks.metadata import MetadataTask
 from datapipeline.config.tasks.scaler import ScalerTask
 from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.config.tasks.ticks import TicksTask
+from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.services.definitions import ArtifactHashes, ProjectManifest
 
 # Increment when Jerry's core artifact semantics change without a config change.
@@ -152,7 +152,7 @@ def _artifact_inputs(
     dataset: DatasetConfig,
     streams: StreamsConfig,
 ) -> tuple[dict[str, object], set[str]]:
-    if isinstance(task, TicksTask):
+    if isinstance(task, ScheduleTask):
         stream_config, source_ids = _stream_config_closure((task.stream,), streams)
         return {"streams": stream_config}, source_ids
 

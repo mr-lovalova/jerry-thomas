@@ -175,7 +175,7 @@ def test_materialize_stream_refuses_managed_artifact_paths(
     tmp_path: Path,
     one_row_runtime: Runtime,
 ) -> None:
-    output = tmp_path / "artifacts" / "ticks.jsonl"
+    output = tmp_path / "artifacts" / "schedule.jsonl"
 
     with pytest.raises(ValueError, match="outside the managed artifacts root"):
         materialize_stream(

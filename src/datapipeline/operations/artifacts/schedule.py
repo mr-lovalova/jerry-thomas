@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-from datapipeline.config.tasks.ticks import TicksTask
+from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.domain.value import normalize_data_value
 from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.observability import OperationProgressTracker
@@ -29,33 +29,37 @@ def _to_iso(ts: datetime) -> str:
     return text
 
 
-def _tick_row(record, grid_by: list[str]) -> tuple:
-    values = tuple(normalize_data_value(get_field(record, field)) for field in grid_by)
-    for field, value in zip(grid_by, values):
+def _schedule_row(record, partition_by: list[str]) -> tuple:
+    values = tuple(
+        normalize_data_value(get_field(record, field)) for field in partition_by
+    )
+    for field, value in zip(partition_by, values):
         if value is None:
-            raise ValueError(f"Tick stream row is missing grid_by field '{field}'.")
+            raise ValueError(
+                f"Schedule stream row is missing partition_by field '{field}'."
+            )
     return (record.time, *values)
 
 
-def _json_tick_row(row: tuple, grid_by: list[str]) -> dict:
+def _json_schedule_row(row: tuple, partition_by: list[str]) -> dict:
     payload = {"time": _to_iso(row[0])}
-    for field, value in zip(grid_by, row[1:]):
+    for field, value in zip(partition_by, row[1:]):
         payload[field] = value
     return payload
 
 
-def _tick_sort_key(row: tuple) -> tuple:
+def _schedule_sort_key(row: tuple) -> tuple:
     return (*row[1:], row[0])
 
 
-def _unique_ticks(rows) -> Iterator[tuple]:
+def _unique_schedule_rows(rows) -> Iterator[tuple]:
     previous = None
     previous_key = None
     for position, row in enumerate(rows, start=1):
-        current_key = _tick_sort_key(row)
+        current_key = _schedule_sort_key(row)
         if previous_key is not None and not previous_key <= current_key:
             raise ValueError(
-                f"Tick row {position} violates canonical grid order: "
+                f"Schedule row {position} violates canonical order: "
                 f"key {current_key!r} follows {previous_key!r}."
             )
         if row != previous:
@@ -64,9 +68,9 @@ def _unique_ticks(rows) -> Iterator[tuple]:
         previous_key = current_key
 
 
-def build_ticks_artifact(
+def build_schedule_artifact(
     runtime: Runtime,
-    task_cfg: TicksTask,
+    task_cfg: ScheduleTask,
 ) -> ArtifactOutput:
     heartbeat_interval = resolve_heartbeat_interval_seconds(
         runtime.heartbeat_interval_seconds
@@ -75,18 +79,22 @@ def build_ticks_artifact(
     runtime_stream = require_runtime_stream(runtime, task_cfg.stream)
     stream = run_stream_pipeline(context, task_cfg.stream)
     project_progress = OperationProgressTracker(
-        "project_ticks",
+        "project_schedule",
         "records",
         heartbeat_interval,
     )
-    tick_rows = _project_tick_rows(stream, task_cfg.grid_by, project_progress)
-    if tuple(task_cfg.grid_by) == runtime_stream.partition_by:
-        ordered_ticks = tick_rows
+    schedule_rows = _project_schedule_rows(
+        stream,
+        task_cfg.partition_by,
+        project_progress,
+    )
+    if tuple(task_cfg.partition_by) == runtime_stream.partition_by:
+        ordered_rows = schedule_rows
     else:
-        ordered_ticks = batch_sort(
-            tick_rows,
+        ordered_rows = batch_sort(
+            schedule_rows,
             buffer_bytes=runtime.execution.sort_buffer_bytes,
-            key=_tick_sort_key,
+            key=_schedule_sort_key,
         )
     rows = 0
     try:
@@ -99,9 +107,11 @@ def build_ticks_artifact(
         )
         sink = AtomicTextFileSink(destination)
         try:
-            for tick in _unique_ticks(ordered_ticks):
+            for row in _unique_schedule_rows(ordered_rows):
                 rows += 1
-                sink.write_text(json_text(_json_tick_row(tick, task_cfg.grid_by)))
+                sink.write_text(
+                    json_text(_json_schedule_row(row, task_cfg.partition_by))
+                )
                 sink.write_text("\n")
                 write_progress.advance()
             sink.close()
@@ -109,7 +119,7 @@ def build_ticks_artifact(
             sink.abort()
             raise
     finally:
-        _close_iterator(ordered_ticks)
+        _close_iterator(ordered_rows)
         _close_iterator(stream)
 
     return ArtifactOutput(
@@ -117,16 +127,16 @@ def build_ticks_artifact(
         meta={
             "rows": rows,
             "stream": task_cfg.stream,
-            "grid_by": list(task_cfg.grid_by),
+            "partition_by": list(task_cfg.partition_by),
         },
     )
 
 
-def _project_tick_rows(
+def _project_schedule_rows(
     stream,
-    grid_by: list[str],
+    partition_by: list[str],
     progress: OperationProgressTracker,
 ) -> Iterator[tuple]:
     for record in stream:
-        yield _tick_row(record, grid_by)
+        yield _schedule_row(record, partition_by)
         progress.advance()
