@@ -2,7 +2,7 @@ from bisect import bisect_right
 from collections.abc import Generator, Iterator
 from datetime import datetime, timedelta
 
-from datapipeline.alignment._lifecycle import close_alignment_inputs
+from datapipeline.alignment._lifecycle import closing_alignment_inputs
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.transforms.utils import partition_key
 
@@ -28,9 +28,8 @@ def broadcast_as_of_stream(
     """
     lookup_times: list[datetime] = []
     lookup_records: list[TemporalRecord] = []
-    processing_failed = False
 
-    try:
+    with closing_alignment_inputs((primary, lookup)):
         if max_age is not None and not isinstance(max_age, timedelta):
             raise TypeError("Broadcast as-of max_age must be a timedelta or None")
         if max_age is not None and max_age <= timedelta(0):
@@ -99,12 +98,3 @@ def broadcast_as_of_stream(
                 continue
 
             yield primary_record, lookup_record
-    except GeneratorExit:
-        raise
-    except BaseException:
-        processing_failed = True
-        raise
-    finally:
-        cleanup_error = close_alignment_inputs((primary, lookup))
-        if not processing_failed and cleanup_error is not None:
-            raise cleanup_error
