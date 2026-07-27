@@ -21,6 +21,7 @@ from datapipeline.profiles.materialize import (
     execute_materialize_job,
     preflight_materialize_jobs,
 )
+from datapipeline.runtime import Runtime
 from datapipeline.services.execution_lock import (
     ProjectExecutionBusyError,
     project_execution_lock,
@@ -174,7 +175,7 @@ def _run_materialize_profiles(request: MaterializeRunRequest) -> None:
     except (OSError, ValueError) as exc:
         raise ProfileCommandError(str(exc)) from exc
 
-    _prepare_materialize_artifacts(request, graph, required_artifacts)
+    _build_prerequisites(request, graph, required_artifacts, request.runtime)
     for job in jobs:
         request.runtime.heartbeat_interval_seconds = (
             job.observability.heartbeat_interval_seconds
@@ -241,9 +242,20 @@ def _prepare_runtime_artifacts(
     if not required_artifacts:
         return
 
-    settings = request.artifact_settings
     runtime = compile_runtime(request.definition)
     runtime.execution = request.execution
+    _build_prerequisites(request, graph, required_artifacts, runtime)
+
+
+def _build_prerequisites(
+    request: RuntimeRunRequest | MaterializeRunRequest,
+    graph: ArtifactGraph,
+    required_artifacts: set[str],
+    runtime: Runtime,
+) -> None:
+    if not required_artifacts:
+        return
+    settings = request.artifact_settings
     with execution_scope(runtime, settings.observability):
         run_build_if_needed(
             request.definition,
@@ -251,24 +263,4 @@ def _prepare_runtime_artifacts(
             required_artifacts=required_artifacts,
             settings=settings,
             runtime=runtime,
-        )
-
-
-def _prepare_materialize_artifacts(
-    request: MaterializeRunRequest,
-    graph: ArtifactGraph,
-    required_artifacts: set[str],
-) -> None:
-    if not required_artifacts:
-        return
-    with execution_scope(
-        request.runtime,
-        request.artifact_settings.observability,
-    ):
-        run_build_if_needed(
-            request.definition,
-            graph=graph,
-            required_artifacts=required_artifacts,
-            settings=request.artifact_settings,
-            runtime=request.runtime,
         )
