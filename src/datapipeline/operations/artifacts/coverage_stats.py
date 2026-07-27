@@ -6,8 +6,10 @@ from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
 from datapipeline.io.json_file import write_json_object
 from datapipeline.operations.persistence import ArtifactOutput
-from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
-from datapipeline.pipelines.sample.input import open_samples
+from datapipeline.pipelines.dataset.pipeline import (
+    run_dataset_pipeline,
+    run_sample_pipeline,
+)
 from datapipeline.pipelines.sample.keys import require_metadata_key_plan
 from datapipeline.runtime import Runtime
 
@@ -26,22 +28,13 @@ def build_coverage_stats_artifact(
         dataset.sample.keys,
     )
 
-    samples = open_samples(
-        runtime,
-        tuple(entry.id for entry in schema.features),
-        dataset.sample.cadence,
-        target_ids=tuple(entry.id for entry in schema.targets),
-        sample_keys=dataset.sample.keys,
-        key_plan=key_plan,
-    )
-    feature_entries = schema.features
-    target_entries = schema.targets
     if task_cfg.stage == "postprocessed":
-        plan = build_postprocess_plan(dataset.postprocess, schema)
-        samples = plan.apply(samples)
+        samples = run_dataset_pipeline(runtime, schema, key_plan)
+    else:
+        samples = run_sample_pipeline(runtime, schema, key_plan)
 
-    feature_accumulator = CoverageStatsAccumulator(feature_entries)
-    target_accumulator = CoverageStatsAccumulator(target_entries)
+    feature_accumulator = CoverageStatsAccumulator(schema.features)
+    target_accumulator = CoverageStatsAccumulator(schema.targets)
     total_samples = 0
     empty_samples = 0
     try:

@@ -4,8 +4,10 @@ from datapipeline.analysis.vector.matrix import MatrixBuilder, render_matrix_htm
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.config.tasks.matrix import MatrixTask
 from datapipeline.operations.persistence import RuntimeOutput
-from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
-from datapipeline.pipelines.sample.input import open_samples
+from datapipeline.pipelines.dataset.pipeline import (
+    run_dataset_pipeline,
+    run_sample_pipeline,
+)
 from datapipeline.pipelines.sample.keys import require_metadata_key_plan
 from datapipeline.runtime import Runtime
 
@@ -26,21 +28,12 @@ def run_matrix_operation(
         dataset.sample.keys,
     )
 
-    samples = open_samples(
-        runtime,
-        tuple(entry.id for entry in schema.features),
-        dataset.sample.cadence,
-        target_ids=tuple(entry.id for entry in schema.targets),
-        sample_keys=dataset.sample.keys,
-        key_plan=key_plan,
-    )
-    feature_entries = schema.features
-    target_entries = schema.targets
     if options.stage == "postprocessed":
-        plan = build_postprocess_plan(dataset.postprocess, schema)
-        samples = plan.apply(samples)
+        samples = run_dataset_pipeline(runtime, schema, key_plan)
+    else:
+        samples = run_sample_pipeline(runtime, schema, key_plan)
 
-    builder = MatrixBuilder(feature_entries, target_entries, options.max_cells)
+    builder = MatrixBuilder(schema.features, schema.targets, options.max_cells)
     limited_samples = islice(samples, limit) if limit is not None else samples
     try:
         for sample in limited_samples:

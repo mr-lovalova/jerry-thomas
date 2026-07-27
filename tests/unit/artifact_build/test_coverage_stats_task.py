@@ -8,11 +8,9 @@ from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.pipeline import Stage
 from datapipeline.operations.artifacts.coverage_stats import (
     build_coverage_stats_artifact,
 )
-from datapipeline.pipelines.dataset.postprocess import PostprocessPlan
 from datapipeline.runtime import Runtime
 
 
@@ -91,10 +89,6 @@ def _register_metadata(monkeypatch, runtime: Runtime) -> None:
     monkeypatch.setattr(runtime.artifacts, "load", load_artifact)
 
 
-def _postprocess_plan(*stages: Stage) -> PostprocessPlan:
-    return PostprocessPlan(stages=stages)
-
-
 def test_build_coverage_stats_artifact_writes_bounded_v3_summary(
     monkeypatch,
     tmp_path,
@@ -110,12 +104,8 @@ def test_build_coverage_stats_artifact_writes_bounded_v3_summary(
     ]
     _register_metadata(monkeypatch, runtime)
     monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.open_samples",
-        lambda *_args, **_kwargs: iter(samples),
-    )
-    monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.build_postprocess_plan",
-        lambda _config, _schema: _postprocess_plan(),
+        "datapipeline.operations.artifacts.coverage_stats.run_dataset_pipeline",
+        lambda *_args: iter(samples),
     )
 
     task = CoverageStatsTask()
@@ -150,18 +140,16 @@ def test_assembled_coverage_stats_do_not_apply_postprocess(
     runtime = _runtime(tmp_path)
     _register_metadata(monkeypatch, runtime)
     monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.open_samples",
+        "datapipeline.operations.artifacts.coverage_stats.run_sample_pipeline",
         lambda *_args, **_kwargs: iter(()),
     )
 
-    def fail_plan(*_args):
-        raise AssertionError(
-            "assembled coverage stats must not build a postprocess plan"
-        )
+    def fail_postprocessed_pipeline(*_args):
+        raise AssertionError("assembled coverage stats must not run postprocessing")
 
     monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.build_postprocess_plan",
-        fail_plan,
+        "datapipeline.operations.artifacts.coverage_stats.run_dataset_pipeline",
+        fail_postprocessed_pipeline,
     )
 
     build_coverage_stats_artifact(
@@ -175,20 +163,10 @@ def test_postprocessed_coverage_stats_keep_columns_when_every_sample_is_dropped(
     tmp_path,
 ) -> None:
     runtime = _runtime(tmp_path)
-    sample = Sample(
-        key=(_ts(1),),
-        features=Vector(values={"speed": [None, None]}),
-        targets=Vector(values={"return": None}),
-    )
-    drop_all = Stage(name="drop_all", apply=lambda _samples: iter(()))
     _register_metadata(monkeypatch, runtime)
     monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.open_samples",
-        lambda *_args, **_kwargs: iter((sample,)),
-    )
-    monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.build_postprocess_plan",
-        lambda _config, _schema: _postprocess_plan(drop_all),
+        "datapipeline.operations.artifacts.coverage_stats.run_dataset_pipeline",
+        lambda *_args: iter(()),
     )
 
     task = CoverageStatsTask()

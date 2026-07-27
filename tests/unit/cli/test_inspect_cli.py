@@ -13,12 +13,10 @@ from datapipeline.config.tasks.coverage import CoverageTask
 from datapipeline.config.tasks.matrix import MatrixTask
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.pipeline import Stage
 from datapipeline.io.output import OutputTarget
 from datapipeline.operations.persistence import persist_runtime_result
 from datapipeline.operations.runtime import coverage as coverage_ops
 from datapipeline.operations.runtime import matrix as matrix_ops
-from datapipeline.pipelines.dataset.postprocess import PostprocessPlan
 
 
 def _coverage_stats() -> CoverageStatsArtifact:
@@ -101,17 +99,16 @@ def _matrix_runtime():
 
 
 def _patch_matrix(monkeypatch) -> None:
+    samples = [Sample(key="g0", features=Vector(values={"speed": 1.0}))]
     monkeypatch.setattr(
         matrix_ops,
-        "open_samples",
-        lambda *_args, **_kwargs: iter(
-            [Sample(key="g0", features=Vector(values={"speed": 1.0}))]
-        ),
+        "run_sample_pipeline",
+        lambda *_args: iter(samples),
     )
     monkeypatch.setattr(
         matrix_ops,
-        "build_postprocess_plan",
-        lambda *_args: PostprocessPlan(stages=()),
+        "run_dataset_pipeline",
+        lambda *_args: iter(samples),
     )
 
 
@@ -240,10 +237,14 @@ def test_inspect_matrix_writes_html(monkeypatch, tmp_path) -> None:
 def test_assembled_matrix_does_not_postprocess(monkeypatch) -> None:
     _patch_matrix(monkeypatch)
 
-    def fail_plan(*_args):
-        raise AssertionError("assembled matrix must not build a postprocess plan")
+    def fail_postprocessed_pipeline(*_args):
+        raise AssertionError("assembled matrix must not run postprocessing")
 
-    monkeypatch.setattr(matrix_ops, "build_postprocess_plan", fail_plan)
+    monkeypatch.setattr(
+        matrix_ops,
+        "run_dataset_pipeline",
+        fail_postprocessed_pipeline,
+    )
     matrix_ops.run_matrix_operation(
         runtime=_matrix_runtime(),
         task=MatrixTask(id="matrix", options={"stage": "assembled"}),
@@ -258,21 +259,8 @@ def test_matrix_limit_caps_samples_after_postprocess(monkeypatch) -> None:
     ]
     monkeypatch.setattr(
         matrix_ops,
-        "open_samples",
-        lambda *_args, **_kwargs: iter(samples),
-    )
-
-    def drop_first(items):
-        iterator = iter(items)
-        next(iterator)
-        return iterator
-
-    monkeypatch.setattr(
-        matrix_ops,
-        "build_postprocess_plan",
-        lambda *_args: PostprocessPlan(
-            stages=(Stage(name="drop_first", apply=drop_first),),
-        ),
+        "run_dataset_pipeline",
+        lambda *_args: iter(samples[1:]),
     )
 
     result = matrix_ops.run_matrix_operation(
@@ -290,11 +278,10 @@ def test_postprocessed_matrix_keeps_headers_when_every_sample_is_dropped(
     tmp_path,
 ) -> None:
     _patch_matrix(monkeypatch)
-    drop_all = Stage(name="drop_all", apply=lambda _samples: iter(()))
     monkeypatch.setattr(
         matrix_ops,
-        "build_postprocess_plan",
-        lambda *_args: PostprocessPlan(stages=(drop_all,)),
+        "run_dataset_pipeline",
+        lambda *_args: iter(()),
     )
     destination = (tmp_path / "empty-matrix.html").resolve()
 
