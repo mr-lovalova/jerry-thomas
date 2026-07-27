@@ -10,7 +10,7 @@ from datapipeline.domain.series_id import (
     make_partitioned_series_id,
 )
 from datapipeline.domain.sample_key import SampleKeyContract
-from datapipeline.domain.value import normalize_data_value
+from datapipeline.domain.value import normalize_series_value
 from datapipeline.transforms.utils import (
     get_field,
     partition_key,
@@ -56,7 +56,7 @@ class SeriesProjector:
             yield SeriesRecord(
                 id=series_id,
                 time=record.time,
-                value=normalize_data_value(get_field(record, config.field)),
+                value=normalize_series_value(get_field(record, config.field)),
                 entity_key=entity_key,
                 _establishes_domain=establishes_domain,
             )

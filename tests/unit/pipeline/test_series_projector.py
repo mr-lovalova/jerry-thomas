@@ -19,6 +19,12 @@ class _Record:
     _establishes_domain: bool = field(default=True, init=False, repr=False)
 
 
+@dataclass
+class _Point:
+    latitude: float
+    longitude: float
+
+
 def _projected_id(
     record: _Record,
     partition_by: tuple[str, ...],
@@ -52,21 +58,81 @@ def test_series_projector_projects_long_identity_as_entity_key() -> None:
     assert [record.entity_key for record in records] == [("north",), ("north",)]
 
 
-def test_series_projector_normalizes_nested_nan_without_mutating_record() -> None:
-    source_record = _Record(sensor={"values": [1.0, float("nan")]})
+def test_series_projector_normalizes_list_nan_without_mutating_record() -> None:
+    source_record = _Record(sensor=[1.0, float("nan")])
     projector = SeriesProjector((), SampleKeyContract(()))
     config = SeriesConfig(stream="stream", id="sensor", field="sensor")
 
     [projected] = projector.project(source_record, (config,))
 
-    assert projected.value == {"values": [1.0, None]}
-    assert isinstance(source_record.sensor, dict)
-    assert math.isnan(source_record.sensor["values"][1])
+    assert projected.value == [1.0, None]
+    assert isinstance(source_record.sensor, list)
+    assert math.isnan(source_record.sensor[1])
+
+
+def test_series_projector_normalizes_scalar_nan() -> None:
+    projector = SeriesProjector((), SampleKeyContract(()))
+    config = SeriesConfig(stream="stream", id="sensor", field="sensor")
+
+    [projected] = projector.project(_Record(sensor=float("nan")), (config,))
+
+    assert projected.value is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        False,
+        1,
+        1.5,
+        "temperature",
+        [None, False, 1, 1.5, "temperature"],
+    ],
+    ids=["null", "boolean", "integer", "float", "string", "flat-list"],
+)
+def test_series_projector_accepts_flat_series_values(value: object) -> None:
+    projector = SeriesProjector((), SampleKeyContract(()))
+    config = SeriesConfig(stream="stream", id="sensor", field="sensor")
+
+    [projected] = projector.project(_Record(sensor=value), (config,))
+
+    assert projected.value == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"latitude": 55.7, "longitude": 12.6},
+        _Point(55.7, 12.6),
+        (1.0, 2.0),
+        [[1.0, 2.0], [1.1, 2.1]],
+        [{"latitude": 55.7, "longitude": 12.6}],
+    ],
+    ids=["mapping", "domain-object", "tuple", "nested-list", "list-of-mapping"],
+)
+def test_series_projector_rejects_non_flat_series_values(value: object) -> None:
+    projector = SeriesProjector((), SampleKeyContract(()))
+    config = SeriesConfig(stream="stream", id="sensor", field="sensor")
+
+    with pytest.raises(
+        TypeError,
+        match="Series values must be a scalar or a flat list of scalar values",
+    ):
+        next(projector.project(_Record(sensor=value), (config,)))
+
+
+def test_series_projector_rejects_empty_list() -> None:
+    projector = SeriesProjector((), SampleKeyContract(()))
+    config = SeriesConfig(stream="stream", id="sensor", field="sensor")
+
+    with pytest.raises(ValueError, match="must not be empty"):
+        next(projector.project(_Record(sensor=[]), (config,)))
 
 
 @pytest.mark.parametrize("value", [float("inf"), float("-inf")])
-def test_series_projector_rejects_nested_infinity(value: float) -> None:
-    record = _Record(sensor={"values": [1.0, value]})
+def test_series_projector_rejects_list_infinity(value: float) -> None:
+    record = _Record(sensor=[1.0, value])
     projector = SeriesProjector((), SampleKeyContract(()))
     config = SeriesConfig(stream="stream", id="sensor", field="sensor")
 

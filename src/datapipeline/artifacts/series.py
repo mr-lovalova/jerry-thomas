@@ -25,13 +25,13 @@ from datapipeline.domain.sample_key import (
     sample_key_value_type,
 )
 from datapipeline.domain.series_id import base_id
+from datapipeline.domain.value import validate_series_value
 from datapipeline.io.sinks.files import GzipBinarySink
 from datapipeline.services.path_policy import resolve_artifact_output_path
 from datapipeline.utils.time import CADENCE_PATTERN, parse_datetime
 
-SERIES_MANIFEST_VERSION: Final = 10
+SERIES_MANIFEST_VERSION: Final = 11
 _SERIES_COMPRESSION_LEVEL: Final = 3
-_JSON_SCALAR_TYPES = {type(None), bool, int, float, str}
 _NonEmptyString = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1),
@@ -49,7 +49,7 @@ class SeriesEntry(BaseModel):
 class SeriesManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    version: Literal[10] = SERIES_MANIFEST_VERSION
+    version: Literal[11] = SERIES_MANIFEST_VERSION
     format: Literal["jsonl.gz"] = "jsonl.gz"
     cadence: str = Field(pattern=CADENCE_PATTERN)
     sample_keys: tuple[_NonEmptyString, ...] = ()
@@ -111,27 +111,6 @@ def _to_iso(value: datetime) -> str:
     return text
 
 
-def _require_json_value(value: Any) -> None:
-    value_type = type(value)
-    if value_type in _JSON_SCALAR_TYPES:
-        return
-    if value_type is list:
-        for item in value:
-            _require_json_value(item)
-        return
-    if value_type is dict:
-        for key, item in value.items():
-            if type(key) is not str:
-                raise TypeError(
-                    f"Series mappings require string keys; got {type(key).__name__}."
-                )
-            _require_json_value(item)
-        return
-    raise TypeError(
-        f"Series rows require JSON-native values; got {value_type.__name__}."
-    )
-
-
 def write_series_rows(path: Path, rows: Iterable[SeriesRow]) -> SeriesWriteResult:
     sink = GzipBinarySink(path, compression_level=_SERIES_COMPRESSION_LEVEL)
     hasher = hashlib.sha256()
@@ -150,7 +129,6 @@ def write_series_rows(path: Path, rows: Iterable[SeriesRow]) -> SeriesWriteResul
                     if series_id in placeholder_ids
                 ],
             }
-            _require_json_value(payload)
             line = (
                 json.dumps(payload, separators=(",", ":"), allow_nan=False) + "\n"
             ).encode("utf-8")
@@ -177,6 +155,13 @@ def _validate_series_row(
         sample_key_value_type(f"entity_key[{index}]", component)
     if type(row.features) is not dict or type(row.targets) is not dict:
         raise TypeError("Series row features and targets must be dictionaries.")
+    for values in (row.features, row.targets):
+        for series_id, value in values.items():
+            if type(series_id) is not str:
+                raise TypeError("Series row IDs must be strings.")
+            if not series_id:
+                raise ValueError("Series row IDs must not be empty.")
+            validate_series_value(value)
     duplicate_ids = row.features.keys() & row.targets.keys()
     if duplicate_ids:
         raise ValueError(
@@ -378,6 +363,13 @@ def _value_mapping(
         raise ValueError(f"Series row in '{path}' must define object '{key}'.")
     if any(not isinstance(series_id, str) or not series_id for series_id in value):
         raise ValueError(f"Series row in '{path}' has an invalid series id.")
+    for series_id, series_value in value.items():
+        try:
+            validate_series_value(series_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Series row in '{path}' has an invalid value for {series_id!r}: {exc}"
+            ) from exc
     return value
 
 

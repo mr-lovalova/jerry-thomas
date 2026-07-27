@@ -89,7 +89,7 @@ def test_series_rows_round_trip_json_native_values(tmp_path: Path) -> None:
             0,
             entity_key=("A", 7, "north"),
             features={
-                "record": {"values": [None, True, 1, 1.5, "text"]},
+                "values": [None, True, 1, 1.5, "text"],
                 "null_record": None,
             },
             targets={"sequence": [None, False, 2, 2.5, "other"]},
@@ -201,22 +201,33 @@ def test_series_writer_aborts_when_atomic_commit_fails(
 
 
 @pytest.mark.parametrize(
-    "value",
+    ("value", "error"),
     [
-        {"nested": [Decimal("1.25")]},
-        (1, 2),
-        {1: "one"},
+        ({"nested": [Decimal("1.25")]}, TypeError),
+        ({"nested": [1.25]}, TypeError),
+        ((1, 2), TypeError),
+        ({1: "one"}, TypeError),
+        ([[1.0, 2.0]], TypeError),
+        ([], ValueError),
     ],
-    ids=["unsupported-object", "tuple", "non-string-mapping-key"],
+    ids=[
+        "unsupported-object",
+        "mapping",
+        "tuple",
+        "non-string-mapping-key",
+        "nested-list",
+        "empty-list",
+    ],
 )
-def test_series_writer_rejects_lossy_values_atomically(
+def test_series_writer_rejects_invalid_values_atomically(
     tmp_path: Path,
     value: object,
+    error: type[Exception],
 ) -> None:
     destination = tmp_path / "series.jsonl.gz"
     destination.write_bytes(b"existing")
 
-    with pytest.raises(TypeError, match="Series"):
+    with pytest.raises(error, match="Series"):
         write_series_rows(
             destination,
             [
@@ -274,6 +285,17 @@ def test_series_writer_rejects_lossy_values_atomically(
             SeriesRow(
                 time=_time(0),
                 entity_key=(),
+                features={"": 1.0},
+                targets={},
+                placeholder_ids=frozenset(),
+            ),
+            ValueError,
+            "IDs must not be empty",
+        ),
+        (
+            SeriesRow(
+                time=_time(0),
+                entity_key=(),
                 features={"price": 1.0},
                 targets={},
                 placeholder_ids=cast(Any, ["price"]),
@@ -287,6 +309,7 @@ def test_series_writer_rejects_lossy_values_atomically(
         "naive-time",
         "non-tuple-key",
         "non-dict-values",
+        "empty-series-id",
         "non-frozenset-placeholders",
     ],
 )
@@ -324,12 +347,12 @@ def test_series_writer_rejects_non_finite_values_atomically(
 ) -> None:
     destination = tmp_path / "series.jsonl.gz"
     destination.write_bytes(b"existing")
-    row = _row(0, features={"price": {"values": [1.0, value]}})
+    row = _row(0, features={"price": [1.0, value]})
 
-    with pytest.raises(ValueError, match="Out of range float values"):
+    with pytest.raises(ValueError, match="finite floats"):
         write_series_rows(destination, [row])
 
-    assert row.features["price"] == {"values": [1.0, value]}
+    assert row.features["price"] == [1.0, value]
     assert destination.read_bytes() == b"existing"
     assert list(tmp_path.iterdir()) == [destination]
 
@@ -375,7 +398,7 @@ def test_series_writer_removes_temp_file_on_interrupt(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "version",
-    [None, 1, 2, 3, 4, 5, 6, 7, 8, 9, 8.0, True],
+    [None, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 8.0, True],
 )
 def test_series_manifest_rejects_incompatible_version(
     tmp_path: Path,
@@ -387,6 +410,34 @@ def test_series_manifest_rejects_incompatible_version(
 
     with pytest.raises(ValueError, match="FORCE mode"):
         load_series_manifest(manifest)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"latitude": 55.7, "longitude": 12.6},
+        [[1.0, 2.0]],
+        [],
+    ],
+    ids=["mapping", "nested-list", "empty-list"],
+)
+def test_series_reader_rejects_non_flat_values(
+    tmp_path: Path,
+    value: object,
+) -> None:
+    destination = tmp_path / "series.jsonl.gz"
+    row = {
+        "time": "2024-01-01T00:00:00Z",
+        "entity_key": [],
+        "features": {"location": value},
+        "targets": {},
+        "placeholder_ids": [],
+    }
+    with gzip.open(destination, "wt", encoding="utf-8") as handle:
+        handle.write(json.dumps(row) + "\n")
+
+    with pytest.raises(ValueError, match="invalid value for 'location'"):
+        list(read_series_rows(destination))
 
 
 def test_cache_pruning_rejects_symlinked_manifest_parent(tmp_path: Path) -> None:

@@ -39,9 +39,11 @@ value in one fold output is scaled with that fold's scaler. `with_mean`,
 recorded in the managed artifact; individual features cannot override them.
 `None` is the canonical missing value. A transient floating `NaN` is converted
 to `None` when the field is projected; other nonnumeric values and infinity are
-rejected. Intrinsically list-valued fields are fitted independently by position.
-Lists produced from scalar `sequence` or `collect` inputs apply the same scalar
-series statistics to every position.
+rejected. A field must be a scalar or a non-empty flat list of scalars;
+mappings, tuples, and nested lists are not implicit vector shapes.
+Intrinsically list-valued fields are fitted independently by position. Lists
+produced from scalar `sequence` or `collect` inputs apply the same scalar series
+statistics to every position.
 
 `sequence` accepts strictly positive integer `size` and optional `stride`
 (default `1`). It creates independent windows per series ID and entity from

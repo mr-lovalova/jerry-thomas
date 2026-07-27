@@ -10,11 +10,13 @@ filenames, such as `operations/schedule.yaml`.
 - `build/series/manifest.json` plus one compressed, globally ordered companion
   under `build/series/manifest.data/`: durable sparse sample inputs consumed
   by dataset assembly. Each row stores its sample key once with all available
-  feature and target values. Values may contain only `None`, `bool`, `int`,
-  `float`, `str`, lists, and string-keyed dictionaries; sample-key components
-  may use only those scalar types. Other Python objects fail the build instead
-  of being converted to strings. Each successful build publishes a new
-  immutable generation. The manifest records its row counts and content digest.
+  feature and target values. A value must be `None`, `bool`, `int`, `float`,
+  `str`, or a non-empty flat list containing those scalar types. Mappings,
+  tuples, nested lists, and other Python objects fail the build instead of
+  being flattened or converted to strings. Sample-key components accept the
+  same scalar types except `None`. Each successful build publishes a new
+  immutable generation. The manifest records its row counts and content
+  digest.
   Project commands hold one artifact-workspace lock; generations no longer
   referenced by the manifest are pruned only after the locked command finishes.
 - `build/scaler.json`: managed scaler statistics. Unsplit datasets store one
@@ -112,16 +114,18 @@ same eligible sample origins; an unsplit dataset has no role boundary to
 enforce. A horizon change does not change the grouped series values, but it does
 change folded scaler eligibility and the fold contracts stored in metadata.
 
-Jerry 8 series manifests use format version 10. Version 9 introduced source
-record versus cadence-placeholder provenance; version 10 replaces implicit
-scalar-to-list aggregation with explicit fixed-size `collect`. The series
-format version participates in artifact fingerprints, so `AUTO` rebuilds
-series, metadata, and dependent coverage artifacts created with version 9.
-Projects that relied on multiple scalar values in one sample bucket must first
-declare `collect: N` or use a finer `sample.cadence`; otherwise the rebuild
-fails instead of silently changing shape. `OFF` requires those artifacts to be
-rebuilt first. Scaler artifacts remain current because collection shapes
-already-fitted scalar observations.
+Jerry 8 series manifests use format version 11. Version 9 introduced source
+record versus cadence-placeholder provenance; version 10 replaced implicit
+scalar-to-list aggregation with explicit fixed-size `collect`; version 11
+enforces scalar or non-empty flat-list values. The series format version
+participates in artifact fingerprints, so `AUTO` rebuilds series, metadata, and
+dependent coverage artifacts from earlier versions. Projects that relied on
+multiple scalar values in one sample bucket must declare `collect: N` or use a
+finer `sample.cadence`. Structured values must be projected into explicit
+scalar or flat-list series. Otherwise the rebuild fails instead of silently
+changing shape. `OFF` requires those artifacts to be rebuilt first. Scaler
+artifacts remain current because collection shapes already-fitted scalar
+observations.
 
 Metadata format version 4 stores the global catalog plus the explicit unsplit
 or folded layout. The artifact cache generation is also incremented for the new

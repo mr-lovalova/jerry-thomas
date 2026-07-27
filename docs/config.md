@@ -812,7 +812,9 @@ postprocess:
 - `None` is the canonical missing series value. A floating `NaN` produced by
   a parser, mapper, or transform is converted to `None` when the field is
   projected; positive and negative infinity are rejected. Identity fields
-  reject every non-finite float rather than treating it as missing.
+  reject every non-finite float rather than treating it as missing. Series
+  values must be scalars or non-empty flat lists of scalars; mappings, tuples,
+  empty lists, and nested lists are rejected.
 - Every `id` must be unique across both `features` and `targets`. Scaler and
   metadata operations plus postprocess policies use this shared vector-ID
   space.
