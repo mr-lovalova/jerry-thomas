@@ -86,20 +86,14 @@ def _runtime_with_streams(
     return runtime
 
 
-def _register_scaler(
-    runtime: Runtime, configs: list[SeriesConfig], group_by: str
-) -> None:
+def _register_scaler(runtime: Runtime, configs: list[SeriesConfig]) -> None:
     sanitized = [
         cfg.model_copy(update={"scale": False, "sequence": None, "collect": None})
         for cfg in configs
     ]
     accumulator = ScalerAccumulator()
     for cfg in sanitized:
-        stream = run_series_pipeline(
-            runtime,
-            cfg,
-            group_by_cadence=group_by,
-        )
+        stream = run_series_pipeline(runtime, cfg)
         try:
             for feature in stream:
                 if not isinstance(feature, SeriesRecord):
@@ -170,7 +164,6 @@ def test_sample_targets_respect_partitioned_ids(tmp_path) -> None:
                 "wind_speed__@municipality:06019",
                 "wind_speed__@municipality:06030",
             },
-            "1h",
             target_ids={
                 "wind_production__@municipality:06019",
                 "wind_production__@municipality:06030",
@@ -234,9 +227,7 @@ def test_samples_can_group_by_record_key_fields(tmp_path) -> None:
         open_samples(
             runtime,
             [config.id for config in feature_cfgs],
-            "1h",
             target_ids=[config.id for config in target_cfgs],
-            sample_keys=["security_id"],
         )
     )
 
@@ -308,8 +299,6 @@ def test_samples_keep_entity_buckets_contiguous(tmp_path) -> None:
         open_samples(
             runtime,
             [config.id for config in feature_cfgs],
-            "1d",
-            sample_keys=["security_id"],
         )
     )
 
@@ -361,8 +350,6 @@ def test_sequence_series_are_windowed_by_sample_keys(tmp_path) -> None:
         open_samples(
             runtime,
             [config.id for config in feature_cfgs],
-            "1h",
-            sample_keys=["security_id"],
         )
     )
 
@@ -415,7 +402,6 @@ def test_sample_input_selects_exact_wide_feature_ids(
         open_samples(
             runtime,
             ["monthly_return__@security_id:AAPL"],
-            "1h",
         )
     )
 
@@ -475,8 +461,6 @@ def test_stream_transforms_use_explicit_stream_partition(tmp_path) -> None:
         open_samples(
             runtime,
             [config.id for config in feature_cfgs],
-            "1h",
-            sample_keys=["security_id"],
         )
     )
 
@@ -536,13 +520,12 @@ def test_regression_scaled_shapes_airpressure_high_freq_and_windspeed_hourly(
         ),
     ]
 
-    _register_scaler(runtime, configs, group_by)
+    _register_scaler(runtime, configs)
     register_series(runtime, configs, group_by)
 
     raw = open_samples(
         runtime,
         [config.id for config in configs],
-        group_by,
     )
     out = list(
         SampleScaler(
@@ -631,12 +614,11 @@ def test_regression_fill_then_scale_with_missing_values(tmp_path) -> None:
         ),
     ]
 
-    _register_scaler(runtime, configs, group_by)
+    _register_scaler(runtime, configs)
     register_series(runtime, configs, group_by)
     raw = open_samples(
         runtime,
         [config.id for config in configs],
-        group_by,
     )
     out = list(
         SampleScaler(

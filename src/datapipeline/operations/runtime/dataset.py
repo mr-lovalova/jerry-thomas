@@ -202,12 +202,7 @@ def _serve_preview(
                     preview,
                 )
             case "series":
-                stream = run_series_pipeline(
-                    runtime,
-                    cfg,
-                    sample_keys=dataset.sample.keys,
-                    group_by_cadence=dataset.sample.cadence,
-                )
+                stream = run_series_pipeline(runtime, cfg)
             case _:
                 raise ValueError(f"Unsupported preview stage: {preview!r}")
         outputs.append(_runtime_output(stream, output_target, limit))

@@ -35,11 +35,14 @@ def _identity(records):
 def _runtime(
     tmp_path,
     partition_by: tuple[str, ...] = (),
+    sample_keys: tuple[str, ...] = (),
 ) -> Runtime:
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(
+            sample=SampleConfig(cadence="1h", keys=list(sample_keys))
+        ),
     )
     runtime.streams["stream"] = SourceRuntimeStream(
         source=_EmptySource(),
@@ -77,7 +80,6 @@ def test_series_stages_sequence_without_scaling(tmp_path) -> None:
             scale=True,
             sequence=SequenceConfig(size=3, stride=2),
         ),
-        group_by_cadence="1h",
     )
 
     assert [stage.name for stage in stages] == [
@@ -97,10 +99,12 @@ def test_series_stages_omit_disabled_stages(tmp_path) -> None:
 
 def test_partitioned_series_stages_include_ordering(tmp_path) -> None:
     stages = build_series_stages(
-        _runtime(tmp_path, partition_by=("symbol",)),
+        _runtime(
+            tmp_path,
+            partition_by=("symbol",),
+            sample_keys=("symbol",),
+        ),
         SeriesConfig(stream="stream", id="x", field="value"),
-        sample_keys=("symbol",),
-        group_by_cadence="1h",
     )
 
     assert [stage.name for stage in stages] == [

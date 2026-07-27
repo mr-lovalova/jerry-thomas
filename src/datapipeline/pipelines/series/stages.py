@@ -70,13 +70,13 @@ class SeriesSequencer:
 
 def order_series(
     buffer_bytes: int,
-    group_by_cadence: str | None,
+    group_by_cadence: str,
     sample_keys: Sequence[str],
     progress: SortProgress,
     records: Iterator[SeriesRecord | SeriesSequence],
 ) -> Iterable[SeriesRecord | SeriesSequence]:
     key = _time_then_id
-    if sample_keys and group_by_cadence is not None:
+    if sample_keys:
         key = _sample_group_then_time_and_id(group_by_cadence)
     return batch_sort(
         records,

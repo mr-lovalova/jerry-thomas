@@ -36,7 +36,6 @@ def test_drop_with_metadata_and_partitioned_streams(copy_fixture):
     assembled_samples = open_samples(
         runtime,
         [entry.id for entry in schema.features],
-        dataset.sample.cadence,
         target_ids=[entry.id for entry in schema.targets],
         key_plan=None,
     )

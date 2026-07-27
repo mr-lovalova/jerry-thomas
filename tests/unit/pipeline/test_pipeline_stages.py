@@ -1319,7 +1319,6 @@ def test_series_pipeline_keeps_scaled_sequence_inputs_raw(
     [sequence] = run_series_pipeline(
         runtime,
         config,
-        group_by_cadence="1h",
     )
 
     assert isinstance(sequence, SeriesSequence)
@@ -1378,7 +1377,7 @@ def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -
     postprocess_preview = list(run_dataset_pipeline(ctx, schema, None))
     dataset_out = list(run_dataset_pipeline(ctx, schema, None))
 
-    manual = open_samples(ctx, [cfg.id], "1h")
+    manual = open_samples(ctx, [cfg.id])
     manual_out = list(
         build_postprocess_plan(runtime.dataset.postprocess, schema).apply(manual)
     )
@@ -1437,7 +1436,7 @@ def test_sample_input_snapshots_selected_ids(tmp_path: Path) -> None:
     sample_input = build_sample_input(runtime, feature_ids)
     feature_ids.clear()
 
-    assert list(sample_input.open()) == list(open_samples(runtime, [config.id], "1h"))
+    assert list(sample_input.open()) == list(open_samples(runtime, [config.id]))
 
 
 def test_rectangular_features_and_targets_share_every_planned_key(
@@ -1465,7 +1464,6 @@ def test_rectangular_features_and_targets_share_every_planned_key(
         open_samples(
             runtime,
             [feature.id],
-            "1h",
             target_ids=[target.id],
             key_plan=key_plan,
         )
@@ -1527,8 +1525,6 @@ def test_series_artifact_feeds_serve_pipeline(tmp_path: Path) -> None:
         open_samples(
             runtime,
             [config.id for config in configs],
-            "1h",
-            sample_keys=["id_"],
         )
     )
 
@@ -1684,16 +1680,12 @@ def test_series_shared_stream_matches_independent_series_pipelines(
         run_series_pipeline(
             runtime,
             price,
-            sample_keys=["exchange"],
-            group_by_cadence="1h",
         )
     )
     expected_volume = list(
         run_series_pipeline(
             runtime,
             volume,
-            sample_keys=["exchange"],
-            group_by_cadence="1h",
         )
     )
 
@@ -2479,7 +2471,7 @@ def test_sample_input_requires_series_artifact(
     cfg = SeriesConfig(stream="stream", id="price", field="value")
 
     with pytest.raises(RuntimeError, match="Series artifact is required"):
-        list(open_samples(runtime, [cfg.id], "1h", key_plan=key_plan))
+        list(open_samples(runtime, [cfg.id], key_plan=key_plan))
 
 
 def test_cached_sample_input_rejects_manifest_cadence_mismatch(
@@ -2501,7 +2493,6 @@ def test_cached_sample_input_rejects_manifest_cadence_mismatch(
             open_samples(
                 runtime,
                 [cfg.id],
-                "1h",
             )
         )
 
@@ -2525,7 +2516,6 @@ def test_cached_sample_input_verifies_manifest_rows(
             open_samples(
                 runtime,
                 [cfg.id],
-                "1h",
             )
         )
 
@@ -2546,7 +2536,6 @@ def test_cached_sample_input_reads_requested_feature_subset(
         open_samples(
             runtime,
             [value_cfg.id],
-            "1h",
         )
     )
 
@@ -2620,7 +2609,6 @@ def test_cached_series_rows_close_reader_when_stopped_early(
     samples = open_samples(
         runtime,
         [config.id for config in configs],
-        "1h",
     )
     first = next(samples)
     assert first.features.values == {"a": 1.0, "b": 1.0}
@@ -2666,7 +2654,6 @@ def test_cached_sample_input_opens_one_reader_for_many_series(
         open_samples(
             runtime,
             [config.id for config in configs],
-            "1h",
         )
     )
 

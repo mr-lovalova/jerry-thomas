@@ -1,4 +1,4 @@
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from functools import partial
 
 from datapipeline.config.dataset.series import SeriesConfig
@@ -20,45 +20,31 @@ from datapipeline.runtime import Runtime, require_runtime_stream
 def run_series_pipeline(
     runtime: Runtime,
     cfg: SeriesConfig,
-    sample_keys: Sequence[str] = (),
-    group_by_cadence: str | None = None,
 ) -> Iterator[SeriesRecord | SeriesSequence]:
     return run_pipeline(
         runtime,
-        build_series_pipeline(
-            runtime,
-            cfg,
-            sample_keys=sample_keys,
-            group_by_cadence=group_by_cadence,
-        ),
+        build_series_pipeline(runtime, cfg),
     )
 
 
 def build_series_pipeline(
     runtime: Runtime,
     cfg: SeriesConfig,
-    sample_keys: Sequence[str] = (),
-    group_by_cadence: str | None = None,
 ) -> Pipeline:
     record_pipeline = build_stream_pipeline(runtime, cfg.stream)
     return record_pipeline.continue_as(
         f"series:{cfg.id}",
-        build_series_stages(
-            runtime,
-            cfg,
-            sample_keys=sample_keys,
-            group_by_cadence=group_by_cadence,
-        ),
+        build_series_stages(runtime, cfg),
     )
 
 
 def build_series_stages(
     runtime: Runtime,
     config: SeriesConfig,
-    sample_keys: Sequence[str] = (),
-    group_by_cadence: str | None = None,
 ) -> tuple[Stage, ...]:
     stream = require_runtime_stream(runtime, config.stream)
+    sample = runtime.dataset.sample
+    sample_keys = tuple(sample.keys)
     projector = SeriesProjector(
         stream.partition_by,
         SampleKeyContract(sample_keys),
@@ -88,7 +74,7 @@ def build_series_stages(
                 apply=partial(
                     order_series,
                     runtime.execution.sort_buffer_bytes,
-                    group_by_cadence,
+                    sample.cadence,
                     sample_keys,
                     sort_progress,
                 ),

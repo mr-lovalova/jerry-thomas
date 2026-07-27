@@ -1,4 +1,4 @@
-from collections.abc import Collection, Iterator, Sequence
+from collections.abc import Collection, Iterator
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -22,22 +22,15 @@ from datapipeline.runtime import Runtime
 def open_samples(
     runtime: Runtime,
     feature_ids: Collection[str],
-    group_by_cadence: str,
     target_ids: Collection[str] = (),
-    sample_keys: Sequence[str] = (),
     key_plan: RectangularKeyPlan | None = None,
 ) -> Iterator[Sample]:
     selected_feature_ids = frozenset(feature_ids)
     selected_target_ids = frozenset(target_ids)
-    sample_key_fields = tuple(sample_keys)
     if not selected_feature_ids and not selected_target_ids:
         return iter(())
 
-    manifest_path, manifest = _require_series(
-        runtime,
-        group_by_cadence,
-        sample_key_fields,
-    )
+    manifest_path, manifest = _require_series(runtime)
     return _samples_from_series(
         manifest_path,
         manifest,
@@ -53,7 +46,6 @@ def build_sample_input(
     target_ids: Collection[str] = (),
     key_plan: RectangularKeyPlan | None = None,
 ) -> Input:
-    sample = runtime.dataset.sample
     selected_feature_ids = frozenset(feature_ids)
     selected_target_ids = frozenset(target_ids)
     progress = None
@@ -69,9 +61,7 @@ def build_sample_input(
             open_samples,
             runtime,
             selected_feature_ids,
-            sample.cadence,
             selected_target_ids,
-            tuple(sample.keys),
             key_plan,
         ),
         progress=progress,
@@ -80,8 +70,6 @@ def build_sample_input(
 
 def _require_series(
     runtime: Runtime,
-    group_by_cadence: str,
-    sample_keys: Sequence[str],
 ) -> tuple[Path, SeriesManifest]:
     artifact = runtime.artifacts.optional(SERIES)
     if artifact is None:
@@ -93,12 +81,13 @@ def _require_series(
 
     manifest_path = artifact.resolve(runtime.artifacts.root)
     manifest = load_series_manifest(manifest_path)
-    if manifest.cadence != group_by_cadence:
+    sample = runtime.dataset.sample
+    if manifest.cadence != sample.cadence:
         raise RuntimeError(
             "Series artifact cadence does not match requested pipeline cadence: "
-            f"{manifest.cadence!r} != {group_by_cadence!r}."
+            f"{manifest.cadence!r} != {sample.cadence!r}."
         )
-    if manifest.sample_keys != tuple(sample_keys):
+    if manifest.sample_keys != tuple(sample.keys):
         raise RuntimeError(
             "Series artifact sample keys do not match requested pipeline sample keys."
         )
