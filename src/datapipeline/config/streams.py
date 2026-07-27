@@ -143,8 +143,7 @@ class BroadcastStreamConfig(_StreamConfig):
         return (self.from_.stream, self.from_.broadcast)
 
 
-class AsOfStreamConfig(_StreamConfig):
-    from_: AsOfFromConfig = Field(alias="from")
+class _AsOfStreamConfig(_StreamConfig):
     combine: EntryPointConfig
     max_age: _Timecode | None = None
     require_match: bool = Field(default=True, strict=True)
@@ -155,23 +154,17 @@ class AsOfStreamConfig(_StreamConfig):
         if max_age is not None and parse_timecode(max_age).total_seconds() <= 0:
             raise ValueError("max_age must be positive")
         return max_age
+
+
+class AsOfStreamConfig(_AsOfStreamConfig):
+    from_: AsOfFromConfig = Field(alias="from")
 
     def input_streams(self) -> tuple[str, ...]:
         return (self.from_.stream, self.from_.as_of)
 
 
-class BroadcastAsOfStreamConfig(_StreamConfig):
+class BroadcastAsOfStreamConfig(_AsOfStreamConfig):
     from_: BroadcastAsOfFromConfig = Field(alias="from")
-    combine: EntryPointConfig
-    max_age: _Timecode | None = None
-    require_match: bool = Field(default=True, strict=True)
-
-    @field_validator("max_age")
-    @classmethod
-    def validate_max_age(cls, max_age: str | None) -> str | None:
-        if max_age is not None and parse_timecode(max_age).total_seconds() <= 0:
-            raise ValueError("max_age must be positive")
-        return max_age
 
     def input_streams(self) -> tuple[str, ...]:
         return (self.from_.stream, self.from_.broadcast_as_of)
