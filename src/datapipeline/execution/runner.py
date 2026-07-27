@@ -184,7 +184,7 @@ def run_pipeline(
 
     active_observer = observer if observer is not None else runtime.pipeline_observer
     if active_observer is None or active_observer is _NOOP_OBSERVER:
-        return _run_unobserved(pipeline)
+        return _build_stream(pipeline, observer=None, progress=None)
 
     return _run_observed(
         pipeline,
@@ -192,16 +192,6 @@ def run_pipeline(
         observe_nodes=observer is not None or runtime.observe_node_events,
         heartbeat_interval_seconds=runtime.heartbeat_interval_seconds,
     )
-
-
-def _run_unobserved(
-    pipeline: Pipeline,
-) -> Iterator[Any]:
-    stream = _build_stream(pipeline, observer=None, progress=None)
-    try:
-        yield from stream
-    finally:
-        _close_iterator(stream)
 
 
 def _run_observed(
@@ -217,9 +207,7 @@ def _run_observed(
     stream: Iterable[Any] = ()
     iterator: Iterator[Any] = iter(())
     started = False
-    heartbeat_interval = resolve_heartbeat_interval_seconds(
-        heartbeat_interval_seconds
-    )
+    heartbeat_interval = resolve_heartbeat_interval_seconds(heartbeat_interval_seconds)
     progress = _RunProgress(
         observer,
         pipeline.name,
@@ -315,8 +303,8 @@ def _build_stream(
     pipeline: Pipeline,
     observer: PipelineObserver | None,
     progress: _RunProgress | None,
-) -> Iterable[Any]:
-    stream: Iterable[Any] = _wrap_node(
+) -> Iterator[Any]:
+    stream = _wrap_node(
         pipeline.name,
         pipeline.input,
         0,

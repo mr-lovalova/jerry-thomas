@@ -619,9 +619,13 @@ def test_live_progress_suppresses_unchanged_snapshots() -> None:
     assert [event.progress.completed for event in observer.progress_events] == [0, 1]
 
 
-def test_partial_close_closes_stages_in_reverse_order(tmp_path: Path) -> None:
+@pytest.mark.parametrize("observed", [False, True], ids=["unobserved", "observed"])
+def test_partial_close_closes_stages_in_reverse_order(
+    tmp_path: Path,
+    observed: bool,
+) -> None:
     closed: list[str] = []
-    observer = _CollectingObserver()
+    observer = _CollectingObserver() if observed else None
 
     def source() -> Iterator[int]:
         try:
@@ -654,6 +658,8 @@ def test_partial_close_closes_stages_in_reverse_order(tmp_path: Path) -> None:
     stream.close()
 
     assert closed == ["second", "first", "source"]
+    if observer is None:
+        return
     assert {
         event.node_name: (event.output_items, event.status)
         for event in observer.node_events
