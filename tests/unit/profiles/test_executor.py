@@ -12,7 +12,10 @@ from datapipeline.execution.settings import (
     LogOutputTarget,
     ObservabilitySettings,
 )
-from datapipeline.execution.observability import emit_execution_message
+from datapipeline.execution.observability import (
+    current_execution_observer,
+    emit_execution_message,
+)
 from datapipeline.profiles.executor import execution_scope
 from datapipeline.runtime import Runtime
 
@@ -76,6 +79,7 @@ def test_execution_scope_configures_logging_and_runs_inside_visuals(monkeypatch)
         ),
     ):
         assert runtime.pipeline_observer is not None
+        assert current_execution_observer() is runtime.pipeline_observer
         assert runtime.observe_node_events
         calls.append(("work", inside_visual_context))
 

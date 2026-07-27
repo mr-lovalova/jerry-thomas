@@ -7,7 +7,6 @@ import datapipeline.execution.observability as observability
 from datapipeline.cli.visuals.execution import (
     ExecutionEventFormatter,
     make_execution_observer,
-    make_pipeline_observer,
 )
 from datapipeline.cli.visuals.execution_context import (
     reset_current_execution_event_handler,
@@ -213,7 +212,7 @@ def test_failed_terminal_events_are_errors() -> None:
 
 def test_observer_logs_root_lifecycle_and_summary_at_info(caplog) -> None:
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.root")
-    observer = make_pipeline_observer(logger)
+    observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.INFO, logger=logger.name):
         observer(PipelineStarted(pipeline_name="stream:prices"))
@@ -241,7 +240,7 @@ def test_observer_logs_root_lifecycle_and_summary_at_info(caplog) -> None:
 
 def test_observer_logs_stages_at_debug(caplog) -> None:
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.stages")
-    observer = make_pipeline_observer(logger)
+    observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.DEBUG, logger=logger.name):
         observer(
@@ -270,7 +269,7 @@ def test_observer_logs_stages_at_debug(caplog) -> None:
 
 def test_observer_logs_pipeline_heartbeat_at_info(caplog) -> None:
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.progress")
-    observer = make_pipeline_observer(logger)
+    observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.INFO, logger=logger.name):
         observer(
@@ -300,7 +299,7 @@ def test_observer_logs_pipeline_heartbeat_at_info(caplog) -> None:
 
 def test_observer_logs_only_heartbeat_node_progress_at_debug(caplog) -> None:
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.node-progress")
-    observer = make_pipeline_observer(logger)
+    observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.DEBUG, logger=logger.name):
         observer(
@@ -330,7 +329,7 @@ def test_observer_logs_only_heartbeat_node_progress_at_debug(caplog) -> None:
 
 def test_observer_includes_error_details_on_failure(caplog) -> None:
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.error")
-    observer = make_pipeline_observer(logger)
+    observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.INFO, logger=logger.name):
         observer(
@@ -354,12 +353,14 @@ def test_observer_includes_error_details_on_failure(caplog) -> None:
     )
 
 
-def test_make_pipeline_observer_routes_to_logger_and_context_handler(caplog) -> None:
+def test_execution_observer_routes_pipeline_events_to_logger_and_handler(
+    caplog,
+) -> None:
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.context")
     capture = _CaptureHandler()
     token = set_current_execution_event_handler(capture)
     try:
-        observer = make_pipeline_observer(logger=logger)
+        observer = make_execution_observer(logger=logger)
         with caplog.at_level(logging.INFO, logger=logger.name):
             observer(PipelineStarted(pipeline_name="dataset"))
             observer(
@@ -388,7 +389,7 @@ def test_context_handler_is_resolved_when_each_event_is_emitted(caplog) -> None:
     capture = _CaptureHandler()
     token = set_current_execution_event_handler(capture)
     try:
-        observer = make_pipeline_observer(logger=logger)
+        observer = make_execution_observer(logger=logger)
         observer(PipelineStarted(pipeline_name="dataset"))
     finally:
         reset_current_execution_event_handler(token)

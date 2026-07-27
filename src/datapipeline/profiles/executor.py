@@ -3,10 +3,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 
 from datapipeline.cli.logging_setup import root_logging_scope
-from datapipeline.cli.visuals.execution import (
-    make_execution_observer,
-    make_pipeline_observer,
-)
+from datapipeline.cli.visuals.execution import make_execution_observer
 from datapipeline.cli.visuals.rich.progress import (
     rich_visuals_supported,
     visual_execution,
@@ -25,19 +22,17 @@ def execution_scope(
     with root_logging_scope(level, observability.log_output):
         visuals_active = observability.visuals == "on" and rich_visuals_supported()
         visuals = visual_execution(level) if visuals_active else nullcontext()
+        observer = make_execution_observer(
+            logging.getLogger("datapipeline.execution.observer")
+        )
 
         previous_pipeline_observer = runtime.pipeline_observer
         previous_observe_node_events = runtime.observe_node_events
         if previous_pipeline_observer is None:
-            runtime.pipeline_observer = make_pipeline_observer(
-                logging.getLogger("datapipeline.execution.observer")
-            )
+            runtime.pipeline_observer = observer
             runtime.observe_node_events = visuals_active or level <= logging.DEBUG
 
         try:
-            observer = make_execution_observer(
-                logging.getLogger("datapipeline.execution.observer")
-            )
             with execution_observer(observer), visuals:
                 yield
         finally:

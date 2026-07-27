@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from functools import partial
 
 from datapipeline.cli.visuals.execution_context import (
@@ -16,12 +17,10 @@ from datapipeline.execution.events import (
     format_elapsed,
     format_node_progress,
 )
-from datapipeline.execution.observer import PipelineObserver
 from datapipeline.execution.observability import (
     CommandFinished,
     ExecutionEvent,
     ExecutionMessage,
-    ExecutionObserver,
     FileResult,
     OperationFinished,
     OperationProgress,
@@ -160,16 +159,7 @@ def route_execution_event(
 
 def make_execution_observer(
     logger: logging.Logger | None = None,
-) -> ExecutionObserver:
-    return partial(
-        route_execution_event,
-        logger=logger or logging.getLogger(__name__),
-    )
-
-
-def make_pipeline_observer(
-    logger: logging.Logger | None = None,
-) -> PipelineObserver:
+) -> Callable[[ExecutionLogEvent], None]:
     return partial(
         route_execution_event,
         logger=logger or logging.getLogger(__name__),
