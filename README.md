@@ -10,8 +10,9 @@ for custom loaders, parsers, mappers, and stream combiners.
 
 > **Core assumptions**
 >
-> - Every record carries a timezone-aware `time` attribute. Time-zone awareness
->   is a quality gate for correct sample assembly.
+> - Every canonical record carries a UTC `time` attribute. Mappers and
+>   combiners may return any timezone-aware representation; Jerry normalizes
+>   it before downstream processing.
 > - Samples are grouped by `sample.cadence`, plus optional
 >   `sample.keys` such as `security_id`.
 > - `partition_by` is the complete identity of an independent record series.
@@ -143,7 +144,8 @@ These live under `lib/<plugin>/src/<package>/`:
   `reader`. Custom loaders handle other protocols.
 - A parser converts each row into a source-shaped DTO and may drop invalid rows.
 - A mapper converts DTOs into canonical domain records shared by downstream
-  streams. Every record has a timezone-aware `time` field.
+  streams. Every record has a timezone-aware `time` field, which Jerry
+  normalizes to UTC at the mapper boundary.
 - Custom loaders are for behavior such as pagination, authentication, or
   proprietary protocols. See [Extending the runtime](docs/extending.md).
 

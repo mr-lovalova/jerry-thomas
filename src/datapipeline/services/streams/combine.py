@@ -1,4 +1,5 @@
 from collections.abc import Callable, Iterable, Iterator
+from datetime import datetime, timezone
 from typing import Any
 
 from datapipeline.config.streams import (
@@ -46,14 +47,21 @@ def build_combine_stage(
                     "time and partition fields."
                 ) from exc
 
-            if (
-                type(actual_time) is not type(expected_time)
-                or actual_time != expected_time
-            ):
+            if not isinstance(actual_time, datetime):
+                raise TypeError(
+                    f"Stream '{config.id}' combine output time must be a "
+                    f"datetime; got {type(actual_time).__name__}."
+                )
+            if actual_time.tzinfo is None or actual_time.utcoffset() is None:
+                raise ValueError(
+                    f"Stream '{config.id}' combine output time must be timezone-aware."
+                )
+            if actual_time.astimezone(timezone.utc) != expected_time:
                 raise ValueError(
                     f"Stream '{config.id}' combine must preserve input time: "
                     f"expected {expected_time!r}, got {actual_time!r}."
                 )
+            record.time = expected_time
             for field, expected, actual in zip(
                 partition_by,
                 expected_partition,

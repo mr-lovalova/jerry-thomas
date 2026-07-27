@@ -125,8 +125,9 @@ already-fitted scalar observations.
 
 Metadata format version 4 stores the global catalog plus the explicit unsplit
 or folded layout. The artifact cache generation is also incremented for the new
-folded-scaler semantics. `AUTO` therefore rebuilds stale v7 series, scaler,
-metadata, and dependent coverage artifacts; `OFF` requires a v8 build first.
+folded-scaler semantics and UTC record canonicalization. `AUTO` therefore
+rebuilds stale v7 and pre-canonicalization artifacts; `OFF` requires a v8 build
+first.
 
 Jerry 7 renames the v6 `variable_records` artifact to `series`:
 

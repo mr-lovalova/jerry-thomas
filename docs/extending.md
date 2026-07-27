@@ -30,7 +30,9 @@ latest eligible lookup; the lookup can be `None` when `require_match: false`.
 All combiners return one record or `None`. Combiner inputs are read-only;
 indexed broadcast records may be reused across primary partitions. Combiners
 belong to `datapipeline.combiners`, not the iterator-oriented
-`datapipeline.mappers` group.
+`datapipeline.mappers` group. Mapper and combiner outputs must have
+timezone-aware timestamps; Jerry normalizes them to UTC before downstream
+processing.
 
 A custom runtime operation receives exactly three positional arguments:
 

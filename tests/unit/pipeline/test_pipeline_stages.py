@@ -876,7 +876,9 @@ def test_source_pipeline_rejects_invalid_mapped_time(
         list(run_stream_pipeline(PipelineContext(runtime), "stream"))
 
 
-def test_source_pipeline_preserves_aware_mapped_time(tmp_path: Path) -> None:
+def test_source_pipeline_normalizes_aware_mapped_time_to_utc(
+    tmp_path: Path,
+) -> None:
     mapped_time = datetime(2024, 1, 1, tzinfo=timezone(timedelta(hours=5, minutes=45)))
     runtime = _runtime_with_rows(tmp_path, [{"raw": 1}])
 
@@ -888,7 +890,95 @@ def test_source_pipeline_preserves_aware_mapped_time(tmp_path: Path) -> None:
 
     [record] = list(run_stream_pipeline(PipelineContext(runtime), "stream"))
 
-    assert record.time is mapped_time
+    assert record.time == datetime(2023, 12, 31, 18, 15, tzinfo=timezone.utc)
+    assert record.time.tzinfo is timezone.utc
+
+
+def test_source_pipeline_keeps_fall_back_instants_distinct_in_utc(
+    tmp_path: Path,
+) -> None:
+    timezone_ny = ZoneInfo("America/New_York")
+    mapped_times = (
+        datetime(2024, 11, 3, 1, 30, tzinfo=timezone_ny, fold=0),
+        datetime(2024, 11, 3, 1, 30, tzinfo=timezone_ny, fold=1),
+    )
+    runtime = _runtime_with_rows(tmp_path, [{"raw": 1}, {"raw": 2}])
+
+    def map_record(rows):
+        for row, mapped_time in zip(rows, mapped_times, strict=True):
+            yield SimpleNamespace(time=mapped_time, raw=row["raw"])
+
+    _set_source_mapper(runtime, map_record)
+
+    records = list(run_stream_pipeline(PipelineContext(runtime), "stream"))
+
+    assert [record.time for record in records] == [
+        datetime(2024, 11, 3, 5, 30, tzinfo=timezone.utc),
+        datetime(2024, 11, 3, 6, 30, tzinfo=timezone.utc),
+    ]
+
+
+def test_as_of_pipeline_does_not_use_future_fall_back_record(
+    tmp_path: Path,
+) -> None:
+    timezone_ny = ZoneInfo("America/New_York")
+    primary_time = datetime(2024, 11, 3, 1, 30, tzinfo=timezone_ny, fold=0)
+    future_lookup_time = datetime(
+        2024,
+        11,
+        3,
+        1,
+        30,
+        tzinfo=timezone_ny,
+        fold=1,
+    )
+    runtime = _runtime_with_rows(tmp_path, [])
+
+    def map_source_record(rows):
+        for row in rows:
+            yield SimpleNamespace(**row)
+
+    def mark_lookup_match(rows):
+        for primary_record, lookup_record in rows:
+            primary_record.lookup_matched = lookup_record is not None
+            yield primary_record
+
+    runtime.streams = {
+        "primary": SourceRuntimeStream(
+            source=_StubSource(
+                [{"time": primary_time, "id_": "A"}],
+            ),
+            mapper=map_source_record,
+            preprocess=(),
+            partition_by=("id_",),
+            presorted=True,
+            transforms=(),
+        ),
+        "lookup": SourceRuntimeStream(
+            source=_StubSource(
+                [{"time": future_lookup_time, "id_": "A"}],
+            ),
+            mapper=map_source_record,
+            preprocess=(),
+            partition_by=("id_",),
+            presorted=True,
+            transforms=(),
+        ),
+        "enriched": AsOfRuntimeStream(
+            input_stream="primary",
+            lookup_stream="lookup",
+            combine=mark_lookup_match,
+            partition_by=("id_",),
+            max_age=timedelta(minutes=30),
+            require_match=False,
+            transforms=(),
+        ),
+    }
+
+    [record] = list(run_stream_pipeline(PipelineContext(runtime), "enriched"))
+
+    assert record.time == datetime(2024, 11, 3, 5, 30, tzinfo=timezone.utc)
+    assert record.lookup_matched is False
 
 
 def test_source_pipeline_closes_mapper_after_partial_read(tmp_path: Path) -> None:

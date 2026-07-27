@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -109,6 +111,80 @@ def test_combiner_rejects_changed_time(monkeypatch) -> None:
     combine = build_combine_stage(_config(), ("id_",))
 
     with pytest.raises(ValueError, match="must preserve input time"):
+        list(combine(iter([(_record(1, 1), _record(1, 10))])))
+
+
+def test_combiner_normalizes_equivalent_fall_back_time_to_input(
+    monkeypatch,
+) -> None:
+    timezone_ny = ZoneInfo("America/New_York")
+    expected_time = datetime(2024, 11, 3, 5, 30, tzinfo=UTC)
+    local_time = datetime(
+        2024,
+        11,
+        3,
+        1,
+        30,
+        tzinfo=timezone_ny,
+        fold=0,
+    )
+    left = _Record(time=expected_time, id_="A", value=1)
+    right = _Record(time=expected_time, id_="A", value=10)
+
+    def calculate(left, right, offset):
+        return SimpleNamespace(
+            time=local_time,
+            id_=left.id_,
+            value=left.value + right.value + offset,
+        )
+
+    monkeypatch.setattr(
+        "datapipeline.services.streams.combine.load_ep",
+        lambda _group, _entrypoint: calculate,
+    )
+    combine = build_combine_stage(_config(), ("id_",))
+
+    [record] = combine(iter([(left, right)]))
+
+    assert record.time is left.time
+    assert record.time.tzinfo is UTC
+
+
+@pytest.mark.parametrize(
+    ("invalid_time", "error_type", "message"),
+    [
+        (
+            "2025-01-01T00:00:00Z",
+            TypeError,
+            "combine output time must be a datetime; got str",
+        ),
+        (
+            datetime(2025, 1, 1),
+            ValueError,
+            "combine output time must be timezone-aware",
+        ),
+    ],
+)
+def test_combiner_rejects_invalid_time(
+    monkeypatch,
+    invalid_time,
+    error_type,
+    message,
+) -> None:
+    def calculate(left, right, offset):
+        return SimpleNamespace(
+            time=invalid_time,
+            id_=left.id_,
+            value=left.value + right.value + offset,
+        )
+
+    monkeypatch.setattr(
+        "datapipeline.services.streams.combine.load_ep",
+        lambda _group, _entrypoint: calculate,
+    )
+    combine = build_combine_stage(_config(), ("id_",))
+
+    with pytest.raises(error_type, match=message):
         list(combine(iter([(_record(1, 1), _record(1, 10))])))
 
 

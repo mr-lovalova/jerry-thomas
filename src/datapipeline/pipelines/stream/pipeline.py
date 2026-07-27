@@ -1,6 +1,6 @@
 from collections.abc import Generator, Iterable, Iterator
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from typing import Any
 
@@ -229,10 +229,12 @@ def _map_records(mapper: RecordStage, records: Iterator[Any]) -> Iterator[Any]:
                     f"Mapped record {position} time must be a datetime; "
                     f"got {type(record_time).__name__}."
                 )
-            if record_time.tzinfo is None or record_time.utcoffset() is None:
-                raise ValueError(
-                    f"Mapped record {position} time must be timezone-aware."
-                )
+            if record_time.tzinfo is not timezone.utc:
+                if record_time.tzinfo is None or record_time.utcoffset() is None:
+                    raise ValueError(
+                        f"Mapped record {position} time must be timezone-aware."
+                    )
+                record.time = record_time.astimezone(timezone.utc)
             set_record_domain_anchor(record, True)
             yield record
     except GeneratorExit:

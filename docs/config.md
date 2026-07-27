@@ -531,8 +531,8 @@ transforms:
 ```
 
 The mapper receives the parsed source iterator and returns canonical domain
-records. `preprocess` contains only per-record operations and runs before
-ordering. `transforms` runs after ordering and may use partition history.
+records. Jerry normalizes their timezone-aware `time` fields to UTC before
+`preprocess`, ordering, and downstream transforms.
 
 ### Derived Streams
 
@@ -721,6 +721,7 @@ Notes:
   positional combine arguments.
 - `combine` is required and cannot be replaced by the iterator-level `map`.
 - `combine.entrypoint` resolves from the `datapipeline.combiners` plugin group.
+- Jerry normalizes timezone-aware combiner output timestamps to UTC.
 - Inputs must use the same `partition_by`; the aligned stream inherits it.
 - Alignment validates and merges the already ordered inputs in one pass. Each
   source-backed stream establishes canonical `[*partition_by, time]` order

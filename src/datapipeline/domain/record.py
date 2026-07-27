@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 @dataclass
 class TemporalRecord:
-    """Canonical time-series payload used throughout the pipeline."""
+    """Canonical UTC time-series payload used throughout the pipeline."""
 
     time: datetime
     _establishes_domain: bool = field(

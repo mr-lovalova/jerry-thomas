@@ -27,7 +27,7 @@ from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.services.definitions import ArtifactHashes, ProjectManifest
 
 # Increment when Jerry's core artifact semantics change without a config change.
-ARTIFACT_CACHE_VERSION = 8
+ARTIFACT_CACHE_VERSION = 9
 
 
 def _normalized_label(path: Path, base_dir: Path) -> str:
