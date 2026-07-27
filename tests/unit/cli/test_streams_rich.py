@@ -380,7 +380,7 @@ def test_root_pipeline_finish_clears_progress_and_remains_a_static_event() -> No
     assert progress.tasks == []
 
 
-def test_nested_pipeline_keeps_root_as_live_progress_owner() -> None:
+def test_nested_pipeline_shows_deepest_active_node() -> None:
     progress = _progress()
     renderer = _ExecutionProgress(progress, debug=False)
     renderer.handle(PipelineStarted(pipeline_name="series:artifact"))
@@ -391,6 +391,9 @@ def test_nested_pipeline_keeps_root_as_live_progress_owner() -> None:
             node_index=0,
         )
     )
+    root, project_streams = progress.tasks
+    assert root.visible is True
+    assert project_streams.visible is True
 
     renderer.handle(PipelineStarted(pipeline_name="series:prices"))
     renderer.handle(
@@ -409,6 +412,27 @@ def test_nested_pipeline_keeps_root_as_live_progress_owner() -> None:
             elapsed_seconds=1,
         )
     )
+    root, project_streams, open_source = progress.tasks
+    assert root.visible is True
+    assert project_streams.visible is False
+    assert open_source.description == "[series:prices/open_source]"
+    assert open_source.visible is True
+    assert open_source.fields["status"].plain == "100 items"
+
+    renderer.handle(
+        NodeProgress(
+            pipeline_name="series:artifact",
+            node_name="project_streams",
+            node_index=0,
+            progress=ProgressSnapshot(completed=25),
+            elapsed_seconds=1,
+            heartbeat=True,
+        )
+    )
+    assert project_streams.completed == 25
+    assert project_streams.visible is False
+    assert open_source.visible is True
+
     renderer.handle(
         NodeFinished(
             pipeline_name="series:prices",
@@ -419,6 +443,10 @@ def test_nested_pipeline_keeps_root_as_live_progress_owner() -> None:
             elapsed_seconds=1,
         )
     )
+    root, project_streams = progress.tasks
+    assert root.visible is True
+    assert project_streams.visible is True
+
     renderer.handle(
         PipelineFinished(
             pipeline_name="series:prices",
@@ -427,11 +455,6 @@ def test_nested_pipeline_keeps_root_as_live_progress_owner() -> None:
             elapsed_seconds=1,
         )
     )
-
-    assert [task.description for task in progress.tasks] == [
-        "[series:artifact]",
-        "[series:artifact/project_streams]",
-    ]
 
     renderer.handle(
         NodeFinished(
