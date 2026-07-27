@@ -115,28 +115,32 @@ class _FoldRoute:
                 continue
             _, key_plan = output
             if key_plan.contains(sample.key):
-                target_values = {} if sample.targets is None else sample.targets.values
-                yield Sample(
-                    key=sample.key,
-                    features=Vector(
-                        {
-                            series_id: value
-                            for series_id, value in sample.features.values.items()
-                            if series_id in self.feature_ids
-                        }
-                    ),
-                    targets=(
-                        None
-                        if not self.target_ids
-                        else Vector(
-                            {
-                                series_id: value
-                                for series_id, value in target_values.items()
-                                if series_id in self.target_ids
-                            }
-                        )
-                    ),
-                )
+                features = _select_vector(sample.features, self.feature_ids)
+                targets = sample.targets
+                if not self.target_ids:
+                    targets = None
+                elif targets is None:
+                    targets = Vector({})
+                else:
+                    targets = _select_vector(targets, self.target_ids)
+
+                if features is sample.features and targets is sample.targets:
+                    yield sample
+                else:
+                    yield replace(sample, features=features, targets=targets)
+
+
+def _select_vector(vector: Vector, selected_ids: frozenset[str]) -> Vector:
+    if vector.values.keys() <= selected_ids:
+        return vector
+    return replace(
+        vector,
+        values={
+            series_id: value
+            for series_id, value in vector.values.items()
+            if series_id in selected_ids
+        },
+    )
 
 
 def run_dataset_pipeline(

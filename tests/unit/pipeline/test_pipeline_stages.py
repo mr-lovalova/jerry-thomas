@@ -2573,27 +2573,26 @@ def test_cached_series_rows_close_reader_when_stopped_early(
     register_series(runtime, configs, "1h")
     closed = False
     opens = 0
+    rows = [
+        SeriesRow(
+            time=_ts(0),
+            entity_key=(),
+            features={"a": 1.0, "b": 1.0},
+            targets={},
+            placeholder_ids=frozenset(),
+        ),
+        SeriesRow(
+            time=_ts(1),
+            entity_key=(),
+            features={"a": 2.0, "b": 2.0},
+            targets={},
+            placeholder_ids=frozenset(),
+        ),
+    ]
 
     class _ClosingRows:
         def __init__(self) -> None:
-            self.items = iter(
-                [
-                    SeriesRow(
-                        time=_ts(0),
-                        entity_key=(),
-                        features={"a": 1.0, "b": 1.0},
-                        targets={},
-                        placeholder_ids=frozenset(),
-                    ),
-                    SeriesRow(
-                        time=_ts(1),
-                        entity_key=(),
-                        features={"a": 2.0, "b": 2.0},
-                        targets={},
-                        placeholder_ids=frozenset(),
-                    ),
-                ]
-            )
+            self.items = iter(rows)
 
         def __iter__(self):
             return self
@@ -2622,7 +2621,9 @@ def test_cached_series_rows_close_reader_when_stopped_early(
         [config.id for config in configs],
         "1h",
     )
-    assert next(samples).features.values == {"a": 1.0, "b": 1.0}
+    first = next(samples)
+    assert first.features.values == {"a": 1.0, "b": 1.0}
+    assert first.features.values is rows[0].features
     assert opens == 1
     assert not closed
 

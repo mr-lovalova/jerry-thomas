@@ -1,4 +1,4 @@
-from collections.abc import Collection, Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -162,9 +162,11 @@ def _select_rows(
 
 
 def _select_values(
-    values: Mapping[str, Any],
+    values: dict[str, Any],
     selected_ids: frozenset[str],
 ) -> dict[str, Any]:
+    if values.keys() <= selected_ids:
+        return values
     return {
         series_id: value
         for series_id, value in values.items()

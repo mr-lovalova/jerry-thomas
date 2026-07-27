@@ -19,6 +19,8 @@ from datapipeline.pipelines.dataset.pipeline import (
     FoldOutputPlan,
     run_fold_outputs_pipeline,
 )
+from datapipeline.pipelines.dataset.postprocess import PostprocessPlan
+from datapipeline.pipelines.sample.keys import window_key_plan
 from datapipeline.runtime import Runtime
 
 
@@ -67,6 +69,38 @@ def _output_plan(
             )
         },
     )
+
+
+def _route(
+    feature_ids: frozenset[str],
+    target_ids: frozenset[str],
+) -> dataset_pipeline._FoldRoute:
+    key_plan = window_key_plan(_TIME, _TIME, "1d")
+    assert key_plan is not None
+    return dataset_pipeline._FoldRoute(
+        output_by_label={"all": ("all.train", key_plan)},
+        feature_ids=feature_ids,
+        target_ids=target_ids,
+        postprocess=PostprocessPlan(stages=()),
+        scaler=None,
+    )
+
+
+def test_fold_route_reuses_sample_when_schema_already_matches() -> None:
+    sample = Sample(
+        key=(_TIME,),
+        features=Vector({"price": 10.0, "volume": 20.0}),
+        targets=Vector({"return": 0.1}),
+    )
+
+    selected = next(
+        _route(
+            frozenset(("price", "volume")),
+            frozenset(("return",)),
+        ).select((("all", sample),))
+    )
+
+    assert selected is sample
 
 
 def test_shared_fold_scan_labels_once_and_projects_each_training_schema(
