@@ -128,12 +128,9 @@ class _RunProgress:
                         continue
                     progress = self._snapshot(state)
                     heartbeat = heartbeat_due and node == active_node
-                    if heartbeat:
-                        state.last_live_progress = progress
-                    elif progress != state.last_live_progress:
-                        state.last_live_progress = progress
-                    else:
+                    if not heartbeat and progress == state.last_live_progress:
                         continue
+                    state.last_live_progress = progress
                     due.append((node, progress, now - state.started_at, heartbeat))
                 output_items = self.output_items if heartbeat_due else 0
             for node, progress, elapsed, heartbeat in due:
