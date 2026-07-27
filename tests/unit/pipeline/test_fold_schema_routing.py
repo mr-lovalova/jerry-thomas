@@ -69,7 +69,7 @@ def _output_plan(
     )
 
 
-def test_shared_fold_scan_projects_each_sample_to_its_training_schema(
+def test_shared_fold_scan_labels_once_and_projects_each_training_schema(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -107,6 +107,14 @@ def test_shared_fold_scan_projects_each_sample_to_its_training_schema(
             open=lambda: iter((sample,)),
         ),
     )
+    label_calls = []
+    label = dataset_pipeline.TimeLabeler.label
+
+    def counted_label(labeler, key):
+        label_calls.append(key)
+        return label(labeler, key)
+
+    monkeypatch.setattr(dataset_pipeline.TimeLabeler, "label", counted_label)
     early = _output_plan(
         "early",
         "early.train",
@@ -128,6 +136,7 @@ def test_shared_fold_scan_projects_each_sample_to_its_training_schema(
         )
     )
 
+    assert [row.key for _, row in output] == [sample.key, sample.key]
     assert [(output_id, row.features.values) for output_id, row in output] == [
         ("early.train", {"metric__@bucket:known": 1.0}),
         (
@@ -138,3 +147,4 @@ def test_shared_fold_scan_projects_each_sample_to_its_training_schema(
             },
         ),
     ]
+    assert label_calls == [sample.key]

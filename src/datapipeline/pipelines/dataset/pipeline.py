@@ -329,13 +329,14 @@ def _prepare_fold_outputs(
 ) -> Iterator[tuple[str, Sample]]:
     while batch := tuple(islice(samples, _FOLD_BATCH_SIZE)):
         labeled = tuple((labeler.label(sample.key), sample) for sample in batch)
+        labels_by_key = {sample.key: label for label, sample in labeled}
         for route in routes:
             selected = route.select(labeled)
             processed = (
                 selected if route.scaler is None else route.scaler.apply(selected)
             )
             for sample in route.postprocess.apply(processed):
-                output = route.output_by_label.get(labeler.label(sample.key))
+                output = route.output_by_label.get(labels_by_key[sample.key])
                 if output is not None:
                     yield output[0], sample
 
