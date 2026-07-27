@@ -400,15 +400,15 @@ def _close_pending_runtime_outputs(
             )
 
 
-def _persist_runtime_batch(
-    result: RuntimeOutputBatch,
+def _persist_runtime_outputs(
+    outputs: Sequence[RuntimeOutputItem],
     target: OutputTarget | None,
     heartbeat_interval_seconds: float | None,
     logger: logging.Logger,
 ) -> None:
     attempted = 0
     try:
-        for output in result.outputs:
+        for output in outputs:
             attempted += 1
             if isinstance(output, RoutedOutput):
                 _persist_routed_output(
@@ -431,7 +431,7 @@ def _persist_runtime_batch(
                     logger=logger,
                 )
     except BaseException:
-        _close_pending_runtime_outputs(result.outputs[attempted:], logger)
+        _close_pending_runtime_outputs(outputs[attempted:], logger)
         raise
 
 
@@ -444,40 +444,15 @@ def persist_runtime_result(
 ) -> None:
     if result is None:
         return
-    if not isinstance(
-        result,
-        RuntimeOutput | RoutedOutput | DatasetTableOutput | RuntimeOutputBatch,
-    ):
-        raise TypeError("Runtime operation returned an unsupported output type.")
     if isinstance(result, RuntimeOutputBatch):
-        _persist_runtime_batch(
-            result,
-            target,
-            heartbeat_interval_seconds,
-            logger,
-        )
-        return
-
-    if isinstance(result, RoutedOutput):
-        _persist_routed_output(
-            result,
-            heartbeat_interval_seconds=heartbeat_interval_seconds,
-            logger=logger,
-        )
-        return
-
-    if isinstance(result, DatasetTableOutput):
-        _persist_dataset_table_output(
-            result,
-            target=target,
-            heartbeat_interval_seconds=heartbeat_interval_seconds,
-            logger=logger,
-        )
-        return
-
-    _persist_runtime_output(
-        result,
-        target=target,
-        heartbeat_interval_seconds=heartbeat_interval_seconds,
-        logger=logger,
+        outputs = result.outputs
+    elif isinstance(result, RuntimeOutputItem):
+        outputs = (result,)
+    else:
+        raise TypeError("Runtime operation returned an unsupported output type.")
+    _persist_runtime_outputs(
+        outputs,
+        target,
+        heartbeat_interval_seconds,
+        logger,
     )
