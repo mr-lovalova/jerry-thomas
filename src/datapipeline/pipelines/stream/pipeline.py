@@ -1,5 +1,4 @@
 from collections.abc import Iterable, Iterator
-from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from typing import Any
@@ -83,24 +82,13 @@ def build_stream_pipeline(
         )
     if isinstance(stream, DerivedRuntimeStream):
         upstream = build_stream_pipeline(runtime, stream.input_stream)
-        return Pipeline(
-            name=f"stream:{stream_id}",
-            input=replace(
-                upstream.input,
-                name=f"{upstream.name}/{upstream.input.name}",
+        return upstream.continue_as(
+            f"stream:{stream_id}",
+            build_transform_stages(
+                runtime,
+                stream.transforms,
+                stream.partition_by,
             ),
-            stages=(
-                *(
-                    replace(stage, name=f"{upstream.name}/{stage.name}")
-                    for stage in upstream.stages
-                ),
-                *build_transform_stages(
-                    runtime,
-                    stream.transforms,
-                    stream.partition_by,
-                ),
-            ),
-            summary=upstream.summary,
         )
     if isinstance(stream, BroadcastRuntimeStream):
         return Pipeline(

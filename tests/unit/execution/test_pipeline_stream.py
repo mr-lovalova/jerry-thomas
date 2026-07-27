@@ -1,5 +1,6 @@
 import threading
 from collections.abc import Callable, Iterable, Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -145,6 +146,44 @@ def test_pipeline_can_stop_at_an_ordered_stage() -> None:
         pipeline.through_stage_named("missing")
     with pytest.raises(ValueError, match="stage count -1 is out of range"):
         pipeline.through_stage_count(-1)
+
+
+def test_pipeline_can_continue_under_a_new_identity() -> None:
+    def progress(completed: int) -> ProgressSnapshot:
+        return ProgressSnapshot(completed=completed)
+
+    source = Input("source", lambda: (), progress=progress)
+    map_stage = Stage("map", lambda records: records, progress=progress)
+    filter_stage = Stage("filter", lambda records: records)
+    upstream = Pipeline(
+        name="upstream",
+        input=source,
+        stages=(map_stage,),
+        summary="source summary",
+    )
+
+    continued = upstream.continue_as("downstream", (filter_stage,))
+
+    assert continued.name == "downstream"
+    assert continued.input == replace(source, name="upstream/source")
+    assert continued.stages == (
+        replace(map_stage, name="upstream/map"),
+        filter_stage,
+    )
+    assert continued.input.open is source.open
+    assert continued.input.progress is progress
+    assert continued.stages[0].apply is map_stage.apply
+    assert continued.stages[0].progress is progress
+    assert continued.summary == "source summary"
+    assert upstream.input == source
+    assert upstream.stages == (map_stage,)
+
+    nested = continued.continue_as("final", ())
+    assert nested.input.name == "downstream/upstream/source"
+    assert [stage.name for stage in nested.stages] == [
+        "downstream/upstream/map",
+        "downstream/filter",
+    ]
 
 
 def test_run_starts_lazily(tmp_path: Path) -> None:

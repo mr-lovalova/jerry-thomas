@@ -1,5 +1,4 @@
 from collections.abc import Iterator, Sequence
-from dataclasses import replace
 from functools import partial
 
 from datapipeline.config.dataset.series import SeriesConfig
@@ -42,25 +41,14 @@ def build_series_pipeline(
     group_by_cadence: str | None = None,
 ) -> Pipeline:
     record_pipeline = build_stream_pipeline(runtime, cfg.stream)
-    return Pipeline(
-        name=f"series:{cfg.id}",
-        input=replace(
-            record_pipeline.input,
-            name=f"{record_pipeline.name}/{record_pipeline.input.name}",
+    return record_pipeline.continue_as(
+        f"series:{cfg.id}",
+        build_series_stages(
+            runtime,
+            cfg,
+            sample_keys=sample_keys,
+            group_by_cadence=group_by_cadence,
         ),
-        stages=(
-            *(
-                replace(stage, name=f"{record_pipeline.name}/{stage.name}")
-                for stage in record_pipeline.stages
-            ),
-            *build_series_stages(
-                runtime,
-                cfg,
-                sample_keys=sample_keys,
-                group_by_cadence=group_by_cadence,
-            ),
-        ),
-        summary=record_pipeline.summary,
     )
 
 
