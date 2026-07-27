@@ -10,16 +10,6 @@ from datapipeline.domain.record import TemporalRecord
 TRecord = TypeVar("TRecord", bound=TemporalRecord)
 
 
-def adjacent_partitions(
-    records: Iterator[TRecord],
-    partition_by: tuple[str, ...],
-) -> Iterator[tuple[tuple[Any, ...], Iterator[TRecord]]]:
-    return groupby(
-        records,
-        key=lambda record: partition_key(record, partition_by),
-    )
-
-
 def is_missing(value: object) -> bool:
     if value is None:
         return True
@@ -52,7 +42,7 @@ def get_field(record: object, field: str) -> Any:
 def partition_key(
     record: object,
     partition_by: tuple[str, ...],
-) -> tuple:
+) -> tuple[Any, ...]:
     values: list[Any] = []
     for field in partition_by:
         try:
@@ -65,6 +55,16 @@ def partition_key(
             raise ValueError(f"Partition field {field!r} must contain finite floats")
         values.append(value)
     return tuple(values)
+
+
+def adjacent_partitions(
+    records: Iterator[TRecord],
+    partition_by: tuple[str, ...],
+) -> Iterator[tuple[tuple[Any, ...], Iterator[TRecord]]]:
+    return groupby(
+        records,
+        key=lambda record: partition_key(record, partition_by),
+    )
 
 
 def record_establishes_domain(record: object) -> bool:
