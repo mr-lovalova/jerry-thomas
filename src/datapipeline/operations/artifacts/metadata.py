@@ -12,6 +12,7 @@ from datapipeline.artifacts.models import (
     VectorMetadata,
     VectorMetadataCatalog,
     VectorMetadataCounts,
+    VectorMetadataEntry,
     VectorMetadataFold,
     VectorSchema,
     VECTOR_METADATA_VERSION,
@@ -196,17 +197,18 @@ class _OutputDomains:
 
     def window_bounds(
         self,
-        schema: VectorSchema,
+        feature_entries: Sequence[VectorMetadataEntry],
+        target_entries: Sequence[VectorMetadataEntry],
         mode: WindowMode,
     ) -> tuple[datetime | None, datetime | None]:
         features = [
             self.features.stats[entry.id]
-            for entry in schema.features
+            for entry in feature_entries
             if entry.id in self.features.stats
         ]
         targets = [
             self.targets.stats[entry.id]
-            for entry in schema.targets
+            for entry in target_entries
             if entry.id in self.targets.stats
         ]
         return _window_bounds_from_stats(features, targets, mode)
@@ -556,7 +558,8 @@ def _fold_output_metadata(
     output_domain = collector.output_domains[role]
     domain = output_domain.merged(task_cfg.window_mode)
     observed_start, observed_end = output_domain.window_bounds(
-        schema,
+        schema.features,
+        schema.targets,
         task_cfg.window_mode,
     )
     window = None
@@ -706,16 +709,13 @@ def build_metadata_artifact(
     feature_meta = metadata_entries_from_stats(feature_stats)
     target_meta = metadata_entries_from_stats(target_stats)
 
-    catalog_schema = VectorSchema(
-        features=feature_meta,
-        targets=target_meta,
-        counts=VectorMetadataCounts(
-            feature_vectors=catalog_domains.features.vectors,
-            target_vectors=catalog_domains.targets.vectors,
-        ),
+    counts = VectorMetadataCounts(
+        feature_vectors=catalog_domains.features.vectors,
+        target_vectors=catalog_domains.targets.vectors,
     )
     computed_start, computed_end = catalog_domains.window_bounds(
-        catalog_schema,
+        feature_meta,
+        target_meta,
         task_cfg.window_mode,
     )
     window_obj = _window(
@@ -736,10 +736,7 @@ def build_metadata_artifact(
     catalog = VectorMetadataCatalog(
         features=feature_meta,
         targets=target_meta,
-        counts=VectorMetadataCounts(
-            feature_vectors=catalog_domains.features.vectors,
-            target_vectors=catalog_domains.targets.vectors,
-        ),
+        counts=counts,
         window=window_obj,
         sample=sample_meta,
     )
