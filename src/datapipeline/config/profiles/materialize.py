@@ -1,9 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, StrictBool, field_validator
-
-from datapipeline.config.observability import ObservabilityConfig
+from pydantic import StrictBool, field_validator
 
 from .base import Profile
 
@@ -13,7 +11,6 @@ class MaterializeProfile(Profile):
     stream: str
     output: Path
     overwrite: StrictBool = False
-    observability: ObservabilityConfig | None = Field(default=None)
 
     @field_validator("stream", mode="before")
     @classmethod
