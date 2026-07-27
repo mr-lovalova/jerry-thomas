@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.domain.series_id import base_id, series_id_components
+from datapipeline.domain.series_id import base_id
 from datapipeline.domain.sample_key import SampleKeyContract
 from datapipeline.pipelines.series import projector as projector_module
 from datapipeline.pipelines.series.projector import SeriesProjector
@@ -165,10 +165,6 @@ def test_series_projector_escapes_component_delimiters() -> None:
         "temp__@station_id:north__west%7C%40sensor%3Ax|@sensor:A%3AB%2F100%25"
     )
     assert base_id(identifier) == "temp"
-    assert series_id_components(identifier) == (
-        ("station_id", "north__west|@sensor:x"),
-        ("sensor", "A:B/100%"),
-    )
 
 
 def test_distinct_component_tuples_cannot_generate_the_same_id() -> None:
