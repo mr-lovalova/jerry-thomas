@@ -10,7 +10,7 @@ from datapipeline.config.profiles.serve import ServeProfile
 from datapipeline.config.tasks.base import RuntimeTask
 from datapipeline.config.tasks.dataset import DatasetTask
 from datapipeline.execution.settings import (
-    LogOutputTarget,
+    CommandObservability,
     ObservabilitySettings,
     resolve_observability_settings,
 )
@@ -108,11 +108,7 @@ def resolve_serve_profiles(
     preview: PreviewStage | None,
     limit: int | None,
     cli_output: ServeOutputConfig | None,
-    cli_log_level: str | None = None,
-    cli_log_outputs: Sequence[LogOutputTarget] | None = None,
-    base_log_level: str = "INFO",
-    cli_visuals: str | None = None,
-    cli_heartbeat_interval_seconds: float | None = None,
+    command_observability: CommandObservability = CommandObservability(),
 ) -> list[ResolvedRuntimeProfile]:
     project_path = definition.project.path
     runtime_operations = {
@@ -168,11 +164,7 @@ def resolve_serve_profiles(
         observability = resolve_observability_settings(
             project_path,
             profile.observability,
-            cli_visuals=cli_visuals,
-            cli_heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
-            cli_log_level=cli_log_level,
-            cli_log_outputs=cli_log_outputs,
-            base_log_level=base_log_level,
+            command_observability,
         )
         resolved.append(
             ResolvedRuntimeProfile(
@@ -196,11 +188,7 @@ def resolve_inspect_profiles(
     profiles: Sequence[InspectProfile],
     limit: int | None,
     cli_output: ServeOutputConfig | None,
-    cli_log_level: str | None = None,
-    cli_log_outputs: Sequence[LogOutputTarget] | None = None,
-    base_log_level: str = "INFO",
-    cli_visuals: str | None = None,
-    cli_heartbeat_interval_seconds: float | None = None,
+    command_observability: CommandObservability = CommandObservability(),
 ) -> list[ResolvedRuntimeProfile]:
     project_path = definition.project.path
     resolved: list[ResolvedRuntimeProfile] = []
@@ -215,11 +203,7 @@ def resolve_inspect_profiles(
         observability = resolve_observability_settings(
             project_path,
             profile.observability,
-            cli_visuals=cli_visuals,
-            cli_heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
-            cli_log_level=cli_log_level,
-            cli_log_outputs=cli_log_outputs,
-            base_log_level=base_log_level,
+            command_observability,
         )
         resolved.append(
             ResolvedRuntimeProfile(

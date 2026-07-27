@@ -4,6 +4,7 @@ from typing import Literal
 
 from datapipeline.config.profiles.output import ServeOutputConfig
 from datapipeline.config.preview import PreviewStage
+from datapipeline.execution.settings import CommandObservability
 from datapipeline.profiles.models import RuntimeRunRequest
 from datapipeline.profiles.orchestration import run_profiles
 from datapipeline.profiles.request_builder import build_runtime_run_request
@@ -24,8 +25,10 @@ def serve_dataset(
         limit=limit,
         preview=preview,
         cli_output=cli_output,
-        cli_visuals="off",
-        cli_log_level="CRITICAL",
+        command_observability=CommandObservability(
+            visuals="off",
+            log_level="CRITICAL",
+        ),
     )
     assert request is not None
     assert len(request.serve_run_plans) == 1

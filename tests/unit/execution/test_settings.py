@@ -6,6 +6,7 @@ import pytest
 
 from datapipeline.config.observability import ObservabilityConfig
 from datapipeline.execution.settings import (
+    CommandObservability,
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogOutputSettings,
     LogOutputTarget,
@@ -52,29 +53,17 @@ def test_resolve_observability_settings_applies_heartbeat_precedence():
     cli = resolve_observability_settings(
         None,
         configured,
-        cli_visuals=None,
-        cli_heartbeat_interval_seconds=0,
-        cli_log_level=None,
-        cli_log_outputs=None,
-        base_log_level="INFO",
+        CommandObservability(heartbeat_interval_seconds=0),
     )
     profile = resolve_observability_settings(
         None,
         configured,
-        cli_visuals=None,
-        cli_heartbeat_interval_seconds=None,
-        cli_log_level=None,
-        cli_log_outputs=None,
-        base_log_level="INFO",
+        CommandObservability(),
     )
     default = resolve_observability_settings(
         None,
         None,
-        cli_visuals=None,
-        cli_heartbeat_interval_seconds=None,
-        cli_log_level=None,
-        cli_log_outputs=None,
-        base_log_level="INFO",
+        CommandObservability(),
     )
 
     assert cli.heartbeat_interval_seconds == 0

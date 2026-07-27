@@ -8,6 +8,7 @@ import pytest
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.profiles.materialize import MaterializeProfile
 from datapipeline.execution.settings import (
+    CommandObservability,
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,
     LogOutputSettings,
@@ -65,11 +66,7 @@ def test_resolve_materialize_jobs_applies_command_overrides(
         execution_dir=tmp_path / "execution",
         overwrite=True,
         cli_output=None,
-        cli_visuals=None,
-        cli_heartbeat_interval_seconds=None,
-        cli_log_level=None,
-        cli_log_outputs=[],
-        base_log_level="INFO",
+        command_observability=CommandObservability(),
     )
 
     assert [job.name for job in jobs] == ["adv-20", "adv-63"]
@@ -89,11 +86,7 @@ def test_resolve_materialize_jobs_derives_gzip_from_profile_output(tmp_path) -> 
         execution_dir=tmp_path / "execution",
         overwrite=None,
         cli_output=None,
-        cli_visuals=None,
-        cli_heartbeat_interval_seconds=None,
-        cli_log_level=None,
-        cli_log_outputs=[],
-        base_log_level="INFO",
+        command_observability=CommandObservability(),
     )
 
     assert jobs[0].output.destination == tmp_path / "adv-20.jsonl.gz"
@@ -107,11 +100,7 @@ def test_resolve_materialize_jobs_derives_gzip_from_output_override(tmp_path) ->
         execution_dir=tmp_path / "execution",
         overwrite=None,
         cli_output=tmp_path / "override.jsonl.gz",
-        cli_visuals=None,
-        cli_heartbeat_interval_seconds=None,
-        cli_log_level=None,
-        cli_log_outputs=[],
-        base_log_level="INFO",
+        command_observability=CommandObservability(),
     )
 
     assert jobs[0].output.destination == tmp_path / "override.jsonl.gz"
@@ -131,11 +120,7 @@ def test_output_override_requires_one_selected_profile(tmp_path) -> None:
             execution_dir=tmp_path / "execution",
             overwrite=None,
             cli_output=tmp_path / "override.jsonl",
-            cli_visuals=None,
-            cli_heartbeat_interval_seconds=None,
-            cli_log_level=None,
-            cli_log_outputs=[],
-            base_log_level="INFO",
+            command_observability=CommandObservability(),
         )
 
 

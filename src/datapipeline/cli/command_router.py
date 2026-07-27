@@ -30,7 +30,6 @@ def execute_command(
     plugin_root: Path | None,
     workspace_context: WorkspaceContext | None,
     cli_level_arg: str | None,
-    base_level_name: str,
     cli_log_outputs: list[LogOutputTarget],
 ) -> None:
     match args.cmd:
@@ -42,7 +41,6 @@ def execute_command(
             handle_build(
                 args=args,
                 cli_log_level=cli_level_arg,
-                base_log_level=base_level_name,
                 cli_log_outputs=cli_log_outputs,
             )
         case "serve":
@@ -50,7 +48,6 @@ def execute_command(
                 args=args,
                 workspace=workspace_context,
                 cli_log_level=cli_level_arg,
-                base_log_level=base_level_name,
                 cli_log_outputs=cli_log_outputs,
             )
         case "inspect":
@@ -58,7 +55,6 @@ def execute_command(
                 args=args,
                 workspace=workspace_context,
                 cli_log_level=cli_level_arg,
-                base_log_level=base_level_name,
                 cli_log_outputs=cli_log_outputs,
             )
         case "clean":
@@ -74,7 +70,6 @@ def execute_command(
                 heartbeat_interval_seconds=args.heartbeat_interval_seconds,
                 cli_log_level=cli_level_arg,
                 cli_log_outputs=cli_log_outputs,
-                base_log_level=base_level_name,
                 workspace=workspace_context,
             )
         case "source":

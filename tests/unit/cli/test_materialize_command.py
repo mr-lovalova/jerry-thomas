@@ -4,6 +4,7 @@ import pytest
 
 from datapipeline.cli.command_router import execute_command
 from datapipeline.cli.parser_builder import build_parser
+from datapipeline.execution.settings import CommandObservability
 from datapipeline.profiles.errors import ProfileCommandError
 
 
@@ -13,7 +14,6 @@ def _execute(args, workspace=None) -> None:
         plugin_root=None,
         workspace_context=workspace,
         cli_level_arg="DEBUG",
-        base_level_name="INFO",
         cli_log_outputs=[],
     )
 
@@ -79,7 +79,6 @@ def test_materialize_dispatches_one_profile_execution_path(monkeypatch) -> None:
         "heartbeat_interval_seconds": None,
         "cli_log_level": "DEBUG",
         "cli_log_outputs": [],
-        "base_log_level": "INFO",
         "workspace": None,
     }
 
@@ -189,7 +188,10 @@ def test_materialize_allows_global_overrides_without_profile(monkeypatch) -> Non
     assert captured["profile_name"] is None
     assert captured["output"] is None
     assert captured["overwrite"] is True
-    assert captured["cli_visuals"] == "off"
+    assert captured["command_observability"] == CommandObservability(
+        visuals="off",
+        log_level="DEBUG",
+    )
 
 
 def test_materialize_profile_validation_error_reaches_cli_boundary(monkeypatch) -> None:

@@ -97,7 +97,7 @@ def _configure_cli_logging(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
     workspace_context: WorkspaceContext | None,
-) -> tuple[str | None, str, list[LogOutputTarget]]:
+) -> tuple[str | None, list[LogOutputTarget]]:
     cli_level_arg = args.log_level
     cli_log_output_specs = args.log_output
 
@@ -121,7 +121,7 @@ def _configure_cli_logging(
         raise SystemExit(2) from exc
 
     configure_root_logging(level=base_level.value, output=base_log_output)
-    return cli_level_arg, base_level.name, cli_log_outputs
+    return cli_level_arg, cli_log_outputs
 
 
 def main() -> None:
@@ -134,11 +134,7 @@ def main() -> None:
         except (OSError, TypeError, ValueError) as exc:
             parser.error(f"Failed to load workspace: {exc}")
     _resolve_project_arguments(args=args, workspace_context=workspace_context)
-    (
-        cli_level_arg,
-        base_level_name,
-        cli_log_outputs,
-    ) = _configure_cli_logging(
+    cli_level_arg, cli_log_outputs = _configure_cli_logging(
         parser=parser,
         args=args,
         workspace_context=workspace_context,
@@ -151,7 +147,6 @@ def main() -> None:
             plugin_root=plugin_root,
             workspace_context=workspace_context,
             cli_level_arg=cli_level_arg,
-            base_level_name=base_level_name,
             cli_log_outputs=cli_log_outputs,
         )
     except ProfileCommandError as exc:

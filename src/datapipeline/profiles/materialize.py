@@ -6,7 +6,7 @@ from typing import Sequence
 
 from datapipeline.config.profiles.materialize import MaterializeProfile
 from datapipeline.execution.settings import (
-    LogOutputTarget,
+    CommandObservability,
     resolve_execution_log_outputs,
     resolve_observability_settings,
 )
@@ -32,11 +32,7 @@ def resolve_materialize_jobs(
     execution_dir: Path,
     overwrite: bool | None,
     cli_output: Path | None,
-    cli_visuals: str | None,
-    cli_heartbeat_interval_seconds: float | None,
-    cli_log_level: str | None,
-    cli_log_outputs: Sequence[LogOutputTarget],
-    base_log_level: str,
+    command_observability: CommandObservability,
 ) -> list[MaterializeJob]:
     if cli_output is not None and len(profiles) != 1:
         raise ValueError("A materialize output override requires one selected profile.")
@@ -46,11 +42,7 @@ def resolve_materialize_jobs(
         observability = resolve_observability_settings(
             project_path,
             profile.observability,
-            cli_visuals=cli_visuals,
-            cli_heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
-            cli_log_level=cli_log_level,
-            cli_log_outputs=cli_log_outputs,
-            base_log_level=base_log_level,
+            command_observability,
         )
         observability = replace(
             observability,

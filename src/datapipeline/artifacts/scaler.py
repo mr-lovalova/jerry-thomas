@@ -10,7 +10,7 @@ from pydantic import (
     model_validator,
 )
 
-from datapipeline.utils.json_artifact import write_json_artifact
+from datapipeline.io.json_file import write_json_object
 
 
 SCALER_ARTIFACT_VERSION: Final = 4
@@ -109,4 +109,4 @@ def load_scaler_artifact(path: Path) -> ScalerArtifact:
 
 
 def save_scaler_artifact(path: Path, artifact: ScalerArtifact) -> None:
-    write_json_artifact(path, artifact.model_dump(mode="json"))
+    write_json_object(path, artifact.model_dump(mode="json"))

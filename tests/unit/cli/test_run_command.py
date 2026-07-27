@@ -12,6 +12,7 @@ from datapipeline.cli.parser_builder import build_parser
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.profiles.output import ServeOutputConfig
 from datapipeline.execution.observability import CommandFinished
+from datapipeline.execution.settings import CommandObservability
 from datapipeline.profiles.errors import ProfileCommandError
 from datapipeline.profiles.models import BuildRunRequest
 
@@ -263,7 +264,6 @@ def test_execute_serve_propagates_keyboard_interrupt(monkeypatch) -> None:
             plugin_root=None,
             workspace_context=None,
             cli_level_arg=None,
-            base_level_name="INFO",
             cli_log_outputs=[],
         )
 
@@ -300,7 +300,6 @@ def test_execute_serve_runs_request_from_builder(monkeypatch) -> None:
         plugin_root=None,
         workspace_context=None,
         cli_level_arg=None,
-        base_level_name="INFO",
         cli_log_outputs=[],
     )
 
@@ -308,6 +307,7 @@ def test_execute_serve_runs_request_from_builder(monkeypatch) -> None:
     assert seen["request"] is sentinel_request
     assert captured["command"] == "serve"
     assert captured["artifact_mode"] == "FORCE"
+    assert captured["command_observability"] == CommandObservability(visuals="on")
 
 
 @pytest.mark.parametrize("command", ["serve", "inspect"])
@@ -349,7 +349,6 @@ def test_runtime_command_propagates_gzip_output_override(
         plugin_root=None,
         workspace_context=None,
         cli_level_arg=None,
-        base_level_name="INFO",
         cli_log_outputs=[],
     )
 
@@ -375,7 +374,6 @@ def test_execute_serve_skips_when_no_enabled_profiles(monkeypatch, caplog) -> No
             plugin_root=None,
             workspace_context=None,
             cli_level_arg=None,
-            base_level_name="INFO",
             cli_log_outputs=[],
         )
 
@@ -412,13 +410,16 @@ def test_execute_build_passes_profile_and_force(monkeypatch) -> None:
         plugin_root=None,
         workspace_context=None,
         cli_level_arg="DEBUG",
-        base_level_name="DEBUG",
         cli_log_outputs=[],
     )
 
     assert result is None
     assert captured["profile_name"] == "nightly"
     assert captured["force"] is True
+    assert captured["command_observability"] == CommandObservability(
+        visuals="off",
+        log_level="DEBUG",
+    )
 
 
 def test_execute_inspect_passes_command_and_profile(monkeypatch) -> None:
@@ -444,13 +445,16 @@ def test_execute_inspect_passes_command_and_profile(monkeypatch) -> None:
         plugin_root=None,
         workspace_context=None,
         cli_level_arg="INFO",
-        base_level_name="INFO",
         cli_log_outputs=[],
     )
 
     assert result is None
     assert captured["command"] == "inspect"
     assert captured["profile_name"] == "report"
+    assert captured["command_observability"] == CommandObservability(
+        visuals="on",
+        log_level="INFO",
+    )
 
 
 def test_execute_inspect_skips_when_no_enabled_profiles(monkeypatch, caplog) -> None:
@@ -467,7 +471,6 @@ def test_execute_inspect_skips_when_no_enabled_profiles(monkeypatch, caplog) -> 
             plugin_root=None,
             workspace_context=None,
             cli_level_arg=None,
-            base_level_name="INFO",
             cli_log_outputs=[],
         )
 

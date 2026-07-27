@@ -24,6 +24,7 @@ from datapipeline.domain.series import SeriesSequence
 from datapipeline.domain.series_id import base_id
 from datapipeline.execution.pipeline import Input, Pipeline, Stage
 from datapipeline.execution.runner import run_pipeline
+from datapipeline.io.json_file import write_json_object
 from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.series.projector import SeriesProjector
 from datapipeline.pipelines.series.stages import SeriesSequencer
@@ -32,7 +33,6 @@ from datapipeline.pipelines.stream.pipeline import build_stream_pipeline
 from datapipeline.runtime import Runtime, require_runtime_stream
 from datapipeline.services.path_policy import resolve_artifact_output_path
 from datapipeline.transforms.utils import record_establishes_domain
-from datapipeline.utils.json_artifact import write_json_artifact
 from datapipeline.utils.time import floor_time_to_cadence, parse_cadence
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ def build_series_artifact(
         raise
 
     try:
-        write_json_artifact(destination, manifest.model_dump(mode="json"))
+        write_json_object(destination, manifest.model_dump(mode="json"))
     except BaseException:
         _remove_failed_generation(generation_root)
         raise

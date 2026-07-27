@@ -4,12 +4,12 @@ from datapipeline.analysis.vector.coverage_stats import CoverageStatsAccumulator
 from datapipeline.artifacts.models import CoverageStatsArtifact
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
+from datapipeline.io.json_file import write_json_object
 from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.sample.input import open_samples
 from datapipeline.pipelines.sample.keys import require_metadata_key_plan
 from datapipeline.runtime import Runtime
-from datapipeline.utils.json_artifact import write_json_artifact
 
 
 def build_coverage_stats_artifact(
@@ -66,7 +66,7 @@ def build_coverage_stats_artifact(
     )
     relative_path = Path(task_cfg.output)
     destination = (runtime.artifacts_root / relative_path).resolve()
-    write_json_artifact(destination, artifact.model_dump(mode="json"))
+    write_json_object(destination, artifact.model_dump(mode="json"))
 
     return ArtifactOutput(
         meta={

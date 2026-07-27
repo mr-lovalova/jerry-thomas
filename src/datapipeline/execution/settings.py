@@ -92,6 +92,14 @@ class LogOutputTarget:
 
 
 @dataclass(frozen=True)
+class CommandObservability:
+    visuals: str | None = None
+    heartbeat_interval_seconds: float | None = None
+    log_level: str | None = None
+    log_outputs: tuple[LogOutputTarget, ...] = ()
+
+
+@dataclass(frozen=True)
 class LogOutputSettings:
     outputs: tuple[LogOutputTarget, ...]
 
@@ -245,12 +253,7 @@ def resolve_log_output(
 def resolve_observability_settings(
     project_path: Path | None,
     observability: ObservabilityConfig | None,
-    *,
-    cli_visuals: str | None,
-    cli_heartbeat_interval_seconds: float | None,
-    cli_log_level: str | None,
-    cli_log_outputs: Sequence[LogOutputTarget] | None,
-    base_log_level: str,
+    command_observability: CommandObservability,
 ) -> ObservabilitySettings:
     logging_config = observability.logging if observability is not None else None
     configured_output_specs = (
@@ -267,26 +270,25 @@ def resolve_observability_settings(
         observability.heartbeat_interval_seconds if observability is not None else None
     )
     heartbeat_interval = (
-        cli_heartbeat_interval_seconds
-        if cli_heartbeat_interval_seconds is not None
+        command_observability.heartbeat_interval_seconds
+        if command_observability.heartbeat_interval_seconds is not None
         else configured_heartbeat_interval
     )
 
     return ObservabilitySettings(
         visuals=resolve_visuals(
-            cli_visuals,
+            command_observability.visuals,
             observability.visuals if observability is not None else None,
         ),
         heartbeat_interval_seconds=resolve_heartbeat_interval_seconds(
             heartbeat_interval,
         ),
         log_decision=resolve_log_level(
-            cli_log_level,
+            command_observability.log_level,
             logging_config.level if logging_config is not None else None,
-            base_log_level,
         ),
         log_output=resolve_log_output(
-            cli_outputs=cli_log_outputs,
+            cli_outputs=command_observability.log_outputs,
             config_outputs=configured_outputs,
             allow_execution_scope=True,
         ),

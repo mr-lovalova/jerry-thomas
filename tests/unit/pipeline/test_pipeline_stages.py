@@ -2332,7 +2332,7 @@ def test_failed_series_manifest_commit_removes_new_generation(
 
     monkeypatch.setattr(
         series_operation,
-        "write_json_artifact",
+        "write_json_object",
         fail_manifest,
     )
 

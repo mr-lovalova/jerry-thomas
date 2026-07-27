@@ -2,7 +2,7 @@ import logging
 
 from datapipeline.cli.commands.profile_runner import execute_profile_request
 from datapipeline.cli.workspace import WorkspaceContext
-from datapipeline.execution.settings import LogOutputTarget
+from datapipeline.execution.settings import CommandObservability, LogOutputTarget
 from datapipeline.profiles.request_builder import build_materialize_run_request
 from datapipeline.services.path_policy import resolve_workspace_path
 
@@ -19,7 +19,6 @@ def handle(
     heartbeat_interval_seconds: float | None,
     cli_log_level: str | None,
     cli_log_outputs: list[LogOutputTarget],
-    base_log_level: str,
     workspace: WorkspaceContext | None,
 ) -> None:
     if profile_name is None and output is not None:
@@ -41,11 +40,12 @@ def handle(
         overwrite=overwrite,
         artifact_mode=artifact_mode,
         output=output_path,
-        cli_visuals=visuals,
-        cli_heartbeat_interval_seconds=heartbeat_interval_seconds,
-        cli_log_level=cli_log_level,
-        cli_log_outputs=cli_log_outputs,
-        base_log_level=base_log_level,
+        command_observability=CommandObservability(
+            visuals=visuals,
+            heartbeat_interval_seconds=heartbeat_interval_seconds,
+            log_level=cli_log_level,
+            log_outputs=tuple(cli_log_outputs),
+        ),
     )
     if request is None:
         logger.info("No enabled materialize profiles; skipping materialize.")

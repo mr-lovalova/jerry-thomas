@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from datapipeline.config.preview import PreviewStage
-from datapipeline.utils.json_artifact import write_json_artifact
+from datapipeline.io.json_file import write_json_object
 
 RunStatus = Literal["running", "success", "failed"]
 
@@ -76,7 +76,7 @@ def get_run_paths(serve_root: Path, run_id: str | None = None) -> RunPaths:
 
 
 def _write_run_metadata(meta: RunMetadata, path: Path) -> None:
-    write_json_artifact(path, asdict(meta))
+    write_json_object(path, asdict(meta))
 
 
 def _load_run_metadata(path: Path) -> RunMetadata:

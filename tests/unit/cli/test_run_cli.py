@@ -18,7 +18,7 @@ from datapipeline.config.profiles.output import ServeOutputConfig
 from datapipeline.config.profiles.serve import ServeProfile
 from datapipeline.config.tasks.base import RuntimeTask
 from datapipeline.config.tasks.dataset import DatasetTask
-from datapipeline.execution.settings import LogOutputTarget
+from datapipeline.execution.settings import CommandObservability, LogOutputTarget
 from datapipeline.profiles.runtime_profiles import (
     resolve_inspect_profiles,
     resolve_serve_profiles,
@@ -58,11 +58,10 @@ def _resolve_serve(
         preview=preview,
         limit=limit,
         cli_output=cli_output,
-        cli_log_level=None,
-        cli_log_outputs=cli_log_outputs,
-        base_log_level="INFO",
-        cli_visuals=None,
-        cli_heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
+        command_observability=CommandObservability(
+            heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
+            log_outputs=tuple(cli_log_outputs or ()),
+        ),
     )
 
 

@@ -5,8 +5,8 @@ from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from datapipeline.io.json_file import write_json_object
 from datapipeline.services.path_policy import resolve_artifact_output_path
-from datapipeline.utils.json_artifact import write_json_artifact
 
 BUILD_STATE_VERSION = 8
 _BUILD_STATE_PATH = Path("_system/build/state.json")
@@ -97,4 +97,4 @@ def load_build_state(artifacts_root: Path) -> BuildState | None:
 
 def save_build_state(state: BuildState, artifacts_root: Path) -> None:
     path = resolve_artifact_output_path(_BUILD_STATE_PATH, artifacts_root)
-    write_json_artifact(path, state.model_dump())
+    write_json_object(path, state.model_dump())

@@ -33,10 +33,10 @@ from datapipeline.config.tasks.metadata import MetadataTask
 from datapipeline.domain.series_id import base_id
 from datapipeline.execution.observability import OperationProgressTracker
 from datapipeline.execution.settings import resolve_heartbeat_interval_seconds
+from datapipeline.io.json_file import write_json_object
 from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.dataset.split import TargetHorizonPolicy, build_labeler
 from datapipeline.runtime import Runtime
-from datapipeline.utils.json_artifact import write_json_artifact
 from datapipeline.utils.time import (
     count_cadence_buckets,
     floor_time_to_cadence,
@@ -753,7 +753,7 @@ def build_metadata_artifact(
 
     relative_path = Path(task_cfg.output)
     destination = (runtime.artifacts_root / relative_path).resolve()
-    write_json_artifact(
+    write_json_object(
         destination,
         doc.model_dump(mode="json", exclude_none=True),
     )

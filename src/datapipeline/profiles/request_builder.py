@@ -24,7 +24,7 @@ from datapipeline.config.profiles.materialize import MaterializeProfile
 from datapipeline.config.profiles.output import ServeOutputConfig
 from datapipeline.config.profiles.serve import ServeProfile
 from datapipeline.execution.settings import (
-    LogOutputTarget,
+    CommandObservability,
     resolve_execution_log_outputs,
     resolve_observability_settings,
 )
@@ -142,11 +142,7 @@ def build_build_run_request(
     project: str,
     profile_name: str | None = None,
     force: bool = False,
-    cli_log_level: str | None = None,
-    cli_log_outputs: Sequence[LogOutputTarget] | None = None,
-    base_log_level: str = "INFO",
-    cli_visuals: str | None = None,
-    cli_heartbeat_interval_seconds: float | None = None,
+    command_observability: CommandObservability = CommandObservability(),
 ) -> BuildRunRequest | None:
     definition = _load_definition(project)
     project_path = definition.project.path
@@ -186,11 +182,7 @@ def build_build_run_request(
             observability = resolve_observability_settings(
                 project_path,
                 profile.observability,
-                cli_visuals=cli_visuals,
-                cli_heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
-                cli_log_level=cli_log_level,
-                cli_log_outputs=cli_log_outputs,
-                base_log_level=base_log_level,
+                command_observability,
             )
         except ValueError as exc:
             raise ProfileCommandError(f"Invalid build configuration: {exc}") from exc
@@ -229,11 +221,7 @@ def build_runtime_run_request(
     limit: int | None = None,
     preview: PreviewStage | None = None,
     cli_output: ServeOutputConfig | None = None,
-    cli_log_level: str | None = None,
-    cli_log_outputs: Sequence[LogOutputTarget] | None = None,
-    base_log_level: str = "INFO",
-    cli_visuals: str | None = None,
-    cli_heartbeat_interval_seconds: float | None = None,
+    command_observability: CommandObservability = CommandObservability(),
 ) -> RuntimeRunRequest | None:
     definition = _load_definition(project)
     project_path = definition.project.path
@@ -294,11 +282,7 @@ def build_runtime_run_request(
         artifact_observability = resolve_observability_settings(
             project_path,
             defaults.observability,
-            cli_visuals=cli_visuals,
-            cli_heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
-            cli_log_level=cli_log_level,
-            cli_log_outputs=cli_log_outputs,
-            base_log_level=base_log_level,
+            command_observability,
         )
     except ValueError as exc:
         raise ProfileCommandError(f"Invalid prerequisite observability: {exc}") from exc
@@ -322,11 +306,7 @@ def build_runtime_run_request(
                 preview,
                 limit,
                 cli_output,
-                cli_log_level=cli_log_level,
-                cli_log_outputs=cli_log_outputs,
-                base_log_level=base_log_level,
-                cli_visuals=cli_visuals,
-                cli_heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
+                command_observability,
             )
         else:
             if preview is not None:
@@ -336,11 +316,7 @@ def build_runtime_run_request(
                 inspect_profiles,
                 limit,
                 cli_output,
-                cli_log_level=cli_log_level,
-                cli_log_outputs=cli_log_outputs,
-                base_log_level=base_log_level,
-                cli_visuals=cli_visuals,
-                cli_heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
+                command_observability,
             )
         jobs = [
             RuntimeJob(
@@ -387,11 +363,7 @@ def build_materialize_run_request(
     overwrite: bool | None,
     output: Path | None,
     artifact_mode: str | None,
-    cli_log_level: str | None,
-    cli_log_outputs: Sequence[LogOutputTarget],
-    base_log_level: str,
-    cli_visuals: str | None,
-    cli_heartbeat_interval_seconds: float | None,
+    command_observability: CommandObservability = CommandObservability(),
 ) -> MaterializeRunRequest | None:
     definition = _load_definition(project)
     project_path = definition.project.path
@@ -420,11 +392,7 @@ def build_materialize_run_request(
             execution_dir=execution_dir,
             overwrite=overwrite,
             cli_output=output,
-            cli_visuals=cli_visuals,
-            cli_heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
-            cli_log_level=cli_log_level,
-            cli_log_outputs=cli_log_outputs,
-            base_log_level=base_log_level,
+            command_observability=command_observability,
         )
         resolved_artifact_mode = (
             normalize_artifact_mode(artifact_mode) or defaults.artifact_mode or "AUTO"
@@ -432,11 +400,7 @@ def build_materialize_run_request(
         artifact_observability = resolve_observability_settings(
             project_path,
             defaults.observability,
-            cli_visuals=cli_visuals,
-            cli_heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
-            cli_log_level=cli_log_level,
-            cli_log_outputs=cli_log_outputs,
-            base_log_level=base_log_level,
+            command_observability,
         )
         runtime = compile_runtime(definition)
     except (OSError, TypeError, ValueError) as exc:

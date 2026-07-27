@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from datapipeline.config.execution import ExecutionConfig
-from datapipeline.execution.settings import LogOutputTarget
+from datapipeline.execution.settings import CommandObservability, LogOutputTarget
 from datapipeline.profiles.errors import ProfileCommandError
 from datapipeline.profiles.request_builder import (
     build_build_run_request,
@@ -199,7 +199,9 @@ def test_inspect_request_materializes_execution_scoped_log_output(
     request = build_runtime_run_request(
         command="inspect",
         project=str(project_yaml),
-        cli_log_outputs=[LogOutputTarget(transport="fs", scope="execution")],
+        command_observability=CommandObservability(
+            log_outputs=(LogOutputTarget(transport="fs", scope="execution"),),
+        ),
     )
     assert request is not None
     job = request.jobs[0]
@@ -313,11 +315,9 @@ def test_materialize_request_uses_shared_resolution_snapshot(
         overwrite=None,
         output=None,
         artifact_mode=None,
-        cli_log_level=None,
-        cli_log_outputs=[LogOutputTarget(transport="fs", scope="execution")],
-        base_log_level="INFO",
-        cli_visuals=None,
-        cli_heartbeat_interval_seconds=None,
+        command_observability=CommandObservability(
+            log_outputs=(LogOutputTarget(transport="fs", scope="execution"),),
+        ),
     )
 
     assert request is not None

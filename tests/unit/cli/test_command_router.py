@@ -18,7 +18,6 @@ def _execute(args, *, plugin_root=None, workspace=None) -> None:
         plugin_root=plugin_root,
         workspace_context=workspace,
         cli_level_arg=None,
-        base_level_name="INFO",
         cli_log_outputs=[],
     )
 

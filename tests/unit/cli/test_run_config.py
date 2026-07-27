@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from datapipeline.execution.settings import CommandObservability
 from datapipeline.profiles.errors import ProfileCommandError
 from datapipeline.profiles.request_builder import (
     build_build_run_request,
@@ -264,9 +265,11 @@ def test_cli_artifact_mode_overrides_serve_defaults(tmp_path: Path):
         command="serve",
         project=str(project_yaml),
         artifact_mode="force",
-        cli_heartbeat_interval_seconds=0,
-        cli_log_level="debug",
-        cli_visuals="on",
+        command_observability=CommandObservability(
+            visuals="on",
+            heartbeat_interval_seconds=0,
+            log_level="debug",
+        ),
     )
 
     assert request is not None
@@ -443,7 +446,9 @@ def test_serve_heartbeat_preserves_prerequisite_and_profile_precedence(
         command="serve",
         project=str(project_yaml),
         profile_name="train",
-        cli_heartbeat_interval_seconds=0,
+        command_observability=CommandObservability(
+            heartbeat_interval_seconds=0,
+        ),
     )
 
     assert request is not None

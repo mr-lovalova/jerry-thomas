@@ -14,7 +14,7 @@ from datapipeline.artifacts.specs import (
     VECTOR_METADATA,
     COVERAGE_STATS,
 )
-from datapipeline.utils.json_artifact import read_json_artifact
+from datapipeline.io.json_file import read_json_object
 
 ArtifactValue = TypeVar("ArtifactValue")
 
@@ -104,11 +104,11 @@ class ArtifactRegistry:
 
 
 def _read_vector_metadata(path: Path) -> VectorMetadata:
-    return VectorMetadata.model_validate(read_json_artifact(path))
+    return VectorMetadata.model_validate(read_json_object(path))
 
 
 def _read_coverage_stats(path: Path) -> CoverageStatsArtifact:
-    payload = read_json_artifact(path)
+    payload = read_json_object(path)
     version = payload.get("schema_version")
     if version != 3:
         raise ValueError(
