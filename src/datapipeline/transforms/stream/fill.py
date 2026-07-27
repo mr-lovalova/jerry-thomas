@@ -88,13 +88,8 @@ class ForwardFillTransform:
             key=lambda record: partition_key(record, self.partition_fields),
         ):
             last_value = None
-            has_value = False
             for record in records:
                 value = get_field(record, self.field)
-                if is_missing(value):
-                    output = last_value if has_value else None
-                else:
+                if not is_missing(value):
                     last_value = value
-                    has_value = True
-                    output = value
-                yield clone_record_with_field(record, self.to, output)
+                yield clone_record_with_field(record, self.to, last_value)

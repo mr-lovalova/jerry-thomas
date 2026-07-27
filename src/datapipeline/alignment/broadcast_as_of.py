@@ -2,6 +2,7 @@ from bisect import bisect_right
 from collections.abc import Generator, Iterator
 from datetime import datetime, timedelta
 
+from datapipeline.alignment._lifecycle import close_alignment_inputs
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.transforms.utils import partition_key
 
@@ -104,19 +105,6 @@ def broadcast_as_of_stream(
         processing_failed = True
         raise
     finally:
-        try:
-            primary_close = getattr(primary, "close", None)
-            if callable(primary_close):
-                primary_close()
-        except BaseException:
-            if not processing_failed:
-                processing_failed = True
-                raise
-        finally:
-            try:
-                lookup_close = getattr(lookup, "close", None)
-                if callable(lookup_close):
-                    lookup_close()
-            except BaseException:
-                if not processing_failed:
-                    raise
+        cleanup_error = close_alignment_inputs((primary, lookup))
+        if not processing_failed and cleanup_error is not None:
+            raise cleanup_error

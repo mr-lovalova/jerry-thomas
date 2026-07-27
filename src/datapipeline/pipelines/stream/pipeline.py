@@ -269,7 +269,7 @@ def _align_inputs(
         )
         for stream_id in input_streams
     ]
-    yield from align_streams(inputs, partition_by=partition_by)
+    return align_streams(inputs, partition_by=partition_by)
 
 
 def _broadcast_inputs(
@@ -280,7 +280,7 @@ def _broadcast_inputs(
 ) -> Iterator[tuple[Any, Any]]:
     primary = _run_internal_stream(runtime, input_stream)
     broadcast = _run_internal_stream(runtime, broadcast_input)
-    yield from broadcast_stream(primary, broadcast, partition_by)
+    return broadcast_stream(primary, broadcast, partition_by)
 
 
 def _as_of_inputs(
@@ -293,7 +293,7 @@ def _as_of_inputs(
 ) -> Iterator[tuple[Any, Any | None]]:
     primary = _run_internal_stream(runtime, input_stream)
     lookup = _run_internal_stream(runtime, lookup_stream)
-    yield from as_of_stream(
+    return as_of_stream(
         primary,
         lookup,
         partition_by,
@@ -312,7 +312,7 @@ def _broadcast_as_of_inputs(
 ) -> Iterator[tuple[Any, Any | None]]:
     primary = _run_internal_stream(runtime, input_stream)
     lookup = _run_internal_stream(runtime, lookup_stream)
-    yield from broadcast_as_of_stream(
+    return broadcast_as_of_stream(
         primary,
         lookup,
         partition_by,

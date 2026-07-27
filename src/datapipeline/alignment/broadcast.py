@@ -1,6 +1,7 @@
 from collections.abc import Generator, Iterator
 from datetime import datetime
 
+from datapipeline.alignment._lifecycle import close_alignment_inputs
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.transforms.utils import partition_key
 
@@ -68,19 +69,6 @@ def broadcast_stream(
         processing_failed = True
         raise
     finally:
-        try:
-            primary_close = getattr(primary, "close", None)
-            if callable(primary_close):
-                primary_close()
-        except BaseException:
-            if not processing_failed:
-                processing_failed = True
-                raise
-        finally:
-            try:
-                broadcast_close = getattr(broadcast, "close", None)
-                if callable(broadcast_close):
-                    broadcast_close()
-            except BaseException:
-                if not processing_failed:
-                    raise
+        cleanup_error = close_alignment_inputs((primary, broadcast))
+        if not processing_failed and cleanup_error is not None:
+            raise cleanup_error
