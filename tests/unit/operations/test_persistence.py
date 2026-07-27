@@ -429,38 +429,6 @@ def test_runtime_batch_failure_closes_pending_rows(tmp_path) -> None:
     assert pending_rows.closed
 
 
-def test_runtime_batch_callback_does_not_replace_persistence_failure(
-    tmp_path,
-) -> None:
-    target = OutputTarget(
-        transport="fs",
-        format="jsonl",
-        view="raw",
-        encoding="utf-8",
-        destination=tmp_path / "out.jsonl",
-    )
-
-    def fail_completion(_success: bool) -> None:
-        raise OSError("completion failed")
-
-    result = RuntimeOutputBatch(
-        outputs=(
-            RuntimeOutput(
-                rows=_ClosableRows(iteration_error=RuntimeError("processing failed")),
-                target=target,
-            ),
-        ),
-        on_complete=fail_completion,
-    )
-
-    with pytest.raises(RuntimeError, match="processing failed"):
-        persist_runtime_result(
-            result,
-            target=None,
-            logger=logging.getLogger(__name__),
-        )
-
-
 def test_routed_runtime_output_rejects_colliding_destinations(tmp_path) -> None:
     targets = {
         output_id: OutputTarget(

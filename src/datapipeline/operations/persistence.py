@@ -96,7 +96,6 @@ RuntimeOutputItem = RuntimeOutput | RoutedOutput | DatasetTableOutput
 @dataclass(frozen=True)
 class RuntimeOutputBatch:
     outputs: Sequence[RuntimeOutputItem]
-    on_complete: Callable[[bool], None] | None = None
 
 
 def persist_artifact_output(
@@ -432,7 +431,6 @@ def _persist_runtime_batch(
     heartbeat_interval_seconds: float | None,
     logger: logging.Logger,
 ) -> None:
-    success = False
     attempted = 0
     try:
         for output in result.outputs:
@@ -457,21 +455,9 @@ def _persist_runtime_batch(
                     heartbeat_interval_seconds=heartbeat_interval_seconds,
                     logger=logger,
                 )
-        success = True
-    finally:
-        if not success:
-            _close_pending_runtime_outputs(result.outputs[attempted:], logger)
-        if result.on_complete is not None:
-            try:
-                result.on_complete(success)
-            except BaseException:
-                if success:
-                    raise
-                logger.debug(
-                    "Runtime output completion callback failed after an earlier "
-                    "persistence failure",
-                    exc_info=True,
-                )
+    except BaseException:
+        _close_pending_runtime_outputs(result.outputs[attempted:], logger)
+        raise
 
 
 def persist_runtime_result(

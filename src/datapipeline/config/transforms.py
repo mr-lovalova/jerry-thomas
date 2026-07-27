@@ -211,19 +211,14 @@ class DeriveConfig(_TransformConfig):
 
     @model_validator(mode="after")
     def validate_right_operand(self) -> "DeriveConfig":
-        has_field = "right_field" in self.model_fields_set
-        has_value = "right_value" in self.model_fields_set
+        has_field = self.right_field is not None
+        has_value = self.right_value is not None
         if has_field == has_value:
             raise ValueError(
                 "derive requires exactly one of right_field or right_value"
             )
-        if has_field and self.right_field is None:
-            raise ValueError("derive right_field must not be null")
-        if has_value:
-            if self.right_value is None:
-                raise ValueError("derive right_value must not be null")
-            if isinstance(self.right_value, float) and not isfinite(self.right_value):
-                raise ValueError("derive right_value must be finite")
+        if isinstance(self.right_value, float) and not isfinite(self.right_value):
+            raise ValueError("derive right_value must be finite")
         return self
 
 
