@@ -1,7 +1,34 @@
 import pytest
 
-from datapipeline.transforms.utils import finite_number, get_field, partition_key
+from datapipeline.transforms.utils import (
+    adjacent_partitions,
+    finite_number,
+    get_field,
+    partition_key,
+)
 from tests.unit.transforms.helpers import make_time_record
+
+
+def test_adjacent_partitions_preserves_stream_group_boundaries() -> None:
+    records = [
+        make_time_record(1.0, 0),
+        make_time_record(2.0, 1),
+        make_time_record(3.0, 2),
+        make_time_record(4.0, 3),
+    ]
+    for record, security_id in zip(records, ("AAPL", "AAPL", "MSFT", "AAPL")):
+        record.security_id = security_id
+
+    partitions = [
+        (key, [record.value for record in partition])
+        for key, partition in adjacent_partitions(iter(records), ("security_id",))
+    ]
+
+    assert partitions == [
+        (("AAPL",), [1.0, 2.0]),
+        (("MSFT",), [3.0]),
+        (("AAPL",), [4.0]),
+    ]
 
 
 def test_partition_key_requires_declared_object_field() -> None:

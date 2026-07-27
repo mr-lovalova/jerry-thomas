@@ -1,14 +1,13 @@
 from collections.abc import Iterator
-from itertools import groupby
 
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.transforms.rolling_slope import RollingSlope
 from datapipeline.transforms.utils import (
+    adjacent_partitions,
     clone_record_with_field,
     finite_number,
     get_field,
     is_missing,
-    partition_key,
 )
 
 
@@ -30,10 +29,7 @@ class RollingSlopeTransform:
         self.to = to
 
     def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
-        for _, records in groupby(
-            stream,
-            key=lambda record: partition_key(record, self.partition_fields),
-        ):
+        for _, records in adjacent_partitions(stream, self.partition_fields):
             rolling_slope = RollingSlope(self.window)
 
             for record in records:

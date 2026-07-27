@@ -1,11 +1,23 @@
 import copy
 import math
+from collections.abc import Iterator
+from itertools import groupby
 from typing import Any, TypeVar
 
 from datapipeline.domain.record import TemporalRecord
 
 
 TRecord = TypeVar("TRecord", bound=TemporalRecord)
+
+
+def adjacent_partitions(
+    records: Iterator[TRecord],
+    partition_by: tuple[str, ...],
+) -> Iterator[tuple[tuple[Any, ...], Iterator[TRecord]]]:
+    return groupby(
+        records,
+        key=lambda record: partition_key(record, partition_by),
+    )
 
 
 def is_missing(value: object) -> bool:

@@ -1,12 +1,12 @@
 from collections.abc import Iterator
 from datetime import datetime
-from itertools import chain, groupby
+from itertools import chain
 
 from datapipeline.artifacts.schedule import Schedule
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.transforms.utils import (
+    adjacent_partitions,
     clone_record,
-    partition_key,
     set_record_domain_anchor,
 )
 from datapipeline.utils.time import parse_timecode
@@ -24,10 +24,7 @@ class EnsureCadenceTransform:
         self.step = parse_timecode(cadence)
 
     def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
-        for _, records in groupby(
-            stream,
-            key=lambda record: partition_key(record, self.partition_fields),
-        ):
+        for _, records in adjacent_partitions(stream, self.partition_fields):
             previous: TemporalRecord | None = None
             for record in records:
                 if previous is not None:
@@ -63,10 +60,7 @@ class EnsureScheduleTransform:
     def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
         partition_fields = self.partition_fields
 
-        for key, records in groupby(
-            stream,
-            key=lambda record: partition_key(record, partition_fields),
-        ):
+        for key, records in adjacent_partitions(stream, partition_fields):
             source = iter(records)
             first = next(source, None)
             if first is None:
