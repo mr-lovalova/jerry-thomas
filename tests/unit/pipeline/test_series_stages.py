@@ -9,7 +9,6 @@ from datapipeline.config.dataset.series import SequenceConfig, SeriesConfig
 from datapipeline.domain.series import SeriesRecord
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.domain.sample_key import SampleKeyContract
-from datapipeline.execution.context import PipelineContext
 from datapipeline.pipelines.series.stages import (
     SeriesSequencer,
     project_series,
@@ -33,10 +32,10 @@ def _identity(records):
     return records
 
 
-def _context(
+def _runtime(
     tmp_path,
     partition_by: tuple[str, ...] = (),
-) -> PipelineContext:
+) -> Runtime:
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
@@ -50,7 +49,7 @@ def _context(
         partition_by=partition_by,
         presorted=False,
     )
-    return PipelineContext(runtime)
+    return runtime
 
 
 def _series_record(
@@ -70,7 +69,7 @@ def _series_record(
 
 def test_series_stages_sequence_without_scaling(tmp_path) -> None:
     stages = build_series_stages(
-        _context(tmp_path),
+        _runtime(tmp_path),
         SeriesConfig(
             stream="stream",
             id="x",
@@ -89,7 +88,7 @@ def test_series_stages_sequence_without_scaling(tmp_path) -> None:
 
 def test_series_stages_omit_disabled_stages(tmp_path) -> None:
     stages = build_series_stages(
-        _context(tmp_path),
+        _runtime(tmp_path),
         SeriesConfig(stream="stream", id="x", field="value"),
     )
 
@@ -98,7 +97,7 @@ def test_series_stages_omit_disabled_stages(tmp_path) -> None:
 
 def test_partitioned_series_stages_include_ordering(tmp_path) -> None:
     stages = build_series_stages(
-        _context(tmp_path, partition_by=("symbol",)),
+        _runtime(tmp_path, partition_by=("symbol",)),
         SeriesConfig(stream="stream", id="x", field="value"),
         sample_keys=("symbol",),
         group_by_cadence="1h",

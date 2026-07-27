@@ -2,7 +2,6 @@ from datetime import timedelta
 from math import log, log1p
 
 from datapipeline.domain.record import TemporalRecord
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.events import PipelineEvent, PipelineStarted
 from datapipeline.pipelines.stream.pipeline import (
     build_stream_pipeline,
@@ -151,7 +150,7 @@ transforms:
 
     assert isinstance(derived, DerivedRuntimeStream)
     assert derived.partition_by == ("ticker",)
-    records = list(run_stream_pipeline(PipelineContext(runtime), "filtered"))
+    records = list(run_stream_pipeline(runtime, "filtered"))
     assert [(record.time.day, record.ticker, record.value) for record in records] == [
         (2, "A", 2)
     ]
@@ -250,7 +249,7 @@ transforms:
     assert enriched.partition_by == ("station",)
     assert len(enriched.transforms) == 5
 
-    records = list(run_stream_pipeline(PipelineContext(runtime), "enriched"))
+    records = list(run_stream_pipeline(runtime, "enriched"))
     assert [
         (
             record.station,
@@ -385,13 +384,12 @@ combine:
     assert factor_adjusted.max_age == timedelta(days=2)
     assert factor_adjusted.require_match is True
 
-    context = PipelineContext(runtime)
     reported_canonical = list(
-        run_stream_preview_pipeline(context, "reported", "canonical")
+        run_stream_preview_pipeline(runtime, "reported", "canonical")
     )
     assert [record.report for record in reported_canonical] == [100, 400, 1000, None]
 
-    reported_records = list(run_stream_pipeline(context, "reported"))
+    reported_records = list(run_stream_pipeline(runtime, "reported"))
     assert [
         (record.ticker, record.time.day, record.price, record.report, record.doubled)
         for record in reported_records
@@ -403,7 +401,7 @@ combine:
     ]
 
     factor_records = list(
-        run_stream_preview_pipeline(context, "factor_adjusted", "canonical")
+        run_stream_preview_pipeline(runtime, "factor_adjusted", "canonical")
     )
     assert [
         (record.ticker, record.time.day, record.price, record.factor)
@@ -494,26 +492,25 @@ combine:
     )
 
     runtime = compile_runtime(load_project_definition(project_yaml))
-    context = PipelineContext(runtime)
-    pipeline = build_stream_pipeline(context, "combined")
+    pipeline = build_stream_pipeline(runtime, "combined")
     assert pipeline.name == "stream:combined"
     assert pipeline.input.name == "align_inputs"
     assert [stage.name for stage in pipeline.stages] == ["combine_records"]
     assert pipeline.input.progress is None
     assert [stage.progress is not None for stage in pipeline.stages] == [False]
-    input_rows = list(run_stream_preview_pipeline(context, "combined", "input"))
+    input_rows = list(run_stream_preview_pipeline(runtime, "combined", "input"))
     assert [[record.value for record in row] for row in input_rows] == [
         [1, 10],
         [2, 20],
     ]
-    canonical = list(run_stream_preview_pipeline(context, "combined", "canonical"))
+    canonical = list(run_stream_preview_pipeline(runtime, "combined", "canonical"))
     assert [record.value for record in canonical] == [115, 225]
 
     observer = _PipelineObserver()
     runtime.pipeline_observer = observer
 
     assert runtime.streams["combined"].partition_by == ("ticker",)
-    records = list(run_stream_pipeline(PipelineContext(runtime), "combined"))
+    records = list(run_stream_pipeline(runtime, "combined"))
     assert [(record.time.day, record.ticker, record.value) for record in records] == [
         (1, "A", 115),
         (2, "A", 225),

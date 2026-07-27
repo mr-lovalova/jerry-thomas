@@ -8,7 +8,6 @@ from datapipeline.artifacts.models import (
 )
 from datapipeline.artifacts.registry import COVERAGE_STATS_SPEC
 from datapipeline.config.tasks.coverage import CoverageTask
-from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.persistence import RuntimeOutput
 from datapipeline.runtime import Runtime
 
@@ -97,7 +96,7 @@ def run_coverage_operation(
     task: CoverageTask,
 ) -> RuntimeOutput:
     options = task.options
-    coverage_stats = PipelineContext(runtime).require_artifact(COVERAGE_STATS_SPEC)
+    coverage_stats = runtime.artifacts.load(COVERAGE_STATS_SPEC)
     return RuntimeOutput(
         payload={
             "report": "coverage",

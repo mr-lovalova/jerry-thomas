@@ -1,11 +1,10 @@
 import threading
 import time
-from collections.abc import Generator, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from contextvars import copy_context
 from dataclasses import dataclass
 from typing import Any
 
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.events import (
     NodeFinished,
     NodeProgress,
@@ -20,6 +19,7 @@ from datapipeline.execution.events import (
 from datapipeline.execution.observer import PipelineObserver, ignore_pipeline_event
 from datapipeline.execution.pipeline import Input, Pipeline, ProgressReader, Stage
 from datapipeline.execution.settings import resolve_heartbeat_interval_seconds
+from datapipeline.runtime import Runtime
 
 
 _LIVE_PROGRESS_INTERVAL_SECONDS = 0.1
@@ -175,23 +175,22 @@ def _error_message(exc: BaseException) -> str | None:
 
 
 def run_pipeline(
-    context: PipelineContext,
+    runtime: Runtime,
     pipeline: Pipeline,
     *,
     observer: PipelineObserver | None = None,
-) -> Generator[Any, None, None]:
+) -> Iterator[Any]:
     """Run a pipeline input followed by its ordered stages."""
 
-    active_observer = observer if observer is not None else context.pipeline_observer
+    active_observer = observer if observer is not None else runtime.pipeline_observer
     if active_observer is None or active_observer is _NOOP_OBSERVER:
-        yield from _run_unobserved(pipeline)
-        return
+        return _run_unobserved(pipeline)
 
-    yield from _run_observed(
-        context,
+    return _run_observed(
         pipeline,
         active_observer,
-        observe_nodes=observer is not None or context.observe_node_events,
+        observe_nodes=observer is not None or runtime.observe_node_events,
+        heartbeat_interval_seconds=runtime.heartbeat_interval_seconds,
     )
 
 
@@ -206,10 +205,10 @@ def _run_unobserved(
 
 
 def _run_observed(
-    context: PipelineContext,
     pipeline: Pipeline,
     observer: PipelineObserver,
     observe_nodes: bool,
+    heartbeat_interval_seconds: float | None,
 ) -> Iterator[Any]:
     start_time = time.perf_counter()
     status: RunStatus = "success"
@@ -219,7 +218,7 @@ def _run_observed(
     iterator: Iterator[Any] = iter(())
     started = False
     heartbeat_interval = resolve_heartbeat_interval_seconds(
-        context.heartbeat_interval_seconds
+        heartbeat_interval_seconds
     )
     progress = _RunProgress(
         observer,

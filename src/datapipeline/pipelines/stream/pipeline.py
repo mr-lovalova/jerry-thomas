@@ -1,4 +1,4 @@
-from collections.abc import Generator, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -9,7 +9,6 @@ from datapipeline.alignment.broadcast import broadcast_stream
 from datapipeline.alignment.broadcast_as_of import broadcast_as_of_stream
 from datapipeline.alignment.engine import align_streams
 from datapipeline.config.preview import RecordPreviewStage
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.observer import ignore_pipeline_event
 from datapipeline.execution.pipeline import Input, Pipeline, Stage
 from datapipeline.execution.runner import run_pipeline
@@ -26,6 +25,7 @@ from datapipeline.runtime import (
     CombinedRuntimeStream,
     DerivedRuntimeStream,
     RecordStage,
+    Runtime,
     SourceRuntimeStream,
     require_runtime_stream,
 )
@@ -34,24 +34,24 @@ from datapipeline.transforms.utils import set_record_domain_anchor
 
 
 def run_stream_pipeline(
-    context: PipelineContext,
+    runtime: Runtime,
     stream_id: str,
-) -> Generator[Any, None, None]:
-    return run_pipeline(context, build_stream_pipeline(context, stream_id))
+) -> Iterator[Any]:
+    return run_pipeline(runtime, build_stream_pipeline(runtime, stream_id))
 
 
 def run_stream_preview_pipeline(
-    context: PipelineContext,
+    runtime: Runtime,
     stream_id: str,
     preview: RecordPreviewStage,
-) -> Generator[Any, None, None]:
-    pipeline = build_stream_pipeline(context, stream_id)
-    stream = require_runtime_stream(context.runtime, stream_id)
+) -> Iterator[Any]:
+    pipeline = build_stream_pipeline(runtime, stream_id)
+    stream = require_runtime_stream(runtime, stream_id)
     if preview in {"input", "canonical"} and isinstance(
         stream,
         DerivedRuntimeStream,
     ):
-        upstream = build_stream_pipeline(context, stream.input_stream)
+        upstream = build_stream_pipeline(runtime, stream.input_stream)
         pipeline = pipeline.through_stage_count(len(upstream.stages))
     elif preview == "input":
         pipeline = pipeline.input_only()
@@ -62,14 +62,14 @@ def run_stream_preview_pipeline(
             else "map_records"
         )
         pipeline = pipeline.through_stage_named(stage_name)
-    return run_pipeline(context, pipeline)
+    return run_pipeline(runtime, pipeline)
 
 
 def build_stream_pipeline(
-    context: PipelineContext,
+    runtime: Runtime,
     stream_id: str,
 ) -> Pipeline:
-    stream = require_runtime_stream(context.runtime, stream_id)
+    stream = require_runtime_stream(runtime, stream_id)
     if isinstance(stream, SourceRuntimeStream):
         return Pipeline(
             name=f"stream:{stream_id}",
@@ -78,11 +78,11 @@ def build_stream_pipeline(
                 open=stream.source.stream,
                 progress=source_progress(stream.source),
             ),
-            stages=_source_stages(context, stream),
+            stages=_source_stages(runtime, stream),
             summary=source_summary(stream.source),
         )
     if isinstance(stream, DerivedRuntimeStream):
-        upstream = build_stream_pipeline(context, stream.input_stream)
+        upstream = build_stream_pipeline(runtime, stream.input_stream)
         return Pipeline(
             name=f"stream:{stream_id}",
             input=replace(
@@ -95,7 +95,7 @@ def build_stream_pipeline(
                     for stage in upstream.stages
                 ),
                 *build_transform_stages(
-                    context,
+                    runtime,
                     stream.transforms,
                     stream.partition_by,
                 ),
@@ -109,13 +109,13 @@ def build_stream_pipeline(
                 name="broadcast_inputs",
                 open=partial(
                     _broadcast_inputs,
-                    context,
+                    runtime,
                     stream.input_stream,
                     stream.broadcast_stream,
                     stream.partition_by,
                 ),
             ),
-            stages=_combined_stages(context, stream),
+            stages=_combined_stages(runtime, stream),
             summary=(
                 f"primary={stream.input_stream},broadcast={stream.broadcast_stream}"
             ),
@@ -127,7 +127,7 @@ def build_stream_pipeline(
                 name="as_of_inputs",
                 open=partial(
                     _as_of_inputs,
-                    context,
+                    runtime,
                     stream.input_stream,
                     stream.lookup_stream,
                     stream.partition_by,
@@ -135,7 +135,7 @@ def build_stream_pipeline(
                     stream.require_match,
                 ),
             ),
-            stages=_combined_stages(context, stream),
+            stages=_combined_stages(runtime, stream),
             summary=f"primary={stream.input_stream},as_of={stream.lookup_stream}",
         )
     if isinstance(stream, BroadcastAsOfRuntimeStream):
@@ -145,7 +145,7 @@ def build_stream_pipeline(
                 name="broadcast_as_of_inputs",
                 open=partial(
                     _broadcast_as_of_inputs,
-                    context,
+                    runtime,
                     stream.input_stream,
                     stream.lookup_stream,
                     stream.partition_by,
@@ -153,7 +153,7 @@ def build_stream_pipeline(
                     stream.require_match,
                 ),
             ),
-            stages=_combined_stages(context, stream),
+            stages=_combined_stages(runtime, stream),
             summary=(
                 f"primary={stream.input_stream},broadcast_as_of={stream.lookup_stream}"
             ),
@@ -165,19 +165,19 @@ def build_stream_pipeline(
                 name="align_inputs",
                 open=partial(
                     _align_inputs,
-                    context,
+                    runtime,
                     stream.inputs,
                     stream.partition_by,
                 ),
             ),
-            stages=_combined_stages(context, stream),
+            stages=_combined_stages(runtime, stream),
             summary="inputs=" + ",".join(stream.inputs),
         )
     raise TypeError(f"Unsupported runtime stream: {type(stream).__name__}")
 
 
 def _source_stages(
-    context: PipelineContext,
+    runtime: Runtime,
     stream: SourceRuntimeStream,
 ) -> tuple[Stage, ...]:
     return (
@@ -189,10 +189,10 @@ def _source_stages(
         build_record_order_stage(
             stream.partition_by,
             stream.presorted,
-            context.runtime.execution.sort_buffer_bytes,
+            runtime.execution.sort_buffer_bytes,
         ),
         *build_transform_stages(
-            context,
+            runtime,
             stream.transforms,
             stream.partition_by,
         ),
@@ -200,13 +200,13 @@ def _source_stages(
 
 
 def _combined_stages(
-    context: PipelineContext,
+    runtime: Runtime,
     stream: CombinedRuntimeStream,
 ) -> tuple[Stage, ...]:
     return (
         Stage(name="combine_records", apply=stream.combine),
         *build_transform_stages(
-            context,
+            runtime,
             stream.transforms,
             stream.partition_by,
         ),
@@ -258,14 +258,14 @@ def _map_records(mapper: RecordStage, records: Iterator[Any]) -> Iterator[Any]:
 
 
 def _align_inputs(
-    context: PipelineContext,
+    runtime: Runtime,
     input_streams: tuple[str, ...],
     partition_by: tuple[str, ...],
 ) -> Iterator[tuple[Any, ...]]:
     inputs = [
         (
             stream_id,
-            _run_internal_stream(context, stream_id),
+            _run_internal_stream(runtime, stream_id),
         )
         for stream_id in input_streams
     ]
@@ -273,26 +273,26 @@ def _align_inputs(
 
 
 def _broadcast_inputs(
-    context: PipelineContext,
+    runtime: Runtime,
     input_stream: str,
     broadcast_input: str,
     partition_by: tuple[str, ...],
 ) -> Iterator[tuple[Any, Any]]:
-    primary = _run_internal_stream(context, input_stream)
-    broadcast = _run_internal_stream(context, broadcast_input)
+    primary = _run_internal_stream(runtime, input_stream)
+    broadcast = _run_internal_stream(runtime, broadcast_input)
     yield from broadcast_stream(primary, broadcast, partition_by)
 
 
 def _as_of_inputs(
-    context: PipelineContext,
+    runtime: Runtime,
     input_stream: str,
     lookup_stream: str,
     partition_by: tuple[str, ...],
     max_age: timedelta | None,
     require_match: bool,
 ) -> Iterator[tuple[Any, Any | None]]:
-    primary = _run_internal_stream(context, input_stream)
-    lookup = _run_internal_stream(context, lookup_stream)
+    primary = _run_internal_stream(runtime, input_stream)
+    lookup = _run_internal_stream(runtime, lookup_stream)
     yield from as_of_stream(
         primary,
         lookup,
@@ -303,15 +303,15 @@ def _as_of_inputs(
 
 
 def _broadcast_as_of_inputs(
-    context: PipelineContext,
+    runtime: Runtime,
     input_stream: str,
     lookup_stream: str,
     partition_by: tuple[str, ...],
     max_age: timedelta | None,
     require_match: bool,
 ) -> Iterator[tuple[Any, Any | None]]:
-    primary = _run_internal_stream(context, input_stream)
-    lookup = _run_internal_stream(context, lookup_stream)
+    primary = _run_internal_stream(runtime, input_stream)
+    lookup = _run_internal_stream(runtime, lookup_stream)
     yield from broadcast_as_of_stream(
         primary,
         lookup,
@@ -322,11 +322,11 @@ def _broadcast_as_of_inputs(
 
 
 def _run_internal_stream(
-    context: PipelineContext,
+    runtime: Runtime,
     stream_id: str,
-) -> Generator[Any, None, None]:
+) -> Iterator[Any]:
     return run_pipeline(
-        context,
-        build_stream_pipeline(context, stream_id),
+        runtime,
+        build_stream_pipeline(runtime, stream_id),
         observer=ignore_pipeline_event,
     )

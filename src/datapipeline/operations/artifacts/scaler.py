@@ -15,7 +15,6 @@ from datapipeline.config.dataset.split import DatasetFold, TimeSplitConfig
 from datapipeline.config.tasks.scaler import ScalerTask
 from datapipeline.domain.series import SeriesRecord
 from datapipeline.domain.sample_key import SampleKeyContract
-from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.dataset.split import TargetHorizonPolicy, build_labeler
 from datapipeline.pipelines.series.projector import SeriesProjector
@@ -227,7 +226,6 @@ def _iter_scaler_inputs(
     runtime: Runtime,
     configs: Sequence[SeriesConfig],
 ) -> Iterator[_ScalerInput]:
-    context = PipelineContext(runtime)
     cadence_step = parse_cadence(runtime.dataset.sample.cadence)
     sample_key_contract = SampleKeyContract(runtime.dataset.sample.keys)
     configs_by_stream: dict[str, list[SeriesConfig]] = defaultdict(list)
@@ -240,7 +238,7 @@ def _iter_scaler_inputs(
             runtime_stream.partition_by,
             sample_key_contract,
         )
-        records = run_stream_pipeline(context, stream_id)
+        records = run_stream_pipeline(runtime, stream_id)
         try:
             for record in records:
                 series_records = tuple(projector.project(record, stream_configs))

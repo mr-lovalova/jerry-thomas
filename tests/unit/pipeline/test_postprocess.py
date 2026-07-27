@@ -7,7 +7,6 @@ from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.postprocess import PostprocessConfig
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.context import PipelineContext
 from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.dataset.pipeline import build_dataset_pipeline
 from datapipeline.runtime import Runtime
@@ -46,7 +45,7 @@ def _runtime(
 
 
 def _catalog(runtime: Runtime) -> VectorMetadataCatalog:
-    return PipelineContext(runtime).require_artifact(VECTOR_METADATA_SPEC).catalog
+    return runtime.artifacts.load(VECTOR_METADATA_SPEC).catalog
 
 
 def test_dataset_pipeline_assembles_before_postprocess(tmp_path) -> None:
@@ -68,7 +67,7 @@ def test_dataset_pipeline_assembles_before_postprocess(tmp_path) -> None:
     )
 
     pipeline = build_dataset_pipeline(
-        PipelineContext(runtime),
+        runtime,
         _catalog(runtime),
         None,
     )
@@ -239,7 +238,6 @@ def test_metadata_coverage_counts_never_change_the_dataset_schema(
             "targets": [],
         },
     )
-    context = PipelineContext(runtime)
     sample = Sample(
         key=(0,),
         features=Vector(values={"sparse": 1.0, "complete": 2.0}),
@@ -255,5 +253,5 @@ def test_metadata_coverage_counts_never_change_the_dataset_schema(
     assert output[0].features.values == {"sparse": 1.0, "complete": 2.0}
     assert [
         entry.id
-        for entry in context.require_artifact(VECTOR_METADATA_SPEC).catalog.features
+        for entry in runtime.artifacts.load(VECTOR_METADATA_SPEC).catalog.features
     ] == ["sparse", "complete"]

@@ -18,7 +18,6 @@ from datapipeline.artifacts.specs import dataset_requires_scaler
 from datapipeline.config.dataset.split import resolve_fold_output
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.pipeline import Pipeline, Stage
 from datapipeline.execution.runner import run_pipeline
 from datapipeline.pipelines.dataset.postprocess import (
@@ -33,6 +32,7 @@ from datapipeline.pipelines.sample.keys import (
     metadata_key_plan,
 )
 from datapipeline.transforms.vector.scaler import SampleScaler
+from datapipeline.runtime import Runtime
 
 _FOLD_BATCH_SIZE = 256
 
@@ -45,14 +45,14 @@ class FoldOutputPlan:
 
 
 def resolve_fold_output_plans(
-    context: PipelineContext,
+    runtime: Runtime,
     output_ids: Sequence[str],
 ) -> tuple[FoldOutputPlan, ...]:
-    split = context.runtime.dataset.split
+    split = runtime.dataset.split
     if split is None:
         raise ValueError("Fold outputs require dataset split configuration.")
 
-    metadata = context.require_artifact(VECTOR_METADATA_SPEC)
+    metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     if not isinstance(metadata.layout, FoldedMetadataLayout):
         raise RuntimeError(
             "Split dataset requires folded metadata. Rebuild build/metadata.json."
@@ -144,14 +144,14 @@ def _select_vector(vector: Vector, selected_ids: frozenset[str]) -> Vector:
 
 
 def run_dataset_pipeline(
-    context: PipelineContext,
+    runtime: Runtime,
     schema: VectorSchema,
     key_plan: RectangularKeyPlan | None,
-) -> Generator[Sample, None, None]:
+) -> Iterator[Sample]:
     return run_pipeline(
-        context,
+        runtime,
         build_dataset_pipeline(
-            context,
+            runtime,
             schema,
             key_plan,
         ),
@@ -159,22 +159,22 @@ def run_dataset_pipeline(
 
 
 def run_sample_pipeline(
-    context: PipelineContext,
+    runtime: Runtime,
     schema: VectorSchema,
     key_plan: RectangularKeyPlan | None,
-) -> Generator[Sample, None, None]:
-    return run_pipeline(context, build_sample_pipeline(context, schema, key_plan))
+) -> Iterator[Sample]:
+    return run_pipeline(runtime, build_sample_pipeline(runtime, schema, key_plan))
 
 
 def build_sample_pipeline(
-    context: PipelineContext,
+    runtime: Runtime,
     schema: VectorSchema,
     key_plan: RectangularKeyPlan | None,
 ) -> Pipeline:
     return Pipeline(
         name="dataset",
         input=build_sample_input(
-            context,
+            runtime,
             tuple(entry.id for entry in schema.features),
             tuple(entry.id for entry in schema.targets),
             key_plan,
@@ -183,13 +183,13 @@ def build_sample_pipeline(
 
 
 def build_dataset_pipeline(
-    context: PipelineContext,
+    runtime: Runtime,
     schema: VectorSchema,
     key_plan: RectangularKeyPlan | None,
 ) -> Pipeline:
-    pipeline = build_sample_pipeline(context, schema, key_plan)
+    pipeline = build_sample_pipeline(runtime, schema, key_plan)
     postprocess = build_postprocess_plan(
-        context.runtime.dataset.postprocess,
+        runtime.dataset.postprocess,
         schema,
     )
     return replace(
@@ -199,19 +199,19 @@ def build_dataset_pipeline(
 
 
 def run_scaled_dataset_pipeline(
-    context: PipelineContext,
+    runtime: Runtime,
     schema: VectorSchema,
     key_plan: RectangularKeyPlan | None,
-) -> Generator[Sample, None, None]:
-    artifact = context.require_artifact(SCALER_SPEC)
+) -> Iterator[Sample]:
+    artifact = runtime.artifacts.load(SCALER_SPEC)
     if not isinstance(artifact, StandardScalerArtifact):
         raise RuntimeError(
             "A dataset without folds requires a standard scaler artifact."
         )
-    scaler = _sample_scaler(context, artifact)
-    pipeline = build_dataset_pipeline(context, schema, key_plan)
+    scaler = _sample_scaler(runtime, artifact)
+    pipeline = build_dataset_pipeline(runtime, schema, key_plan)
     return run_pipeline(
-        context,
+        runtime,
         replace(
             pipeline,
             stages=(
@@ -223,11 +223,11 @@ def run_scaled_dataset_pipeline(
 
 
 def run_fold_dataset_pipeline(
-    context: PipelineContext,
+    runtime: Runtime,
     output: FoldOutputPlan,
 ) -> Generator[Sample, None, None]:
     routed = run_fold_outputs_pipeline(
-        context,
+        runtime,
         (output,),
     )
     try:
@@ -240,10 +240,10 @@ def run_fold_dataset_pipeline(
 
 
 def run_fold_outputs_pipeline(
-    context: PipelineContext,
+    runtime: Runtime,
     outputs: Sequence[FoldOutputPlan],
 ) -> Iterator[tuple[str, Sample]]:
-    dataset = context.runtime.dataset
+    dataset = runtime.dataset
     split = dataset.split
     if split is None:
         raise ValueError("Fold dataset output requires dataset split configuration.")
@@ -253,7 +253,7 @@ def run_fold_outputs_pipeline(
 
     scaler_artifact: FoldedScalerArtifact | None = None
     if dataset_requires_scaler(dataset):
-        artifact = context.require_artifact(SCALER_SPEC)
+        artifact = runtime.artifacts.load(SCALER_SPEC)
         if not isinstance(artifact, FoldedScalerArtifact):
             raise RuntimeError("A split dataset requires a folded scaler artifact.")
         scaler_artifact = artifact
@@ -297,17 +297,17 @@ def run_fold_outputs_pipeline(
             scaler=(
                 None
                 if scaler_artifact is None
-                else _sample_scaler(context, scaler_artifact.for_fold(plan.fold_id))
+                else _sample_scaler(runtime, scaler_artifact.for_fold(plan.fold_id))
             ),
         )
         for plan, key_plans in zip(plans, route_key_plans, strict=True)
     )
     return run_pipeline(
-        context,
+        runtime,
         Pipeline(
             name="dataset",
             input=build_sample_input(
-                context,
+                runtime,
                 {entry.id for plan in plans for entry in plan.schema.features},
                 {entry.id for plan in plans for entry in plan.schema.targets},
                 merge_rectangular_key_plans(selected_key_plans),
@@ -346,10 +346,10 @@ def _prepare_fold_outputs(
 
 
 def _sample_scaler(
-    context: PipelineContext,
+    runtime: Runtime,
     artifact: StandardScalerArtifact,
 ) -> SampleScaler:
-    dataset = context.runtime.dataset
+    dataset = runtime.dataset
     return SampleScaler(
         artifact,
         scaled_feature_ids=tuple(

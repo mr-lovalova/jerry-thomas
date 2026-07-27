@@ -80,22 +80,14 @@ def _metadata() -> VectorMetadata:
     )
 
 
-class _CoverageContext:
-    def __init__(self, runtime):
-        self.runtime = runtime
-
-    def require_artifact(self, spec):
-        assert spec.key == COVERAGE_STATS
-        return _coverage_stats()
+def _load_coverage_stats(spec):
+    assert spec.key == COVERAGE_STATS
+    return _coverage_stats()
 
 
-class _MatrixContext:
-    def __init__(self, runtime):
-        self.runtime = runtime
-
-    def require_artifact(self, spec):
-        assert spec.key == VECTOR_METADATA
-        return _metadata()
+def _load_metadata(spec):
+    assert spec.key == VECTOR_METADATA
+    return _metadata()
 
 
 def _matrix_runtime():
@@ -103,12 +95,12 @@ def _matrix_runtime():
         dataset=DatasetConfig(
             sample=SampleConfig(cadence="1h"),
             features=[SeriesConfig(id="speed", stream="stream", field="value")],
-        )
+        ),
+        artifacts=SimpleNamespace(load=_load_metadata),
     )
 
 
 def _patch_matrix(monkeypatch) -> None:
-    monkeypatch.setattr(matrix_ops, "PipelineContext", _MatrixContext)
     monkeypatch.setattr(
         matrix_ops,
         "open_samples",
@@ -135,11 +127,12 @@ def test_inspect_coverage_reads_typed_coverage_stats_artifact(
     monkeypatch,
     tmp_path,
 ) -> None:
-    monkeypatch.setattr(coverage_ops, "PipelineContext", _CoverageContext)
     destination = (tmp_path / "coverage.txt").resolve()
 
     result = coverage_ops.run_coverage_operation(
-        runtime=SimpleNamespace(),
+        runtime=SimpleNamespace(
+            artifacts=SimpleNamespace(load=_load_coverage_stats)
+        ),
         task=CoverageTask(id="coverage", options={"threshold": 0.8}),
     )
     _persist_result(
@@ -161,11 +154,12 @@ def test_inspect_coverage_reads_typed_coverage_stats_artifact(
 
 
 def test_inspect_coverage_writes_one_json_report(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(coverage_ops, "PipelineContext", _CoverageContext)
     destination = (tmp_path / "coverage.jsonl").resolve()
 
     result = coverage_ops.run_coverage_operation(
-        runtime=SimpleNamespace(),
+        runtime=SimpleNamespace(
+            artifacts=SimpleNamespace(load=_load_coverage_stats)
+        ),
         task=CoverageTask(id="coverage"),
     )
     _persist_result(

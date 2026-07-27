@@ -45,10 +45,15 @@ def _runtime(streams=None):
         pipeline_observer=None,
         observe_node_events=True,
         heartbeat_interval_seconds=None,
-        output_ids=(),
         streams=streams or {},
     )
     runtime.dataset = _dataset()
+
+    def load_artifact(spec):
+        assert spec.key == "metadata"
+        return _metadata(split=runtime.dataset.split is not None)
+
+    runtime.artifacts = SimpleNamespace(load=load_artifact)
     return runtime
 
 
@@ -109,18 +114,6 @@ def _metadata(split: bool = False) -> VectorMetadata:
         schema_version=4,
         catalog=catalog,
         layout=layout,
-    )
-
-
-@pytest.fixture(autouse=True)
-def _register_metadata(monkeypatch) -> None:
-    def require_artifact(context, spec):
-        assert spec.key == "metadata"
-        return _metadata(split=context.runtime.dataset.split is not None)
-
-    monkeypatch.setattr(
-        "datapipeline.execution.context.PipelineContext.require_artifact",
-        require_artifact,
     )
 
 
@@ -200,10 +193,12 @@ def _serve(
     dataset,
     target,
     preview: PreviewStage | None,
+    output_ids: tuple[str, ...] = (),
 ):
     runtime.dataset = dataset
     return run_dataset_operation(
         runtime=runtime,
+        output_ids=output_ids,
         limit=None,
         target=target,
         throttle_ms=None,
@@ -230,6 +225,7 @@ def test_dataset_operation_reraises_keyboard_interrupt_and_marks_run_failed(
 
     result = run_dataset_operation(
         runtime=runtime,
+        output_ids=(),
         limit=None,
         target=target,
         throttle_ms=None,
@@ -267,12 +263,7 @@ def test_dataset_operation_returns_parquet_dataset_output(monkeypatch, tmp_path)
 
 
 def test_dataset_operation_returns_split_fanout_output(monkeypatch, tmp_path):
-    runtime = SimpleNamespace(
-        pipeline_observer=None,
-        observe_node_events=True,
-        heartbeat_interval_seconds=None,
-        output_ids=("holdout.train", "holdout.validation"),
-    )
+    runtime = _runtime()
     dataset = _dataset(
         split=TimeSplitConfig(
             intervals=[
@@ -305,7 +296,13 @@ def test_dataset_operation_returns_split_fanout_output(monkeypatch, tmp_path):
         ),
     )
 
-    result = _serve(runtime, dataset, target, preview=None)
+    result = _serve(
+        runtime,
+        dataset,
+        target,
+        preview=None,
+        output_ids=("holdout.train", "holdout.validation"),
+    )
 
     assert len(result.outputs) == 1
     output = result.outputs[0]
@@ -325,12 +322,7 @@ def test_dataset_operation_returns_split_fanout_output(monkeypatch, tmp_path):
 
 
 def test_dataset_operation_returns_parquet_split_outputs(monkeypatch, tmp_path):
-    runtime = SimpleNamespace(
-        pipeline_observer=None,
-        observe_node_events=True,
-        heartbeat_interval_seconds=None,
-        output_ids=("holdout.train", "holdout.validation"),
-    )
+    runtime = _runtime()
     dataset = _dataset(
         split=TimeSplitConfig(
             intervals=[
@@ -361,6 +353,7 @@ def test_dataset_operation_returns_parquet_split_outputs(monkeypatch, tmp_path):
         dataset,
         _parquet_target(tmp_path / "dataset.parquet"),
         preview=None,
+        output_ids=("holdout.train", "holdout.validation"),
     )
 
     output = result.outputs[0]
@@ -461,7 +454,7 @@ def test_parquet_preview_rejects_non_dataset_stage_before_opening_stream(
 def test_record_previews_use_stream_preview_pipeline(monkeypatch, preview, expected):
     captured = {}
 
-    def run_preview(context, stream_id, selected_preview):
+    def run_preview(runtime, stream_id, selected_preview):
         captured["stream_id"] = stream_id
         captured["preview"] = selected_preview
         return iter((expected,))

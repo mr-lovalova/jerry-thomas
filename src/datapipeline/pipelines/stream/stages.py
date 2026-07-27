@@ -30,8 +30,8 @@ from datapipeline.config.transforms import (
     TransformConfig,
     WhereConfig,
 )
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.pipeline import Stage, StageOp
+from datapipeline.runtime import Runtime
 from datapipeline.transforms.stream.dedupe import DedupeTransform
 from datapipeline.transforms.stream.derive import DeriveTransform
 from datapipeline.transforms.stream.fill import (
@@ -91,7 +91,7 @@ def build_preprocess_stages(
 
 
 def build_transform_stages(
-    context: PipelineContext,
+    runtime: Runtime,
     operations: Sequence[TransformConfig],
     partition_by: tuple[str, ...],
 ) -> tuple[Stage, ...]:
@@ -143,7 +143,7 @@ def build_transform_stages(
         elif isinstance(operation, EnsureScheduleConfig):
             stage_op = partial(
                 apply_schedule,
-                context,
+                runtime,
                 operation,
                 partition_by,
             )
@@ -217,16 +217,16 @@ def build_transform_stages(
 
 
 def apply_schedule(
-    context: PipelineContext,
+    runtime: Runtime,
     operation: EnsureScheduleConfig,
     partition_fields: tuple[str, ...],
     records: Iterator[Any],
 ) -> Iterator[Any]:
     partition_by = schedule_partition_by_from_metadata(
         operation.schedule,
-        context.artifact_metadata(operation.schedule),
+        runtime.artifacts.require(operation.schedule).meta,
     )
-    schedule = context.require_artifact(
+    schedule = runtime.artifacts.load(
         ArtifactSpec[Schedule](
             key=operation.schedule,
             loader=partial(read_schedule, partition_by=partition_by),

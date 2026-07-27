@@ -22,7 +22,6 @@ from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.domain.sample_key import SampleKeyContract
 from datapipeline.domain.series import SeriesSequence
 from datapipeline.domain.series_id import base_id
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.pipeline import Input, Pipeline, Stage
 from datapipeline.execution.runner import run_pipeline
 from datapipeline.operations.persistence import ArtifactOutput
@@ -86,7 +85,6 @@ def build_series_artifact(
     staging_root = cache_root / f".staging-{generation}"
     generation_root = cache_root / generation
     data_path = staging_root / "series.jsonl.gz"
-    context = PipelineContext(runtime)
     sample_keys = SampleKeyContract(dataset.sample.keys)
     feature_counts: Counter[str] = Counter()
     target_counts: Counter[str] = Counter()
@@ -94,7 +92,7 @@ def build_series_artifact(
     try:
         staging_root.mkdir(parents=True)
         projected = _ordered_projected_rows(
-            context,
+            runtime,
             _stream_plans(dataset.features, dataset.targets),
             sample_keys,
             parse_cadence(dataset.sample.cadence),
@@ -182,7 +180,7 @@ def _stream_plans(
 
 
 def _ordered_projected_rows(
-    context: PipelineContext,
+    runtime: Runtime,
     plans: Sequence[_StreamPlan],
     sample_keys: SampleKeyContract,
     cadence: timedelta,
@@ -194,7 +192,7 @@ def _ordered_projected_rows(
             name="project_streams",
             open=partial(
                 _project_streams,
-                context,
+                runtime,
                 plans,
                 sample_keys,
                 cadence,
@@ -205,7 +203,7 @@ def _ordered_projected_rows(
                 name="order_series",
                 apply=partial(
                     batch_sort,
-                    buffer_bytes=context.runtime.execution.sort_buffer_bytes,
+                    buffer_bytes=runtime.execution.sort_buffer_bytes,
                     key=lambda row: (row.key, row.time),
                     progress=sort_progress,
                 ),
@@ -213,26 +211,26 @@ def _ordered_projected_rows(
             ),
         ),
     )
-    return run_pipeline(context, pipeline)
+    return run_pipeline(runtime, pipeline)
 
 
 def _project_streams(
-    context: PipelineContext,
+    runtime: Runtime,
     plans: Sequence[_StreamPlan],
     sample_keys: SampleKeyContract,
     cadence: timedelta,
 ) -> Iterator[_ProjectedRow]:
     for plan in plans:
-        yield from _project_stream(context, plan, sample_keys, cadence)
+        yield from _project_stream(runtime, plan, sample_keys, cadence)
 
 
 def _project_stream(
-    context: PipelineContext,
+    runtime: Runtime,
     plan: _StreamPlan,
     sample_keys: SampleKeyContract,
     cadence: timedelta,
 ) -> Iterator[_ProjectedRow]:
-    stream = require_runtime_stream(context.runtime, plan.stream_id)
+    stream = require_runtime_stream(runtime, plan.stream_id)
     configs = (*plan.features, *plan.targets)
     feature_ids = {config.id for config in plan.features}
     projector = SeriesProjector(stream.partition_by, sample_keys)
@@ -298,7 +296,7 @@ def _project_stream(
                     targets=tuple(targets),
                 )
 
-    record_pipeline = build_stream_pipeline(context, plan.stream_id)
+    record_pipeline = build_stream_pipeline(runtime, plan.stream_id)
     pipeline = Pipeline(
         name=f"series:{plan.stream_id}",
         input=record_pipeline.input,
@@ -308,7 +306,7 @@ def _project_stream(
         ),
         summary=record_pipeline.summary,
     )
-    projected = run_pipeline(context, pipeline)
+    projected = run_pipeline(runtime, pipeline)
     try:
         yield from projected
     finally:

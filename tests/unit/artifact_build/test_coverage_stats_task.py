@@ -83,13 +83,12 @@ def _runtime(tmp_path) -> Runtime:
     )
 
 
-class _Context:
-    def __init__(self, runtime):
-        self.runtime = runtime
-
-    def require_artifact(self, spec):
+def _register_metadata(monkeypatch, runtime: Runtime) -> None:
+    def load_artifact(spec):
         assert spec.key == VECTOR_METADATA
         return _metadata()
+
+    monkeypatch.setattr(runtime.artifacts, "load", load_artifact)
 
 
 def _postprocess_plan(*stages: Stage) -> PostprocessPlan:
@@ -109,9 +108,7 @@ def test_build_coverage_stats_artifact_writes_bounded_v3_summary(
         ),
         Sample(key=(_ts(2),), features=Vector(values={}), targets=Vector(values={})),
     ]
-    monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.PipelineContext", _Context
-    )
+    _register_metadata(monkeypatch, runtime)
     monkeypatch.setattr(
         "datapipeline.operations.artifacts.coverage_stats.open_samples",
         lambda *_args, **_kwargs: iter(samples),
@@ -154,9 +151,7 @@ def test_assembled_coverage_stats_do_not_apply_postprocess(
     tmp_path,
 ) -> None:
     runtime = _runtime(tmp_path)
-    monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.PipelineContext", _Context
-    )
+    _register_metadata(monkeypatch, runtime)
     monkeypatch.setattr(
         "datapipeline.operations.artifacts.coverage_stats.open_samples",
         lambda *_args, **_kwargs: iter(()),
@@ -189,9 +184,7 @@ def test_postprocessed_coverage_stats_keep_columns_when_every_sample_is_dropped(
         targets=Vector(values={"return": None}),
     )
     drop_all = Stage(name="drop_all", apply=lambda _samples: iter(()))
-    monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.PipelineContext", _Context
-    )
+    _register_metadata(monkeypatch, runtime)
     monkeypatch.setattr(
         "datapipeline.operations.artifacts.coverage_stats.open_samples",
         lambda *_args, **_kwargs: iter((sample,)),

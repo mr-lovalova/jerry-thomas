@@ -3,7 +3,6 @@ from itertools import islice
 from datapipeline.analysis.vector.matrix import MatrixBuilder, render_matrix_html
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.config.tasks.matrix import MatrixTask
-from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.persistence import RuntimeOutput
 from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.sample.input import open_samples
@@ -18,8 +17,7 @@ def run_matrix_operation(
 ) -> RuntimeOutput:
     options = task.options
     dataset = runtime.dataset
-    context = PipelineContext(runtime)
-    metadata = context.require_artifact(VECTOR_METADATA_SPEC)
+    metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     schema = metadata.catalog
     key_plan = require_metadata_key_plan(
         schema.window,
@@ -29,7 +27,7 @@ def run_matrix_operation(
     )
 
     samples = open_samples(
-        context,
+        runtime,
         tuple(entry.id for entry in schema.features),
         dataset.sample.cadence,
         target_ids=tuple(entry.id for entry in schema.targets),

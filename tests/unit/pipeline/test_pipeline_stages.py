@@ -49,7 +49,6 @@ from datapipeline.domain.series import SeriesRecord, SeriesSequence
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.events import (
     NodeStarted,
     PipelineEvent,
@@ -400,7 +399,7 @@ def _register_price_metadata(runtime: Runtime) -> VectorMetadataCatalog:
         encoding="utf-8",
     )
     runtime.artifacts.register(VECTOR_METADATA, "metadata.json")
-    return PipelineContext(runtime).require_artifact(VECTOR_METADATA_SPEC).catalog
+    return runtime.artifacts.load(VECTOR_METADATA_SPEC).catalog
 
 
 def test_source_pipeline_carries_source_summary(tmp_path: Path) -> None:
@@ -416,7 +415,7 @@ def test_source_pipeline_carries_source_summary(tmp_path: Path) -> None:
         ),
     )
 
-    pipeline = build_stream_pipeline(PipelineContext(runtime), "prices")
+    pipeline = build_stream_pipeline(runtime, "prices")
 
     assert pipeline.name == "stream:prices"
     assert pipeline.summary == "transport=fs.file file=prices.jsonl"
@@ -450,7 +449,7 @@ def test_stream_pipeline_carries_source_summary(tmp_path: Path) -> None:
         transforms=(),
     )
 
-    pipeline = build_stream_pipeline(PipelineContext(runtime), "derived")
+    pipeline = build_stream_pipeline(runtime, "derived")
 
     assert pipeline.name == "stream:derived"
     assert pipeline.summary == (
@@ -482,16 +481,15 @@ def test_derived_stream_reuses_upstream_order_without_a_mapper(
         partition_by=("symbol",),
         transforms=(),
     )
-    context = PipelineContext(runtime)
 
-    pipeline = build_stream_pipeline(context, "derived")
+    pipeline = build_stream_pipeline(runtime, "derived")
 
     assert pipeline.input.name == "stream:stream/open_source"
     assert [stage.name for stage in pipeline.stages] == [
         "stream:stream/map_records",
         "stream:stream/ensure_record_order",
     ]
-    records = list(run_pipeline(context, pipeline))
+    records = list(run_pipeline(runtime, pipeline))
     assert [(record.symbol, record.time.hour) for record in records] == [
         ("A", 0),
         ("A", 2),
@@ -517,7 +515,7 @@ def test_derived_record_previews_use_records_before_derived_transforms(
         transforms=(EnsureCadenceConfig(cadence="1h"),),
     )
 
-    pipeline = build_stream_pipeline(PipelineContext(runtime), "derived")
+    pipeline = build_stream_pipeline(runtime, "derived")
     assert pipeline.input.name == "stream:stream/open_source"
     assert [stage.name for stage in pipeline.stages] == [
         "stream:stream/map_records",
@@ -526,7 +524,7 @@ def test_derived_record_previews_use_records_before_derived_transforms(
     ]
 
     records = run_stream_preview_pipeline(
-        PipelineContext(runtime),
+        runtime,
         "derived",
         preview,
     )
@@ -568,7 +566,7 @@ def test_aligned_pipeline_closes_inputs_after_partial_read(tmp_path: Path) -> No
         ),
     }
 
-    records = run_stream_pipeline(PipelineContext(runtime), "combined")
+    records = run_stream_pipeline(runtime, "combined")
     assert next(records).time == _ts(0)
     records.close()
 
@@ -629,9 +627,8 @@ def test_broadcast_pipeline_reuses_exact_input_across_partitions(
         ),
     }
 
-    context = PipelineContext(runtime)
-    pipeline = build_stream_pipeline(context, "enriched")
-    records = list(run_pipeline(context, pipeline))
+    pipeline = build_stream_pipeline(runtime, "enriched")
+    records = list(run_pipeline(runtime, pipeline))
 
     assert pipeline.summary == "primary=primary,broadcast=broadcast"
     assert pipeline.input.name == "broadcast_inputs"
@@ -695,7 +692,7 @@ def test_as_of_pipeline_validates_lookup_tail_after_primary_finishes(
     }
 
     with pytest.raises(ValueError, match="violates declared ordered_by"):
-        list(run_stream_pipeline(PipelineContext(runtime), "enriched"))
+        list(run_stream_pipeline(runtime, "enriched"))
 
     assert primary.closes == 1
     assert lookup.closes == 1
@@ -746,7 +743,7 @@ def test_broadcast_pipeline_closes_inputs_after_partial_read(tmp_path: Path) -> 
         ),
     }
 
-    records = run_stream_pipeline(PipelineContext(runtime), "enriched")
+    records = run_stream_pipeline(runtime, "enriched")
     assert next(records).time == _ts(0)
     records.close()
 
@@ -800,11 +797,10 @@ def test_broadcast_record_previews_preserve_stage_boundaries(tmp_path: Path) -> 
             transforms=(EnsureCadenceConfig(cadence="1h"),),
         ),
     }
-    context = PipelineContext(runtime)
 
-    input_rows = list(run_stream_preview_pipeline(context, "enriched", "input"))
-    canonical = list(run_stream_preview_pipeline(context, "enriched", "canonical"))
-    records = list(run_stream_preview_pipeline(context, "enriched", "records"))
+    input_rows = list(run_stream_preview_pipeline(runtime, "enriched", "input"))
+    canonical = list(run_stream_preview_pipeline(runtime, "enriched", "canonical"))
+    records = list(run_stream_preview_pipeline(runtime, "enriched", "records"))
 
     assert [
         (primary.time.hour, broadcast.time.hour) for primary, broadcast in input_rows
@@ -825,7 +821,7 @@ def test_source_pipeline_runs_map_then_preprocess(
         rows,
         preprocess=[FloorTimeConfig(cadence="1h")],
     )
-    ctx = PipelineContext(runtime)
+    ctx = runtime
 
     input_rows = list(run_stream_preview_pipeline(ctx, "stream", "input"))
     assert input_rows == rows
@@ -873,7 +869,7 @@ def test_source_pipeline_rejects_invalid_mapped_time(
     _set_source_mapper(runtime, map_record)
 
     with pytest.raises(error_type, match=message):
-        list(run_stream_pipeline(PipelineContext(runtime), "stream"))
+        list(run_stream_pipeline(runtime, "stream"))
 
 
 def test_source_pipeline_normalizes_aware_mapped_time_to_utc(
@@ -888,7 +884,7 @@ def test_source_pipeline_normalizes_aware_mapped_time_to_utc(
 
     _set_source_mapper(runtime, map_record)
 
-    [record] = list(run_stream_pipeline(PipelineContext(runtime), "stream"))
+    [record] = list(run_stream_pipeline(runtime, "stream"))
 
     assert record.time == datetime(2023, 12, 31, 18, 15, tzinfo=timezone.utc)
     assert record.time.tzinfo is timezone.utc
@@ -910,7 +906,7 @@ def test_source_pipeline_keeps_fall_back_instants_distinct_in_utc(
 
     _set_source_mapper(runtime, map_record)
 
-    records = list(run_stream_pipeline(PipelineContext(runtime), "stream"))
+    records = list(run_stream_pipeline(runtime, "stream"))
 
     assert [record.time for record in records] == [
         datetime(2024, 11, 3, 5, 30, tzinfo=timezone.utc),
@@ -975,7 +971,7 @@ def test_as_of_pipeline_does_not_use_future_fall_back_record(
         ),
     }
 
-    [record] = list(run_stream_pipeline(PipelineContext(runtime), "enriched"))
+    [record] = list(run_stream_pipeline(runtime, "enriched"))
 
     assert record.time == datetime(2024, 11, 3, 5, 30, tzinfo=timezone.utc)
     assert record.lookup_matched is False
@@ -1003,7 +999,7 @@ def test_source_pipeline_closes_mapper_after_partial_read(tmp_path: Path) -> Non
 
     _set_source_mapper(runtime, map_record)
 
-    records = run_stream_pipeline(PipelineContext(runtime), "stream")
+    records = run_stream_pipeline(runtime, "stream")
     next(records)
     records.close()
 
@@ -1024,7 +1020,7 @@ def test_source_pipeline_surfaces_mapper_close_errors(tmp_path: Path) -> None:
             raise RuntimeError("mapper close failed")
 
     _set_source_mapper(runtime, map_record)
-    records = run_stream_pipeline(PipelineContext(runtime), "stream")
+    records = run_stream_pipeline(runtime, "stream")
     next(records)
 
     with pytest.raises(RuntimeError, match="mapper close failed"):
@@ -1034,11 +1030,10 @@ def test_source_pipeline_surfaces_mapper_close_errors(tmp_path: Path) -> None:
 def test_pipeline_builders_expose_structure(tmp_path: Path) -> None:
     runtime = _runtime_with_rows(tmp_path, [{"time": _ts(0), "value": 1.0}])
     _register_price_metadata(runtime)
-    context = PipelineContext(runtime)
     cfg = SeriesConfig(stream="stream", id="price", field="value")
 
-    stream_pipeline = build_stream_pipeline(context, "stream")
-    series_pipeline = build_series_pipeline(context, cfg)
+    stream_pipeline = build_stream_pipeline(runtime, "stream")
+    series_pipeline = build_series_pipeline(runtime, cfg)
 
     assert stream_pipeline.input.name == "open_source"
     assert stream_pipeline.stages[0].name == "map_records"
@@ -1059,7 +1054,7 @@ def test_source_pipeline_orders_by_partition_and_time(tmp_path: Path) -> None:
         {"time": _ts(2), "value": 6.0, "symbol": "A"},
     ]
     runtime = _runtime_with_rows(tmp_path, rows, partition_by=("symbol",))
-    ctx = PipelineContext(runtime)
+    ctx = runtime
 
     ordered = list(run_pipeline(ctx, build_stream_pipeline(ctx, "stream")))
     assert [(rec.symbol, rec.time.hour) for rec in ordered] == [
@@ -1079,7 +1074,7 @@ def test_stream_pipeline_applies_stream_transforms(tmp_path: Path) -> None:
         rows,
         transforms=[EnsureCadenceConfig(cadence="1h")],
     )
-    ctx = PipelineContext(runtime)
+    ctx = runtime
 
     transformed = list(run_stream_pipeline(ctx, "stream"))
     assert [(rec.time.hour, rec.value) for rec in transformed] == [
@@ -1102,7 +1097,7 @@ def test_ensure_cadence_placeholders_do_not_copy_payload_fields(
         partition_by=("symbol",),
         transforms=[EnsureCadenceConfig(cadence="1h")],
     )
-    ctx = PipelineContext(runtime)
+    ctx = runtime
 
     placeholder = list(run_stream_pipeline(ctx, "stream"))[1]
 
@@ -1151,7 +1146,7 @@ def test_ensure_schedule_uses_stream_partition_and_caches_artifact(
         return original_read_schedule(path, partition_by)
 
     monkeypatch.setattr(stream_stages, "read_schedule", counted_read_schedule)
-    ctx = PipelineContext(runtime)
+    ctx = runtime
 
     first = list(run_stream_pipeline(ctx, "stream"))
     second = list(run_stream_pipeline(ctx, "stream"))
@@ -1176,7 +1171,7 @@ def test_series_pipeline_wraps_record_values(tmp_path: Path) -> None:
         rows,
         partition_by=("symbol",),
     )
-    ctx = PipelineContext(runtime)
+    ctx = runtime
     cfg = SeriesConfig(
         stream="stream",
         id="price",
@@ -1215,7 +1210,7 @@ def test_series_preview_keeps_collection_values_unassembled(
 
     records = list(
         run_series_pipeline(
-            PipelineContext(runtime),
+            runtime,
             config,
         )
     )
@@ -1234,7 +1229,7 @@ def test_unpartitioned_series_pipeline_preserves_time_order(tmp_path: Path) -> N
 
     records = list(
         run_series_pipeline(
-            PipelineContext(runtime),
+            runtime,
             SeriesConfig(stream="stream", id="price", field="value"),
         )
     )
@@ -1257,11 +1252,10 @@ def test_partitioned_series_pipeline_orders_across_partitions(tmp_path: Path) ->
         rows,
         partition_by=("symbol",),
     )
-    context = PipelineContext(runtime)
 
     records = list(
         run_series_pipeline(
-            context,
+            runtime,
             SeriesConfig(stream="stream", id="price", field="value"),
         )
     )
@@ -1281,7 +1275,7 @@ def test_series_pipeline_builds_sequences(tmp_path: Path) -> None:
         {"time": _ts(3), "value": 4.0},
     ]
     runtime = _runtime_with_rows(tmp_path, rows)
-    ctx = PipelineContext(runtime)
+    ctx = runtime
     cfg = SeriesConfig(
         stream="stream",
         id="price",
@@ -1323,7 +1317,7 @@ def test_series_pipeline_keeps_scaled_sequence_inputs_raw(
     )
 
     [sequence] = run_series_pipeline(
-        PipelineContext(runtime),
+        runtime,
         config,
         group_by_cadence="1h",
     )
@@ -1368,7 +1362,7 @@ def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -
         }
     )
     schema = _register_price_metadata(runtime)
-    ctx = PipelineContext(runtime)
+    ctx = runtime
     cfg = SeriesConfig(stream="stream", id="price", field="value")
     register_series(runtime, [cfg], "1h")
 
@@ -1404,7 +1398,6 @@ def test_rectangular_dataset_source_reuses_its_key_plan(
 ) -> None:
     runtime = _runtime_with_rows(tmp_path, [])
     schema = _register_price_metadata(runtime)
-    context = PipelineContext(runtime)
     cfg = SeriesConfig(stream="stream", id="price", field="value")
     feature_configs = [cfg]
     register_series(runtime, feature_configs, "1h")
@@ -1412,7 +1405,7 @@ def test_rectangular_dataset_source_reuses_its_key_plan(
     key_plan = window_key_plan(_ts(0, 10), _ts(2, 50), "1h")
     assert key_plan is not None
     pipeline = build_dataset_pipeline(
-        context,
+        runtime,
         schema,
         key_plan,
     )
@@ -1437,15 +1430,14 @@ def test_sample_input_snapshots_selected_ids(tmp_path: Path) -> None:
         tmp_path,
         [{"time": _ts(0), "value": 1.0}],
     )
-    context = PipelineContext(runtime)
     config = SeriesConfig(stream="stream", id="price", field="value")
     register_series(runtime, [config], "1h")
     feature_ids = [config.id]
 
-    sample_input = build_sample_input(context, feature_ids)
+    sample_input = build_sample_input(runtime, feature_ids)
     feature_ids.clear()
 
-    assert list(sample_input.open()) == list(open_samples(context, [config.id], "1h"))
+    assert list(sample_input.open()) == list(open_samples(runtime, [config.id], "1h"))
 
 
 def test_rectangular_features_and_targets_share_every_planned_key(
@@ -1471,7 +1463,7 @@ def test_rectangular_features_and_targets_share_every_planned_key(
 
     samples = list(
         open_samples(
-            PipelineContext(runtime),
+            runtime,
             [feature.id],
             "1h",
             target_ids=[target.id],
@@ -1532,7 +1524,7 @@ def test_series_artifact_feeds_serve_pipeline(tmp_path: Path) -> None:
     )
     cached = _sample_payload(
         open_samples(
-            PipelineContext(runtime),
+            runtime,
             [config.id for config in configs],
             "1h",
             sample_keys=["id_"],
@@ -1686,10 +1678,9 @@ def test_series_shared_stream_matches_independent_series_pipelines(
         features=[price],
         targets=[volume],
     )
-    context = PipelineContext(runtime)
     expected_price = list(
         run_series_pipeline(
-            context,
+            runtime,
             price,
             sample_keys=["exchange"],
             group_by_cadence="1h",
@@ -1697,7 +1688,7 @@ def test_series_shared_stream_matches_independent_series_pipelines(
     )
     expected_volume = list(
         run_series_pipeline(
-            context,
+            runtime,
             volume,
             sample_keys=["exchange"],
             group_by_cadence="1h",
@@ -2474,11 +2465,10 @@ def test_sample_input_requires_series_artifact(
         tmp_path,
         rows=[{"time": _ts(0), "value": 1.0}],
     )
-    context = PipelineContext(runtime)
     cfg = SeriesConfig(stream="stream", id="price", field="value")
 
     with pytest.raises(RuntimeError, match="Series artifact is required"):
-        list(open_samples(context, [cfg.id], "1h", key_plan=key_plan))
+        list(open_samples(runtime, [cfg.id], "1h", key_plan=key_plan))
 
 
 def test_cached_sample_input_rejects_manifest_cadence_mismatch(
@@ -2498,7 +2488,7 @@ def test_cached_sample_input_rejects_manifest_cadence_mismatch(
     with pytest.raises(RuntimeError, match="cadence does not match"):
         list(
             open_samples(
-                PipelineContext(runtime),
+                runtime,
                 [cfg.id],
                 "1h",
             )
@@ -2522,7 +2512,7 @@ def test_cached_sample_input_verifies_manifest_rows(
     with pytest.raises(ValueError, match="declares 2 rows but contains 1"):
         list(
             open_samples(
-                PipelineContext(runtime),
+                runtime,
                 [cfg.id],
                 "1h",
             )
@@ -2543,7 +2533,7 @@ def test_cached_sample_input_reads_requested_feature_subset(
 
     samples = list(
         open_samples(
-            PipelineContext(runtime),
+            runtime,
             [value_cfg.id],
             "1h",
         )
@@ -2617,7 +2607,7 @@ def test_cached_series_rows_close_reader_when_stopped_early(
     )
 
     samples = open_samples(
-        PipelineContext(runtime),
+        runtime,
         [config.id for config in configs],
         "1h",
     )
@@ -2663,7 +2653,7 @@ def test_cached_sample_input_opens_one_reader_for_many_series(
 
     samples = list(
         open_samples(
-            PipelineContext(runtime),
+            runtime,
             [config.id for config in configs],
             "1h",
         )

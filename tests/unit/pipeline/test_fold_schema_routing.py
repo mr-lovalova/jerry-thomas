@@ -13,7 +13,6 @@ from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.pipeline import Input
 from datapipeline.pipelines.dataset.pipeline import (
     FoldOutputPlan,
@@ -165,7 +164,7 @@ def test_shared_fold_scan_labels_once_and_projects_each_training_schema(
 
     output = list(
         run_fold_outputs_pipeline(
-            PipelineContext(runtime),
+            runtime,
             (early, later),
         )
     )

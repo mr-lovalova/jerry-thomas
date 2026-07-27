@@ -138,7 +138,6 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> None:
             job.runtime.heartbeat_interval_seconds = (
                 job.observability.heartbeat_interval_seconds
             )
-            job.runtime.output_ids = job.output_ids
             with execution_scope(job.runtime, job.observability):
                 execute_runtime_job(
                     request.command,

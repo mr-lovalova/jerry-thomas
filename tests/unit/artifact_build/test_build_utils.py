@@ -17,7 +17,6 @@ from datapipeline.config.dataset.split import (
     TimeSplitConfig,
 )
 from datapipeline.config.tasks.metadata import MetadataTask
-from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.artifacts import metadata as artifact_metadata
 from datapipeline.operations.artifacts.metadata import (
     _window_bounds_from_stats,
@@ -164,7 +163,7 @@ def test_pipeline_context_rejects_invalid_registered_metadata(tmp_path) -> None:
     runtime.artifacts.register(VECTOR_METADATA, "metadata.json")
 
     with pytest.raises(ValueError, match="length"):
-        PipelineContext(runtime).require_artifact(VECTOR_METADATA_SPEC)
+        runtime.artifacts.load(VECTOR_METADATA_SPEC)
 
 
 def test_metadata_materialization_writes_keyed_sample_domain(

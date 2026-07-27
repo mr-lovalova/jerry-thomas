@@ -4,7 +4,6 @@ from datapipeline.analysis.vector.coverage_stats import CoverageStatsAccumulator
 from datapipeline.artifacts.models import CoverageStatsArtifact
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
-from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.sample.input import open_samples
@@ -18,8 +17,7 @@ def build_coverage_stats_artifact(
     task_cfg: CoverageStatsTask,
 ) -> ArtifactOutput:
     dataset = runtime.dataset
-    context = PipelineContext(runtime)
-    metadata = context.require_artifact(VECTOR_METADATA_SPEC)
+    metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     schema = metadata.catalog
     key_plan = require_metadata_key_plan(
         schema.window,
@@ -29,7 +27,7 @@ def build_coverage_stats_artifact(
     )
 
     samples = open_samples(
-        context,
+        runtime,
         tuple(entry.id for entry in schema.features),
         dataset.sample.cadence,
         target_ids=tuple(entry.id for entry in schema.targets),

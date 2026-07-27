@@ -10,7 +10,6 @@ from datapipeline.artifacts.specs import (
 from datapipeline.config.tasks.metadata import MetadataTask
 from datapipeline.config.tasks.scaler import ScalerTask
 from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.artifacts.metadata import build_metadata_artifact
 from datapipeline.operations.artifacts.scaler import build_scaler_artifact
 from datapipeline.operations.artifacts.series import build_series_artifact
@@ -23,7 +22,6 @@ def _dataset_samples(project_yaml):
     definition = load_project_definition(project_yaml)
     runtime = compile_runtime(definition)
     hydrate_runtime_artifacts_for_pipeline(runtime, definition)
-    context = PipelineContext(runtime)
 
     # Ensure artifacts are materialized for the test run.
     scaler_rel = build_scaler_artifact(
@@ -50,10 +48,10 @@ def _dataset_samples(project_yaml):
         VECTOR_METADATA,
         relative_path=metadata_rel.relative_path,
     )
-    metadata = context.require_artifact(VECTOR_METADATA_SPEC)
+    metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     return list(
         run_scaled_dataset_pipeline(
-            context,
+            runtime,
             schema=metadata.catalog,
             key_plan=None,
         )

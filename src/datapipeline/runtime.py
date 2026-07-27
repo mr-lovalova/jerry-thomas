@@ -86,14 +86,13 @@ RuntimeStream = SourceRuntimeStream | DerivedRuntimeStream | CombinedRuntimeStre
 
 @dataclass
 class Runtime:
-    """Holds the active project context and prepared streams."""
+    """Holds the active project state and prepared streams."""
 
     project_yaml: Path
     artifacts_root: Path
     dataset: DatasetConfig
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     streams: dict[str, RuntimeStream] = field(default_factory=dict)
-    output_ids: tuple[str, ...] = ()
     heartbeat_interval_seconds: float | None = None
     pipeline_observer: PipelineObserver | None = None
     observe_node_events: bool = True

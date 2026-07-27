@@ -15,7 +15,6 @@ from datapipeline.artifacts.specs import SERIES, dataset_requires_scaler
 from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.preview import PreviewStage
 from datapipeline.domain.sample import Sample
-from datapipeline.execution.context import PipelineContext
 from datapipeline.io.dataset_table import DatasetTable
 from datapipeline.io.output import OutputTarget, output_destination_key
 from datapipeline.operations.persistence import (
@@ -132,19 +131,19 @@ def _preview_plan(
 
 
 def _serve_preview(
-    context: PipelineContext,
+    runtime: Runtime,
     limit: int | None,
     target: OutputTarget,
     throttle_ms: float | None,
     preview: PreviewStage,
 ) -> RuntimeOutputBatch:
-    dataset = context.runtime.dataset
+    dataset = runtime.dataset
     if target.format == "parquet" and preview not in {"samples", "postprocess"}:
         raise ValueError(
             "Parquet preview supports only the 'samples' and 'postprocess' stages."
         )
     if preview in {"samples", "postprocess"}:
-        metadata = context.require_artifact(VECTOR_METADATA_SPEC)
+        metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
         key_plan = require_metadata_key_plan(
             metadata.catalog.window,
             metadata.catalog.sample,
@@ -153,19 +152,19 @@ def _serve_preview(
         )
         if preview == "samples":
             sample_stream = run_sample_pipeline(
-                context,
+                runtime,
                 metadata.catalog,
                 key_plan,
             )
         else:
             sample_stream = run_dataset_pipeline(
-                context,
+                runtime,
                 metadata.catalog,
                 key_plan,
             )
         if target.format == "parquet":
             table = _dataset_table(
-                context,
+                runtime,
                 metadata.catalog.features,
                 metadata.catalog.targets,
             )
@@ -207,13 +206,13 @@ def _serve_preview(
         match preview:
             case "input" | "canonical" | "records":
                 stream = run_stream_preview_pipeline(
-                    context,
+                    runtime,
                     output_id,
                     preview,
                 )
             case "series":
                 stream = run_series_pipeline(
-                    context,
+                    runtime,
                     cfg,
                     sample_keys=dataset.sample.keys,
                     group_by_cadence=dataset.sample.cadence,
@@ -225,13 +224,13 @@ def _serve_preview(
 
 
 def _serve_dataset(
-    context: PipelineContext,
+    runtime: Runtime,
     limit: int | None,
     target: OutputTarget,
     throttle_ms: float | None,
 ) -> RuntimeOutputBatch:
-    dataset = context.runtime.dataset
-    metadata = context.require_artifact(VECTOR_METADATA_SPEC)
+    dataset = runtime.dataset
+    metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     if not isinstance(metadata.layout, UnsplitMetadataLayout):
         raise RuntimeError(
             "Unsplit dataset requires unsplit metadata. Rebuild build/metadata.json."
@@ -248,7 +247,7 @@ def _serve_dataset(
         else run_dataset_pipeline
     )
     samples = run(
-        context,
+        runtime,
         metadata.catalog,
         key_plan,
     )
@@ -261,7 +260,7 @@ def _serve_dataset(
                     limit,
                     throttle_ms,
                     _served_dataset_table(
-                        context,
+                        runtime,
                         metadata.catalog,
                     ),
                 ),
@@ -273,22 +272,22 @@ def _serve_dataset(
 
 
 def _serve_fold_outputs(
-    context: PipelineContext,
+    runtime: Runtime,
     output_ids: tuple[str, ...],
     limit: int | None,
     target: OutputTarget,
     throttle_ms: float | None,
 ) -> RuntimeOutputBatch:
-    dataset = context.runtime.dataset
+    dataset = runtime.dataset
     if target.transport != "fs":
         raise ValueError("Fold outputs require fs output.")
     split_cfg = dataset.split
     if split_cfg is None:
         raise ValueError("Fold outputs require dataset split configuration.")
 
-    plans = resolve_fold_output_plans(context, output_ids)
+    plans = resolve_fold_output_plans(runtime, output_ids)
     samples = run_fold_outputs_pipeline(
-        context,
+        runtime,
         plans,
     )
     rows = throttle_items(_managed_items(samples), throttle_ms)
@@ -298,7 +297,7 @@ def _serve_fold_outputs(
     tables = (
         {
             output_id: _served_dataset_table(
-                context,
+                runtime,
                 plan.schema,
             )
             for plan in plans
@@ -325,12 +324,12 @@ def _serve_fold_outputs(
 
 
 def _served_dataset_table(
-    context: PipelineContext,
+    runtime: Runtime,
     schema: VectorSchema,
 ) -> DatasetTable:
-    dataset = context.runtime.dataset
+    dataset = runtime.dataset
     return _dataset_table(
-        context,
+        runtime,
         schema.features,
         schema.targets,
         scaled_feature_ids=tuple(cfg.id for cfg in dataset.features if cfg.scale),
@@ -339,14 +338,14 @@ def _served_dataset_table(
 
 
 def _dataset_table(
-    context: PipelineContext,
+    runtime: Runtime,
     feature_entries: Sequence[VectorMetadataEntry],
     target_entries: Sequence[VectorMetadataEntry],
     scaled_feature_ids: tuple[str, ...] = (),
     scaled_target_ids: tuple[str, ...] = (),
 ) -> DatasetTable:
-    sample_keys = context.runtime.dataset.sample.keys
-    manifest = load_series_manifest(context.resolve_artifact_path(SERIES))
+    sample_keys = runtime.dataset.sample.keys
+    manifest = load_series_manifest(runtime.artifacts.resolve_path(SERIES))
     if manifest.sample_keys != tuple(sample_keys):
         raise RuntimeError(
             "Series sample keys do not match the dataset table contract."
@@ -363,6 +362,7 @@ def _dataset_table(
 
 def run_dataset_operation(
     runtime: Runtime,
+    output_ids: tuple[str, ...],
     limit: int | None,
     target: OutputTarget,
     throttle_ms: float | None,
@@ -370,15 +370,13 @@ def run_dataset_operation(
 ) -> RuntimeOutputBatch | None:
     dataset = runtime.dataset
 
-    context = PipelineContext(runtime)
     if not dataset.series:
         logger.warning("(no features configured; nothing to serve)")
         return None
 
-    output_ids = runtime.output_ids
     if preview is not None:
         return _serve_preview(
-            context,
+            runtime,
             limit,
             target,
             throttle_ms,
@@ -389,7 +387,7 @@ def run_dataset_operation(
         if not output_ids:
             raise ValueError("A split dataset requires at least one fold output.")
         return _serve_fold_outputs(
-            context,
+            runtime,
             output_ids,
             limit,
             target,
@@ -397,7 +395,7 @@ def run_dataset_operation(
         )
 
     return _serve_dataset(
-        context,
+        runtime,
         limit,
         target,
         throttle_ms,

@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.pipeline import Input, Pipeline, Stage
 from datapipeline.execution.runner import run_pipeline
 from datapipeline.runtime import Runtime
@@ -194,7 +193,7 @@ def test_pipeline_closes_source_when_forward_sum_output_is_closed(
         stages=(Stage("forward_sum", transform.apply),),
     )
 
-    output = run_pipeline(PipelineContext(runtime), pipeline)
+    output = run_pipeline(runtime, pipeline)
     next(output)
     output.close()
 

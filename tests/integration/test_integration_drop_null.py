@@ -4,7 +4,6 @@ from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipel
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import VECTOR_METADATA
 from datapipeline.config.tasks.metadata import MetadataTask
-from datapipeline.execution.context import PipelineContext
 from datapipeline.operations.artifacts.metadata import build_metadata_artifact
 from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.sample.input import open_samples
@@ -20,7 +19,6 @@ def test_drop_with_metadata_and_partitioned_streams(copy_fixture):
     runtime = compile_runtime(definition)
     hydrate_runtime_artifacts_for_pipeline(runtime, definition)
     dataset = definition.dataset
-    context = PipelineContext(runtime)
     register_series(
         runtime,
         dataset.features,
@@ -35,10 +33,10 @@ def test_drop_with_metadata_and_partitioned_streams(copy_fixture):
         VECTOR_METADATA,
         relative_path=metadata.relative_path,
     )
-    metadata_artifact = context.require_artifact(VECTOR_METADATA_SPEC)
+    metadata_artifact = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     schema = metadata_artifact.catalog
     assembled_samples = open_samples(
-        context,
+        runtime,
         [entry.id for entry in schema.features],
         dataset.sample.cadence,
         target_ids=[entry.id for entry in schema.targets],

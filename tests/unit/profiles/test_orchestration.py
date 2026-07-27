@@ -661,7 +661,7 @@ def test_runtime_jobs_keep_order_and_apply_execution_settings(
             (
                 plan.job.name,
                 runtime.heartbeat_interval_seconds,
-                runtime.output_ids,
+                plan.job.output_ids,
                 runtime.execution,
             )
         )
@@ -808,12 +808,25 @@ def test_runtime_plugin_receives_the_documented_contract(
 
 def test_dataset_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> None:
     task = DatasetTask(id="dataset")
-    job = _runtime_job("dataset", task, _runtime(tmp_path), limit=5)
+    job = _runtime_job(
+        "dataset",
+        task,
+        _runtime(tmp_path),
+        limit=5,
+        output_ids=("holdout.train",),
+    )
     received = None
 
-    def run_dataset(runtime, limit, output, throttle_ms, preview):
+    def run_dataset(
+        runtime,
+        output_ids,
+        limit,
+        target,
+        throttle_ms,
+        preview,
+    ):
         nonlocal received
-        received = runtime, limit, output, throttle_ms, preview
+        received = runtime, output_ids, limit, target, throttle_ms, preview
         return "dataset"
 
     monkeypatch.setattr(
@@ -826,7 +839,7 @@ def test_dataset_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> 
     )
 
     assert run_runtime_operation(job) == "dataset"
-    assert received == (job.runtime, 5, job.output, None, None)
+    assert received == (job.runtime, job.output_ids, 5, job.output, None, None)
 
 
 def test_matrix_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> None:

@@ -22,7 +22,6 @@ from datapipeline.config.dataset.split import (
 )
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.context import PipelineContext
 from datapipeline.pipelines.dataset.pipeline import (
     FoldOutputPlan,
     resolve_fold_output_plans,
@@ -95,8 +94,7 @@ class _SampleSource:
 
         runtime = compile_runtime(definition)
         hydrate_runtime_artifacts_for_pipeline(runtime, definition)
-        context = PipelineContext(runtime)
-        metadata = context.require_artifact(VECTOR_METADATA_SPEC)
+        metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
         if split is None:
             if not isinstance(metadata.layout, UnsplitMetadataLayout):
                 raise RuntimeError(
@@ -117,7 +115,7 @@ class _SampleSource:
             )
 
         assert output_id is not None
-        fold_output = resolve_fold_output_plans(context, (output_id,))[0]
+        fold_output = resolve_fold_output_plans(runtime, (output_id,))[0]
         return cls(
             runtime=runtime,
             fold_output=fold_output,
@@ -136,10 +134,10 @@ class _SampleSource:
                 "stream before iterating samples."
             )
 
-        context = PipelineContext(self.runtime)
+        samples: Iterator[Sample]
         if self.fold_output is not None:
             samples = run_fold_dataset_pipeline(
-                context,
+                self.runtime,
                 self.fold_output,
             )
         else:
@@ -149,7 +147,7 @@ class _SampleSource:
                 else run_dataset_pipeline
             )
             samples = run(
-                context,
+                self.runtime,
                 self.schema,
                 self.key_plan,
             )
@@ -160,7 +158,9 @@ class _SampleSource:
             else:
                 yield from islice(samples, limit)
         finally:
-            samples.close()
+            close = getattr(samples, "close", None)
+            if callable(close):
+                close()
 
 
 def iter_samples(

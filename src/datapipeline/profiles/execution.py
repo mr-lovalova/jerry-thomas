@@ -82,11 +82,12 @@ def run_runtime_operation(job: RuntimeJob) -> object:
     task = job.task
     if isinstance(task, DatasetTask):
         return run_dataset_operation(
-            job.runtime,
-            job.limit,
-            job.output,
-            job.throttle_ms,
-            job.preview,
+            runtime=job.runtime,
+            output_ids=job.output_ids,
+            limit=job.limit,
+            target=job.output,
+            throttle_ms=job.throttle_ms,
+            preview=job.preview,
         )
     if isinstance(task, MatrixTask):
         return run_matrix_operation(job.runtime, task, job.limit)

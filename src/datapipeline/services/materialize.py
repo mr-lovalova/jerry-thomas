@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from datapipeline.execution.context import PipelineContext
 from datapipeline.io.compression import Compression
 from datapipeline.io.factory import writer_factory
 from datapipeline.io.output import OutputTarget
@@ -41,7 +40,7 @@ def materialize_stream(
         )
     check_materialize_destination(output_path, overwrite)
 
-    rows = run_stream_pipeline(PipelineContext(runtime), stream_id)
+    rows = run_stream_pipeline(runtime, stream_id)
     try:
         writer = writer_factory(output, overwrite=overwrite)
         try:
@@ -52,7 +51,9 @@ def materialize_stream(
             writer.abort()
             raise
     finally:
-        rows.close()
+        close = getattr(rows, "close", None)
+        if callable(close):
+            close()
     return output_path.resolve()
 
 

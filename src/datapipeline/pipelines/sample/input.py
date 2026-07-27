@@ -13,14 +13,14 @@ from datapipeline.artifacts.specs import SERIES
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.series_id import base_id
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.events import ProgressSnapshot
 from datapipeline.execution.pipeline import Input
 from datapipeline.pipelines.sample.keys import RectangularKeyPlan
+from datapipeline.runtime import Runtime
 
 
 def open_samples(
-    context: PipelineContext,
+    runtime: Runtime,
     feature_ids: Collection[str],
     group_by_cadence: str,
     target_ids: Collection[str] = (),
@@ -34,7 +34,7 @@ def open_samples(
         return iter(())
 
     manifest_path, manifest = _require_series(
-        context,
+        runtime,
         group_by_cadence,
         sample_key_fields,
     )
@@ -48,12 +48,12 @@ def open_samples(
 
 
 def build_sample_input(
-    context: PipelineContext,
+    runtime: Runtime,
     feature_ids: Collection[str],
     target_ids: Collection[str] = (),
     key_plan: RectangularKeyPlan | None = None,
 ) -> Input:
-    sample = context.runtime.dataset.sample
+    sample = runtime.dataset.sample
     selected_feature_ids = frozenset(feature_ids)
     selected_target_ids = frozenset(target_ids)
     progress = None
@@ -67,7 +67,7 @@ def build_sample_input(
         name="assemble_samples",
         open=partial(
             open_samples,
-            context,
+            runtime,
             selected_feature_ids,
             sample.cadence,
             selected_target_ids,
@@ -79,11 +79,11 @@ def build_sample_input(
 
 
 def _require_series(
-    context: PipelineContext,
+    runtime: Runtime,
     group_by_cadence: str,
     sample_keys: Sequence[str],
 ) -> tuple[Path, SeriesManifest]:
-    artifact = context.runtime.artifacts.optional(SERIES)
+    artifact = runtime.artifacts.optional(SERIES)
     if artifact is None:
         raise RuntimeError(
             "Series artifact is required before sample assembly. "
@@ -91,7 +91,7 @@ def _require_series(
             "`--artifact-mode AUTO|FORCE`."
         )
 
-    manifest_path = artifact.resolve(context.runtime.artifacts.root)
+    manifest_path = artifact.resolve(runtime.artifacts.root)
     manifest = load_series_manifest(manifest_path)
     if manifest.cadence != group_by_cadence:
         raise RuntimeError(
