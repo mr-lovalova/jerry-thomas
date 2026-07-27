@@ -1,20 +1,15 @@
 from datetime import datetime
-from typing import Annotated, Literal, Self
+from typing import Literal, Self
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
     field_validator,
     model_validator,
 )
 
-
-ProjectPath = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
+from datapipeline.config.constraints import NonEmptyString as ProjectPath
 
 
 class ProjectPaths(BaseModel):

@@ -1,37 +1,22 @@
-from typing import Annotated, TypeAlias
+from typing import TypeAlias
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
     field_validator,
     model_validator,
 )
 
+from datapipeline.config.constraints import DottedIdentifier, NonEmptyString
 from datapipeline.config.sources import EntryPointConfig, SourceConfig
 from datapipeline.config.transforms import PreprocessConfig, TransformConfig
 from datapipeline.utils.time import parse_timecode
 
 
-_StreamId = Annotated[
-    str,
-    StringConstraints(
-        strip_whitespace=True,
-        min_length=1,
-        pattern=r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$",
-    ),
-]
-
-_FieldName = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
-
-_Timecode = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
+_StreamId = DottedIdentifier
+_FieldName = NonEmptyString
+_Timecode = NonEmptyString
 
 
 class SourceRefConfig(BaseModel):

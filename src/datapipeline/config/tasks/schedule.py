@@ -1,14 +1,7 @@
-from typing import Annotated
+from pydantic import Field, field_validator
 
-from pydantic import Field, StringConstraints, field_validator
-
+from datapipeline.config.constraints import NonEmptyString as FieldName
 from .base import ArtifactTask
-
-
-FieldName = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
 
 
 class ScheduleTask(ArtifactTask):

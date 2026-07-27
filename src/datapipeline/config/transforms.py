@@ -6,19 +6,15 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
     field_validator,
     model_validator,
 )
 
+from datapipeline.config.constraints import NonEmptyString
 from datapipeline.utils.placeholders import is_missing
 from datapipeline.utils.time import parse_cadence, parse_datetime, parse_timecode
 
 
-NonEmptyString = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
 PositiveInt = Annotated[int, Field(strict=True, gt=0)]
 
 

@@ -1,18 +1,11 @@
-from typing import Annotated
-
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
     field_validator,
 )
 
-
-NonEmptyString = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
+from datapipeline.config.constraints import NonEmptyString
 
 
 class _PostprocessConfig(BaseModel):

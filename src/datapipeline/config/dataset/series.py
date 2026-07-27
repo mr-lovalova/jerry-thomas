@@ -1,23 +1,17 @@
 from datetime import timedelta
-from typing import Annotated, Self
+from typing import Self
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
     field_validator,
     model_validator,
 )
 
+from datapipeline.config.constraints import NonEmptyString
 from datapipeline.domain.series_id import SERIES_ID_SEPARATOR
 from datapipeline.utils.time import parse_timecode
-
-
-NonEmptyString = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
 
 
 class SequenceConfig(BaseModel):

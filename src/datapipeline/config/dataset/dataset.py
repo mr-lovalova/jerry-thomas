@@ -1,25 +1,19 @@
 from datetime import timedelta
-from typing import Annotated, Self
+from typing import Self
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
     field_validator,
     model_validator,
 )
 
+from datapipeline.config.constraints import NonEmptyString
 from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.dataset.postprocess import PostprocessConfig
 from datapipeline.config.dataset.split import HashSplitConfig, SplitConfig
 from datapipeline.utils.time import CADENCE_PATTERN
-
-
-NonEmptyString = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
 
 
 class SampleConfig(BaseModel):
