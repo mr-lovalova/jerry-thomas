@@ -12,27 +12,33 @@ def normalize_data_value(value: Any) -> Any:
         if math.isnan(value):
             return None
         raise ValueError("Data values must not contain infinity.")
-    if isinstance(value, list):
-        normalized_list = [normalize_data_value(item) for item in value]
-        return (
-            normalized_list
-            if any(a is not b for a, b in zip(value, normalized_list))
-            else value
-        )
-    if isinstance(value, tuple):
-        normalized_tuple = tuple(normalize_data_value(item) for item in value)
-        return (
-            normalized_tuple
-            if any(a is not b for a, b in zip(value, normalized_tuple))
-            else value
-        )
+    if isinstance(value, (list, tuple)):
+        return _normalize_sequence(value)
     if isinstance(value, Mapping):
-        normalized_mapping = {
-            key: normalize_data_value(item) for key, item in value.items()
-        }
-        return (
-            normalized_mapping
-            if any(normalized_mapping[key] is not item for key, item in value.items())
-            else value
-        )
+        items = iter(value.items())
+        for key, item in items:
+            normalized = normalize_data_value(item)
+            if normalized is item:
+                continue
+            normalized_mapping = dict(value.items())
+            normalized_mapping[key] = normalized
+            for remaining_key, remaining_item in items:
+                normalized_mapping[remaining_key] = normalize_data_value(remaining_item)
+            return normalized_mapping
+        return value
+    return value
+
+
+def _normalize_sequence(
+    value: list[Any] | tuple[Any, ...],
+) -> list[Any] | tuple[Any, ...]:
+    for index, item in enumerate(value):
+        normalized = normalize_data_value(item)
+        if normalized is item:
+            continue
+        normalized_items = list(value)
+        normalized_items[index] = normalized
+        for remaining in range(index + 1, len(value)):
+            normalized_items[remaining] = normalize_data_value(value[remaining])
+        return tuple(normalized_items) if isinstance(value, tuple) else normalized_items
     return value
