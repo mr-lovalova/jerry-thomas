@@ -5,9 +5,8 @@ from datapipeline.transforms.rolling_slope import RollingSlope
 from datapipeline.transforms.utils import (
     adjacent_partitions,
     clone_record_with_field,
-    finite_number,
+    finite_number_or_none,
     get_field,
-    is_missing,
 )
 
 
@@ -33,8 +32,8 @@ class RollingSlopeTransform:
             rolling_slope = RollingSlope(self.window)
 
             for record in records:
-                x = self._number(get_field(record, self.x), self.x)
-                y = self._number(get_field(record, self.y), self.y)
+                x = finite_number_or_none(get_field(record, self.x), self.x)
+                y = finite_number_or_none(get_field(record, self.y), self.y)
                 if x is None or y is None:
                     rolling_slope.clear()
                     slope = None
@@ -42,9 +41,3 @@ class RollingSlopeTransform:
                     rolling_slope.append(x, y)
                     slope = rolling_slope.result() if rolling_slope.full else None
                 yield clone_record_with_field(record, self.to, slope)
-
-    @staticmethod
-    def _number(value: object, field: str) -> float | None:
-        if is_missing(value):
-            return None
-        return finite_number(value, field)

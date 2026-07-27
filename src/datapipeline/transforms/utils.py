@@ -30,6 +30,12 @@ def finite_number(value: Any, field: str) -> float:
     return number
 
 
+def finite_number_or_none(value: Any, field: str) -> float | None:
+    if is_missing(value):
+        return None
+    return finite_number(value, field)
+
+
 def get_field(record: object, field: str) -> Any:
     try:
         return getattr(record, field)

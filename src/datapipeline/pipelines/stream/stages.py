@@ -189,21 +189,13 @@ def build_transform_stages(
         elif isinstance(operation, Log1pConfig):
             stage_op = Log1pTransform(operation.field, operation.to).apply
         elif isinstance(operation, DeriveConfig):
-            if operation.right_field is not None:
-                transform = DeriveTransform(
-                    operation.left,
-                    operation.operator,
-                    operation.to,
-                    right_field=operation.right_field,
-                )
-            else:
-                transform = DeriveTransform(
-                    operation.left,
-                    operation.operator,
-                    operation.to,
-                    right_value=operation.right_value,
-                )
-            stage_op = transform.apply
+            stage_op = DeriveTransform(
+                operation.left,
+                operation.operator,
+                operation.to,
+                right_field=operation.right_field,
+                right_value=operation.right_value,
+            ).apply
         else:
             raise TypeError(f"Unsupported transform config: {type(operation).__name__}")
 

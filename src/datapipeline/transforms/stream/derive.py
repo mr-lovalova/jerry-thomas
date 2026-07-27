@@ -1,13 +1,12 @@
 from collections.abc import Iterator
 from math import isfinite
-from typing import Any, Literal
+from typing import Literal
 
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.transforms.utils import (
     clone_record_with_field,
-    finite_number,
+    finite_number_or_none,
     get_field,
-    is_missing,
 )
 
 Operator = Literal["add", "sub", "mul", "div"]
@@ -32,9 +31,9 @@ class DeriveTransform:
 
     def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
         for record in stream:
-            left = self._number(get_field(record, self.left), self.left)
+            left = finite_number_or_none(get_field(record, self.left), self.left)
             if self.right_field is not None:
-                right = self._number(
+                right = finite_number_or_none(
                     get_field(record, self.right_field),
                     self.right_field,
                 )
@@ -47,12 +46,6 @@ class DeriveTransform:
                     "floating-point range"
                 )
             yield clone_record_with_field(record, self.to, value)
-
-    @staticmethod
-    def _number(value: Any, field: str) -> float | None:
-        if is_missing(value):
-            return None
-        return finite_number(value, field)
 
     def _derive(self, left: float | None, right: float | None) -> float | None:
         if left is None or right is None:

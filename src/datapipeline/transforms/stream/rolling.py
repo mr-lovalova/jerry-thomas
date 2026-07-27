@@ -14,9 +14,8 @@ from datapipeline.transforms.rolling_window import (
 from datapipeline.transforms.utils import (
     adjacent_partitions,
     clone_record_with_field,
-    finite_number,
+    finite_number_or_none,
     get_field,
-    is_missing,
 )
 
 
@@ -54,12 +53,7 @@ class RollingTransform:
             rolling_window = self._window_type(self.window)
 
             for record in records:
-                raw_value = get_field(record, self.field)
-                if is_missing(raw_value):
-                    value = None
-                else:
-                    value = finite_number(raw_value, self.field)
-
+                value = finite_number_or_none(get_field(record, self.field), self.field)
                 rolling_window.append(value)
                 if rolling_window.sample_count >= self.min_samples:
                     rolled = rolling_window.result()
