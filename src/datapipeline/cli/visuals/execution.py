@@ -1,5 +1,4 @@
 import logging
-from collections.abc import Callable
 from functools import partial
 
 from datapipeline.cli.visuals.execution_context import (
@@ -9,7 +8,6 @@ from datapipeline.execution.events import (
     NodeFinished,
     NodeProgress,
     NodeStarted,
-    PipelineEvent,
     PipelineFinished,
     PipelineProgress,
     PipelineStarted,
@@ -21,15 +19,13 @@ from datapipeline.execution.observability import (
     CommandFinished,
     ExecutionEvent,
     ExecutionMessage,
+    ExecutionObserver,
     FileResult,
     OperationFinished,
     OperationProgress,
     OperationStarted,
     RowsWritten,
 )
-
-
-ExecutionLogEvent = ExecutionEvent | PipelineEvent
 
 
 class ExecutionEventFormatter:
@@ -50,7 +46,7 @@ class ExecutionEventFormatter:
         return format_node_progress(event.progress, event.elapsed_seconds)
 
     @staticmethod
-    def level(event: ExecutionLogEvent) -> int:
+    def level(event: ExecutionEvent) -> int:
         if isinstance(event, ExecutionMessage):
             return int(event.log_level)
         if isinstance(
@@ -78,7 +74,7 @@ class ExecutionEventFormatter:
         raise TypeError(f"Unsupported execution event: {type(event).__name__}")
 
     @classmethod
-    def message(cls, event: ExecutionLogEvent) -> str:
+    def message(cls, event: ExecutionEvent) -> str:
         if isinstance(event, FileResult):
             return f"{event.label}: {event.path}"
         if isinstance(event, RowsWritten):
@@ -139,7 +135,7 @@ class ExecutionEventFormatter:
 
 
 def route_execution_event(
-    event: ExecutionLogEvent,
+    event: ExecutionEvent,
     logger: logging.Logger | None = None,
 ) -> None:
     if not isinstance(event, NodeProgress) or event.heartbeat:
@@ -159,7 +155,7 @@ def route_execution_event(
 
 def make_execution_observer(
     logger: logging.Logger | None = None,
-) -> Callable[[ExecutionLogEvent], None]:
+) -> ExecutionObserver:
     return partial(
         route_execution_event,
         logger=logger or logging.getLogger(__name__),

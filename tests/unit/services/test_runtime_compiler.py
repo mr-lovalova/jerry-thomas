@@ -3,6 +3,7 @@ from math import log, log1p
 
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.execution.events import PipelineEvent, PipelineStarted
+from datapipeline.execution.observability import execution_observer
 from datapipeline.pipelines.stream.pipeline import (
     build_stream_pipeline,
     run_stream_preview_pipeline,
@@ -507,10 +508,10 @@ combine:
     assert [record.value for record in canonical] == [115, 225]
 
     observer = _PipelineObserver()
-    runtime.pipeline_observer = observer
 
     assert runtime.streams["combined"].partition_by == ("ticker",)
-    records = list(run_stream_pipeline(runtime, "combined"))
+    with execution_observer(observer):
+        records = list(run_stream_pipeline(runtime, "combined"))
     assert [(record.time.day, record.ticker, record.value) for record in records] == [
         (1, "A", 115),
         (2, "A", 225),

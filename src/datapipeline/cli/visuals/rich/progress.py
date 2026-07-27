@@ -17,7 +17,6 @@ from rich.text import Text
 
 from datapipeline.cli.visuals.execution import (
     ExecutionEventFormatter,
-    ExecutionLogEvent,
 )
 from datapipeline.cli.visuals.execution_context import (
     reset_current_execution_event_handler,
@@ -36,6 +35,7 @@ from datapipeline.execution.events import (
 )
 from datapipeline.execution.observability import (
     CommandFinished,
+    ExecutionEvent,
     FileResult,
     OperationFinished,
     OperationProgress,
@@ -91,7 +91,7 @@ class _ExecutionProgress:
         self._open_nodes: list[tuple[str, int]] = []
         self._visible_node: tuple[str, int] | None = None
 
-    def handle(self, event: ExecutionLogEvent) -> None:
+    def handle(self, event: ExecutionEvent) -> None:
         if isinstance(event, OperationStarted):
             self._start_operation(event)
         elif isinstance(event, OperationProgress):
@@ -296,7 +296,7 @@ class _RichExecutionRenderer:
         self._console = console
         self._progress = progress
 
-    def render(self, event: ExecutionLogEvent) -> None:
+    def render(self, event: ExecutionEvent) -> None:
         if self._progress is not None and isinstance(event, PipelineProgress):
             return
         if self._progress is not None and isinstance(
@@ -340,7 +340,7 @@ class _RichExecutionRenderer:
         table.add_row(f"{event.label}:", result)
         return table
 
-    def _render_event(self, event: ExecutionLogEvent) -> Text:
+    def _render_event(self, event: ExecutionEvent) -> Text:
         level = ExecutionEventFormatter.level(event)
         text = Text(ExecutionEventFormatter.message(event))
         if isinstance(

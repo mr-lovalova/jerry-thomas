@@ -15,6 +15,7 @@ from datapipeline.execution.settings import (
 from datapipeline.execution.observability import (
     current_execution_observer,
     emit_execution_message,
+    execution_observer,
 )
 from datapipeline.profiles.executor import execution_scope
 from datapipeline.runtime import Runtime
@@ -78,8 +79,7 @@ def test_execution_scope_configures_logging_and_runs_inside_visuals(monkeypatch)
             log_output=log_output,
         ),
     ):
-        assert runtime.pipeline_observer is not None
-        assert current_execution_observer() is runtime.pipeline_observer
+        assert current_execution_observer() is not None
         assert runtime.observe_node_events
         calls.append(("work", inside_visual_context))
 
@@ -88,7 +88,7 @@ def test_execution_scope_configures_logging_and_runs_inside_visuals(monkeypatch)
         ("visuals", 20),
         ("work", True),
     ]
-    assert runtime.pipeline_observer is None
+    assert current_execution_observer() is None
     assert not runtime.observe_node_events
 
 
@@ -143,10 +143,10 @@ def test_execution_scope_uses_plain_context_when_visuals_are_unavailable(
             log_output=_log_output(),
         ),
     ):
-        assert runtime.pipeline_observer is not None
+        assert current_execution_observer() is not None
         assert not runtime.observe_node_events
 
-    assert runtime.pipeline_observer is None
+    assert current_execution_observer() is None
     assert runtime.observe_node_events
 
 
@@ -171,10 +171,10 @@ def test_execution_scope_observes_nodes_for_debug_logging(monkeypatch) -> None:
             log_output=_log_output(),
         ),
     ):
-        assert runtime.pipeline_observer is not None
+        assert current_execution_observer() is not None
         assert runtime.observe_node_events
 
-    assert runtime.pipeline_observer is None
+    assert current_execution_observer() is None
     assert not runtime.observe_node_events
 
 
@@ -198,7 +198,7 @@ def test_execution_scope_restores_observation_after_failure(monkeypatch) -> None
             assert not runtime.observe_node_events
             raise RuntimeError("failed")
 
-    assert runtime.pipeline_observer is None
+    assert current_execution_observer() is None
     assert runtime.observe_node_events
 
 
@@ -235,7 +235,6 @@ def test_execution_scope_restores_outer_state_after_visual_cleanup_failure(
             yield
         finally:
             assert operation_active
-            assert runtime.pipeline_observer is not None
             calls.append("visuals exit")
             raise RuntimeError("visual cleanup failed")
 
@@ -277,15 +276,19 @@ def test_execution_scope_restores_outer_state_after_visual_cleanup_failure(
         "operation exit",
         "logging exit",
     ]
-    assert runtime.pipeline_observer is None
     assert runtime.observe_node_events
 
 
-def test_execution_scope_preserves_existing_pipeline_observer(monkeypatch) -> None:
+def test_execution_scope_restores_outer_execution_observer(monkeypatch) -> None:
     runtime = _runtime()
-    existing_observer = object()
-    runtime.pipeline_observer = existing_observer
     runtime.observe_node_events = False
+
+    def outer_observer(_event) -> None:
+        pass
+
+    def inner_observer(_event) -> None:
+        pass
+
     monkeypatch.setattr(
         "datapipeline.profiles.executor.root_logging_scope",
         lambda *_args, **_kwargs: nullcontext(),
@@ -294,17 +297,23 @@ def test_execution_scope_preserves_existing_pipeline_observer(monkeypatch) -> No
         "datapipeline.profiles.executor.rich_visuals_supported",
         lambda: False,
     )
+    monkeypatch.setattr(
+        "datapipeline.profiles.executor.make_execution_observer",
+        lambda _logger: inner_observer,
+    )
 
-    with execution_scope(
-        runtime,
-        ObservabilitySettings(
-            visuals="on",
-            heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
-            log_decision=LogLevelDecision(name="INFO", value=20),
-            log_output=_log_output(),
-        ),
-    ):
-        pass
+    with execution_observer(outer_observer):
+        with execution_scope(
+            runtime,
+            ObservabilitySettings(
+                visuals="on",
+                heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+                log_decision=LogLevelDecision(name="INFO", value=20),
+                log_output=_log_output(),
+            ),
+        ):
+            assert current_execution_observer() is inner_observer
+        assert current_execution_observer() is outer_observer
 
-    assert runtime.pipeline_observer is existing_observer
+    assert current_execution_observer() is None
     assert not runtime.observe_node_events

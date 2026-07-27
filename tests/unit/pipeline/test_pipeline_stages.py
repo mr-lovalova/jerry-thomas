@@ -55,6 +55,7 @@ from datapipeline.execution.events import (
     PipelineStarted,
     ProgressSnapshot,
 )
+from datapipeline.execution.observability import execution_observer
 from datapipeline.execution.pipeline import Input
 from datapipeline.execution.runner import run_pipeline
 from datapipeline.operations.artifacts.metadata import build_metadata_artifact
@@ -2209,9 +2210,9 @@ def test_series_record_sort_is_part_of_the_observed_stream_pipeline(
         observer(event)
         rich_renderer.render(event)
 
-    runtime.pipeline_observer = observe
     task = SeriesTask()
-    build_series_artifact(runtime, task)
+    with execution_observer(observe):
+        build_series_artifact(runtime, task)
     manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     [row] = open_series(manifest_path, manifest)

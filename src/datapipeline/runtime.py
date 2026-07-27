@@ -4,16 +4,13 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from datapipeline.artifacts.registry import ArtifactRegistry
 from datapipeline.config.dataset.dataset import DatasetConfig
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.transforms import PreprocessConfig, TransformConfig
 from datapipeline.domain.stream import RecordStream
-
-if TYPE_CHECKING:
-    from datapipeline.execution.observer import PipelineObserver
 
 RecordStage = Callable[[Iterator[Any]], Iterable[Any]]
 
@@ -94,7 +91,6 @@ class Runtime:
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     streams: dict[str, RuntimeStream] = field(default_factory=dict)
     heartbeat_interval_seconds: float | None = None
-    pipeline_observer: PipelineObserver | None = None
     observe_node_events: bool = True
     artifacts: ArtifactRegistry = field(init=False)
 

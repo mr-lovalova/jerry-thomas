@@ -16,14 +16,18 @@ from datapipeline.execution.events import (
     ProgressSnapshot,
     RunStatus,
 )
-from datapipeline.execution.observer import PipelineObserver, ignore_pipeline_event
+from datapipeline.execution.observability import (
+    ExecutionObserver,
+    current_execution_observer,
+    ignore_execution_event,
+)
 from datapipeline.execution.pipeline import Input, Pipeline, ProgressReader, Stage
 from datapipeline.execution.settings import resolve_heartbeat_interval_seconds
 from datapipeline.runtime import Runtime
 
 
 _LIVE_PROGRESS_INTERVAL_SECONDS = 0.1
-_NOOP_OBSERVER = ignore_pipeline_event
+_NOOP_OBSERVER = ignore_execution_event
 
 
 @dataclass(frozen=True)
@@ -46,7 +50,7 @@ class _RunProgress:
 
     def __init__(
         self,
-        observer: PipelineObserver,
+        observer: ExecutionObserver,
         pipeline_name: str,
         interval_seconds: float,
     ) -> None:
@@ -175,11 +179,11 @@ def run_pipeline(
     runtime: Runtime,
     pipeline: Pipeline,
     *,
-    observer: PipelineObserver | None = None,
+    observer: ExecutionObserver | None = None,
 ) -> Iterator[Any]:
     """Run a pipeline input followed by its ordered stages."""
 
-    active_observer = observer if observer is not None else runtime.pipeline_observer
+    active_observer = observer if observer is not None else current_execution_observer()
     if active_observer is None or active_observer is _NOOP_OBSERVER:
         return _build_stream(pipeline, observer=None, progress=None)
 
@@ -193,7 +197,7 @@ def run_pipeline(
 
 def _run_observed(
     pipeline: Pipeline,
-    observer: PipelineObserver,
+    observer: ExecutionObserver,
     observe_nodes: bool,
     heartbeat_interval_seconds: float | None,
 ) -> Iterator[Any]:
@@ -298,7 +302,7 @@ def _run_observed(
 
 def _build_stream(
     pipeline: Pipeline,
-    observer: PipelineObserver | None,
+    observer: ExecutionObserver | None,
     progress: _RunProgress | None,
 ) -> Iterator[Any]:
     stream = _wrap_node(
@@ -326,7 +330,7 @@ def _wrap_node(
     node: Input | Stage,
     node_index: int,
     upstream: Iterable[Any] | None,
-    observer: PipelineObserver | None,
+    observer: ExecutionObserver | None,
     progress: _RunProgress | None,
 ) -> Iterator[Any]:
     if observer is None or progress is None:
@@ -386,7 +390,7 @@ def _observed_node(
     node: Input | Stage,
     node_index: int,
     upstream: Iterable[Any] | None,
-    observer: PipelineObserver,
+    observer: ExecutionObserver,
     progress: _RunProgress,
 ) -> Iterator[Any]:
     context = _NodeProgressContext(pipeline_name, node.name, node_index)

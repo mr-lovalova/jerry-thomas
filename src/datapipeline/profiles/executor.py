@@ -22,20 +22,13 @@ def execution_scope(
     with root_logging_scope(level, observability.log_output):
         visuals_active = observability.visuals == "on" and rich_visuals_supported()
         visuals = visual_execution(level) if visuals_active else nullcontext()
-        observer = make_execution_observer(
-            logging.getLogger("datapipeline.execution.observer")
-        )
+        observer = make_execution_observer(logging.getLogger("datapipeline.execution"))
 
-        previous_pipeline_observer = runtime.pipeline_observer
         previous_observe_node_events = runtime.observe_node_events
-        if previous_pipeline_observer is None:
-            runtime.pipeline_observer = observer
-            runtime.observe_node_events = visuals_active or level <= logging.DEBUG
+        runtime.observe_node_events = visuals_active or level <= logging.DEBUG
 
         try:
             with execution_observer(observer), visuals:
                 yield
         finally:
-            if previous_pipeline_observer is None:
-                runtime.pipeline_observer = None
-                runtime.observe_node_events = previous_observe_node_events
+            runtime.observe_node_events = previous_observe_node_events

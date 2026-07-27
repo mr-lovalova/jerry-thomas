@@ -58,7 +58,6 @@ class _CloseTrackingIterator:
 
 def _runtime(streams=None):
     runtime = SimpleNamespace(
-        pipeline_observer=None,
         observe_node_events=True,
         heartbeat_interval_seconds=None,
         streams=streams or {},

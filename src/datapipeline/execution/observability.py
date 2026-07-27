@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal
 
-from datapipeline.execution.events import RunStatus
+from datapipeline.execution.events import PipelineEvent, RunStatus
 
 
 OperationStatus = Literal["success", "error"]
@@ -61,7 +61,8 @@ class ExecutionMessage:
 
 
 ExecutionEvent = (
-    ExecutionMessage
+    PipelineEvent
+    | ExecutionMessage
     | CommandFinished
     | FileResult
     | RowsWritten
@@ -70,6 +71,10 @@ ExecutionEvent = (
     | OperationFinished
 )
 ExecutionObserver = Callable[[ExecutionEvent], None]
+
+
+def ignore_execution_event(event: ExecutionEvent) -> None:
+    pass
 
 
 @dataclass(frozen=True)

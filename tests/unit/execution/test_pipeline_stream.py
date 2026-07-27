@@ -19,6 +19,7 @@ from datapipeline.execution.events import (
     PipelineSummary,
     ProgressSnapshot,
 )
+from datapipeline.execution.observability import execution_observer
 from datapipeline.execution.runner import run_pipeline
 from datapipeline.runtime import Runtime
 
@@ -308,7 +309,6 @@ def test_unobserved_pipeline_does_not_read_progress(tmp_path: Path) -> None:
 def test_pipeline_only_observation_skips_node_instrumentation(tmp_path: Path) -> None:
     observer = _CollectingObserver()
     runtime = _runtime(tmp_path)
-    runtime.pipeline_observer = observer
     runtime.observe_node_events = False
 
     def fail_progress(_completed: int) -> ProgressSnapshot:
@@ -321,7 +321,8 @@ def test_pipeline_only_observation_skips_node_instrumentation(tmp_path: Path) ->
         stages=(Stage("double", lambda records: (value * 2 for value in records)),),
     )
 
-    assert list(run_pipeline(runtime, pipeline)) == [2, 4]
+    with execution_observer(observer):
+        assert list(run_pipeline(runtime, pipeline)) == [2, 4]
     assert observer.pipeline_started == [PipelineStarted(pipeline_name="pipeline-only")]
     assert observer.pipeline_summaries == [
         PipelineSummary(pipeline_name="pipeline-only", summary="two stages")
@@ -335,7 +336,6 @@ def test_pipeline_only_observation_skips_node_instrumentation(tmp_path: Path) ->
 def test_pipeline_only_observation_keeps_pipeline_heartbeats(tmp_path: Path) -> None:
     observer = _CollectingObserver()
     runtime = _runtime(tmp_path)
-    runtime.pipeline_observer = observer
     runtime.observe_node_events = False
     runtime.heartbeat_interval_seconds = 0.01
 
@@ -347,7 +347,8 @@ def test_pipeline_only_observation_keeps_pipeline_heartbeats(tmp_path: Path) -> 
 
     pipeline = Pipeline(name="heartbeat", input=Input("source", source))
 
-    assert list(run_pipeline(runtime, pipeline)) == [1]
+    with execution_observer(observer):
+        assert list(run_pipeline(runtime, pipeline)) == [1]
     assert observer.pipeline_progress_events
     assert observer.progress_events == []
 
@@ -358,7 +359,6 @@ def test_pipeline_only_observation_without_heartbeats_skips_progress_thread(
 ) -> None:
     observer = _CollectingObserver()
     runtime = _runtime(tmp_path)
-    runtime.pipeline_observer = observer
     runtime.observe_node_events = False
     runtime.heartbeat_interval_seconds = 0
     monkeypatch.setattr(
@@ -371,7 +371,8 @@ def test_pipeline_only_observation_without_heartbeats_skips_progress_thread(
         input=Input("source", lambda: [1, 2]),
     )
 
-    assert list(run_pipeline(runtime, pipeline)) == [1, 2]
+    with execution_observer(observer):
+        assert list(run_pipeline(runtime, pipeline)) == [1, 2]
     assert observer.pipeline_events[-1].output_items == 2
     assert observer.node_started == []
     assert observer.progress_events == []
@@ -392,13 +393,27 @@ def test_explicit_observer_includes_nodes_in_pipeline_only_runtime(
     assert [event.node_name for event in observer.node_events] == ["source"]
 
 
+def test_explicit_observer_overrides_scoped_observer(tmp_path: Path) -> None:
+    scoped = _CollectingObserver()
+    explicit = _CollectingObserver()
+    pipeline = Pipeline(name="explicit", input=Input("source", lambda: [1]))
+
+    with execution_observer(scoped):
+        assert list(run_pipeline(_runtime(tmp_path), pipeline, observer=explicit)) == [
+            1
+        ]
+
+    assert explicit.pipeline_started == [PipelineStarted(pipeline_name="explicit")]
+    assert scoped.pipeline_started == []
+
+
 def test_runtime_snapshots_node_observation_for_lazy_execution(tmp_path: Path) -> None:
     observer = _CollectingObserver()
     runtime = _runtime(tmp_path)
-    runtime.pipeline_observer = observer
     runtime.observe_node_events = False
     pipeline = Pipeline(name="lazy-detail", input=Input("source", lambda: [1]))
-    stream = run_pipeline(runtime, pipeline)
+    with execution_observer(observer):
+        stream = run_pipeline(runtime, pipeline)
 
     runtime.observe_node_events = True
 

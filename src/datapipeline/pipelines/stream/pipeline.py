@@ -8,7 +8,7 @@ from datapipeline.alignment.broadcast import broadcast_stream
 from datapipeline.alignment.broadcast_as_of import broadcast_as_of_stream
 from datapipeline.alignment.engine import align_streams
 from datapipeline.config.preview import RecordPreviewStage
-from datapipeline.execution.observer import ignore_pipeline_event
+from datapipeline.execution.observability import ignore_execution_event
 from datapipeline.execution.pipeline import Input, Pipeline, Stage
 from datapipeline.execution.runner import run_pipeline
 from datapipeline.pipelines.stream.order import build_record_order_stage
@@ -316,5 +316,5 @@ def _run_internal_stream(
     return run_pipeline(
         runtime,
         build_stream_pipeline(runtime, stream_id),
-        observer=ignore_pipeline_event,
+        observer=ignore_execution_event,
     )
