@@ -130,9 +130,7 @@ def test_inspect_coverage_reads_typed_coverage_stats_artifact(
     destination = (tmp_path / "coverage.txt").resolve()
 
     result = coverage_ops.run_coverage_operation(
-        runtime=SimpleNamespace(
-            artifacts=SimpleNamespace(load=_load_coverage_stats)
-        ),
+        runtime=SimpleNamespace(artifacts=SimpleNamespace(load=_load_coverage_stats)),
         task=CoverageTask(id="coverage", options={"threshold": 0.8}),
     )
     _persist_result(
@@ -157,9 +155,7 @@ def test_inspect_coverage_writes_one_json_report(monkeypatch, tmp_path) -> None:
     destination = (tmp_path / "coverage.jsonl").resolve()
 
     result = coverage_ops.run_coverage_operation(
-        runtime=SimpleNamespace(
-            artifacts=SimpleNamespace(load=_load_coverage_stats)
-        ),
+        runtime=SimpleNamespace(artifacts=SimpleNamespace(load=_load_coverage_stats)),
         task=CoverageTask(id="coverage"),
     )
     _persist_result(
