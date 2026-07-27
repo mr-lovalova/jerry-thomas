@@ -41,6 +41,21 @@ BOUNDARY = datetime(2021, 1, 1, tzinfo=timezone.utc)
 END = datetime(2022, 1, 1, tzinfo=timezone.utc)
 
 
+class _CloseTrackingIterator:
+    def __init__(self, *items):
+        self._items = iter(items)
+        self.close_calls = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return next(self._items)
+
+    def close(self):
+        self.close_calls += 1
+
+
 def _runtime(streams=None):
     runtime = SimpleNamespace(
         pipeline_observer=None,
@@ -393,6 +408,28 @@ def test_samples_preview_stops_before_postprocess(monkeypatch):
     assert isinstance(result, RuntimeOutput)
     assert result.target == target
     assert list(result.rows) == ["sample"]
+
+
+@pytest.mark.parametrize("throttle_ms", [None, 1])
+def test_limited_preview_closes_sample_pipeline_once(monkeypatch, throttle_ms):
+    stream = _CloseTrackingIterator("first", "second")
+    monkeypatch.setattr(
+        "datapipeline.operations.runtime.dataset.run_sample_pipeline",
+        lambda *args, **kwargs: stream,
+    )
+
+    result = run_dataset_operation(
+        runtime=_runtime(),
+        output_ids=(),
+        limit=1,
+        target=_target(),
+        throttle_ms=throttle_ms,
+        preview="samples",
+    )
+
+    assert isinstance(result, RuntimeOutput)
+    assert list(result.rows) == ["first"]
+    assert stream.close_calls == 1
 
 
 def test_samples_preview_writes_schema_aware_parquet(monkeypatch, tmp_path):

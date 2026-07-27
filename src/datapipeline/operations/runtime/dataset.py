@@ -44,23 +44,29 @@ _RECORD_PREVIEWS = {"input", "canonical", "records"}
 
 
 def limit_items(items: Iterator[T], limit: int | None) -> Iterator[T]:
-    if limit is None:
-        yield from items
-    else:
-        yield from islice(items, limit)
+    selected = items if limit is None else islice(items, limit)
+    try:
+        for item in selected:
+            yield item
+    finally:
+        _close_iterator(items)
 
 
 def throttle_items(
     items: Iterator[T],
     throttle_ms: float | None,
 ) -> Iterator[T]:
-    if not throttle_ms or throttle_ms <= 0:
-        yield from items
-        return
-    delay = throttle_ms / 1000.0
-    for item in items:
-        yield item
-        time.sleep(delay)
+    try:
+        if not throttle_ms or throttle_ms <= 0:
+            for item in items:
+                yield item
+            return
+        delay = throttle_ms / 1000.0
+        for item in items:
+            yield item
+            time.sleep(delay)
+    finally:
+        _close_iterator(items)
 
 
 def _close_iterator(items: Iterator[object]) -> None:
@@ -69,20 +75,13 @@ def _close_iterator(items: Iterator[object]) -> None:
         closer()
 
 
-def _managed_items(stream: Iterator[T]) -> Iterator[T]:
-    try:
-        yield from stream
-    finally:
-        _close_iterator(stream)
-
-
 def _runtime_output(
     stream: Iterator[object],
     target: OutputTarget,
     limit: int | None,
 ) -> RuntimeOutput:
     return RuntimeOutput(
-        rows=limit_items(_managed_items(stream), limit),
+        rows=limit_items(stream, limit),
         target=target,
     )
 
@@ -104,10 +103,7 @@ def _parquet_sample_output(
     table: DatasetTable,
 ) -> DatasetTableOutput:
     return DatasetTableOutput(
-        rows=limit_items(
-            _managed_items(throttle_items(stream, throttle_ms)),
-            limit,
-        ),
+        rows=limit_items(throttle_items(stream, throttle_ms), limit),
         table=table,
         target=target,
     )
@@ -279,7 +275,7 @@ def _serve_fold_outputs(
         runtime,
         plans,
     )
-    rows = throttle_items(_managed_items(samples), throttle_ms)
+    rows = throttle_items(samples, throttle_ms)
     output_targets = {
         output_id: target.for_output(output_id) for output_id in output_ids
     }
