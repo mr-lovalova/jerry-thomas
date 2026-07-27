@@ -177,7 +177,7 @@ def _build_artifact(runtime, task: ArtifactTask) -> ArtifactOutput:
 
 
 def _patch_artifact_build(monkeypatch, build) -> None:
-    def load_ep(operation_group, entrypoint):
+    def load_entrypoint(operation_group, entrypoint):
         assert operation_group == "datapipeline.operations.build"
 
         def run(*, runtime, task_cfg):
@@ -186,7 +186,7 @@ def _patch_artifact_build(monkeypatch, build) -> None:
 
         return run
 
-    monkeypatch.setattr(build_exec, "load_ep", load_ep)
+    monkeypatch.setattr(build_exec, "load_entrypoint", load_entrypoint)
 
 
 def _patch_stable_artifact_inputs(monkeypatch) -> None:

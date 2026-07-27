@@ -1,11 +1,10 @@
-import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from datapipeline.config.preview import PreviewStage
-from datapipeline.io.json_file import write_json_object
+from datapipeline.io.json_file import read_json_object, write_json_object
 
 RunStatus = Literal["running", "success", "failed"]
 
@@ -80,9 +79,7 @@ def _write_run_metadata(meta: RunMetadata, path: Path) -> None:
 
 
 def _load_run_metadata(path: Path) -> RunMetadata:
-    with path.open("r", encoding="utf-8") as f:
-        data: dict[str, Any] = json.load(f)
-    return RunMetadata(**data)
+    return RunMetadata(**read_json_object(path))
 
 
 def start_run(

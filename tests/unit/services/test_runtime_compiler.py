@@ -236,7 +236,7 @@ transforms:
         return record
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         lambda group, entrypoint: attach_reference,
     )
 
@@ -367,7 +367,7 @@ combine:
         "attach_factor": attach_factor,
     }
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         lambda group, entrypoint: combiners[entrypoint],
     )
 
@@ -487,7 +487,7 @@ combine:
         return combine
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         load_mapper,
     )
 

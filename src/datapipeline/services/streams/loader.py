@@ -7,7 +7,7 @@ from datapipeline.config.streams import StreamConfig, StreamsConfig
 from datapipeline.services.config_inventory import pipeline_yaml_files
 from datapipeline.services.definitions import ProjectManifest
 from datapipeline.services.streams.validation import validate_stream_configs
-from datapipeline.utils.load import YamlDocument, read_yaml_document
+from datapipeline.io.yaml import YamlDocument, read_yaml_document
 
 
 _STREAM_CONFIG_ADAPTER: TypeAdapter[StreamConfig] = TypeAdapter(StreamConfig)

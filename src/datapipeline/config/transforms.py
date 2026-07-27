@@ -11,7 +11,7 @@ from pydantic import (
 )
 
 from datapipeline.config.constraints import NonEmptyString
-from datapipeline.utils.placeholders import is_missing
+from datapipeline.config.interpolation import is_missing_interpolation
 from datapipeline.utils.time import parse_cadence, parse_datetime, parse_timecode
 
 
@@ -31,7 +31,7 @@ class WhereConfig(_TransformConfig):
 
     @model_validator(mode="after")
     def validate_comparand(self) -> "WhereConfig":
-        if is_missing(self.comparand):
+        if is_missing_interpolation(self.comparand):
             raise ValueError("where comparand must resolve to a value")
         if self.operator in {"in", "not_in"}:
             if not isinstance(self.comparand, (list, tuple)):

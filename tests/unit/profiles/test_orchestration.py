@@ -707,7 +707,7 @@ def test_runtime_job_emits_resolved_config_at_debug(
         lambda message, level: messages.append((message, level)),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.load_ep",
+        "datapipeline.profiles.execution.load_entrypoint",
         lambda *_args: lambda *_runner_args: None,
     )
 
@@ -746,7 +746,7 @@ def test_runtime_job_does_not_hide_plugin_value_errors(
 
         return run
 
-    monkeypatch.setattr("datapipeline.profiles.execution.load_ep", fail)
+    monkeypatch.setattr("datapipeline.profiles.execution.load_entrypoint", fail)
 
     with pytest.raises(ValueError, match="plugin bug"):
         execute_runtime_job(
@@ -798,7 +798,7 @@ def test_runtime_plugin_receives_the_documented_contract(
         return run
 
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.load_ep",
+        "datapipeline.profiles.execution.load_entrypoint",
         load_runner,
     )
 
@@ -834,7 +834,7 @@ def test_dataset_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> 
         run_dataset,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.load_ep",
+        "datapipeline.profiles.execution.load_entrypoint",
         lambda *_args: pytest.fail("core operations must not load plugin entry points"),
     )
 
@@ -857,7 +857,7 @@ def test_matrix_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> N
         run_matrix,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.load_ep",
+        "datapipeline.profiles.execution.load_entrypoint",
         lambda *_args: pytest.fail("core operations must not load plugin entry points"),
     )
 
@@ -1220,7 +1220,7 @@ def test_later_output_commit_failure_marks_run_failed_and_preserves_latest(
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.load_ep",
+        "datapipeline.profiles.execution.load_entrypoint",
         lambda *_args: lambda *_plugin_args: result,
     )
 

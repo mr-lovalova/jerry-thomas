@@ -17,7 +17,7 @@ from datapipeline.config.profiles.inspect import InspectProfile
 from datapipeline.config.profiles.materialize import MaterializeProfile
 from datapipeline.config.profiles.serve import ServeProfile
 from datapipeline.services.definitions import ProjectManifest
-from datapipeline.utils.load import read_yaml_document
+from datapipeline.io.yaml import read_yaml_document
 
 ProfileModel = Annotated[
     ServeProfile | BuildProfile | InspectProfile | MaterializeProfile,

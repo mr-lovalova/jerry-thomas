@@ -199,13 +199,13 @@ class OperationProgressTracker:
         self._step = step
         self._unit = unit
         self._interval_seconds = interval
-        self._last_emit_at = time.perf_counter()
+        self._last_emit_at = time.perf_counter() if interval > 0 else 0.0
         self._completed = 0
 
     def advance(self, count: int = 1) -> None:
-        self._completed += int(count)
-        if self._interval_seconds <= 0:
+        if self._interval_seconds == 0:
             return
+        self._completed += int(count)
         now = time.perf_counter()
         if now - self._last_emit_at < self._interval_seconds:
             return

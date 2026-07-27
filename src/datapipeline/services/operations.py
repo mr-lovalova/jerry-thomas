@@ -11,7 +11,7 @@ from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.services.config_inventory import pipeline_yaml_files
 from datapipeline.services.definitions import ProjectManifest
-from datapipeline.utils.load import YamlDocument, read_yaml_document
+from datapipeline.io.yaml import YamlDocument, read_yaml_document
 
 CORE_OPERATION_MODELS: dict[str, type[Task]] = {
     "scaler": ScalerTask,

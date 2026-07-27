@@ -157,3 +157,18 @@ def test_operation_progress_tracker_preserves_interval_counts_and_unit(
 def test_operation_progress_tracker_rejects_negative_interval() -> None:
     with pytest.raises(ValueError, match="interval_seconds must be non-negative"):
         OperationProgressTracker("write", "rows", interval_seconds=-0.1)
+
+
+def test_disabled_operation_progress_tracker_is_inert(monkeypatch) -> None:
+    class _Uncountable(int):
+        def __int__(self) -> int:
+            raise AssertionError("disabled progress must not count")
+
+    def fail(*_args):
+        raise AssertionError("disabled progress must not observe or emit")
+
+    monkeypatch.setattr(observability.time, "perf_counter", fail)
+    monkeypatch.setattr(observability, "emit_operation_progress", fail)
+
+    progress = OperationProgressTracker("write", "rows", interval_seconds=0)
+    progress.advance(_Uncountable(1))

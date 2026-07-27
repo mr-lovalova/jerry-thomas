@@ -1,7 +1,4 @@
-import importlib.metadata as md
-from collections.abc import Callable
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -52,25 +49,6 @@ class _UniqueKeyLoader(yaml.SafeLoader):
 class YamlDocument:
     path: Path
     data: Any
-
-
-@lru_cache
-def load_ep(group: str, name: str) -> Callable[..., Any]:
-    eps = md.entry_points().select(group=group, name=name)
-    if not eps:
-        available = ", ".join(
-            sorted(ep.name for ep in md.entry_points().select(group=group))
-        )
-        raise ValueError(
-            f"No entry point '{name}' in '{group}'. Available: {available or '(none)'}"
-        )
-    if len(eps) > 1:
-        mods = ", ".join(ep.value for ep in eps)
-        raise ValueError(f"Ambiguous entry point '{name}' in '{group}': {mods}")
-    entrypoint = next(iter(eps)).load()
-    if not callable(entrypoint):
-        raise TypeError(f"Entry point '{name}' in '{group}' must be callable")
-    return entrypoint
 
 
 def read_yaml_document(path: Path, require_mapping: bool = True) -> YamlDocument:

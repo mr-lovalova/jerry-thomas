@@ -43,7 +43,7 @@ def test_combiner_calls_function_with_positional_records(monkeypatch) -> None:
         return _record(1, left.value + right.value + offset)
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         lambda _group, _entrypoint: calculate,
     )
     combine = build_combine_stage(_config(), ("id_",))
@@ -55,7 +55,7 @@ def test_combiner_calls_function_with_positional_records(monkeypatch) -> None:
 
 def test_combiner_drops_none(monkeypatch) -> None:
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         lambda _group, _entrypoint: lambda _left, _right, offset: None,
     )
     combine = build_combine_stage(_config(), ("id_",))
@@ -68,7 +68,7 @@ def test_aligned_combiner_uses_any_real_input_as_domain_anchor(monkeypatch) -> N
         return _record(1, left.value + right.value + offset)
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         lambda _group, _entrypoint: calculate,
     )
     combine = build_combine_stage(_config(), ("id_",))
@@ -85,7 +85,7 @@ def test_aligned_combiner_preserves_placeholder_only_rows(monkeypatch) -> None:
         return _record(1, left.value + right.value + offset)
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         lambda _group, _entrypoint: calculate,
     )
     combine = build_combine_stage(_config(), ("id_",))
@@ -105,7 +105,7 @@ def test_combiner_rejects_changed_time(monkeypatch) -> None:
         return left
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         lambda _group, _entrypoint: change_time,
     )
     combine = build_combine_stage(_config(), ("id_",))
@@ -139,7 +139,7 @@ def test_combiner_normalizes_equivalent_fall_back_time_to_input(
         )
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         lambda _group, _entrypoint: calculate,
     )
     combine = build_combine_stage(_config(), ("id_",))
@@ -179,7 +179,7 @@ def test_combiner_rejects_invalid_time(
         )
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         lambda _group, _entrypoint: calculate,
     )
     combine = build_combine_stage(_config(), ("id_",))
@@ -194,7 +194,7 @@ def test_combiner_rejects_changed_partition(monkeypatch) -> None:
         return left
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         lambda _group, _entrypoint: change_partition,
     )
     combine = build_combine_stage(_config(), ("id_",))

@@ -2,7 +2,7 @@ from datapipeline.config.dataset.dataset import DatasetConfig
 from datapipeline.config.streams import StreamsConfig
 from datapipeline.services.definitions import ProjectManifest
 from datapipeline.services.streams.validation import stream_partition_by
-from datapipeline.utils.load import YamlDocument
+from datapipeline.io.yaml import YamlDocument
 
 
 def dataset_from_document(

@@ -13,7 +13,7 @@ from datapipeline.services.operations import (
 )
 from datapipeline.services.project import load_project
 from datapipeline.services.streams.loader import load_streams
-from datapipeline.utils.load import read_yaml_document
+from datapipeline.io.yaml import read_yaml_document
 
 
 def load_project_definition(project_yaml: Path) -> ProjectDefinition:

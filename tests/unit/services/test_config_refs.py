@@ -12,7 +12,7 @@ from datapipeline.services.project_definition import load_project_definition
 from datapipeline.services.project import load_project
 from datapipeline.services.streams.loader import load_streams
 from datapipeline.services.streams.source import build_source
-from datapipeline.utils.placeholders import is_missing
+from datapipeline.config.interpolation import is_missing_interpolation
 
 
 def _project_variables(project_yaml: Path):
@@ -382,7 +382,7 @@ def test_global_reference_to_null_stays_missing(tmp_path: Path) -> None:
     globals_ = _project_variables(project_yaml)
 
     assert globals_["optional_root"] is None
-    assert is_missing(globals_["derived_root"])
+    assert is_missing_interpolation(globals_["derived_root"])
 
 
 def test_missing_global_cannot_be_embedded_in_another_global(tmp_path: Path) -> None:

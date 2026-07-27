@@ -19,9 +19,8 @@ from datapipeline.operations.persistence import persist_runtime_result
 from datapipeline.operations.runtime.coverage import run_coverage_operation
 from datapipeline.operations.runtime.dataset import run_dataset_operation
 from datapipeline.operations.runtime.matrix import run_matrix_operation
-from datapipeline.plugins import RUNTIME_OPERATIONS_EP
+from datapipeline.plugins import RUNTIME_OPERATIONS_EP, load_entrypoint
 from datapipeline.services.definitions import ProjectDefinition
-from datapipeline.utils.load import load_ep
 
 from .models import RuntimeJob
 
@@ -94,7 +93,7 @@ def run_runtime_operation(job: RuntimeJob) -> object:
     if isinstance(task, CoverageTask):
         return run_coverage_operation(job.runtime, task)
 
-    plugin = load_ep(RUNTIME_OPERATIONS_EP, task.entrypoint)
+    plugin = load_entrypoint(RUNTIME_OPERATIONS_EP, task.entrypoint)
     return plugin(job.runtime, task, job.limit)
 
 

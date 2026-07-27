@@ -10,7 +10,7 @@ from datapipeline.services.config_refs import (
 )
 from datapipeline.services.definitions import ProjectManifest
 from datapipeline.services.path_policy import resolve_project_path
-from datapipeline.utils.load import read_yaml_document
+from datapipeline.io.yaml import read_yaml_document
 
 
 def _config_roots(project_yaml: Path, value: str | list[str]) -> tuple[Path, ...]:

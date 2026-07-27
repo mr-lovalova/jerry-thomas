@@ -27,7 +27,7 @@ from datapipeline.operations.artifacts.utils import (
     metadata_entries_from_stats,
 )
 from datapipeline.runtime import DerivedRuntimeStream, Runtime
-from datapipeline.utils.load import load_yaml
+from datapipeline.io.yaml import load_yaml
 
 
 def _hour(hour: int) -> datetime:

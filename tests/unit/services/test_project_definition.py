@@ -22,7 +22,7 @@ from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.services import config_inventory
 from datapipeline.services.project_definition import load_project_definition
 from datapipeline.services.runtime_compiler import compile_runtime
-from datapipeline.utils import load as yaml_loader
+from datapipeline.io import yaml as yaml_loader
 
 
 def _write_project(root: Path) -> Path:

@@ -8,14 +8,13 @@ from datapipeline.config.streams import (
     BroadcastAsOfStreamConfig,
     BroadcastStreamConfig,
 )
-from datapipeline.plugins import COMBINERS_EP
+from datapipeline.config.interpolation import normalize_interpolated_args
+from datapipeline.plugins import COMBINERS_EP, load_entrypoint
 from datapipeline.transforms.utils import (
     partition_key,
     record_establishes_domain,
     set_record_domain_anchor,
 )
-from datapipeline.utils.load import load_ep
-from datapipeline.utils.placeholders import normalize_args
 
 
 def build_combine_stage(
@@ -27,8 +26,8 @@ def build_combine_stage(
     ),
     partition_by: tuple[str, ...],
 ) -> Callable[[Iterator[tuple[Any, ...]]], Iterable[Any]]:
-    combine = load_ep(COMBINERS_EP, config.combine.entrypoint)
-    args = normalize_args(config.combine.args)
+    combine = load_entrypoint(COMBINERS_EP, config.combine.entrypoint)
+    args = normalize_interpolated_args(config.combine.args)
 
     def combine_records(rows: Iterator[tuple[Any, ...]]) -> Iterator[Any]:
         for records in rows:

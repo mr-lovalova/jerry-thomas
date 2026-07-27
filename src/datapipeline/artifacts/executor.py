@@ -25,11 +25,10 @@ from datapipeline.operations.persistence import (
     ArtifactOutput,
     fingerprint_artifact_output,
 )
-from datapipeline.plugins import BUILD_OPERATIONS_EP
+from datapipeline.plugins import BUILD_OPERATIONS_EP, load_entrypoint
 from datapipeline.runtime import Runtime
 from datapipeline.services.definitions import ArtifactHashes, ProjectDefinition
 from datapipeline.services.path_policy import resolve_artifact_output_path
-from datapipeline.utils.load import load_ep
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +254,7 @@ def _execute_build_jobs(
                 artifact_keys=plan.artifacts,
             )
 
-            runner = load_ep(BUILD_OPERATIONS_EP, job.task.entrypoint)
+            runner = load_entrypoint(BUILD_OPERATIONS_EP, job.task.entrypoint)
             operation_result = runner(
                 runtime=runtime,
                 task_cfg=job.task,

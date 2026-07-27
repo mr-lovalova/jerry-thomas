@@ -5,7 +5,7 @@ import importlib
 
 import pytest
 
-from datapipeline.utils import load as dp_load
+import datapipeline.plugins as dp_plugins
 
 # Test-only entrypoint declarations.
 _TEST_EP_TARGETS = {
@@ -22,19 +22,19 @@ _TEST_EP_TARGETS = {
         "combine_humidity_with_baseline",
     ): "tests.combiners:combine_humidity_with_baseline",
 }
-_ORIGINAL_LOAD_EP = dp_load.load_ep
+_ORIGINAL_LOAD_ENTRYPOINT = dp_plugins.load_entrypoint
 
 
 @lru_cache(maxsize=None)
-def _load_ep_with_test_targets(group: str, name: str):
+def _load_entrypoint_with_test_targets(group: str, name: str):
     target = _TEST_EP_TARGETS.get((group, name))
     if target:
         module, attr = target.split(":")
         return getattr(importlib.import_module(module), attr)
-    return _ORIGINAL_LOAD_EP(group, name)
+    return _ORIGINAL_LOAD_ENTRYPOINT(group, name)
 
 
-dp_load.load_ep = _load_ep_with_test_targets
+dp_plugins.load_entrypoint = _load_entrypoint_with_test_targets
 
 
 @pytest.fixture
