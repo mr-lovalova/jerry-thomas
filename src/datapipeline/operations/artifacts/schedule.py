@@ -121,7 +121,6 @@ def build_schedule_artifact(
         _close_iterator(stream)
 
     return ArtifactOutput(
-        relative_path=str(relative_path),
         meta={
             "rows": rows,
             "stream": task_cfg.stream,

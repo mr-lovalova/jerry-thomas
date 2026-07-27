@@ -765,4 +765,4 @@ def build_metadata_artifact(
         "features": len(feature_meta),
         "targets": len(target_meta),
     }
-    return ArtifactOutput(relative_path=str(relative_path), meta=meta)
+    return ArtifactOutput(meta=meta)

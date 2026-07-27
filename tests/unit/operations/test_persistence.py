@@ -3,19 +3,18 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 import pyarrow.parquet as parquet
 
 import datapipeline.operations.persistence as persistence
-from datapipeline.artifacts.registry import ArtifactRegistry
 from datapipeline.artifacts.models import ScalarVectorMetadataEntry
 from datapipeline.cli.visuals.execution import make_execution_observer
 from datapipeline.cli.visuals.execution_context import (
     reset_current_execution_event_handler,
     set_current_execution_event_handler,
 )
+from datapipeline.config.tasks.base import ArtifactTask
 from datapipeline.execution.observability import (
     FileResult,
     execution_observer,
@@ -32,7 +31,7 @@ from datapipeline.operations.persistence import (
     RoutedRuntimeOutput,
     RuntimeOutput,
     RuntimeOutputBatch,
-    persist_artifact_output,
+    fingerprint_artifact_output,
     persist_runtime_result,
 )
 
@@ -144,110 +143,102 @@ def test_html_only_runtime_output_rejects_non_html_target(tmp_path: Path) -> Non
     assert not destination.exists()
 
 
-def test_persist_artifact_output_requires_declared_existing_file(tmp_path) -> None:
-    runtime = SimpleNamespace(
-        artifacts_root=tmp_path,
-        artifacts=ArtifactRegistry(tmp_path),
+def test_fingerprint_artifact_output_requires_declared_file(tmp_path) -> None:
+    task = ArtifactTask(
+        id="snapshot",
+        entrypoint="plugin.snapshot",
+        output="snapshot.json",
     )
-
-    with pytest.raises(ValueError, match="but its operation declares"):
-        persist_artifact_output(
-            ArtifactOutput(relative_path="other.json"),
-            artifact_key="snapshot",
-            expected_relative_path="snapshot.json",
-            runtime=runtime,
-        )
 
     with pytest.raises(RuntimeError, match="did not create its declared output"):
-        persist_artifact_output(
-            ArtifactOutput(relative_path="snapshot.json"),
-            artifact_key="snapshot",
-            expected_relative_path="snapshot.json",
-            runtime=runtime,
+        fingerprint_artifact_output(
+            ArtifactOutput(),
+            task=task,
+            artifacts_root=tmp_path,
         )
 
 
-def test_persist_artifact_output_snapshots_declared_file(tmp_path) -> None:
+def test_fingerprint_artifact_output_snapshots_declared_file(tmp_path) -> None:
     output = tmp_path / "snapshot.json"
     output.write_text("{}", encoding="utf-8")
-    runtime = SimpleNamespace(
+    task = ArtifactTask(
+        id="snapshot",
+        entrypoint="plugin.snapshot",
+        output="snapshot.json",
+    )
+
+    result = ArtifactOutput(meta={"rows": 1})
+    files = fingerprint_artifact_output(
+        result,
+        task=task,
         artifacts_root=tmp_path,
-        artifacts=ArtifactRegistry(tmp_path),
     )
 
-    info = persist_artifact_output(
-        ArtifactOutput(relative_path="snapshot.json", meta={"rows": 1}),
-        artifact_key="snapshot",
-        expected_relative_path="snapshot.json",
-        runtime=runtime,
-    )
-
-    assert info is not None
-    assert info.relative_path == "snapshot.json"
-    assert tuple(file.relative_path for file in info.files) == ("snapshot.json",)
-    assert not runtime.artifacts.has("snapshot")
+    assert tuple(file.relative_path for file in files) == ("snapshot.json",)
+    assert result.meta == {"rows": 1}
 
 
-def test_persist_artifact_output_validates_companion_files(tmp_path) -> None:
+def test_fingerprint_artifact_output_validates_companion_files(tmp_path) -> None:
     output = tmp_path / "manifest.json"
     companion = tmp_path / "manifest.shards/000000.jsonl.gz"
     output.write_text("{}", encoding="utf-8")
     companion.parent.mkdir()
     companion.write_bytes(b"shard")
-    runtime = SimpleNamespace(
-        artifacts_root=tmp_path,
-        artifacts=ArtifactRegistry(tmp_path),
+    task = ArtifactTask(
+        id="series",
+        entrypoint="plugin.series",
+        output="manifest.json",
     )
 
-    info = persist_artifact_output(
+    files = fingerprint_artifact_output(
         ArtifactOutput(
-            relative_path="manifest.json",
             companion_paths=("manifest.shards/000000.jsonl.gz",),
         ),
-        artifact_key="series",
-        expected_relative_path="manifest.json",
-        runtime=runtime,
+        task=task,
+        artifacts_root=tmp_path,
     )
 
-    assert info is not None
-    assert tuple(file.relative_path for file in info.files) == (
+    assert tuple(file.relative_path for file in files) == (
         "manifest.json",
         "manifest.shards/000000.jsonl.gz",
     )
 
 
-def test_persist_artifact_output_rejects_escaping_companion(tmp_path) -> None:
+def test_fingerprint_artifact_output_rejects_escaping_companion(tmp_path) -> None:
     (tmp_path / "manifest.json").write_text("{}", encoding="utf-8")
-    runtime = SimpleNamespace(
-        artifacts_root=tmp_path,
-        artifacts=ArtifactRegistry(tmp_path),
+    task = ArtifactTask(
+        id="series",
+        entrypoint="plugin.series",
+        output="manifest.json",
     )
 
     with pytest.raises(ValueError, match="must be relative"):
-        persist_artifact_output(
+        fingerprint_artifact_output(
             ArtifactOutput(
-                relative_path="manifest.json",
                 companion_paths=("../outside.jsonl.gz",),
             ),
-            artifact_key="series",
-            expected_relative_path="manifest.json",
-            runtime=runtime,
+            task=task,
+            artifacts_root=tmp_path,
         )
 
 
-def test_persist_artifact_output_rejects_case_colliding_companion(tmp_path) -> None:
+def test_fingerprint_artifact_output_rejects_case_colliding_companion(
+    tmp_path,
+) -> None:
     (tmp_path / "manifest.json").write_text("{}", encoding="utf-8")
-    runtime = SimpleNamespace(artifacts_root=tmp_path)
+    task = ArtifactTask(
+        id="series",
+        entrypoint="plugin.series",
+        output="manifest.json",
+    )
 
     with pytest.raises(ValueError, match="output paths must be unique"):
-        persist_artifact_output(
+        fingerprint_artifact_output(
             ArtifactOutput(
-                relative_path="manifest.json",
                 companion_paths=("MANIFEST.json",),
             ),
-            artifact_key="series",
-            expected_relative_path="manifest.json",
-            runtime=runtime,
+            task=task,
+            artifacts_root=tmp_path,
         )
 
 

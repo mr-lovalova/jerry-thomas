@@ -1516,10 +1516,11 @@ def test_series_artifact_feeds_serve_pipeline(tmp_path: Path) -> None:
     unrelated.parent.mkdir(parents=True)
     unrelated.write_text("keep", encoding="utf-8")
 
-    result = build_series_artifact(runtime, SeriesTask())
+    task = SeriesTask()
+    result = build_series_artifact(runtime, task)
     runtime.artifacts.register(
         SERIES,
-        relative_path=result.relative_path,
+        relative_path=task.output,
         meta=result.meta,
     )
     cached = _sample_payload(
@@ -1537,7 +1538,7 @@ def test_series_artifact_feeds_serve_pipeline(tmp_path: Path) -> None:
         "rows": 3,
         "format": "jsonl.gz",
     }
-    manifest_path = runtime.artifacts_root / result.relative_path
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     data_path = Path(manifest.path)
     assert data_path.parts[0] == "manifest.data"
@@ -1604,9 +1605,10 @@ def test_metadata_rejects_projected_wide_id_outside_fold_training(
         ),
     )
 
-    result = build_series_artifact(runtime, SeriesTask())
-    runtime.artifacts.register(SERIES, result.relative_path, meta=result.meta)
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    result = build_series_artifact(runtime, task)
+    runtime.artifacts.register(SERIES, task.output, meta=result.meta)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
 
     assert [tuple(row.features) for row in open_series(manifest_path, manifest)] == [
@@ -1730,8 +1732,9 @@ def test_series_shared_stream_matches_independent_series_pipelines(
         count_floor_time,
     )
 
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     actual_rows = list(open_series(manifest_path, manifest))
 
@@ -1781,8 +1784,9 @@ def test_series_store_sequence_values_unscaled(
         sample=SampleConfig(cadence="1h"),
         features=[config],
     )
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     [row] = open_series(manifest_path, manifest)
 
@@ -1876,8 +1880,9 @@ def test_series_artifact_collects_an_explicit_fixed_size_bucket(
         ],
     )
 
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     rows = list(open_series(manifest_path, manifest))
 
@@ -1906,8 +1911,9 @@ def test_series_artifact_collect_size_one_remains_a_list(
         ],
     )
 
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     [row] = open_series(manifest_path)
 
     assert row.features == {"price": [None]}
@@ -1934,15 +1940,14 @@ def test_collected_series_produces_fixed_list_metadata(
             )
         ],
     )
-    series = build_series_artifact(runtime, SeriesTask())
-    runtime.artifacts.register(SERIES, series.relative_path, meta=series.meta)
+    series_task = SeriesTask()
+    series = build_series_artifact(runtime, series_task)
+    runtime.artifacts.register(SERIES, series_task.output, meta=series.meta)
 
-    metadata = build_metadata_artifact(
-        runtime,
-        MetadataTask(output="metadata.json"),
-    )
+    metadata_task = MetadataTask(output="metadata.json")
+    build_metadata_artifact(runtime, metadata_task)
     payload = json.loads(
-        (runtime.artifacts_root / metadata.relative_path).read_text(encoding="utf-8")
+        (runtime.artifacts_root / metadata_task.output).read_text(encoding="utf-8")
     )
 
     [entry] = payload["catalog"]["features"]
@@ -1998,8 +2003,9 @@ def test_series_artifact_preserves_a_list_valued_scalar(
         ],
     )
 
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     [row] = open_series(manifest_path, manifest)
 
@@ -2057,8 +2063,9 @@ def test_series_artifact_collects_each_wide_series_independently(
         ],
     )
 
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     [row] = open_series(manifest_path)
 
     assert row.features == {
@@ -2098,8 +2105,9 @@ def test_series_artifact_collects_targets(
         ],
     )
 
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     [row] = open_series(manifest_path)
 
     assert row.features == {"price": [10.0, 11.0]}
@@ -2129,8 +2137,9 @@ def test_series_artifact_collect_counts_and_tracks_cadence_placeholders(
         ],
     )
 
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     rows = list(open_series(manifest_path))
 
     assert [row.features for row in rows] == [
@@ -2172,8 +2181,9 @@ def test_series_manifest_counts_empty_series_from_a_shared_stream(
         ],
     )
 
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
 
     assert [(entry.id, entry.samples) for entry in manifest.features] == [
@@ -2208,8 +2218,9 @@ def test_series_record_sort_is_part_of_the_observed_stream_pipeline(
         rich_renderer.render(event)
 
     runtime.pipeline_observer = observe
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     [row] = open_series(manifest_path, manifest)
 
@@ -2267,8 +2278,8 @@ def test_failed_series_rebuild_preserves_previous_generation(
         ],
     )
     task = SeriesTask()
-    first = build_series_artifact(runtime, task)
-    manifest_path = runtime.artifacts_root / first.relative_path
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     previous_manifest = manifest_path.read_bytes()
     previous = load_series_manifest(manifest_path)
     previous_data = manifest_path.parent / previous.path
@@ -2310,8 +2321,8 @@ def test_failed_series_manifest_commit_removes_new_generation(
         features=[SeriesConfig(stream="stream", id="value", field="value")],
     )
     task = SeriesTask()
-    first = build_series_artifact(runtime, task)
-    manifest_path = runtime.artifacts_root / first.relative_path
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     previous_manifest = manifest_path.read_bytes()
     previous = load_series_manifest(manifest_path)
     previous_path = manifest_path.parent / previous.path
@@ -2346,8 +2357,8 @@ def test_identical_series_rebuild_publishes_a_new_generation(
     )
     task = SeriesTask()
 
-    first = build_series_artifact(runtime, task)
-    manifest_path = runtime.artifacts_root / first.relative_path
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     first_manifest = load_series_manifest(manifest_path)
     first_path = manifest_path.parent / first_manifest.path
 
@@ -2373,8 +2384,8 @@ def test_changed_series_rebuild_retains_previous_generation(
     )
     task = SeriesTask()
 
-    first = build_series_artifact(runtime, task)
-    manifest_path = runtime.artifacts_root / first.relative_path
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     first_manifest = load_series_manifest(manifest_path)
     first_path = manifest_path.parent / first_manifest.path
     first_rows = list(open_series(manifest_path, first_manifest))
@@ -2412,8 +2423,8 @@ def test_series_rebuild_replaces_a_corrupt_generation(
     )
     task = SeriesTask()
 
-    first = build_series_artifact(runtime, task)
-    manifest_path = runtime.artifacts_root / first.relative_path
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     data_path = manifest_path.parent / manifest.path
     data_path.write_bytes(b"corrupt")

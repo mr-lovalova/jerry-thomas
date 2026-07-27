@@ -101,18 +101,16 @@ def test_schedule_task_rejects_time_as_partition_field() -> None:
 def test_build_schedule_artifact_writes_sorted_unique_rows(tmp_path) -> None:
     runtime = _runtime(tmp_path)
 
-    result = build_schedule_artifact(
-        runtime,
-        ScheduleTask(
-            id="schedule",
-            entrypoint="core.artifact.schedule",
-            stream="source.stream",
-            partition_by=[],
-            output="build/schedule.jsonl",
-        ),
+    task = ScheduleTask(
+        id="schedule",
+        entrypoint="core.artifact.schedule",
+        stream="source.stream",
+        partition_by=[],
+        output="build/schedule.jsonl",
     )
+    result = build_schedule_artifact(runtime, task)
 
-    path = runtime.artifacts_root / result.relative_path
+    path = runtime.artifacts_root / task.output
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows == [
         {"time": "2024-01-01T00:00:00Z"},
@@ -136,18 +134,16 @@ def test_build_schedule_artifact_writes_partitioned_rows(tmp_path) -> None:
         ],
     )
 
-    result = build_schedule_artifact(
-        runtime,
-        ScheduleTask(
-            id="schedule",
-            entrypoint="core.artifact.schedule",
-            stream="source.stream",
-            partition_by=["security_id"],
-            output="build/schedule.jsonl",
-        ),
+    task = ScheduleTask(
+        id="schedule",
+        entrypoint="core.artifact.schedule",
+        stream="source.stream",
+        partition_by=["security_id"],
+        output="build/schedule.jsonl",
     )
+    result = build_schedule_artifact(runtime, task)
 
-    path = runtime.artifacts_root / result.relative_path
+    path = runtime.artifacts_root / task.output
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows == [
         {"time": "2024-01-01T00:00:00Z", "security_id": "AAPL"},
@@ -180,18 +176,16 @@ def test_build_schedule_artifact_reuses_matching_stream_order(
         lambda *_args, **_kwargs: pytest.fail("ordered schedule was sorted again"),
     )
 
-    result = build_schedule_artifact(
-        runtime,
-        ScheduleTask(
-            id="schedule",
-            entrypoint="core.artifact.schedule",
-            stream="source.stream",
-            partition_by=["security_id"],
-            output="build/schedule.jsonl",
-        ),
+    task = ScheduleTask(
+        id="schedule",
+        entrypoint="core.artifact.schedule",
+        stream="source.stream",
+        partition_by=["security_id"],
+        output="build/schedule.jsonl",
     )
+    build_schedule_artifact(runtime, task)
 
-    path = runtime.artifacts_root / result.relative_path
+    path = runtime.artifacts_root / task.output
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows == [
         {"time": "2024-01-01T00:00:00Z", "security_id": "AAPL"},
@@ -228,18 +222,16 @@ def test_build_schedule_artifact_reuses_aligned_stream_order(
         lambda *_args, **_kwargs: pytest.fail("ordered schedule was sorted again"),
     )
 
-    result = build_schedule_artifact(
-        runtime,
-        ScheduleTask(
-            id="schedule",
-            entrypoint="core.artifact.schedule",
-            stream="aligned.stream",
-            partition_by=["security_id"],
-            output="build/schedule.jsonl",
-        ),
+    task = ScheduleTask(
+        id="schedule",
+        entrypoint="core.artifact.schedule",
+        stream="aligned.stream",
+        partition_by=["security_id"],
+        output="build/schedule.jsonl",
     )
+    build_schedule_artifact(runtime, task)
 
-    path = runtime.artifacts_root / result.relative_path
+    path = runtime.artifacts_root / task.output
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows == [
         {"time": "2024-01-01T00:00:00Z", "security_id": "AAPL"},
@@ -350,18 +342,16 @@ def test_build_schedule_artifact_uses_stream_transforms(
         lambda *_args, **_kwargs: pytest.fail("ordered schedule was sorted again"),
     )
 
-    result = build_schedule_artifact(
-        runtime,
-        ScheduleTask(
-            id="derived_schedule",
-            entrypoint="core.artifact.schedule",
-            stream="derived.stream",
-            partition_by=[],
-            output="build/derived_schedule.jsonl",
-        ),
+    task = ScheduleTask(
+        id="derived_schedule",
+        entrypoint="core.artifact.schedule",
+        stream="derived.stream",
+        partition_by=[],
+        output="build/derived_schedule.jsonl",
     )
+    build_schedule_artifact(runtime, task)
 
-    path = runtime.artifacts_root / result.relative_path
+    path = runtime.artifacts_root / task.output
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows == [
         {"time": "2024-01-01T00:30:00Z"},

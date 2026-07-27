@@ -1,7 +1,6 @@
 import json
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
 from datapipeline.artifacts.errors import ArtifactResolutionError
@@ -22,7 +21,10 @@ from datapipeline.execution.observability import (
     emit_file_result,
     operation_scope,
 )
-from datapipeline.operations.persistence import persist_artifact_output
+from datapipeline.operations.persistence import (
+    ArtifactOutput,
+    fingerprint_artifact_output,
+)
 from datapipeline.plugins import BUILD_OPERATIONS_EP
 from datapipeline.runtime import Runtime
 from datapipeline.services.definitions import ArtifactHashes, ProjectDefinition
@@ -254,20 +256,18 @@ def _execute_build_jobs(
             )
 
             runner = load_ep(BUILD_OPERATIONS_EP, job.task.entrypoint)
-            output = runner(
+            operation_result = runner(
                 runtime=runtime,
                 task_cfg=job.task,
             )
-            result = persist_artifact_output(
+            if not isinstance(operation_result, ArtifactOutput):
+                raise TypeError("Build operation must return ArtifactOutput.")
+            output = operation_result
+            files = fingerprint_artifact_output(
                 output,
-                artifact_key=job.task.id,
-                expected_relative_path=job.task.output,
-                runtime=runtime,
+                task=job.task,
+                artifacts_root=runtime.artifacts_root,
             )
-            if result is None:
-                raise RuntimeError(
-                    f"Artifact operation '{job.task.id}' produced no artifact."
-                )
             _require_stable_artifact_inputs(
                 definition,
                 job.task.id,
@@ -275,19 +275,18 @@ def _execute_build_jobs(
             )
             current_state.register(
                 job.task.id,
-                result.relative_path,
                 artifact_hash=artifact_hash,
-                files=result.files,
-                meta=result.meta,
+                files=files,
+                meta=output.meta,
             )
             save_build_state(current_state, runtime.artifacts_root)
             runtime.artifacts.register(
                 job.task.id,
-                relative_path=result.relative_path,
-                meta=result.meta,
+                relative_path=job.task.output,
+                meta=output.meta,
             )
             label = job.task.id.replace("_", " ").capitalize()
-            path = (Path(runtime.artifacts_root) / result.relative_path).resolve()
+            path = (runtime.artifacts_root / job.task.output).resolve()
             emit_file_result(label, path)
     return current_state
 

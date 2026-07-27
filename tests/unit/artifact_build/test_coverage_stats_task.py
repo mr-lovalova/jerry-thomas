@@ -118,14 +118,11 @@ def test_build_coverage_stats_artifact_writes_bounded_v3_summary(
         lambda _config, _schema: _postprocess_plan(),
     )
 
-    result = build_coverage_stats_artifact(
-        runtime,
-        CoverageStatsTask(),
-    )
+    task = CoverageStatsTask()
+    build_coverage_stats_artifact(runtime, task)
 
-    assert result.relative_path == "build/coverage_stats.json"
     payload = json.loads(
-        (runtime.artifacts_root / result.relative_path).read_text(encoding="utf-8")
+        (runtime.artifacts_root / task.output).read_text(encoding="utf-8")
     )
     assert payload["schema_version"] == 3
     assert payload["stage"] == "postprocessed"
@@ -194,13 +191,11 @@ def test_postprocessed_coverage_stats_keep_columns_when_every_sample_is_dropped(
         lambda _config, _schema: _postprocess_plan(drop_all),
     )
 
-    result = build_coverage_stats_artifact(
-        runtime,
-        CoverageStatsTask(),
-    )
+    task = CoverageStatsTask()
+    build_coverage_stats_artifact(runtime, task)
 
     payload = json.loads(
-        (runtime.artifacts_root / result.relative_path).read_text(encoding="utf-8")
+        (runtime.artifacts_root / task.output).read_text(encoding="utf-8")
     )
     assert payload["total_samples"] == 0
     assert [entry["id"] for entry in payload["features"]["columns"]] == ["speed"]

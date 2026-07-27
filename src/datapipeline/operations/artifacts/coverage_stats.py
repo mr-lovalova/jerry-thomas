@@ -69,7 +69,6 @@ def build_coverage_stats_artifact(
     write_json_artifact(destination, artifact.model_dump(mode="json"))
 
     return ArtifactOutput(
-        relative_path=str(relative_path),
         meta={
             "stage": task_cfg.stage,
             "samples": total_samples,

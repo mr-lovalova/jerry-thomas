@@ -120,13 +120,10 @@ def test_materialize_standard_scaler_uses_all_scalar_observations(
         rows=[_record(1, 1.0), _record(3, 3.0)],
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    result = build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
     assert artifact.version == 4
     assert artifact.observations == 2
@@ -149,13 +146,10 @@ def test_materialize_standard_scaler_fits_intrinsic_list_positions(
         ],
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    result = build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
     statistics = artifact.statistics["x"]
     assert isinstance(statistics, PositionalScalerStatistics)
@@ -204,13 +198,10 @@ def test_folded_scaler_fits_list_positions_from_training_rows_only(
         ],
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
     statistics = artifact.for_fold("fold").statistics["x"]
     assert isinstance(statistics, PositionalScalerStatistics)
@@ -224,18 +215,15 @@ def test_materialize_standard_scaler_persists_build_options(
 ) -> None:
     runtime = _runtime(tmp_path, _dataset(), rows=[_record(1, 4.0)])
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(
-            output="scaler.json",
-            with_mean=False,
-            with_std=False,
-            epsilon=0.5,
-        ),
+    task = ScalerTask(
+        output="scaler.json",
+        with_mean=False,
+        with_std=False,
+        epsilon=0.5,
     )
+    build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
     assert artifact.with_mean is False
     assert artifact.with_std is False
@@ -263,13 +251,10 @@ def test_standard_scaler_excludes_placeholder_only_wide_ids(
         lambda *_args: iter((genuine, placeholder)),
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
     assert artifact.observations == 1
     assert tuple(artifact.statistics) == ("x__@bucket:known",)
@@ -323,32 +308,15 @@ def test_scaler_excludes_leading_placeholders_for_later_entities(
         ),
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     scaler = artifact.for_fold("fold") if split is not None else artifact
     assert isinstance(scaler, StandardScalerArtifact)
     assert scaler.observations == 3
     assert scaler.statistics["x"].count == 3
     assert scaler.statistics["x"].mean == pytest.approx(5 / 3)
-
-
-def test_materialize_scaler_skips_dataset_without_scaled_features(
-    tmp_path,
-) -> None:
-    runtime = _runtime(tmp_path, _dataset(scale=False))
-
-    assert (
-        build_scaler_artifact(
-            runtime,
-            ScalerTask(output="scaler.json"),
-        )
-        is None
-    )
 
 
 def test_scaler_fitting_observes_scalars_before_sequence(tmp_path) -> None:
@@ -358,13 +326,10 @@ def test_scaler_fitting_observes_scalars_before_sequence(tmp_path) -> None:
         rows=[_record(1, 1.0), _record(2, 3.0)],
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
     assert artifact.observations == 2
     assert artifact.statistics["x"].mean == 2.0
@@ -415,13 +380,10 @@ def test_target_horizon_trims_pre_sequence_feature_scaler_origins(tmp_path) -> N
         ],
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
     scaler = artifact.for_fold("fold")
     assert scaler.observations == 2
@@ -473,13 +435,10 @@ def test_materialize_folded_scaler_uses_dataset_owned_expanding_train_roles(
         ],
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    result = build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
     assert artifact.version == 4
     assert artifact.for_fold("fold_0").statistics["x"].mean == 1.0
@@ -526,13 +485,10 @@ def test_folded_scaler_assigns_records_by_floored_sample_time(tmp_path) -> None:
         rows=[train_record, validation_record],
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
     scaler = artifact.for_fold("fold")
     assert scaler.statistics["x"].mean == 1.0
@@ -564,13 +520,10 @@ def test_scaler_opens_a_shared_stream_once_for_all_scaled_fields(tmp_path) -> No
     )
     source = runtime.streams["stream"].source
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
     assert artifact.statistics["value"].mean == 2.0
     assert artifact.statistics["other"].mean == 20.0
@@ -606,13 +559,10 @@ def test_grouped_scaler_preserves_global_scalar_statistics_across_sample_keys(
         partition_by=("security_id",),
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
     statistics = artifact.statistics["value"]
     assert statistics.count == 4
@@ -737,13 +687,10 @@ def test_folded_scaler_includes_filled_training_placeholders(
         ),
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
     scaler = artifact.for_fold("fold")
     assert scaler.observations == 3
@@ -779,13 +726,10 @@ def test_folded_scaler_excludes_placeholder_only_wide_ids(
         lambda *_args: iter((genuine, placeholder)),
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
     scaler = artifact.for_fold("fold")
     assert scaler.observations == 1
@@ -804,12 +748,9 @@ def test_materialize_folded_scaler_supports_hash_splits(tmp_path) -> None:
         rows=[_record(1, 2.0), _record(2, 4.0)],
     )
 
-    result = build_scaler_artifact(
-        runtime,
-        ScalerTask(output="scaler.json"),
-    )
+    task = ScalerTask(output="scaler.json")
+    build_scaler_artifact(runtime, task)
 
-    assert result is not None
-    artifact = load_scaler_artifact(runtime.artifacts_root / result.relative_path)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
     assert artifact.for_fold("fold").statistics["x"].mean == 3.0

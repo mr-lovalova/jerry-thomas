@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence, TypeAlias
 
 from datapipeline.build.state import ArtifactFileFingerprint
+from datapipeline.config.tasks.base import ArtifactTask
 from datapipeline.domain.sample import Sample
 from datapipeline.execution.observability import (
     OperationProgressTracker,
@@ -23,18 +24,10 @@ from datapipeline.io.sinks.files import AtomicTextFileSink
 from datapipeline.io.writers.parquet import DEFAULT_ROW_GROUP_ROWS
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ArtifactOutput:
-    relative_path: str
     companion_paths: tuple[str, ...] = ()
     meta: Mapping[str, object] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class PersistedArtifact:
-    relative_path: str
-    files: tuple[ArtifactFileFingerprint, ...]
-    meta: Mapping[str, object]
 
 
 @dataclass(frozen=True)
@@ -98,36 +91,24 @@ class RuntimeOutputBatch:
     outputs: Sequence[RuntimeOutputItem]
 
 
-def persist_artifact_output(
-    result: object,
+def fingerprint_artifact_output(
+    output: ArtifactOutput,
     *,
-    artifact_key: str,
-    expected_relative_path: str | None = None,
-    runtime,
-) -> PersistedArtifact | None:
-    if result is None:
-        return None
-    if not isinstance(result, ArtifactOutput):
-        raise TypeError("Build operation must return ArtifactOutput or None.")
-    if expected_relative_path is not None and Path(result.relative_path) != Path(
-        expected_relative_path
-    ):
-        raise ValueError(
-            f"Artifact '{artifact_key}' returned path '{result.relative_path}', "
-            f"but its operation declares '{expected_relative_path}'."
-        )
-    relative_paths = (result.relative_path, *result.companion_paths)
+    task: ArtifactTask,
+    artifacts_root: Path,
+) -> tuple[ArtifactFileFingerprint, ...]:
+    relative_paths = (task.output, *output.companion_paths)
     normalized_paths = tuple(Path(relative_path) for relative_path in relative_paths)
     path_keys = {output_destination_key(path) for path in normalized_paths}
     if len(normalized_paths) != len(path_keys):
-        raise ValueError(f"Artifact '{artifact_key}' output paths must be unique.")
+        raise ValueError(f"Artifact '{task.id}' output paths must be unique.")
 
-    artifacts_root = Path(runtime.artifacts_root).resolve()
+    artifacts_root = artifacts_root.resolve()
     files: list[ArtifactFileFingerprint] = []
     for relative_path, normalized_path in zip(relative_paths, normalized_paths):
         if normalized_path.is_absolute() or ".." in normalized_path.parts:
             raise ValueError(
-                f"Artifact '{artifact_key}' output path '{relative_path}' must be "
+                f"Artifact '{task.id}' output path '{relative_path}' must be "
                 "relative to the artifacts root."
             )
         full_path = (artifacts_root / normalized_path).resolve()
@@ -135,21 +116,15 @@ def persist_artifact_output(
             full_path.relative_to(artifacts_root)
         except ValueError as exc:
             raise ValueError(
-                f"Artifact '{artifact_key}' output must stay under {artifacts_root}."
+                f"Artifact '{task.id}' output must stay under {artifacts_root}."
             ) from exc
         if not full_path.is_file():
             raise RuntimeError(
-                f"Artifact '{artifact_key}' did not create its declared output: "
-                f"{full_path}."
+                f"Artifact '{task.id}' did not create its declared output: {full_path}."
             )
         files.append(ArtifactFileFingerprint.from_path(str(normalized_path), full_path))
 
-    persisted = PersistedArtifact(
-        relative_path=str(normalized_paths[0]),
-        files=tuple(files),
-        meta=dict(result.meta),
-    )
-    return persisted
+    return tuple(files)
 
 
 def _close_runtime_rows(rows: Iterable[Any]) -> None:

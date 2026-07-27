@@ -25,13 +25,11 @@ def test_drop_with_metadata_and_partitioned_streams(copy_fixture):
         dataset.sample.cadence,
         targets=dataset.targets,
     )
-    metadata = build_metadata_artifact(
-        runtime,
-        MetadataTask(id="metadata", output="metadata.json"),
-    )
+    metadata_task = MetadataTask(id="metadata", output="metadata.json")
+    build_metadata_artifact(runtime, metadata_task)
     runtime.artifacts.register(
         VECTOR_METADATA,
-        relative_path=metadata.relative_path,
+        relative_path=metadata_task.output,
     )
     metadata_artifact = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     schema = metadata_artifact.catalog

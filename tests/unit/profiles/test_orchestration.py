@@ -1467,7 +1467,6 @@ def test_materialize_hydrates_current_schedule_when_build_skips(
     state = BuildState()
     state.register(
         schedule.id,
-        schedule.output,
         artifact_hash=definition.artifact_hashes.for_artifact(schedule.id),
         files=(ArtifactFileFingerprint.from_path(schedule.output, artifact_path),),
     )

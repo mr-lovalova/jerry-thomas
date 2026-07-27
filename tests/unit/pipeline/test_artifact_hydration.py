@@ -70,7 +70,6 @@ def test_hydration_replaces_registry_with_dependency_current_artifacts(
         relative_path = paths[key]
         state.register(
             key,
-            relative_path,
             artifact_hash="current",
             files=(
                 ArtifactFileFingerprint.from_path(
@@ -81,7 +80,6 @@ def test_hydration_replaces_registry_with_dependency_current_artifacts(
         )
     state.register(
         VECTOR_METADATA,
-        paths[VECTOR_METADATA],
         artifact_hash="current",
         files=(
             ArtifactFileFingerprint(
@@ -138,7 +136,6 @@ def test_hydration_skips_incomplete_unrelated_artifact_chain(tmp_path) -> None:
         destination.write_text("{}", encoding="utf-8")
         state.register(
             key,
-            relative_path,
             artifact_hash="current",
             files=(ArtifactFileFingerprint.from_path(relative_path, destination),),
         )
@@ -205,7 +202,6 @@ def test_project_hydration_excludes_nested_schedule_and_dependents(
         destination.write_text("{}", encoding="utf-8")
         state.register(
             key,
-            relative_path,
             artifact_hash="current",
             files=(ArtifactFileFingerprint.from_path(relative_path, destination),),
         )
@@ -285,7 +281,6 @@ def test_project_hydration_uses_semantic_artifact_hash(tmp_path) -> None:
     state = BuildState()
     state.register(
         "custom_snapshot",
-        "build/custom.json",
         artifact_hash=definition.artifact_hashes.for_artifact("custom_snapshot"),
         files=(ArtifactFileFingerprint.from_path("build/custom.json", output),),
     )

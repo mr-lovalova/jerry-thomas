@@ -9,7 +9,6 @@ from datapipeline.artifacts.scaler import (
     StandardScalerArtifact,
     save_scaler_artifact,
 )
-from datapipeline.artifacts.specs import dataset_requires_scaler
 from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.dataset.split import DatasetFold, TimeSplitConfig
 from datapipeline.config.tasks.scaler import ScalerTask
@@ -66,11 +65,8 @@ class _FoldScalerState:
 def build_scaler_artifact(
     runtime: Runtime,
     task_cfg: ScalerTask,
-) -> ArtifactOutput | None:
+) -> ArtifactOutput:
     dataset = runtime.dataset
-    if not dataset_requires_scaler(dataset):
-        return None
-
     configs = tuple(config for config in dataset.series if config.scale)
     if dataset.split is None:
         standard = _fit_standard_scaler(runtime, configs, task_cfg)
@@ -96,7 +92,7 @@ def build_scaler_artifact(
 
     relative_path = Path(task_cfg.output)
     save_scaler_artifact(runtime.artifacts_root / relative_path, artifact)
-    return ArtifactOutput(relative_path=str(relative_path), meta=meta)
+    return ArtifactOutput(meta=meta)
 
 
 def _fit_standard_scaler(

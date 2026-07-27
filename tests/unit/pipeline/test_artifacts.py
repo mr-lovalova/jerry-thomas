@@ -405,7 +405,6 @@ def test_stale_dependency_makes_current_dependent_outdated(tmp_path):
     state = BuildState()
     state.register(
         "input",
-        "input.json",
         artifact_hash="old",
         files=(
             ArtifactFileFingerprint.from_path(
@@ -416,7 +415,6 @@ def test_stale_dependency_makes_current_dependent_outdated(tmp_path):
     )
     state.register(
         "result",
-        "result.json",
         artifact_hash="current",
         files=(
             ArtifactFileFingerprint.from_path(
@@ -448,7 +446,6 @@ def test_freshness_compares_each_artifacts_semantic_hash(tmp_path) -> None:
         path.write_text("{}", encoding="utf-8")
         state.register(
             key,
-            path.name,
             artifact_hash="same" if key == "left" else "old",
             files=(ArtifactFileFingerprint.from_path(path.name, path),),
         )
@@ -472,7 +469,6 @@ def test_artifact_with_missing_file_is_not_current(tmp_path):
     state = BuildState()
     state.register(
         "result",
-        "missing.json",
         artifact_hash="current",
         files=(
             ArtifactFileFingerprint(
@@ -506,7 +502,6 @@ def test_artifact_at_path_other_than_declared_output_is_stale(tmp_path):
     state = BuildState()
     state.register(
         "snapshot",
-        "legacy.json",
         artifact_hash="current",
         files=(
             ArtifactFileFingerprint.from_path(
@@ -545,7 +540,6 @@ def test_artifact_companion_changes_affect_freshness(tmp_path, change):
     state = BuildState()
     state.register(
         "bundle",
-        "manifest.json",
         artifact_hash="current",
         files=files,
     )
@@ -575,7 +569,6 @@ def test_same_size_artifact_replacement_with_preserved_mtime_is_stale(tmp_path):
     state = BuildState()
     state.register(
         "result",
-        "result.json",
         artifact_hash="current",
         files=(fingerprint,),
     )

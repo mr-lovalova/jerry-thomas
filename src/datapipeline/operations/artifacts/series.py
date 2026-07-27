@@ -140,7 +140,6 @@ def build_series_artifact(
 
     companion_path = relative_path.parent / manifest.path
     return ArtifactOutput(
-        relative_path=str(relative_path),
         companion_paths=(str(companion_path),),
         meta={
             "features": len(manifest.features),

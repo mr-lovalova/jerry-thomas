@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from datapipeline.services.path_policy import resolve_artifact_output_path
 from datapipeline.utils.json_artifact import write_json_artifact
 
-BUILD_STATE_VERSION = 7
+BUILD_STATE_VERSION = 8
 _BUILD_STATE_PATH = Path("_system/build/state.json")
 
 
@@ -44,15 +44,18 @@ class ArtifactInfo(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    relative_path: str
     artifact_hash: str
     files: tuple[ArtifactFileFingerprint, ...]
     meta: dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def relative_path(self) -> str:
+        return self.files[0].relative_path
+
     @model_validator(mode="after")
     def validate_files(self) -> Self:
-        if not self.files or self.files[0].relative_path != self.relative_path:
-            raise ValueError("artifact files must start with the primary artifact")
+        if not self.files:
+            raise ValueError("artifact files must not be empty")
         paths = [file.relative_path for file in self.files]
         if len(paths) != len(set(paths)):
             raise ValueError("artifact file paths must be unique")
@@ -70,13 +73,11 @@ class BuildState(BaseModel):
     def register(
         self,
         key: str,
-        relative_path: str,
         artifact_hash: str,
         files: tuple[ArtifactFileFingerprint, ...],
         meta: Mapping[str, Any] | None = None,
     ) -> None:
         self.artifacts[key] = ArtifactInfo(
-            relative_path=relative_path,
             artifact_hash=artifact_hash,
             files=files,
             meta=dict(meta or {}),

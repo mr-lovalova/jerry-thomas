@@ -166,7 +166,6 @@ def _register_artifact(
     _write_artifact(root, task)
     state.register(
         task.id,
-        task.output,
         artifact_hash=artifact_hash,
         files=(ArtifactFileFingerprint.from_path(task.output, root / task.output),),
     )
@@ -174,7 +173,7 @@ def _register_artifact(
 
 def _build_artifact(runtime, task: ArtifactTask) -> ArtifactOutput:
     _write_artifact(runtime.artifacts_root, task)
-    return ArtifactOutput(relative_path=task.output)
+    return ArtifactOutput()
 
 
 def _patch_artifact_build(monkeypatch, build) -> None:
@@ -212,7 +211,7 @@ def _build_settings(mode: str = "AUTO") -> BuildSettings:
     )
 
 
-@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6])
+@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6, 7])
 def test_load_build_state_invalidates_previous_cache_version(
     tmp_path: Path,
     version: int,
@@ -630,6 +629,37 @@ def test_mode_off_rejects_missing_artifact(tmp_path: Path) -> None:
         )
 
 
+def test_execute_build_rejects_invalid_operation_result(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    definition = _definition(tmp_path)
+    _patch_stable_artifact_inputs(monkeypatch)
+    task = ArtifactTask(
+        id="snapshot",
+        entrypoint="plugin.snapshot",
+        output="build/snapshot.json",
+    )
+    graph = build_artifact_graph([task])
+    plan = build_exec.BuildPlan(
+        reason="missing",
+        artifacts=(task.id,),
+        jobs=(build_exec.ArtifactBuildJob(task, (task.id,)),),
+        artifact_hashes=ArtifactHashes({task.id: "artifact-hash"}),
+        previous_state=None,
+        graph=graph,
+    )
+    _patch_artifact_build(monkeypatch, lambda _runtime, _task: None)
+
+    with pytest.raises(TypeError, match="must return ArtifactOutput"):
+        build_exec._execute_build_jobs(
+            definition,
+            runtime=_runtime(tmp_path / "artifacts"),
+            plan=plan,
+            settings=_build_settings(),
+        )
+
+
 def test_execute_build_jobs_persists_completed_job_before_failure(
     monkeypatch,
     tmp_path: Path,
@@ -642,7 +672,6 @@ def test_execute_build_jobs_persists_completed_job_before_failure(
     previous_state = BuildState()
     previous_state.register(
         VECTOR_METADATA,
-        metadata.output,
         artifact_hash="artifact-hash-1",
         files=(
             ArtifactFileFingerprint(
@@ -719,7 +748,6 @@ def test_execute_build_failure_preserves_previous_persisted_state(
     previous_state = BuildState()
     previous_state.register(
         VECTOR_METADATA,
-        metadata.output,
         artifact_hash="artifact-hash-1",
         files=(
             ArtifactFileFingerprint(
@@ -799,7 +827,7 @@ def test_execute_build_rejects_symlink_escape_before_calling_runner(
     def mutate_outside(runtime, task_cfg):
         runner_calls.append(task_cfg.id)
         victim.write_text("mutated", encoding="utf-8")
-        return ArtifactOutput(relative_path=task_cfg.output)
+        return ArtifactOutput()
 
     _patch_artifact_build(monkeypatch, mutate_outside)
     graph = build_artifact_graph([task])
@@ -850,7 +878,7 @@ def test_execute_build_preflights_every_output_before_running_any_job(
     def build(runtime, task_cfg):
         runner_calls.append(task_cfg.id)
         _write_artifact(runtime.artifacts_root, task_cfg)
-        return ArtifactOutput(relative_path=task_cfg.output)
+        return ArtifactOutput()
 
     _patch_artifact_build(monkeypatch, build)
     graph = build_artifact_graph([first, second])
