@@ -93,15 +93,26 @@ def test_series_projector_derives_hybrid_series_identity() -> None:
     assert identifier == "temp__@sensor:temperature"
 
 
-def test_series_projector_encodes_id_components_once_per_record(monkeypatch) -> None:
+def test_series_projector_computes_shared_values_once_per_record(monkeypatch) -> None:
     encoded_fields: list[str] = []
+    domain_records: list[_Record] = []
     encode = projector_module.encode_series_id_component
+    establishes_domain = projector_module.record_establishes_domain
 
     def count_encode(field: str, value: object) -> str:
         encoded_fields.append(field)
         return encode(field, value)
 
+    def count_domain_record(record: _Record) -> bool:
+        domain_records.append(record)
+        return establishes_domain(record)
+
     monkeypatch.setattr(projector_module, "encode_series_id_component", count_encode)
+    monkeypatch.setattr(
+        projector_module,
+        "record_establishes_domain",
+        count_domain_record,
+    )
     projector = SeriesProjector(
         ("station_id", "sensor"),
         SampleKeyContract(()),
@@ -110,11 +121,13 @@ def test_series_projector_encodes_id_components_once_per_record(monkeypatch) -> 
         SeriesConfig(stream="stream", id="temperature", field="sensor"),
         SeriesConfig(stream="stream", id="humidity", field="sensor"),
     )
+    source_record = _Record("north", 7)
 
-    records = tuple(projector.project(_Record("north", 7), configs))
+    records = tuple(projector.project(source_record, configs))
 
     assert len(records) == 2
     assert encoded_fields == ["station_id", "sensor"]
+    assert domain_records == [source_record]
 
 
 def test_series_projector_tags_non_string_scalar_types() -> None:

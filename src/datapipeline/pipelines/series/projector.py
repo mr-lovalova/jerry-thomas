@@ -45,6 +45,7 @@ class SeriesProjector:
                 encode_series_id_component(field, getattr(record, field))
                 for field in self.series_id_fields
             )
+        establishes_domain = record_establishes_domain(record)
 
         for config in configs:
             series_id = (
@@ -57,5 +58,5 @@ class SeriesProjector:
                 time=record.time,
                 value=normalize_data_value(get_field(record, config.field)),
                 entity_key=entity_key,
-                _establishes_domain=record_establishes_domain(record),
+                _establishes_domain=establishes_domain,
             )

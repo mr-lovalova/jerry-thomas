@@ -248,6 +248,7 @@ def _project_stream(
             targets: list[_ProjectedValue] = []
             row_key: tuple[Any, ...] | None = None
             row_time: datetime | None = None
+            sample_time: datetime | None = None
 
             for config, projected in zip(
                 configs,
@@ -259,10 +260,9 @@ def _project_stream(
                 if result is None:
                     continue
 
-                key = (
-                    floor_time_to_cadence(result.time, cadence),
-                    *result.entity_key,
-                )
+                if sample_time is None:
+                    sample_time = floor_time_to_cadence(result.time, cadence)
+                key = (sample_time, *result.entity_key)
                 if row_key is None:
                     row_key = key
                     row_time = result.time

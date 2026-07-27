@@ -1712,6 +1712,8 @@ def test_series_shared_stream_matches_independent_series_pipelines(
     source.opens = 0
     source.closes = 0
     normal_batch_sort = series_operation.batch_sort
+    normal_floor_time = series_operation.floor_time_to_cadence
+    floor_calls = 0
 
     def spilling_batch_sort(items, buffer_bytes, key, progress=None):
         return normal_batch_sort(
@@ -1721,10 +1723,20 @@ def test_series_shared_stream_matches_independent_series_pipelines(
             progress=progress,
         )
 
+    def count_floor_time(timestamp, cadence):
+        nonlocal floor_calls
+        floor_calls += 1
+        return normal_floor_time(timestamp, cadence)
+
     monkeypatch.setattr(
         series_operation,
         "batch_sort",
         spilling_batch_sort,
+    )
+    monkeypatch.setattr(
+        series_operation,
+        "floor_time_to_cadence",
+        count_floor_time,
     )
 
     result = build_series_artifact(runtime, SeriesTask())
@@ -1754,6 +1766,7 @@ def test_series_shared_stream_matches_independent_series_pipelines(
         assert row.targets == expected_targets.get(row.key, {})
     assert source.opens == 1
     assert source.closes == 1
+    assert floor_calls == len(rows)
 
 
 def test_series_store_sequence_values_unscaled(
