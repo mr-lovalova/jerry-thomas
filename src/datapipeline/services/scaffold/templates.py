@@ -7,13 +7,6 @@ ENV = jinja2.Environment(
 )
 
 
-def camel(s: str) -> str:
-    return "".join(w.capitalize() for w in s.split("_"))
-
-
-ENV.filters["camel"] = camel
-
-
 def to_yaml(value, indent: int = 0) -> str:
     text = yaml.safe_dump(value, sort_keys=False).rstrip()
     if indent > 0:
