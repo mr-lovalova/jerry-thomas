@@ -2,7 +2,7 @@ from collections import deque
 from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
-from datapipeline.config.dataset.series import SequenceConfig, SeriesConfig
+from datapipeline.config.dataset.series import SequenceConfig
 from datapipeline.domain.series import SeriesRecord, SeriesSequence
 from datapipeline.pipelines.series.projector import SeriesProjector
 from datapipeline.pipelines.sort import SortProgress, batch_sort
@@ -12,11 +12,10 @@ from datapipeline.utils.time import floor_time_to_cadence, parse_cadence
 
 def project_series(
     projector: SeriesProjector,
-    config: SeriesConfig,
     records: Iterable[Any],
 ) -> Iterator[SeriesRecord]:
     for record in records:
-        yield from projector.project(record, (config,))
+        yield from projector.project(record)
 
 
 def sequence_series(

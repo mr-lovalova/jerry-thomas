@@ -48,15 +48,12 @@ def build_series_stages(
     projector = SeriesProjector(
         stream.partition_by,
         SampleKeyContract(sample_keys),
+        (config,),
     )
     stages = [
         Stage(
             name="project_series",
-            apply=partial(
-                project_series,
-                projector,
-                config,
-            ),
+            apply=partial(project_series, projector),
         ),
     ]
     if config.sequence is not None:

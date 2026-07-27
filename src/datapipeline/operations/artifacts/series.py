@@ -232,7 +232,7 @@ def _project_stream(
     stream = require_runtime_stream(runtime, plan.stream_id)
     configs = (*plan.features, *plan.targets)
     feature_ids = {config.id for config in plan.features}
-    projector = SeriesProjector(stream.partition_by, sample_keys)
+    projector = SeriesProjector(stream.partition_by, sample_keys, configs)
     sequencers = {
         config.id: SeriesSequencer(config.sequence)
         for config in configs
@@ -249,7 +249,7 @@ def _project_stream(
 
             for config, projected in zip(
                 configs,
-                projector.project(record, configs),
+                projector.project(record),
                 strict=True,
             ):
                 sequencer = sequencers.get(config.id)

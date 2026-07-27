@@ -201,10 +201,9 @@ def test_projected_series_does_not_retain_source_record() -> None:
     source_record = TemporalRecord(time=datetime(2024, 1, 1, tzinfo=timezone.utc))
     source_record.value = 1.0
     record_ref = weakref.ref(source_record)
-    [projected] = SeriesProjector((), SampleKeyContract(())).project(
-        source_record,
-        (SeriesConfig(stream="stream", id="x", field="value"),),
-    )
+    config = SeriesConfig(stream="stream", id="x", field="value")
+    projector = SeriesProjector((), SampleKeyContract(()), (config,))
+    [projected] = projector.project(source_record)
 
     del source_record
     gc.collect()
@@ -218,10 +217,9 @@ def test_projected_series_preserves_domain_anchor() -> None:
     source_record.value = None
     set_record_domain_anchor(source_record, False)
 
-    [projected] = SeriesProjector((), SampleKeyContract(())).project(
-        source_record,
-        (SeriesConfig(stream="stream", id="x", field="value"),),
-    )
+    config = SeriesConfig(stream="stream", id="x", field="value")
+    projector = SeriesProjector((), SampleKeyContract(()), (config,))
+    [projected] = projector.project(source_record)
 
     assert not record_establishes_domain(projected)
 
@@ -233,6 +231,7 @@ def test_project_series_rejects_sample_key_type_drift() -> None:
     second = TemporalRecord(time=datetime(2024, 1, 2, tzinfo=timezone.utc))
     second.value = 2.0
     second.security_id = 1
+    config = SeriesConfig(stream="stream", id="value", field="value")
 
     with pytest.raises(TypeError, match="changed type"):
         list(
@@ -240,8 +239,8 @@ def test_project_series_rejects_sample_key_type_drift() -> None:
                 SeriesProjector(
                     ("security_id",),
                     SampleKeyContract(["security_id"]),
+                    (config,),
                 ),
-                SeriesConfig(stream="stream", id="value", field="value"),
                 iter([first, second]),
             )
         )

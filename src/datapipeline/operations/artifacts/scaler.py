@@ -233,11 +233,12 @@ def _iter_scaler_inputs(
         projector = SeriesProjector(
             runtime_stream.partition_by,
             sample_key_contract,
+            tuple(stream_configs),
         )
         records = run_stream_pipeline(runtime, stream_id)
         try:
             for record in records:
-                series_records = tuple(projector.project(record, stream_configs))
+                series_records = tuple(projector.project(record))
                 yield _ScalerInput(
                     group_key=(
                         floor_time_to_cadence(record.time, cadence_step),
