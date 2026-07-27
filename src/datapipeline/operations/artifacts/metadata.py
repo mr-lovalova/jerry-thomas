@@ -250,6 +250,8 @@ class _FoldCollector:
         self,
         row: SeriesRow,
         label: str,
+        features: Mapping[str, object],
+        targets: Mapping[str, object],
     ) -> None:
         role = self.role_by_label.get(label)
         if role is None:
@@ -260,16 +262,6 @@ class _FoldCollector:
         ):
             return
 
-        features = {
-            series_id: value
-            for series_id, value in row.features.items()
-            if series_id not in row.placeholder_ids
-        }
-        targets = {
-            series_id: value
-            for series_id, value in row.targets.items()
-            if series_id not in row.placeholder_ids
-        }
         role_index = FOLD_ROLES.index(role)
         if features:
             for output_role in FOLD_ROLES[role_index:]:
@@ -353,10 +345,15 @@ class _FoldMetadataCollectors:
             for label in collector.role_by_label:
                 self.by_label[label].append(collector)
 
-    def observe(self, row: SeriesRow) -> None:
+    def observe(
+        self,
+        row: SeriesRow,
+        features: Mapping[str, object],
+        targets: Mapping[str, object],
+    ) -> None:
         label = self.labeler.label(row.key)
         for collector in self.by_label.get(label, ()):
-            collector.observe(row, label)
+            collector.observe(row, label, features, targets)
 
 
 def _collapsed_ranges(
@@ -678,7 +675,7 @@ def build_metadata_artifact(
                 established_target_ids,
             )
             if fold_collectors is not None:
-                fold_collectors.observe(row)
+                fold_collectors.observe(row, features, targets)
             progress.advance()
     finally:
         closer = getattr(rows, "close", None)
