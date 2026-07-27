@@ -31,6 +31,7 @@ from datapipeline.operations.persistence import (
     DatasetTableOutput,
     RoutedDatasetTableOutput,
     RoutedRuntimeOutput,
+    RuntimeOutput,
     persist_runtime_result,
 )
 from datapipeline.operations.runtime.dataset import run_dataset_operation
@@ -259,7 +260,7 @@ def test_dataset_operation_returns_parquet_dataset_output(monkeypatch, tmp_path)
         preview=None,
     )
 
-    assert isinstance(result.outputs[0], DatasetTableOutput)
+    assert isinstance(result, DatasetTableOutput)
 
 
 def test_dataset_operation_returns_split_fanout_output(monkeypatch, tmp_path):
@@ -304,18 +305,16 @@ def test_dataset_operation_returns_split_fanout_output(monkeypatch, tmp_path):
         output_ids=("holdout.train", "holdout.validation"),
     )
 
-    assert len(result.outputs) == 1
-    output = result.outputs[0]
-    assert isinstance(output, RoutedRuntimeOutput)
+    assert isinstance(result, RoutedRuntimeOutput)
     assert (
-        output.targets["holdout.train"].destination
+        result.targets["holdout.train"].destination
         == tmp_path / "dataset.holdout.train.jsonl"
     )
     assert (
-        output.targets["holdout.validation"].destination
+        result.targets["holdout.validation"].destination
         == tmp_path / "dataset.holdout.validation.jsonl"
     )
-    assert list(output.rows) == [
+    assert list(result.rows) == [
         ("holdout.train", samples[0]),
         ("holdout.validation", samples[1]),
     ]
@@ -356,15 +355,14 @@ def test_dataset_operation_returns_parquet_split_outputs(monkeypatch, tmp_path):
         output_ids=("holdout.train", "holdout.validation"),
     )
 
-    output = result.outputs[0]
-    assert isinstance(output, RoutedDatasetTableOutput)
-    assert set(output.tables) == {
+    assert isinstance(result, RoutedDatasetTableOutput)
+    assert set(result.tables) == {
         "holdout.train",
         "holdout.validation",
     }
     assert {
         target.destination.name
-        for target in output.targets.values()
+        for target in result.targets.values()
         if target.destination is not None
     } == {
         "dataset.holdout.train.parquet",
@@ -392,9 +390,9 @@ def test_samples_preview_stops_before_postprocess(monkeypatch):
 
     result = _serve(runtime, dataset, target, preview="samples")
 
-    assert len(result.outputs) == 1
-    assert result.outputs[0].target == target
-    assert list(result.outputs[0].rows) == ["sample"]
+    assert isinstance(result, RuntimeOutput)
+    assert result.target == target
+    assert list(result.rows) == ["sample"]
 
 
 def test_samples_preview_writes_schema_aware_parquet(monkeypatch, tmp_path):
@@ -414,7 +412,7 @@ def test_samples_preview_writes_schema_aware_parquet(monkeypatch, tmp_path):
 
     result = _serve(_runtime(), _dataset(), target, preview="samples")
 
-    assert isinstance(result.outputs[0], DatasetTableOutput)
+    assert isinstance(result, DatasetTableOutput)
     persist_runtime_result(
         result,
         target=target,
@@ -534,7 +532,8 @@ def test_postprocess_preview_runs_postprocess(monkeypatch):
 
     result = _serve(runtime, dataset, target, preview="postprocess")
 
-    assert list(result.outputs[0].rows) == ["post:sample"]
+    assert isinstance(result, RuntimeOutput)
+    assert list(result.rows) == ["post:sample"]
 
 
 @pytest.mark.parametrize(

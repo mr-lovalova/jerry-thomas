@@ -23,6 +23,7 @@ from datapipeline.operations.persistence import (
     RoutedRuntimeOutput,
     RuntimeOutput,
     RuntimeOutputBatch,
+    RuntimeOutputItem,
 )
 from datapipeline.pipelines.dataset.pipeline import (
     resolve_fold_output_plans,
@@ -136,7 +137,7 @@ def _serve_preview(
     target: OutputTarget,
     throttle_ms: float | None,
     preview: PreviewStage,
-) -> RuntimeOutputBatch:
+) -> RuntimeOutputItem | RuntimeOutputBatch:
     dataset = runtime.dataset
     if target.format == "parquet" and preview not in {"samples", "postprocess"}:
         raise ValueError(
@@ -168,20 +169,14 @@ def _serve_preview(
                 metadata.catalog.features,
                 metadata.catalog.targets,
             )
-            return RuntimeOutputBatch(
-                outputs=(
-                    _parquet_sample_output(
-                        sample_stream,
-                        target,
-                        limit,
-                        throttle_ms,
-                        table,
-                    ),
-                ),
+            return _parquet_sample_output(
+                sample_stream,
+                target,
+                limit,
+                throttle_ms,
+                table,
             )
-        return RuntimeOutputBatch(
-            outputs=(_sample_output(sample_stream, target, limit, throttle_ms),),
-        )
+        return _sample_output(sample_stream, target, limit, throttle_ms)
 
     outputs: list[RuntimeOutput] = []
     preview_plan = _preview_plan(dataset.series, preview)
@@ -228,7 +223,7 @@ def _serve_dataset(
     limit: int | None,
     target: OutputTarget,
     throttle_ms: float | None,
-) -> RuntimeOutputBatch:
+) -> RuntimeOutput | DatasetTableOutput:
     dataset = runtime.dataset
     metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     if not isinstance(metadata.layout, UnsplitMetadataLayout):
@@ -252,23 +247,17 @@ def _serve_dataset(
         key_plan,
     )
     if target.format == "parquet":
-        return RuntimeOutputBatch(
-            outputs=(
-                _parquet_sample_output(
-                    samples,
-                    target,
-                    limit,
-                    throttle_ms,
-                    _served_dataset_table(
-                        runtime,
-                        metadata.catalog,
-                    ),
-                ),
+        return _parquet_sample_output(
+            samples,
+            target,
+            limit,
+            throttle_ms,
+            _served_dataset_table(
+                runtime,
+                metadata.catalog,
             ),
         )
-    return RuntimeOutputBatch(
-        outputs=(_sample_output(samples, target, limit, throttle_ms),),
-    )
+    return _sample_output(samples, target, limit, throttle_ms)
 
 
 def _serve_fold_outputs(
@@ -277,7 +266,7 @@ def _serve_fold_outputs(
     limit: int | None,
     target: OutputTarget,
     throttle_ms: float | None,
-) -> RuntimeOutputBatch:
+) -> RoutedRuntimeOutput | RoutedDatasetTableOutput:
     dataset = runtime.dataset
     if target.transport != "fs":
         raise ValueError("Fold outputs require fs output.")
@@ -320,7 +309,7 @@ def _serve_fold_outputs(
             limit_per_output=limit,
         )
     )
-    return RuntimeOutputBatch(outputs=(output,))
+    return output
 
 
 def _served_dataset_table(
@@ -367,7 +356,7 @@ def run_dataset_operation(
     target: OutputTarget,
     throttle_ms: float | None,
     preview: PreviewStage | None,
-) -> RuntimeOutputBatch | None:
+) -> RuntimeOutputItem | RuntimeOutputBatch | None:
     dataset = runtime.dataset
 
     if not dataset.series:
