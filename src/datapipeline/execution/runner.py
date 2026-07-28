@@ -1,12 +1,10 @@
-import math
 import threading
 import time
-from collections.abc import Generator, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from contextvars import copy_context
 from dataclasses import dataclass
 from typing import Any
 
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.events import (
     NodeFinished,
     NodeProgress,
@@ -18,13 +16,18 @@ from datapipeline.execution.events import (
     ProgressSnapshot,
     RunStatus,
 )
-from datapipeline.execution.observer import PipelineObserver, ignore_pipeline_event
+from datapipeline.execution.observability import (
+    ExecutionObserver,
+    current_execution_observer,
+    ignore_execution_event,
+)
 from datapipeline.execution.pipeline import Input, Pipeline, ProgressReader, Stage
+from datapipeline.execution.settings import resolve_heartbeat_interval_seconds
+from datapipeline.runtime import Runtime
 
 
-DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60.0
 _LIVE_PROGRESS_INTERVAL_SECONDS = 0.1
-_NOOP_OBSERVER = ignore_pipeline_event
+_NOOP_OBSERVER = ignore_execution_event
 
 
 @dataclass(frozen=True)
@@ -47,7 +50,7 @@ class _RunProgress:
 
     def __init__(
         self,
-        observer: PipelineObserver,
+        observer: ExecutionObserver,
         pipeline_name: str,
         interval_seconds: float,
     ) -> None:
@@ -129,12 +132,9 @@ class _RunProgress:
                         continue
                     progress = self._snapshot(state)
                     heartbeat = heartbeat_due and node == active_node
-                    if heartbeat:
-                        state.last_live_progress = progress
-                    elif progress != state.last_live_progress:
-                        state.last_live_progress = progress
-                    else:
+                    if not heartbeat and progress == state.last_live_progress:
                         continue
+                    state.last_live_progress = progress
                     due.append((node, progress, now - state.started_at, heartbeat))
                 output_items = self.output_items if heartbeat_due else 0
             for node, progress, elapsed, heartbeat in due:
@@ -175,57 +175,31 @@ def _error_message(exc: BaseException) -> str | None:
     return message or None
 
 
-def resolve_heartbeat_interval_seconds(interval: float | None) -> float:
-    if interval is None:
-        return DEFAULT_HEARTBEAT_INTERVAL_SECONDS
-    interval = float(interval)
-    if not math.isfinite(interval):
-        raise ValueError("heartbeat_interval_seconds must be finite")
-    if interval < 0:
-        raise ValueError("heartbeat_interval_seconds must be non-negative")
-    if interval > threading.TIMEOUT_MAX:
-        raise ValueError(
-            f"heartbeat_interval_seconds must not exceed {threading.TIMEOUT_MAX:g}"
-        )
-    return interval
-
-
 def run_pipeline(
-    context: PipelineContext,
+    runtime: Runtime,
     pipeline: Pipeline,
     *,
-    observer: PipelineObserver | None = None,
-) -> Generator[Any, None, None]:
+    observer: ExecutionObserver | None = None,
+) -> Iterator[Any]:
     """Run a pipeline input followed by its ordered stages."""
 
-    active_observer = observer if observer is not None else context.pipeline_observer
+    active_observer = observer if observer is not None else current_execution_observer()
     if active_observer is None or active_observer is _NOOP_OBSERVER:
-        yield from _run_unobserved(pipeline)
-        return
+        return _build_stream(pipeline, observer=None, progress=None)
 
-    yield from _run_observed(
-        context,
+    return _run_observed(
         pipeline,
         active_observer,
-        observe_nodes=observer is not None or context.observe_node_events,
+        observe_nodes=observer is not None or runtime.observe_node_events,
+        heartbeat_interval_seconds=runtime.heartbeat_interval_seconds,
     )
 
 
-def _run_unobserved(
-    pipeline: Pipeline,
-) -> Iterator[Any]:
-    stream = _build_stream(pipeline, observer=None, progress=None)
-    try:
-        yield from stream
-    finally:
-        _close_iterator(stream)
-
-
 def _run_observed(
-    context: PipelineContext,
     pipeline: Pipeline,
-    observer: PipelineObserver,
+    observer: ExecutionObserver,
     observe_nodes: bool,
+    heartbeat_interval_seconds: float | None,
 ) -> Iterator[Any]:
     start_time = time.perf_counter()
     status: RunStatus = "success"
@@ -234,9 +208,7 @@ def _run_observed(
     stream: Iterable[Any] = ()
     iterator: Iterator[Any] = iter(())
     started = False
-    heartbeat_interval = resolve_heartbeat_interval_seconds(
-        context.heartbeat_interval_seconds
-    )
+    heartbeat_interval = resolve_heartbeat_interval_seconds(heartbeat_interval_seconds)
     progress = _RunProgress(
         observer,
         pipeline.name,
@@ -330,10 +302,10 @@ def _run_observed(
 
 def _build_stream(
     pipeline: Pipeline,
-    observer: PipelineObserver | None,
+    observer: ExecutionObserver | None,
     progress: _RunProgress | None,
-) -> Iterable[Any]:
-    stream: Iterable[Any] = _wrap_node(
+) -> Iterator[Any]:
+    stream = _wrap_node(
         pipeline.name,
         pipeline.input,
         0,
@@ -358,7 +330,7 @@ def _wrap_node(
     node: Input | Stage,
     node_index: int,
     upstream: Iterable[Any] | None,
-    observer: PipelineObserver | None,
+    observer: ExecutionObserver | None,
     progress: _RunProgress | None,
 ) -> Iterator[Any]:
     if observer is None or progress is None:
@@ -418,7 +390,7 @@ def _observed_node(
     node: Input | Stage,
     node_index: int,
     upstream: Iterable[Any] | None,
-    observer: PipelineObserver,
+    observer: ExecutionObserver,
     progress: _RunProgress,
 ) -> Iterator[Any]:
     context = _NodeProgressContext(pipeline_name, node.name, node_index)

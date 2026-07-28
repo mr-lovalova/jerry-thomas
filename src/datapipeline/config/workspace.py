@@ -1,12 +1,6 @@
-from typing import Annotated
+from pydantic import BaseModel, ConfigDict, Field
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
-
-
-WorkspacePath = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
+from datapipeline.config.constraints import NonEmptyString as WorkspacePath
 
 
 class WorkspaceConfig(BaseModel):

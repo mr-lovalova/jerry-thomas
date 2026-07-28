@@ -18,27 +18,27 @@ from datapipeline.artifacts.specs import (
     dataset_requires_scaler,
 )
 from datapipeline.artifacts.validation import (
-    nested_tick_dependencies,
-    stream_tick_artifacts,
+    nested_schedule_dependencies,
+    stream_schedule_artifacts,
     validate_artifact_plan,
 )
-from datapipeline.build.state import ArtifactFileFingerprint, BuildState
+from datapipeline.artifacts.state import ArtifactFileFingerprint, BuildState
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.preview import PreviewStage
 from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks import (
+from datapipeline.config.tasks.base import (
     ArtifactTask,
-    CoverageTask,
-    DatasetTask,
-    MatrixTask,
-    MetadataTask,
-    RuntimeTask,
-    ScalerTask,
-    SeriesTask,
-    CoverageStatsTask,
-    TicksTask,
+    PluginRuntimeTask,
 )
+from datapipeline.config.tasks.coverage import CoverageTask
+from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
+from datapipeline.config.tasks.dataset import DatasetTask
+from datapipeline.config.tasks.matrix import MatrixTask
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.scaler import ScalerTask
+from datapipeline.config.tasks.series import SeriesTask
+from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.plugins import BUILD_OPERATIONS_EP
 from datapipeline.services.definitions import ArtifactHashes
 
@@ -114,26 +114,28 @@ def test_coverage_stats_build_selects_metadata_dependency_chain(stage):
     }
 
 
-def test_ticks_task_uses_task_id_as_artifact_key():
+def test_schedule_task_uses_task_id_as_artifact_key():
     graph = build_artifact_graph(
         [
-            TicksTask(
-                id="dataset_ticks",
-                entrypoint="core.artifact.ticks",
+            ScheduleTask(
+                id="schedule",
+                entrypoint="core.artifact.schedule",
                 stream="reference.stream",
-                output="build/dataset_ticks.jsonl",
+                partition_by=[],
+                output="build/schedule.jsonl",
             )
         ]
     )
 
-    assert graph.declared_artifact_keys() == {"dataset_ticks"}
+    assert graph.declared_artifact_keys() == {"schedule"}
 
 
-def test_tick_artifacts_feed_scaler_and_series() -> None:
-    tick_task = TicksTask(
-        id="dataset_ticks",
+def test_schedule_artifacts_feed_scaler_and_series() -> None:
+    schedule_task = ScheduleTask(
+        id="schedule",
         stream="reference.stream",
-        output="build/dataset_ticks.jsonl",
+        partition_by=[],
+        output="build/schedule.jsonl",
     )
     dataset = DatasetConfig(
         sample=SampleConfig(cadence="1h"),
@@ -154,7 +156,10 @@ def test_tick_artifacts_feed_scaler_and_series() -> None:
                     "from": {"source": "raw"},
                     "map": {"entrypoint": "identity"},
                     "transforms": [
-                        {"operation": "ensure_ticks", "artifact": "dataset_ticks"}
+                        {
+                            "operation": "ensure_schedule",
+                            "schedule": "schedule",
+                        }
                     ],
                 }
             }
@@ -162,7 +167,7 @@ def test_tick_artifacts_feed_scaler_and_series() -> None:
     )
     graph = build_artifact_graph(
         [
-            tick_task,
+            schedule_task,
             ScalerTask(id="scaler"),
             SeriesTask(id="series"),
         ],
@@ -170,9 +175,9 @@ def test_tick_artifacts_feed_scaler_and_series() -> None:
         streams,
     )
 
-    assert graph.definition(SCALER_STATISTICS).dependencies == ("dataset_ticks",)
-    assert graph.definition(SERIES).dependencies == ("dataset_ticks",)
-    assert graph.dependents_of({"dataset_ticks"}) == {
+    assert graph.definition(SCALER_STATISTICS).dependencies == ("schedule",)
+    assert graph.definition(SERIES).dependencies == ("schedule",)
+    assert graph.dependents_of({"schedule"}) == {
         SCALER_STATISTICS,
         SERIES,
         VECTOR_METADATA,
@@ -180,13 +185,14 @@ def test_tick_artifacts_feed_scaler_and_series() -> None:
     }
 
 
-def test_tick_artifact_rejects_nested_tick_artifact_in_any_upstream_stream() -> None:
-    tick_task = TicksTask(
-        id="derived_ticks",
+def test_schedule_artifact_rejects_nested_schedule_in_upstream_stream() -> None:
+    schedule_task = ScheduleTask(
+        id="derived_schedule",
         stream="derived",
-        output="build/derived-ticks.jsonl",
+        partition_by=[],
+        output="build/derived-schedule.jsonl",
     )
-    graph = build_artifact_graph([tick_task])
+    graph = build_artifact_graph([schedule_task])
     streams = StreamsConfig.model_validate(
         {
             "streams": {
@@ -196,8 +202,8 @@ def test_tick_artifact_rejects_nested_tick_artifact_in_any_upstream_stream() -> 
                     "map": {"entrypoint": "identity"},
                     "transforms": [
                         {
-                            "operation": "ensure_ticks",
-                            "artifact": "base_ticks",
+                            "operation": "ensure_schedule",
+                            "schedule": "base_schedule",
                         }
                     ],
                 },
@@ -220,29 +226,30 @@ def test_tick_artifact_rejects_nested_tick_artifact_in_any_upstream_stream() -> 
             }
         }
     )
-    assert stream_tick_artifacts("derived", streams) == {"base_ticks"}
+    assert stream_schedule_artifacts("derived", streams) == {"base_schedule"}
 
-    dependencies = nested_tick_dependencies(
+    dependencies = nested_schedule_dependencies(
         streams,
         graph,
-        {"derived_ticks"},
+        {"derived_schedule"},
     )
     assert len(dependencies) == 1
-    assert dependencies[0].task == tick_task
-    assert dependencies[0].task is not tick_task
-    assert dependencies[0].tick_artifacts == {"base_ticks"}
+    assert dependencies[0].task == schedule_task
+    assert dependencies[0].task is not schedule_task
+    assert dependencies[0].schedule_artifacts == {"base_schedule"}
 
-    with pytest.raises(ValueError, match="Nested tick artifact dependencies"):
-        validate_artifact_plan(streams, graph, {"derived_ticks"})
+    with pytest.raises(ValueError, match="Nested schedule artifact dependencies"):
+        validate_artifact_plan(streams, graph, {"derived_schedule"})
 
 
-def test_tick_artifact_allows_duration_cadence() -> None:
-    tick_task = TicksTask(
-        id="hourly_ticks",
+def test_schedule_artifact_allows_duration_cadence() -> None:
+    schedule_task = ScheduleTask(
+        id="hourly_schedule",
         stream="hourly",
-        output="build/hourly-ticks.jsonl",
+        partition_by=[],
+        output="build/hourly-schedule.jsonl",
     )
-    graph = build_artifact_graph([tick_task])
+    graph = build_artifact_graph([schedule_task])
     streams = StreamsConfig.model_validate(
         {
             "streams": {
@@ -260,29 +267,41 @@ def test_tick_artifact_allows_duration_cadence() -> None:
             }
         }
     )
-    validate_artifact_plan(streams, graph, {"hourly_ticks"})
+    validate_artifact_plan(streams, graph, {"hourly_schedule"})
 
 
-def test_inactive_scaler_prunes_its_tick_dependency() -> None:
-    tick_task = TicksTask(
-        id="dataset_ticks",
-        stream="reference.stream",
-        output="build/dataset_ticks.jsonl",
+def test_inactive_artifact_prunes_its_dependency_subtree() -> None:
+    graph = ArtifactGraph(
+        (
+            ArtifactDefinition(key="input"),
+            ArtifactDefinition(
+                key=SCALER_STATISTICS,
+                dependencies=("input",),
+                required_if=dataset_requires_scaler,
+            ),
+            ArtifactDefinition(
+                key="result",
+                dependencies=(SCALER_STATISTICS,),
+            ),
+        ),
+        {},
     )
-    graph = build_artifact_graph([tick_task, ScalerTask(id="scaler")])
     dataset = DatasetConfig(sample=SampleConfig(cadence="1h"), features=[], targets=[])
 
-    assert (
-        graph.active_dependency_closure(
-            {SCALER_STATISTICS},
-            dataset,
-        )
-        == ()
+    assert graph.dependency_closure({"result"}) == (
+        "input",
+        SCALER_STATISTICS,
+        "result",
     )
-    assert graph.active_dependency_closure(
-        {SCALER_STATISTICS, "dataset_ticks"},
+    assert graph.dependency_closure(
+        {"result"},
         dataset,
-    ) == ("dataset_ticks",)
+    ) == ("result",)
+    assert graph.dependency_closure({SCALER_STATISTICS}, dataset) == ()
+    assert graph.dependency_closure(
+        {SCALER_STATISTICS, "input"},
+        dataset,
+    ) == ("input",)
 
 
 def test_generic_artifact_task_is_a_dependency_free_leaf():
@@ -377,11 +396,18 @@ def test_artifact_graph_rejects_cycles_with_path():
         )
 
 
-def test_artifact_graph_rejects_unknown_requested_artifact():
+@pytest.mark.parametrize(
+    "dataset",
+    [
+        None,
+        DatasetConfig(sample=SampleConfig(cadence="1h")),
+    ],
+)
+def test_artifact_graph_rejects_unknown_requested_artifact(dataset):
     graph = build_artifact_graph([])
 
     with pytest.raises(ValueError, match="Unknown artifact 'missing'"):
-        graph.dependency_closure({"missing"})
+        graph.dependency_closure({"missing"}, dataset)
 
 
 def test_stale_dependency_makes_current_dependent_outdated(tmp_path):
@@ -400,7 +426,6 @@ def test_stale_dependency_makes_current_dependent_outdated(tmp_path):
     state = BuildState()
     state.register(
         "input",
-        "input.json",
         artifact_hash="old",
         files=(
             ArtifactFileFingerprint.from_path(
@@ -411,7 +436,6 @@ def test_stale_dependency_makes_current_dependent_outdated(tmp_path):
     )
     state.register(
         "result",
-        "result.json",
         artifact_hash="current",
         files=(
             ArtifactFileFingerprint.from_path(
@@ -443,7 +467,6 @@ def test_freshness_compares_each_artifacts_semantic_hash(tmp_path) -> None:
         path.write_text("{}", encoding="utf-8")
         state.register(
             key,
-            path.name,
             artifact_hash="same" if key == "left" else "old",
             files=(ArtifactFileFingerprint.from_path(path.name, path),),
         )
@@ -467,7 +490,6 @@ def test_artifact_with_missing_file_is_not_current(tmp_path):
     state = BuildState()
     state.register(
         "result",
-        "missing.json",
         artifact_hash="current",
         files=(
             ArtifactFileFingerprint(
@@ -501,7 +523,6 @@ def test_artifact_at_path_other_than_declared_output_is_stale(tmp_path):
     state = BuildState()
     state.register(
         "snapshot",
-        "legacy.json",
         artifact_hash="current",
         files=(
             ArtifactFileFingerprint.from_path(
@@ -540,7 +561,6 @@ def test_artifact_companion_changes_affect_freshness(tmp_path, change):
     state = BuildState()
     state.register(
         "bundle",
-        "manifest.json",
         artifact_hash="current",
         files=files,
     )
@@ -570,7 +590,6 @@ def test_same_size_artifact_replacement_with_preserved_mtime_is_stale(tmp_path):
     state = BuildState()
     state.register(
         "result",
-        "result.json",
         artifact_hash="current",
         files=(fingerprint,),
     )
@@ -626,24 +645,30 @@ def test_plugin_task_cannot_claim_core_requirements_by_entrypoint(
     entrypoint: str,
 ) -> None:
     graph = build_artifact_graph([])
-    task = RuntimeTask(id="plugin", entrypoint=entrypoint, requires=("declared",))
+    task = PluginRuntimeTask(
+        id="plugin",
+        entrypoint=entrypoint,
+        requires=("declared",),
+    )
 
     assert graph.runtime_requirements(task, preview=None) == {"declared"}
 
 
 @pytest.mark.parametrize("preview", ["input", "canonical", "records", "series"])
-def test_record_and_series_previews_require_declared_ticks(
+def test_record_and_series_previews_require_declared_schedule(
     preview: PreviewStage,
 ) -> None:
-    tick_task = TicksTask(
-        id="dataset_ticks",
+    schedule_task = ScheduleTask(
+        id="schedule",
         stream="reference.stream",
-        output="build/dataset_ticks.jsonl",
+        partition_by=[],
+        output="build/schedule.jsonl",
     )
-    unused_tick = TicksTask(
-        id="unused_ticks",
+    unused_schedule = ScheduleTask(
+        id="unused_schedule",
         stream="unused.stream",
-        output="build/unused_ticks.jsonl",
+        partition_by=[],
+        output="build/unused_schedule.jsonl",
     )
     dataset = DatasetConfig(
         sample=SampleConfig(cadence="1h"),
@@ -657,20 +682,30 @@ def test_record_and_series_previews_require_declared_ticks(
                     "from": {"source": "raw"},
                     "map": {"entrypoint": "identity"},
                     "transforms": [
-                        {"operation": "ensure_ticks", "artifact": "dataset_ticks"}
+                        {
+                            "operation": "ensure_schedule",
+                            "schedule": "schedule",
+                        }
                     ],
                 }
             }
         }
     )
-    graph = build_artifact_graph([tick_task, unused_tick], dataset, streams)
+    graph = build_artifact_graph(
+        [schedule_task, unused_schedule],
+        dataset,
+        streams,
+    )
     task = DatasetTask(id="dataset")
 
-    assert "dataset_ticks" in graph.runtime_requirements(
+    assert "schedule" in graph.runtime_requirements(
         task,
         preview=preview,
     )
-    assert "unused_ticks" not in graph.runtime_requirements(task, preview=preview)
+    assert "unused_schedule" not in graph.runtime_requirements(
+        task,
+        preview=preview,
+    )
 
 
 def test_invalid_dataset_preview_is_rejected_for_empty_dataset() -> None:
@@ -809,7 +844,7 @@ def test_empty_dataset_has_no_runtime_artifact_requirements():
 
 def test_custom_runtime_task_has_no_inferred_artifact_dependencies():
     graph = build_artifact_graph([])
-    task = RuntimeTask(id="pipeline", entrypoint="plugin.runtime.pipeline")
+    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime.pipeline")
 
     assert graph.runtime_requirements(task, preview=None) == set()
 
@@ -821,7 +856,7 @@ def test_custom_runtime_task_uses_declared_artifact_dependencies():
         output="build/custom.json",
     )
     graph = build_artifact_graph([snapshot])
-    task = RuntimeTask(
+    task = PluginRuntimeTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("custom_snapshot",),
@@ -852,7 +887,7 @@ def test_empty_dataset_keeps_explicit_artifact_dependencies():
 
 def test_runtime_task_rejects_unknown_declared_artifact_dependency():
     graph = build_artifact_graph([])
-    task = RuntimeTask(
+    task = PluginRuntimeTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("missing",),
@@ -866,9 +901,25 @@ def test_runtime_task_rejects_unknown_declared_artifact_dependency():
         )
 
 
+def test_runtime_task_requires_dataset_to_resolve_conditional_dependency():
+    graph = build_artifact_graph([ScalerTask(id="scaler")])
+    task = PluginRuntimeTask(
+        id="report",
+        entrypoint="plugin.runtime.report",
+        requires=("scaler",),
+    )
+
+    with pytest.raises(ValueError, match="requires dataset configuration"):
+        graph.runtime_dependency_closure(
+            task,
+            preview=None,
+            dataset=None,
+        )
+
+
 def test_runtime_task_rejects_inactive_declared_artifact_dependency():
     graph = build_artifact_graph([ScalerTask(id="scaler")])
-    task = RuntimeTask(
+    task = PluginRuntimeTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("scaler",),
@@ -898,6 +949,6 @@ def test_artifact_definitions_have_runner_bound_entrypoints():
         assert task.entrypoint in declared
 
 
-def test_ticks_entrypoint_is_declared():
+def test_schedule_entrypoint_is_declared():
     declared = _declared_entrypoints(BUILD_OPERATIONS_EP)
-    assert "core.artifact.ticks" in declared
+    assert "core.artifact.schedule" in declared

@@ -1,5 +1,7 @@
 import copy
 import math
+from collections.abc import Iterator
+from itertools import groupby
 from typing import Any, TypeVar
 
 from datapipeline.domain.record import TemporalRecord
@@ -28,6 +30,12 @@ def finite_number(value: Any, field: str) -> float:
     return number
 
 
+def finite_number_or_none(value: Any, field: str) -> float | None:
+    if is_missing(value):
+        return None
+    return finite_number(value, field)
+
+
 def get_field(record: object, field: str) -> Any:
     try:
         return getattr(record, field)
@@ -40,7 +48,7 @@ def get_field(record: object, field: str) -> Any:
 def partition_key(
     record: object,
     partition_by: tuple[str, ...],
-) -> tuple:
+) -> tuple[Any, ...]:
     values: list[Any] = []
     for field in partition_by:
         try:
@@ -53,6 +61,32 @@ def partition_key(
             raise ValueError(f"Partition field {field!r} must contain finite floats")
         values.append(value)
     return tuple(values)
+
+
+def adjacent_partitions(
+    records: Iterator[TRecord],
+    partition_by: tuple[str, ...],
+) -> Iterator[tuple[tuple[Any, ...], Iterator[TRecord]]]:
+    return groupby(
+        records,
+        key=lambda record: partition_key(record, partition_by),
+    )
+
+
+def record_establishes_domain(record: object) -> bool:
+    try:
+        value = getattr(record, "_establishes_domain")
+    except AttributeError as exc:
+        raise RuntimeError(
+            f"{type(record).__name__} lost its sample-domain provenance."
+        ) from exc
+    if type(value) is not bool:
+        raise TypeError("Record sample-domain provenance must be a boolean.")
+    return value
+
+
+def set_record_domain_anchor(record: object, establishes_domain: bool) -> None:
+    setattr(record, "_establishes_domain", establishes_domain)
 
 
 def clone_record(record: TRecord, **updates: Any) -> TRecord:

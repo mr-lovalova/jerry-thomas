@@ -10,27 +10,12 @@ from pydantic import (
     model_validator,
 )
 
+from datapipeline.config.constraints import DottedIdentifier, NonEmptyString
 from datapipeline.io.compression import Compression
 
 
-_EntryPoint = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
-
-_SourceId = Annotated[
-    str,
-    StringConstraints(
-        strip_whitespace=True,
-        min_length=1,
-        pattern=r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$",
-    ),
-]
-
-_NonEmptyString = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
+_EntryPoint = NonEmptyString
+_SourceId = DottedIdentifier
 
 _CsvDelimiter = Annotated[
     str,
@@ -53,7 +38,7 @@ class EntryPointConfig(BaseModel):
 class _TextReaderBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    encoding: _NonEmptyString = "utf-8"
+    encoding: NonEmptyString = "utf-8"
 
     @field_validator("encoding")
     @classmethod
@@ -75,7 +60,7 @@ class CsvReaderConfig(_TextReaderBase):
 
 class JsonReaderConfig(_TextReaderBase):
     format: Literal["json"]
-    array_field: _NonEmptyString | None = None
+    array_field: NonEmptyString | None = None
 
 
 class JsonLinesReaderConfig(_TextReaderBase):
@@ -103,7 +88,7 @@ class FsLoaderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     transport: Literal["fs"]
-    path: _NonEmptyString
+    path: NonEmptyString
     reader: SourceReaderConfig
     compression: Compression | None = None
 
@@ -127,7 +112,7 @@ class HttpLoaderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     transport: Literal["http"]
-    url: _NonEmptyString
+    url: NonEmptyString
     reader: TextReaderConfig
     headers: dict[str, str] = Field(default_factory=dict)
     params: dict[str, Any] = Field(default_factory=dict)
@@ -149,7 +134,7 @@ BuiltInLoaderConfig: TypeAlias = Annotated[
 class SourceInputsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    files: tuple[_NonEmptyString, ...] = Field(min_length=1)
+    files: tuple[NonEmptyString, ...] = Field(min_length=1)
 
     @field_validator("files")
     @classmethod

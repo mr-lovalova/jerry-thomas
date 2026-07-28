@@ -1,25 +1,20 @@
-from typing import Any
-
-from datapipeline.config.tasks import (
+from datapipeline.config.tasks.base import (
     ArtifactTask,
-    CoverageStatsTask,
-    CoverageTask,
-    DatasetTask,
-    MatrixTask,
-    MetadataTask,
+    PluginRuntimeTask,
     RuntimeTask,
-    ScalerTask,
-    SeriesTask,
     Task,
-    TicksTask,
 )
+from datapipeline.config.tasks.coverage import CoverageTask
+from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
+from datapipeline.config.tasks.dataset import DatasetTask
+from datapipeline.config.tasks.matrix import MatrixTask
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.scaler import ScalerTask
+from datapipeline.config.tasks.schedule import ScheduleTask
+from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.services.config_inventory import pipeline_yaml_files
-from datapipeline.services.config_refs import (
-    interpolate_config_vars,
-    resolve_config_refs,
-)
 from datapipeline.services.definitions import ProjectManifest
-from datapipeline.utils.load import YamlDocument, read_yaml_document
+from datapipeline.io.yaml import YamlDocument, read_yaml_document
 
 CORE_OPERATION_MODELS: dict[str, type[Task]] = {
     "scaler": ScalerTask,
@@ -30,7 +25,7 @@ CORE_OPERATION_MODELS: dict[str, type[Task]] = {
     "coverage": CoverageTask,
     "matrix": MatrixTask,
 }
-CORE_RUNTIME_MODELS: dict[str, type[RuntimeTask[Any]]] = {
+CORE_RUNTIME_MODELS: dict[str, type[RuntimeTask]] = {
     "core.runtime.dataset": DatasetTask,
     "core.runtime.coverage": CoverageTask,
     "core.runtime.matrix": MatrixTask,
@@ -59,7 +54,7 @@ def _custom_operation(operation_id: str, entry: dict[str, object]) -> Task:
             "outer whitespace."
         )
     if kind == "runtime":
-        model: type[RuntimeTask[Any]] = RuntimeTask
+        model: type[RuntimeTask] = PluginRuntimeTask
         if isinstance(entrypoint, str):
             core_model = CORE_RUNTIME_MODELS.get(entrypoint)
             if core_model is not None:
@@ -75,8 +70,8 @@ def _custom_operation(operation_id: str, entry: dict[str, object]) -> Task:
         raise ValueError(
             f"Custom operation '{operation_id}' must set kind to artifact or runtime."
         )
-    if entrypoint == "core.artifact.ticks":
-        return TicksTask.model_validate({"id": operation_id, **entry})
+    if entrypoint == "core.artifact.schedule":
+        return ScheduleTask.model_validate({"id": operation_id, **entry})
     core_operation_id = (
         CORE_ARTIFACT_IDS_BY_ENTRYPOINT.get(entrypoint)
         if isinstance(entrypoint, str)
@@ -100,12 +95,7 @@ def _operation_from_document(
         raise ValueError(
             f"Operation filename '{path.name}' must use a lowercase operation ID."
         )
-    entry = resolve_config_refs(
-        document.data,
-        project_yaml=project.path,
-        env=project.environment,
-    )
-    entry = interpolate_config_vars(entry, project.variables)
+    entry = project.resolve_config(document.data)
     if "id" in entry:
         raise ValueError(
             f"{path} must not define id; the filename supplies '{operation_id}'."

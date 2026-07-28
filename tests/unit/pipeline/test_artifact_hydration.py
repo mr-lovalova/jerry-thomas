@@ -6,11 +6,12 @@ from datapipeline.artifacts.hydration import (
 )
 from datapipeline.artifacts.planning import build_artifact_graph
 from datapipeline.artifacts.specs import (
+    SCALER_STATISTICS,
     SERIES,
     VECTOR_METADATA,
 )
-from datapipeline.artifacts.validation import NestedTickDependency
-from datapipeline.build.state import (
+from datapipeline.artifacts.validation import NestedScheduleDependency
+from datapipeline.artifacts.state import (
     ArtifactFileFingerprint,
     BuildState,
     save_build_state,
@@ -18,12 +19,11 @@ from datapipeline.build.state import (
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks import (
-    ArtifactTask,
-    MetadataTask,
-    TicksTask,
-    SeriesTask,
-)
+from datapipeline.config.tasks.base import ArtifactTask
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.scaler import ScalerTask
+from datapipeline.config.tasks.series import SeriesTask
+from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.runtime import Runtime
 from datapipeline.services.definitions import ArtifactHashes
 from datapipeline.services.project_definition import load_project_definition
@@ -72,7 +72,6 @@ def test_hydration_replaces_registry_with_dependency_current_artifacts(
         relative_path = paths[key]
         state.register(
             key,
-            relative_path,
             artifact_hash="current",
             files=(
                 ArtifactFileFingerprint.from_path(
@@ -83,7 +82,6 @@ def test_hydration_replaces_registry_with_dependency_current_artifacts(
         )
     state.register(
         VECTOR_METADATA,
-        paths[VECTOR_METADATA],
         artifact_hash="current",
         files=(
             ArtifactFileFingerprint(
@@ -140,7 +138,6 @@ def test_hydration_skips_incomplete_unrelated_artifact_chain(tmp_path) -> None:
         destination.write_text("{}", encoding="utf-8")
         state.register(
             key,
-            relative_path,
             artifact_hash="current",
             files=(ArtifactFileFingerprint.from_path(relative_path, destination),),
         )
@@ -159,14 +156,60 @@ def test_hydration_skips_incomplete_unrelated_artifact_chain(tmp_path) -> None:
     assert not runtime.artifacts.has(VECTOR_METADATA)
 
 
-def test_project_hydration_excludes_nested_tick_and_dependents(
+def test_project_hydration_excludes_inactive_scaler(
     monkeypatch,
     tmp_path,
 ) -> None:
-    tick = TicksTask(
-        id="derived_ticks",
+    scaler = ScalerTask()
+    dataset = DatasetConfig(sample=SampleConfig(cadence="1h"))
+    streams = StreamsConfig()
+    graph = build_artifact_graph([scaler])
+    runtime = Runtime(
+        project_yaml=tmp_path / "project.yaml",
+        artifacts_root=tmp_path / "artifacts",
+        dataset=dataset,
+    )
+    output = runtime.artifacts_root / scaler.output
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text("{}", encoding="utf-8")
+    state = BuildState()
+    state.register(
+        SCALER_STATISTICS,
+        artifact_hash="current",
+        files=(ArtifactFileFingerprint.from_path(scaler.output, output),),
+    )
+    runtime.artifacts.register(SCALER_STATISTICS, scaler.output)
+    monkeypatch.setattr(
+        "datapipeline.artifacts.hydration.load_build_state",
+        lambda _state_path: state,
+    )
+    definition = SimpleNamespace(
+        project=SimpleNamespace(artifacts_root=runtime.artifacts_root),
+        artifact_graph=graph,
+        artifact_hashes=_current_hashes(SCALER_STATISTICS),
+        dataset=dataset,
+        streams=streams,
+    )
+
+    assert (
+        hydrate_runtime_artifacts_for_pipeline(
+            runtime,
+            definition,
+        )
+        == ()
+    )
+    assert not runtime.artifacts.has(SCALER_STATISTICS)
+
+
+def test_project_hydration_excludes_nested_schedule_and_dependents(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    schedule = ScheduleTask(
+        id="derived_schedule",
         stream="derived",
-        output="build/derived-ticks.jsonl",
+        partition_by=[],
+        output="build/derived-schedule.jsonl",
     )
     series = SeriesTask(id="series")
     dataset = DatasetConfig(
@@ -181,13 +224,16 @@ def test_project_hydration_excludes_nested_tick_and_dependents(
                     "from": {"source": "raw"},
                     "map": {"entrypoint": "identity"},
                     "transforms": [
-                        {"operation": "ensure_ticks", "artifact": "derived_ticks"}
+                        {
+                            "operation": "ensure_schedule",
+                            "schedule": "derived_schedule",
+                        }
                     ],
                 }
             }
         }
     )
-    graph = build_artifact_graph([tick, series], dataset, streams)
+    graph = build_artifact_graph([schedule, series], dataset, streams)
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
@@ -195,7 +241,7 @@ def test_project_hydration_excludes_nested_tick_and_dependents(
     )
     state = BuildState()
     for key, relative_path in (
-        ("derived_ticks", tick.output),
+        ("derived_schedule", schedule.output),
         (SERIES, series.output),
     ):
         destination = runtime.artifacts_root / relative_path
@@ -203,41 +249,39 @@ def test_project_hydration_excludes_nested_tick_and_dependents(
         destination.write_text("{}", encoding="utf-8")
         state.register(
             key,
-            relative_path,
             artifact_hash="current",
             files=(ArtifactFileFingerprint.from_path(relative_path, destination),),
         )
-    runtime.artifacts.register("derived_ticks", tick.output)
+    runtime.artifacts.register("derived_schedule", schedule.output)
     runtime.artifacts.register(SERIES, series.output)
     monkeypatch.setattr(
         "datapipeline.artifacts.hydration.load_build_state",
         lambda _state_path: state,
     )
     monkeypatch.setattr(
-        "datapipeline.artifacts.hydration.nested_tick_dependencies",
+        "datapipeline.artifacts.hydration.nested_schedule_dependencies",
         lambda *_args: (
-            NestedTickDependency(
-                task=tick,
-                tick_artifacts=frozenset({"base_ticks"}),
+            NestedScheduleDependency(
+                task=schedule,
+                schedule_artifacts=frozenset({"base_schedule"}),
             ),
         ),
     )
 
     definition = SimpleNamespace(
         project=SimpleNamespace(artifacts_root=runtime.artifacts_root),
-        artifact_operations=(),
-        artifact_hashes=_current_hashes("derived_ticks", SERIES),
+        artifact_graph=graph,
+        artifact_hashes=_current_hashes("derived_schedule", SERIES),
         dataset=runtime.dataset,
         streams=streams,
     )
     hydrated = hydrate_runtime_artifacts_for_pipeline(
         runtime,
         definition,
-        graph=graph,
     )
 
     assert hydrated == ()
-    assert not runtime.artifacts.has("derived_ticks")
+    assert not runtime.artifacts.has("derived_schedule")
     assert not runtime.artifacts.has(SERIES)
 
 
@@ -246,7 +290,7 @@ def test_project_hydration_uses_semantic_artifact_hash(tmp_path) -> None:
     project_path.write_text(
         "\n".join(
             [
-                "schema_version: 3",
+                "schema_version: 4",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: ./streams",
@@ -283,7 +327,6 @@ def test_project_hydration_uses_semantic_artifact_hash(tmp_path) -> None:
     state = BuildState()
     state.register(
         "custom_snapshot",
-        "build/custom.json",
         artifact_hash=definition.artifact_hashes.for_artifact("custom_snapshot"),
         files=(ArtifactFileFingerprint.from_path("build/custom.json", output),),
     )

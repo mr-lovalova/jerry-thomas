@@ -1,12 +1,12 @@
 import threading
 from collections.abc import Callable, Iterable, Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.execution import runner as pipeline_runner
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.pipeline import Input, Pipeline, Stage
 from datapipeline.execution.events import (
     NodeFinished,
@@ -19,6 +19,7 @@ from datapipeline.execution.events import (
     PipelineSummary,
     ProgressSnapshot,
 )
+from datapipeline.execution.observability import execution_observer
 from datapipeline.execution.runner import run_pipeline
 from datapipeline.runtime import Runtime
 
@@ -94,19 +95,17 @@ class _ProcessingAndCleanupFailure(Iterator[int]):
         raise OSError("cleanup failed")
 
 
-def _context(tmp_path: Path) -> PipelineContext:
+def _runtime(tmp_path: Path) -> Runtime:
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 3\nartifact_revision: 1\n", encoding="utf-8"
+        "schema_version: 4\nartifact_revision: 1\n", encoding="utf-8"
     )
     artifacts_root = tmp_path / "artifacts"
     artifacts_root.mkdir(parents=True, exist_ok=True)
-    return PipelineContext(
-        Runtime(
-            project_yaml=project_yaml,
-            artifacts_root=artifacts_root,
-            dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
-        )
+    return Runtime(
+        project_yaml=project_yaml,
+        artifacts_root=artifacts_root,
+        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
     )
 
 
@@ -150,6 +149,44 @@ def test_pipeline_can_stop_at_an_ordered_stage() -> None:
         pipeline.through_stage_count(-1)
 
 
+def test_pipeline_can_continue_under_a_new_identity() -> None:
+    def progress(completed: int) -> ProgressSnapshot:
+        return ProgressSnapshot(completed=completed)
+
+    source = Input("source", lambda: (), progress=progress)
+    map_stage = Stage("map", lambda records: records, progress=progress)
+    filter_stage = Stage("filter", lambda records: records)
+    upstream = Pipeline(
+        name="upstream",
+        input=source,
+        stages=(map_stage,),
+        summary="source summary",
+    )
+
+    continued = upstream.continue_as("downstream", (filter_stage,))
+
+    assert continued.name == "downstream"
+    assert continued.input == replace(source, name="upstream/source")
+    assert continued.stages == (
+        replace(map_stage, name="upstream/map"),
+        filter_stage,
+    )
+    assert continued.input.open is source.open
+    assert continued.input.progress is progress
+    assert continued.stages[0].apply is map_stage.apply
+    assert continued.stages[0].progress is progress
+    assert continued.summary == "source summary"
+    assert upstream.input == source
+    assert upstream.stages == (map_stage,)
+
+    nested = continued.continue_as("final", ())
+    assert nested.input.name == "downstream/upstream/source"
+    assert [stage.name for stage in nested.stages] == [
+        "downstream/upstream/map",
+        "downstream/filter",
+    ]
+
+
 def test_run_starts_lazily(tmp_path: Path) -> None:
     opened: list[str] = []
     observer = _CollectingObserver()
@@ -159,7 +196,7 @@ def test_run_starts_lazily(tmp_path: Path) -> None:
         yield 1
 
     stream = run_pipeline(
-        _context(tmp_path),
+        _runtime(tmp_path),
         Pipeline(name="lazy", input=Input("source", open_records)),
         observer=observer,
     )
@@ -190,7 +227,7 @@ def test_stages_emit_ordered_results_and_counts(tmp_path: Path) -> None:
         ),
     )
 
-    assert list(run_pipeline(_context(tmp_path), pipeline, observer=observer)) == [
+    assert list(run_pipeline(_runtime(tmp_path), pipeline, observer=observer)) == [
         10,
         30,
     ]
@@ -244,7 +281,7 @@ def test_custom_progress_belongs_to_the_reporting_stage(
         stages=(Stage("annotate", annotate, progress=progress),),
     )
 
-    assert list(run_pipeline(_context(tmp_path), pipeline, observer=observer)) == [1, 2]
+    assert list(run_pipeline(_runtime(tmp_path), pipeline, observer=observer)) == [1, 2]
 
     custom = [
         event
@@ -266,14 +303,13 @@ def test_unobserved_pipeline_does_not_read_progress(tmp_path: Path) -> None:
         input=Input("source", lambda: [1, 2], progress=fail_progress),
     )
 
-    assert list(run_pipeline(_context(tmp_path), pipeline)) == [1, 2]
+    assert list(run_pipeline(_runtime(tmp_path), pipeline)) == [1, 2]
 
 
 def test_pipeline_only_observation_skips_node_instrumentation(tmp_path: Path) -> None:
     observer = _CollectingObserver()
-    context = _context(tmp_path)
-    context.pipeline_observer = observer
-    context.observe_node_events = False
+    runtime = _runtime(tmp_path)
+    runtime.observe_node_events = False
 
     def fail_progress(_completed: int) -> ProgressSnapshot:
         raise AssertionError("pipeline-only observation sampled node progress")
@@ -285,7 +321,8 @@ def test_pipeline_only_observation_skips_node_instrumentation(tmp_path: Path) ->
         stages=(Stage("double", lambda records: (value * 2 for value in records)),),
     )
 
-    assert list(run_pipeline(context, pipeline)) == [2, 4]
+    with execution_observer(observer):
+        assert list(run_pipeline(runtime, pipeline)) == [2, 4]
     assert observer.pipeline_started == [PipelineStarted(pipeline_name="pipeline-only")]
     assert observer.pipeline_summaries == [
         PipelineSummary(pipeline_name="pipeline-only", summary="two stages")
@@ -298,10 +335,9 @@ def test_pipeline_only_observation_skips_node_instrumentation(tmp_path: Path) ->
 
 def test_pipeline_only_observation_keeps_pipeline_heartbeats(tmp_path: Path) -> None:
     observer = _CollectingObserver()
-    context = _context(tmp_path)
-    context.pipeline_observer = observer
-    context.observe_node_events = False
-    context.heartbeat_interval_seconds = 0.01
+    runtime = _runtime(tmp_path)
+    runtime.observe_node_events = False
+    runtime.heartbeat_interval_seconds = 0.01
 
     def source() -> Iterator[int]:
         assert observer.wait_for_pipeline_progress(
@@ -311,7 +347,8 @@ def test_pipeline_only_observation_keeps_pipeline_heartbeats(tmp_path: Path) -> 
 
     pipeline = Pipeline(name="heartbeat", input=Input("source", source))
 
-    assert list(run_pipeline(context, pipeline)) == [1]
+    with execution_observer(observer):
+        assert list(run_pipeline(runtime, pipeline)) == [1]
     assert observer.pipeline_progress_events
     assert observer.progress_events == []
 
@@ -321,10 +358,9 @@ def test_pipeline_only_observation_without_heartbeats_skips_progress_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     observer = _CollectingObserver()
-    context = _context(tmp_path)
-    context.pipeline_observer = observer
-    context.observe_node_events = False
-    context.heartbeat_interval_seconds = 0
+    runtime = _runtime(tmp_path)
+    runtime.observe_node_events = False
+    runtime.heartbeat_interval_seconds = 0
     monkeypatch.setattr(
         pipeline_runner._RunProgress,
         "start",
@@ -335,37 +371,51 @@ def test_pipeline_only_observation_without_heartbeats_skips_progress_thread(
         input=Input("source", lambda: [1, 2]),
     )
 
-    assert list(run_pipeline(context, pipeline)) == [1, 2]
+    with execution_observer(observer):
+        assert list(run_pipeline(runtime, pipeline)) == [1, 2]
     assert observer.pipeline_events[-1].output_items == 2
     assert observer.node_started == []
     assert observer.progress_events == []
     assert observer.pipeline_progress_events == []
 
 
-def test_explicit_observer_includes_nodes_in_pipeline_only_context(
+def test_explicit_observer_includes_nodes_in_pipeline_only_runtime(
     tmp_path: Path,
 ) -> None:
     observer = _CollectingObserver()
-    context = _context(tmp_path)
-    context.observe_node_events = False
+    runtime = _runtime(tmp_path)
+    runtime.observe_node_events = False
     pipeline = Pipeline(name="explicit", input=Input("source", lambda: [1]))
 
-    assert list(run_pipeline(context, pipeline, observer=observer)) == [1]
+    assert list(run_pipeline(runtime, pipeline, observer=observer)) == [1]
 
     assert [event.node_name for event in observer.node_started] == ["source"]
     assert [event.node_name for event in observer.node_events] == ["source"]
 
 
-def test_context_snapshots_node_observation_for_lazy_execution(tmp_path: Path) -> None:
-    observer = _CollectingObserver()
-    context = _context(tmp_path)
-    context.runtime.pipeline_observer = observer
-    context.runtime.observe_node_events = False
-    context = PipelineContext(context.runtime)
-    pipeline = Pipeline(name="lazy-detail", input=Input("source", lambda: [1]))
-    stream = run_pipeline(context, pipeline)
+def test_explicit_observer_overrides_scoped_observer(tmp_path: Path) -> None:
+    scoped = _CollectingObserver()
+    explicit = _CollectingObserver()
+    pipeline = Pipeline(name="explicit", input=Input("source", lambda: [1]))
 
-    context.runtime.observe_node_events = True
+    with execution_observer(scoped):
+        assert list(run_pipeline(_runtime(tmp_path), pipeline, observer=explicit)) == [
+            1
+        ]
+
+    assert explicit.pipeline_started == [PipelineStarted(pipeline_name="explicit")]
+    assert scoped.pipeline_started == []
+
+
+def test_runtime_snapshots_node_observation_for_lazy_execution(tmp_path: Path) -> None:
+    observer = _CollectingObserver()
+    runtime = _runtime(tmp_path)
+    runtime.observe_node_events = False
+    pipeline = Pipeline(name="lazy-detail", input=Input("source", lambda: [1]))
+    with execution_observer(observer):
+        stream = run_pipeline(runtime, pipeline)
+
+    runtime.observe_node_events = True
 
     assert list(stream) == [1]
     assert observer.node_started == []
@@ -399,7 +449,7 @@ def test_progress_reader_is_sampled_while_another_node_is_active(
         stages=(Stage("slow", slow_stage),),
     )
 
-    assert list(run_pipeline(_context(tmp_path), pipeline, observer=observer)) == [1, 2]
+    assert list(run_pipeline(_runtime(tmp_path), pipeline, observer=observer)) == [1, 2]
     source_events = [
         event for event in observer.progress_events if event.node_name == "source"
     ]
@@ -429,7 +479,7 @@ def test_progress_failure_still_finishes_pipeline_lifecycle(
     )
 
     with pytest.raises(RuntimeError, match="Pipeline progress failed"):
-        list(run_pipeline(_context(tmp_path), pipeline, observer=observer))
+        list(run_pipeline(_runtime(tmp_path), pipeline, observer=observer))
 
     assert observer.pipeline_events[-1].status == "error"
     assert observer.pipeline_events[-1].error_type == "RuntimeError"
@@ -458,7 +508,7 @@ def test_progress_failure_does_not_mask_pipeline_failure(
     )
 
     with pytest.raises(ValueError, match="pipeline failed"):
-        list(run_pipeline(_context(tmp_path), pipeline, observer=observer))
+        list(run_pipeline(_runtime(tmp_path), pipeline, observer=observer))
 
     assert observer.pipeline_events[-1].error_type == "ValueError"
 
@@ -498,7 +548,7 @@ def test_finish_observer_failures_do_not_mask_pipeline_failure(
     pipeline = Pipeline(name="failure", input=Input("source", fail))
 
     with pytest.raises(ValueError, match="source failed"):
-        list(run_pipeline(_context(tmp_path), pipeline, observer=observer))
+        list(run_pipeline(_runtime(tmp_path), pipeline, observer=observer))
 
     assert finished == [NodeFinished, PipelineFinished]
 
@@ -515,7 +565,7 @@ def test_finish_observer_failure_is_reported_after_success(
     pipeline = Pipeline(name="success", input=Input("source", lambda: [1]))
 
     with pytest.raises(RuntimeError, match="observer failed"):
-        list(run_pipeline(_context(tmp_path), pipeline, observer=observer))
+        list(run_pipeline(_runtime(tmp_path), pipeline, observer=observer))
 
 
 def test_live_progress_samples_emitted_items(
@@ -524,8 +574,8 @@ def test_live_progress_samples_emitted_items(
 ) -> None:
     monkeypatch.setattr(pipeline_runner, "_LIVE_PROGRESS_INTERVAL_SECONDS", 0.001)
     observer = _CollectingObserver()
-    context = _context(tmp_path)
-    context.heartbeat_interval_seconds = 0
+    runtime = _runtime(tmp_path)
+    runtime.heartbeat_interval_seconds = 0
 
     def source() -> Iterator[int]:
         yield 1
@@ -540,13 +590,13 @@ def test_live_progress_samples_emitted_items(
 
     pipeline = Pipeline(name="sampled", input=Input("source", source))
 
-    assert list(run_pipeline(context, pipeline, observer=observer)) == [1, 2]
+    assert list(run_pipeline(runtime, pipeline, observer=observer)) == [1, 2]
 
 
 def test_heartbeat_reports_current_item_count(tmp_path: Path) -> None:
     observer = _CollectingObserver()
-    context = _context(tmp_path)
-    context.heartbeat_interval_seconds = 0.01
+    runtime = _runtime(tmp_path)
+    runtime.heartbeat_interval_seconds = 0.01
 
     def source() -> Iterator[int]:
         assert observer.wait_for_progress(
@@ -560,7 +610,7 @@ def test_heartbeat_reports_current_item_count(tmp_path: Path) -> None:
 
     pipeline = Pipeline(name="heartbeat", input=Input("source", source))
 
-    assert list(run_pipeline(context, pipeline, observer=observer)) == [1, 2]
+    assert list(run_pipeline(runtime, pipeline, observer=observer)) == [1, 2]
     heartbeats = [event for event in observer.progress_events if event.heartbeat]
     assert heartbeats[0].node_name == "source"
     assert heartbeats[0].progress.completed == 0
@@ -623,9 +673,13 @@ def test_live_progress_suppresses_unchanged_snapshots() -> None:
     assert [event.progress.completed for event in observer.progress_events] == [0, 1]
 
 
-def test_partial_close_closes_stages_in_reverse_order(tmp_path: Path) -> None:
+@pytest.mark.parametrize("observed", [False, True], ids=["unobserved", "observed"])
+def test_partial_close_closes_stages_in_reverse_order(
+    tmp_path: Path,
+    observed: bool,
+) -> None:
     closed: list[str] = []
-    observer = _CollectingObserver()
+    observer = _CollectingObserver() if observed else None
 
     def source() -> Iterator[int]:
         try:
@@ -653,11 +707,13 @@ def test_partial_close_closes_stages_in_reverse_order(tmp_path: Path) -> None:
         ),
     )
 
-    stream = run_pipeline(_context(tmp_path), pipeline, observer=observer)
+    stream = run_pipeline(_runtime(tmp_path), pipeline, observer=observer)
     assert next(stream) == 1
     stream.close()
 
     assert closed == ["second", "first", "source"]
+    if observer is None:
+        return
     assert {
         event.node_name: (event.output_items, event.status)
         for event in observer.node_events
@@ -693,7 +749,7 @@ def test_none_pipeline_output_is_rejected(
         TypeError,
         match="Pipeline node 'broken' returned None; return an iterable",
     ):
-        list(run_pipeline(_context(tmp_path), pipeline, observer=observer))
+        list(run_pipeline(_runtime(tmp_path), pipeline, observer=observer))
 
     event = observer.node_events[-1]
     assert event.node_name == "broken"
@@ -730,7 +786,7 @@ def test_stage_failures_reach_node_and_pipeline_events(
     )
 
     with pytest.raises(type(error)):
-        list(run_pipeline(_context(tmp_path), pipeline, observer=observer))
+        list(run_pipeline(_runtime(tmp_path), pipeline, observer=observer))
 
     node_event = _events_by_name(observer)["fail"]
     assert node_event.output_items == 1
@@ -760,7 +816,7 @@ def test_node_cleanup_does_not_replace_processing_failure(
     )
 
     with pytest.raises(type(processing_error), match=str(processing_error)):
-        list(run_pipeline(_context(tmp_path), pipeline, observer=observer))
+        list(run_pipeline(_runtime(tmp_path), pipeline, observer=observer))
 
     node_event = _events_by_name(observer)["source"]
     assert node_event.status == "error"
@@ -788,7 +844,7 @@ def test_unobserved_cleanup_does_not_replace_processing_failure(
     )
 
     with pytest.raises(type(processing_error), match=str(processing_error)):
-        list(run_pipeline(_context(tmp_path), pipeline))
+        list(run_pipeline(_runtime(tmp_path), pipeline))
 
     assert stream.closed
 
@@ -808,7 +864,7 @@ def test_node_cleanup_failure_emits_failed_finish_event(tmp_path: Path) -> None:
         input=Input("source", source),
     )
 
-    execution = run_pipeline(_context(tmp_path), pipeline, observer=observer)
+    execution = run_pipeline(_runtime(tmp_path), pipeline, observer=observer)
     assert next(execution) == 1
     with pytest.raises(RuntimeError, match="close failed"):
         execution.close()
@@ -837,33 +893,4 @@ def test_unobserved_run_uses_the_fast_path(
         stages=(Stage("double", lambda records: (value * 2 for value in records)),),
     )
 
-    assert list(run_pipeline(_context(tmp_path), pipeline)) == [2, 4]
-
-
-def test_resolve_heartbeat_interval_accepts_supported_values() -> None:
-    assert (
-        pipeline_runner.resolve_heartbeat_interval_seconds(None)
-        == pipeline_runner.DEFAULT_HEARTBEAT_INTERVAL_SECONDS
-    )
-    assert pipeline_runner.resolve_heartbeat_interval_seconds(0) == 0
-    assert (
-        pipeline_runner.resolve_heartbeat_interval_seconds(threading.TIMEOUT_MAX)
-        == threading.TIMEOUT_MAX
-    )
-
-
-@pytest.mark.parametrize(
-    ("interval", "message"),
-    [
-        (-1, "non-negative"),
-        (float("nan"), "finite"),
-        (float("inf"), "finite"),
-        (threading.TIMEOUT_MAX + 1, "must not exceed"),
-    ],
-)
-def test_resolve_heartbeat_interval_rejects_invalid_values(
-    interval: float,
-    message: str,
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        pipeline_runner.resolve_heartbeat_interval_seconds(interval)
+    assert list(run_pipeline(_runtime(tmp_path), pipeline)) == [2, 4]

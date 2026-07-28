@@ -33,7 +33,13 @@ def test_record_json_serializer_emits_plain_payload() -> None:
 
 def test_series_json_serializer_emits_only_projected_fields() -> None:
     time = datetime(2024, 7, 4, tzinfo=timezone.utc)
-    record = SeriesRecord("feature_a", time, 7.0, ("AAPL",))
+    record = SeriesRecord(
+        "feature_a",
+        time,
+        7.0,
+        ("AAPL",),
+        _establishes_domain=True,
+    )
 
     payload = json.loads(json_line_serializer()(record))
 
@@ -65,6 +71,22 @@ def test_json_serializer_flat_view_emits_flattened_payload() -> None:
     payload = json.loads(serializer({"features": {"x": 1.0}}))
 
     assert payload == {"features.x": 1.0}
+
+
+def test_json_serializer_flat_view_flattens_sample_key() -> None:
+    serializer = json_line_serializer(view="flat")
+    sample = Sample(
+        key=("2024-01-01", "AAPL"),
+        features=Vector(values={"x": 1.0}),
+    )
+
+    payload = json.loads(serializer(sample))
+
+    assert payload == {
+        "key.0": "2024-01-01",
+        "key.1": "AAPL",
+        "features.x": 1.0,
+    }
 
 
 def test_flat_json_serializer_rejects_colliding_sample_feature_ids() -> None:

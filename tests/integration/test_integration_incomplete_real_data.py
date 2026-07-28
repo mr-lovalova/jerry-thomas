@@ -1,19 +1,17 @@
 import pytest
 
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
+from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import (
     SCALER_STATISTICS,
     SERIES,
     VECTOR_METADATA,
 )
-from datapipeline.config.tasks import (
-    MetadataTask,
-    ScalerTask,
-    SeriesTask,
-)
-from datapipeline.execution.context import PipelineContext
-from datapipeline.operations.artifacts.metadata import materialize_metadata
-from datapipeline.operations.artifacts.scaler import materialize_scaler_statistics
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.scaler import ScalerTask
+from datapipeline.config.tasks.series import SeriesTask
+from datapipeline.operations.artifacts.metadata import build_metadata_artifact
+from datapipeline.operations.artifacts.scaler import build_scaler_artifact
 from datapipeline.operations.artifacts.series import build_series_artifact
 from datapipeline.pipelines.dataset.pipeline import run_scaled_dataset_pipeline
 from datapipeline.services.project_definition import load_project_definition
@@ -24,41 +22,32 @@ def _dataset_samples(project_yaml):
     definition = load_project_definition(project_yaml)
     runtime = compile_runtime(definition)
     hydrate_runtime_artifacts_for_pipeline(runtime, definition)
-    dataset = definition.dataset
-    context = PipelineContext(runtime)
 
     # Ensure artifacts are materialized for the test run.
-    scaler_rel = materialize_scaler_statistics(
-        runtime,
-        ScalerTask(id="scaler", output="scaler.json"),
+    scaler_task = ScalerTask(id="scaler", output="scaler.json")
+    build_scaler_artifact(runtime, scaler_task)
+    runtime.artifacts.register(
+        SCALER_STATISTICS,
+        relative_path=scaler_task.output,
     )
-    if scaler_rel:
-        runtime.artifacts.register(
-            SCALER_STATISTICS, relative_path=scaler_rel.relative_path
-        )
-    series_rel = build_series_artifact(
-        runtime,
-        SeriesTask(id="series", output="series/manifest.json"),
-    )
+    series_task = SeriesTask(id="series", output="series/manifest.json")
+    build_series_artifact(runtime, series_task)
     runtime.artifacts.register(
         SERIES,
-        relative_path=series_rel.relative_path,
+        relative_path=series_task.output,
     )
-    metadata_rel = materialize_metadata(
-        runtime,
-        MetadataTask(id="metadata", output="metadata.json"),
-    )
+    metadata_task = MetadataTask(id="metadata", output="metadata.json")
+    build_metadata_artifact(runtime, metadata_task)
     runtime.artifacts.register(
         VECTOR_METADATA,
-        relative_path=metadata_rel.relative_path,
+        relative_path=metadata_task.output,
     )
+    metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     return list(
         run_scaled_dataset_pipeline(
-            context,
-            dataset.features,
-            dataset.sample.cadence,
-            target_configs=dataset.targets,
-            rectangular=False,
+            runtime,
+            schema=metadata.catalog,
+            key_plan=None,
         )
     )
 

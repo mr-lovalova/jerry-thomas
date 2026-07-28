@@ -1,31 +1,22 @@
-from typing import Annotated, TypeAlias
+from typing import TypeAlias
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
     field_validator,
     model_validator,
 )
 
+from datapipeline.config.constraints import DottedIdentifier, NonEmptyString
 from datapipeline.config.sources import EntryPointConfig, SourceConfig
 from datapipeline.config.transforms import PreprocessConfig, TransformConfig
+from datapipeline.utils.time import parse_timecode
 
 
-_StreamId = Annotated[
-    str,
-    StringConstraints(
-        strip_whitespace=True,
-        min_length=1,
-        pattern=r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$",
-    ),
-]
-
-_FieldName = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
+_StreamId = DottedIdentifier
+_FieldName = NonEmptyString
+_Timecode = NonEmptyString
 
 
 class SourceRefConfig(BaseModel):
@@ -50,6 +41,34 @@ class BroadcastFromConfig(BaseModel):
     def validate_distinct_inputs(self) -> "BroadcastFromConfig":
         if self.stream == self.broadcast:
             raise ValueError("from.stream and from.broadcast must be different streams")
+        return self
+
+
+class AsOfFromConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stream: _StreamId
+    as_of: _StreamId
+
+    @model_validator(mode="after")
+    def validate_distinct_inputs(self) -> "AsOfFromConfig":
+        if self.stream == self.as_of:
+            raise ValueError("from.stream and from.as_of must be different streams")
+        return self
+
+
+class BroadcastAsOfFromConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stream: _StreamId
+    broadcast_as_of: _StreamId
+
+    @model_validator(mode="after")
+    def validate_distinct_inputs(self) -> "BroadcastAsOfFromConfig":
+        if self.stream == self.broadcast_as_of:
+            raise ValueError(
+                "from.stream and from.broadcast_as_of must be different streams"
+            )
         return self
 
 
@@ -109,6 +128,33 @@ class BroadcastStreamConfig(_StreamConfig):
         return (self.from_.stream, self.from_.broadcast)
 
 
+class _AsOfStreamConfig(_StreamConfig):
+    combine: EntryPointConfig
+    max_age: _Timecode | None = None
+    require_match: bool = Field(default=True, strict=True)
+
+    @field_validator("max_age")
+    @classmethod
+    def validate_max_age(cls, max_age: str | None) -> str | None:
+        if max_age is not None and parse_timecode(max_age).total_seconds() <= 0:
+            raise ValueError("max_age must be positive")
+        return max_age
+
+
+class AsOfStreamConfig(_AsOfStreamConfig):
+    from_: AsOfFromConfig = Field(alias="from")
+
+    def input_streams(self) -> tuple[str, ...]:
+        return (self.from_.stream, self.from_.as_of)
+
+
+class BroadcastAsOfStreamConfig(_AsOfStreamConfig):
+    from_: BroadcastAsOfFromConfig = Field(alias="from")
+
+    def input_streams(self) -> tuple[str, ...]:
+        return (self.from_.stream, self.from_.broadcast_as_of)
+
+
 class AlignedStreamConfig(_StreamConfig):
     from_: AlignFromConfig = Field(alias="from")
     combine: EntryPointConfig
@@ -121,6 +167,8 @@ StreamConfig: TypeAlias = (
     SourceStreamConfig
     | DerivedStreamConfig
     | BroadcastStreamConfig
+    | AsOfStreamConfig
+    | BroadcastAsOfStreamConfig
     | AlignedStreamConfig
 )
 

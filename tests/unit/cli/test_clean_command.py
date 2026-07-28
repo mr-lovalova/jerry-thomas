@@ -30,7 +30,6 @@ def test_clean_command_dispatches(monkeypatch) -> None:
         plugin_root=None,
         workspace_context=None,
         cli_level_arg=None,
-        base_level_name="INFO",
         cli_log_outputs=[],
     )
 
@@ -48,6 +47,5 @@ def test_clean_command_rejects_invalid_age(age: str) -> None:
             plugin_root=None,
             workspace_context=None,
             cli_level_arg=None,
-            base_level_name="INFO",
             cli_log_outputs=[],
         )

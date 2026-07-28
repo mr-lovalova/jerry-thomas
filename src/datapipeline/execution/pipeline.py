@@ -1,5 +1,5 @@
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, TypeAlias
 
 from datapipeline.execution.events import ProgressSnapshot
@@ -45,6 +45,21 @@ class Pipeline:
 
     def input_only(self) -> "Pipeline":
         return self.through_stage_count(0)
+
+    def continue_as(
+        self,
+        pipeline_name: str,
+        stages: tuple[Stage, ...],
+    ) -> "Pipeline":
+        inherited_stages = tuple(
+            replace(stage, name=f"{self.name}/{stage.name}") for stage in self.stages
+        )
+        return Pipeline(
+            name=pipeline_name,
+            input=replace(self.input, name=f"{self.name}/{self.input.name}"),
+            stages=(*inherited_stages, *stages),
+            summary=self.summary,
+        )
 
     def through_stage_named(self, stage_name: str) -> "Pipeline":
         for index, stage in enumerate(self.stages, start=1):

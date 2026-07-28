@@ -7,7 +7,7 @@ from datapipeline.config.transforms import (
     CollapseConfig,
     DedupeConfig,
     EnsureCadenceConfig,
-    EnsureTicksConfig,
+    EnsureScheduleConfig,
     FillConfig,
     ForwardFillConfig,
     ForwardSumConfig,
@@ -59,7 +59,7 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
             },
             {"operation": "forward_fill", "field": "close", "to": "close_asof"},
             {"operation": "collapse", "keep": "last"},
-            {"operation": "ensure_ticks", "artifact": "model_grid"},
+            {"operation": "ensure_schedule", "schedule": "schedule"},
         ]
     )
 
@@ -70,7 +70,7 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
         FillConfig(field="close", window=5, statistic="median"),
         ForwardFillConfig(field="close", to="close_asof"),
         CollapseConfig(keep="last"),
-        EnsureTicksConfig(artifact="model_grid"),
+        EnsureScheduleConfig(schedule="schedule"),
     ]
     assert stream.model_dump()["transforms"] == [
         {"operation": "dedupe"},
@@ -96,7 +96,7 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
             "to": "close_asof",
         },
         {"operation": "collapse", "keep": "last"},
-        {"operation": "ensure_ticks", "artifact": "model_grid"},
+        {"operation": "ensure_schedule", "schedule": "schedule"},
     ]
 
 
@@ -241,7 +241,7 @@ def test_rolling_slope_requires_at_least_two_records(window: object) -> None:
         )
 
 
-@pytest.mark.parametrize("cadence", [None, "", "ticks", "0m", "-1h"])
+@pytest.mark.parametrize("cadence", [None, "", "schedule", "0m", "-1h"])
 def test_ensure_cadence_requires_a_positive_duration(cadence: object) -> None:
     with pytest.raises(ValidationError):
         _stream(transforms=[{"operation": "ensure_cadence", "cadence": cadence}])
@@ -270,7 +270,46 @@ def test_sequence_config_is_strict(sequence: object) -> None:
         )
 
 
-def test_feature_config_uses_explicit_scale_and_sequence_models() -> None:
+@pytest.mark.parametrize(
+    "collect",
+    [
+        True,
+        0,
+        -1,
+        1.5,
+        "2",
+        {"size": 2},
+    ],
+)
+def test_collect_is_a_strict_positive_integer(collect: object) -> None:
+    with pytest.raises(ValidationError):
+        SeriesConfig.model_validate(
+            {
+                "id": "close",
+                "stream": "prices.hourly",
+                "field": "close",
+                "collect": collect,
+            }
+        )
+
+
+def test_series_config_rejects_sequence_and_collect_together() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="sequence and collect are mutually exclusive",
+    ):
+        SeriesConfig.model_validate(
+            {
+                "id": "close",
+                "stream": "prices.hourly",
+                "field": "close",
+                "sequence": {"size": 4},
+                "collect": 4,
+            }
+        )
+
+
+def test_series_config_uses_explicit_shaping_fields() -> None:
     config = SeriesConfig.model_validate(
         {
             "id": "close",
@@ -283,3 +322,14 @@ def test_feature_config_uses_explicit_scale_and_sequence_models() -> None:
 
     assert config.scale is True
     assert config.sequence == SequenceConfig(size=20, stride=5)
+
+    collected = SeriesConfig.model_validate(
+        {
+            "id": "intraday_close",
+            "stream": "prices.hourly",
+            "field": "close",
+            "collect": 4,
+        }
+    )
+
+    assert collected.collect == 4

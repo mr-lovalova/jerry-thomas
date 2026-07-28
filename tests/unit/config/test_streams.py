@@ -2,6 +2,8 @@ import pytest
 
 from datapipeline.config.streams import (
     AlignedStreamConfig,
+    AsOfStreamConfig,
+    BroadcastAsOfStreamConfig,
     BroadcastStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
@@ -137,6 +139,111 @@ def test_broadcast_stream_has_primary_broadcast_combiner_and_transforms() -> Non
     assert len(stream.transforms) == 1
 
 
+def test_as_of_stream_has_primary_lookup_and_match_policy() -> None:
+    stream = AsOfStreamConfig.model_validate(
+        {
+            "id": "priced",
+            "from": {
+                "stream": " prices ",
+                "as_of": " fundamentals.reported ",
+            },
+            "max_age": " 180d ",
+            "require_match": False,
+            "combine": {"entrypoint": "attach_fundamentals"},
+        }
+    )
+
+    assert stream.input_streams() == ("prices", "fundamentals.reported")
+    assert stream.max_age == "180d"
+    assert stream.require_match is False
+
+
+def test_broadcast_as_of_stream_has_primary_and_global_lookup() -> None:
+    stream = BroadcastAsOfStreamConfig.model_validate(
+        {
+            "id": "factor_adjusted",
+            "from": {
+                "stream": " returns ",
+                "broadcast_as_of": " factors.published ",
+            },
+            "combine": {"entrypoint": "attach_factor"},
+        }
+    )
+
+    assert stream.input_streams() == ("returns", "factors.published")
+    assert stream.max_age is None
+    assert stream.require_match is True
+
+
+@pytest.mark.parametrize(
+    ("config_type", "lookup_key"),
+    [
+        (AsOfStreamConfig, "as_of"),
+        (BroadcastAsOfStreamConfig, "broadcast_as_of"),
+    ],
+)
+@pytest.mark.parametrize("max_age", ["0s", "-1d", "forever"])
+def test_as_of_streams_require_a_positive_max_age(
+    config_type: type[AsOfStreamConfig] | type[BroadcastAsOfStreamConfig],
+    lookup_key: str,
+    max_age: str,
+) -> None:
+    with pytest.raises(ValueError, match="max_age|Unsupported timecode"):
+        config_type.model_validate(
+            {
+                "id": "joined",
+                "from": {"stream": "primary", lookup_key: "lookup"},
+                "max_age": max_age,
+                "combine": {"entrypoint": "combine"},
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("config_type", "lookup_key"),
+    [
+        (AsOfStreamConfig, "as_of"),
+        (BroadcastAsOfStreamConfig, "broadcast_as_of"),
+    ],
+)
+def test_as_of_streams_require_distinct_inputs(
+    config_type: type[AsOfStreamConfig] | type[BroadcastAsOfStreamConfig],
+    lookup_key: str,
+) -> None:
+    with pytest.raises(ValueError, match="must be different streams"):
+        config_type.model_validate(
+            {
+                "id": "joined",
+                "from": {"stream": "same", lookup_key: "same"},
+                "combine": {"entrypoint": "combine"},
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("config_type", "lookup_key"),
+    [
+        (AsOfStreamConfig, "as_of"),
+        (BroadcastAsOfStreamConfig, "broadcast_as_of"),
+    ],
+)
+@pytest.mark.parametrize("require_match", ["false", 0, 1])
+def test_as_of_streams_require_an_explicit_boolean_match_policy(
+    config_type: type[AsOfStreamConfig] | type[BroadcastAsOfStreamConfig],
+    lookup_key: str,
+    require_match: object,
+) -> None:
+    with pytest.raises(ValueError, match="valid boolean"):
+        config_type.model_validate(
+            {
+                "id": "joined",
+                "from": {"stream": "primary", lookup_key: "lookup"},
+                "require_match": require_match,
+                "combine": {"entrypoint": "combine"},
+            }
+        )
+
+
 @pytest.mark.parametrize("field", ["map", "preprocess", "partition_by", "ordered_by"])
 def test_broadcast_stream_rejects_other_stream_contracts(field: str) -> None:
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
@@ -235,6 +342,19 @@ def test_stream_catalog_selects_all_concrete_stream_types() -> None:
                     "from": {"stream": "prices", "broadcast": "reference"},
                     "combine": {"entrypoint": "attach_reference"},
                 },
+                "reported": {
+                    "id": "reported",
+                    "from": {"stream": "prices", "as_of": "fundamentals"},
+                    "combine": {"entrypoint": "attach_fundamentals"},
+                },
+                "factor_adjusted": {
+                    "id": "factor_adjusted",
+                    "from": {
+                        "stream": "prices",
+                        "broadcast_as_of": "factors",
+                    },
+                    "combine": {"entrypoint": "attach_factors"},
+                },
             }
         }
     )
@@ -243,6 +363,8 @@ def test_stream_catalog_selects_all_concrete_stream_types() -> None:
     assert isinstance(catalog.streams["returns"], DerivedStreamConfig)
     assert isinstance(catalog.streams["market_cap"], AlignedStreamConfig)
     assert isinstance(catalog.streams["enriched"], BroadcastStreamConfig)
+    assert isinstance(catalog.streams["reported"], AsOfStreamConfig)
+    assert isinstance(catalog.streams["factor_adjusted"], BroadcastAsOfStreamConfig)
 
 
 def test_stream_catalog_rejects_unknown_fields() -> None:

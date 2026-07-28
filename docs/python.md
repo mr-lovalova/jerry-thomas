@@ -50,10 +50,10 @@ for batch in iter_model_batches(
 ```
 
 Feature and target columns follow postprocessed metadata order. Fixed-length
-sequences always expand to numbered columns such as `history[0]`. Missing,
-nonnumeric, non-finite, or unrepresentable values fail with their sample key
-and column instead of being silently coerced. Feature-only datasets expose
-`targets=None`.
+lists from `sequence`, `collect`, or intrinsically list-valued fields expand to
+numbered columns such as `history[0]`. Missing, nonnumeric, non-finite, or
+unrepresentable values fail with their sample key and column instead of being
+silently coerced. Feature-only datasets expose `targets=None`.
 
 The iterator preserves canonical sample order and yields a shorter final batch.
 It does not shuffle or retain the full dataset. PyTorch can consume the arrays

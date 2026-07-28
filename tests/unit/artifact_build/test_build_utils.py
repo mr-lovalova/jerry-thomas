@@ -1,5 +1,4 @@
 import json
-import math
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -10,21 +9,25 @@ from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.series import SeriesRow
 from datapipeline.artifacts.specs import SERIES, VECTOR_METADATA
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.config.tasks import MetadataTask
-from datapipeline.execution.context import PipelineContext
+from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
+from datapipeline.config.dataset.split import (
+    DatasetFold,
+    HashSplitConfig,
+    TimeInterval,
+    TimeSplitConfig,
+)
+from datapipeline.config.tasks.metadata import MetadataTask
 from datapipeline.operations.artifacts import metadata as artifact_metadata
 from datapipeline.operations.artifacts.metadata import (
     _window_bounds_from_stats,
-    materialize_metadata,
+    build_metadata_artifact,
 )
 from datapipeline.operations.artifacts.utils import (
-    VectorMetadataCollector,
     VectorMetadataStats,
     metadata_entries_from_stats,
 )
-from datapipeline.runtime import Runtime
-from datapipeline.utils.load import load_yaml
+from datapipeline.runtime import DerivedRuntimeStream, Runtime
+from datapipeline.io.yaml import load_yaml
 
 
 def _hour(hour: int) -> datetime:
@@ -36,12 +39,12 @@ def test_metadata_task_rejects_removed_relaxed_window_mode() -> None:
         MetadataTask.model_validate({"window_mode": "relaxed"})
 
 
-def _runtime_with_dataset(tmp_path, dataset_text: str) -> Runtime:
+def _runtime_with_config(tmp_path, dataset: DatasetConfig) -> Runtime:
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 3",
+                "schema_version: 4",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: streams",
@@ -54,27 +57,57 @@ def _runtime_with_dataset(tmp_path, dataset_text: str) -> Runtime:
         ),
         encoding="utf-8",
     )
-    dataset_path = tmp_path / "dataset.yaml"
-    dataset_path.write_text(dataset_text, encoding="utf-8")
     artifacts_root = tmp_path / "build"
     artifacts_root.mkdir()
-    runtime = Runtime(
+    return Runtime(
         project_yaml=project_yaml,
         artifacts_root=artifacts_root,
-        dataset=DatasetConfig.model_validate(load_yaml(dataset_path)),
+        dataset=dataset,
+    )
+
+
+def _runtime_with_dataset(tmp_path, dataset_text: str) -> Runtime:
+    dataset_path = tmp_path / "dataset.yaml"
+    dataset_path.write_text(dataset_text, encoding="utf-8")
+    return _runtime_with_config(
+        tmp_path,
+        DatasetConfig.model_validate(load_yaml(dataset_path)),
+    )
+
+
+def _runtime_with_stream_partitions(
+    tmp_path,
+    dataset: DatasetConfig,
+    partitions: dict[str, tuple[str, ...]],
+) -> Runtime:
+    runtime = _runtime_with_config(tmp_path, dataset)
+    runtime.streams.update(
+        {
+            stream_id: DerivedRuntimeStream(
+                input_stream="unused",
+                partition_by=partition_by,
+                transforms=(),
+            )
+            for stream_id, partition_by in partitions.items()
+        }
     )
     return runtime
 
 
-def _collect_metadata(
-    configs: list[SeriesConfig],
-    observations,
-    sample_keys=(),
-):
-    collector = VectorMetadataCollector(configs, sample_keys)
-    for key, values in observations:
-        collector.observe(key, values)
-    return collector.result()
+def _holdout_split() -> TimeSplitConfig:
+    return TimeSplitConfig(
+        intervals=[
+            TimeInterval(id="train", until="2024-01-01T02:00:00Z"),
+            TimeInterval(id="validation"),
+        ],
+        folds=[
+            DatasetFold(
+                id="holdout",
+                train=["train"],
+                validation=["validation"],
+            )
+        ],
+    )
 
 
 def _mock_series_rows(monkeypatch, runtime: Runtime, rows) -> None:
@@ -95,172 +128,6 @@ def _mock_series_rows(monkeypatch, runtime: Runtime, rows) -> None:
     )
 
 
-def test_vector_metadata_collector_counts_nan() -> None:
-    config = SeriesConfig(id="wind_speed", stream="met.obs", field="value")
-    stats, vector_count, domain = _collect_metadata(
-        [config],
-        [((_hour(0),), {"wind_speed": math.nan})],
-    )
-
-    assert vector_count == 1
-    assert domain == {}
-    assert stats[0].present_count == 1
-    assert stats[0].null_count == 1
-
-
-def test_vector_metadata_collector_uses_config_order() -> None:
-    configs = [
-        SeriesConfig(id="history", stream="market.prices", field="value"),
-        SeriesConfig(id="price", stream="market.prices", field="value"),
-        SeriesConfig(
-            id="fundamental",
-            stream="market.prices",
-            field="value",
-        ),
-    ]
-    stats, _, _ = _collect_metadata(
-        configs,
-        [
-            (
-                (_hour(0),),
-                {
-                    "price": 1.0,
-                    "fundamental__@metric:revenue": 10.0,
-                    "fundamental__@metric:debt": 5.0,
-                },
-            ),
-            ((_hour(1),), {"history": [1.0, 2.0]}),
-        ],
-    )
-
-    assert [entry.id for entry in stats] == [
-        "history",
-        "price",
-        "fundamental__@metric:debt",
-        "fundamental__@metric:revenue",
-    ]
-
-
-def test_vector_metadata_collector_rejects_missing_configured_ids() -> None:
-    configs = [
-        SeriesConfig(id="missing", stream="market.prices", field="value"),
-        SeriesConfig(id="price", stream="market.prices", field="value"),
-    ]
-
-    with pytest.raises(RuntimeError, match="missing"):
-        _collect_metadata(
-            configs,
-            [((_hour(0),), {"price": 1.0})],
-        )
-
-
-def test_vector_metadata_collector_rejects_when_all_ids_are_empty() -> None:
-    config = SeriesConfig(id="price", stream="market.prices", field="value")
-
-    with pytest.raises(RuntimeError, match="price"):
-        _collect_metadata([config], [])
-
-
-@pytest.mark.parametrize(
-    ("sample_keys", "key"),
-    [
-        ((), 1),
-        ((), ()),
-        ((), (0,)),
-        ((), (_hour(0), "unexpected")),
-        (("ticker",), (_hour(0),)),
-    ],
-)
-def test_vector_metadata_collector_rejects_malformed_sample_keys(
-    sample_keys,
-    key,
-) -> None:
-    config = SeriesConfig(id="price", stream="market.prices", field="value")
-
-    with pytest.raises(RuntimeError, match="sample key"):
-        _collect_metadata(
-            [config],
-            [(key, {"price": 1.0})],
-            sample_keys=sample_keys,
-        )
-
-
-def test_vector_metadata_collector_rejects_unknown_ids() -> None:
-    config = SeriesConfig(id="price", stream="market.prices", field="value")
-
-    with pytest.raises(RuntimeError, match="rogue"):
-        _collect_metadata(
-            [config],
-            [((_hour(0),), {"price": 1.0, "rogue": 2.0})],
-        )
-
-
-def test_vector_metadata_collector_omits_unkeyed_domain() -> None:
-    config = SeriesConfig(id="price", stream="market.prices", field="value")
-
-    _, _, domain = _collect_metadata(
-        [config],
-        [
-            ((_hour(0),), {"price": 1.0}),
-            ((_hour(1),), {"price": 2.0}),
-        ],
-    )
-
-    assert domain == {}
-
-
-def test_vector_metadata_collector_tracks_each_keyed_domain() -> None:
-    config = SeriesConfig(id="price", stream="market.prices", field="value")
-
-    _, _, domain = _collect_metadata(
-        [config],
-        [
-            ((_hour(2), "AAPL"), {"price": 2.0}),
-            ((_hour(0), "AAPL"), {"price": 1.0}),
-            ((_hour(1), "MSFT"), {"price": 3.0}),
-        ],
-        sample_keys=("ticker",),
-    )
-
-    assert domain == {
-        ("AAPL",): (_hour(0), _hour(2)),
-        ("MSFT",): (_hour(1), _hour(1)),
-    }
-
-
-@pytest.mark.parametrize(
-    "values",
-    [
-        (1.0, [2.0]),
-        ([1.0], 2.0),
-    ],
-)
-def test_vector_metadata_collector_rejects_scalar_list_mixtures(values) -> None:
-    config = SeriesConfig(id="history", stream="market.prices", field="close")
-
-    with pytest.raises(ValueError, match="both (scalar and list|list and scalar)"):
-        _collect_metadata(
-            [config],
-            [
-                ((_hour(0),), {"history": values[0]}),
-                ((_hour(1),), {"history": values[1]}),
-            ],
-        )
-
-
-def test_vector_metadata_collector_rejects_variable_list_lengths() -> None:
-    config = SeriesConfig(id="history", stream="market.prices", field="close")
-
-    with pytest.raises(ValueError, match="different lengths: 1 and 2"):
-        _collect_metadata(
-            [config],
-            [
-                ((_hour(0),), {"history": [1.0]}),
-                ((_hour(1),), {"history": [2.0, 3.0]}),
-            ],
-        )
-
-
 def test_pipeline_context_rejects_invalid_registered_metadata(tmp_path) -> None:
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
@@ -272,20 +139,23 @@ def test_pipeline_context_rejects_invalid_registered_metadata(tmp_path) -> None:
     metadata_path.write_text(
         json.dumps(
             {
-                "schema_version": 3,
-                "features": [
-                    {
-                        "id": "history",
-                        "base_id": "history",
-                        "kind": "list",
-                        "present_count": 1,
-                        "null_count": 0,
-                        "length": 0,
-                        "observed_elements": 0,
-                    }
-                ],
-                "targets": [],
-                "counts": {"feature_vectors": 1, "target_vectors": 0},
+                "schema_version": 4,
+                "catalog": {
+                    "features": [
+                        {
+                            "id": "history",
+                            "base_id": "history",
+                            "kind": "list",
+                            "present_count": 1,
+                            "null_count": 0,
+                            "length": 0,
+                            "observed_elements": 0,
+                        }
+                    ],
+                    "targets": [],
+                    "counts": {"feature_vectors": 1, "target_vectors": 0},
+                },
+                "layout": {"kind": "unsplit"},
             }
         ),
         encoding="utf-8",
@@ -293,7 +163,7 @@ def test_pipeline_context_rejects_invalid_registered_metadata(tmp_path) -> None:
     runtime.artifacts.register(VECTOR_METADATA, "metadata.json")
 
     with pytest.raises(ValueError, match="length"):
-        PipelineContext(runtime).require_artifact(VECTOR_METADATA_SPEC)
+        runtime.artifacts.load(VECTOR_METADATA_SPEC)
 
 
 def test_metadata_materialization_writes_keyed_sample_domain(
@@ -322,17 +192,18 @@ def test_metadata_materialization_writes_keyed_sample_domain(
         monkeypatch,
         runtime,
         [
-            SeriesRow(start, ("AAPL",), {"price": 1.0}, {}),
-            SeriesRow(end, ("AAPL",), {"price": 2.0}, {}),
+            SeriesRow(start, ("AAPL",), {"price": 1.0}, {}, frozenset()),
+            SeriesRow(end, ("AAPL",), {"price": 2.0}, {}, frozenset()),
         ],
     )
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
     )
-    assert payload["sample"] == {
+    assert payload["layout"] == {"kind": "unsplit"}
+    assert payload["catalog"]["sample"] == {
         "cadence": "1h",
         "keys": ["security_id"],
         "domain": [
@@ -343,6 +214,56 @@ def test_metadata_materialization_writes_keyed_sample_domain(
             }
         ],
     }
+
+
+def test_unsplit_domain_starts_at_first_genuine_observation(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_dataset(
+        tmp_path,
+        "\n".join(
+            [
+                "sample:",
+                "  cadence: 1h",
+                "  keys: [security_id]",
+                "features:",
+                "  - id: price",
+                "    stream: market.prices",
+                "    field: close",
+                "",
+            ]
+        ),
+    )
+    placeholder = frozenset({"price"})
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(_hour(0), ("AAPL",), {"price": None}, {}, placeholder),
+            SeriesRow(_hour(1), ("AAPL",), {"price": 1.0}, {}, frozenset()),
+            SeriesRow(_hour(2), ("AAPL",), {"price": None}, {}, placeholder),
+        ],
+    )
+
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+    payload = json.loads(
+        (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
+    )
+    assert payload["catalog"]["window"] == {
+        "start": "2024-01-01T01:00:00Z",
+        "end": "2024-01-01T02:00:00Z",
+        "mode": "intersection",
+        "size": 2,
+    }
+    assert payload["catalog"]["sample"]["domain"] == [
+        {
+            "key": ["AAPL"],
+            "start": "2024-01-01T01:00:00Z",
+            "end": "2024-01-01T02:00:00Z",
+        }
+    ]
 
 
 def test_metadata_materialization_preserves_one_timestamp_window(
@@ -368,15 +289,16 @@ def test_metadata_materialization_preserves_one_timestamp_window(
     _mock_series_rows(
         monkeypatch,
         runtime,
-        [SeriesRow(observed_at, (), {"price": 1.0}, {})],
+        [SeriesRow(observed_at, (), {"price": 1.0}, {}, frozenset())],
     )
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     path = runtime.artifacts_root / "metadata.json"
     first = path.read_bytes()
     payload = json.loads(first)
-    assert payload["window"] == {
+    assert payload["layout"] == {"kind": "unsplit"}
+    assert payload["catalog"]["window"] == {
         "start": "2024-01-01T04:00:00Z",
         "end": "2024-01-01T04:00:00Z",
         "mode": "intersection",
@@ -384,7 +306,7 @@ def test_metadata_materialization_preserves_one_timestamp_window(
     }
     assert "generated_at" not in payload
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     assert path.read_bytes() == first
 
@@ -407,13 +329,14 @@ def test_metadata_materialization_scans_features_and_targets_once(
                 "  - id: return",
                 "    stream: market.prices",
                 "    field: return",
+                "    horizon: 0s",
                 "",
             ]
         ),
     )
     rows = [
-        SeriesRow(_hour(0), (), {"price": 1.0}, {"return": 0.1}),
-        SeriesRow(_hour(1), (), {"price": 2.0}, {"return": 0.2}),
+        SeriesRow(_hour(0), (), {"price": 1.0}, {"return": 0.1}, frozenset()),
+        SeriesRow(_hour(1), (), {"price": 2.0}, {"return": 0.2}, frozenset()),
     ]
     _mock_series_rows(monkeypatch, runtime, rows)
     opens = 0
@@ -436,20 +359,1000 @@ def test_metadata_materialization_scans_features_and_targets_once(
     monkeypatch.setattr(artifact_metadata, "open_series", open_rows)
     monkeypatch.setattr(artifact_metadata, "OperationProgressTracker", Progress)
 
-    materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
     )
-    assert payload["counts"] == {
+    assert payload["layout"] == {"kind": "unsplit"}
+    catalog = payload["catalog"]
+    assert catalog["counts"] == {
         "feature_vectors": 2,
         "target_vectors": 2,
     }
-    assert [entry["id"] for entry in payload["features"]] == ["price"]
-    assert [entry["id"] for entry in payload["targets"]] == ["return"]
+    assert [entry["id"] for entry in catalog["features"]] == ["price"]
+    assert [entry["id"] for entry in catalog["targets"]] == ["return"]
     assert opens == 1
     assert trackers == [("scan_series", "samples", 180)]
     assert advances == [1, 1]
+
+
+def test_metadata_rejects_wide_feature_missing_from_fold_training(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_stream_partitions(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            features=[
+                SeriesConfig(
+                    id="metric",
+                    stream="market.metrics",
+                    field="value",
+                )
+            ],
+            split=_holdout_split(),
+        ),
+        {"market.metrics": ("name",)},
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(0),
+                (),
+                {"metric__@name:known": 1.0},
+                {},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(2),
+                (),
+                {
+                    "metric__@name:known": 2.0,
+                    "metric__@name:future": 3.0,
+                },
+                {},
+                frozenset(),
+            ),
+        ],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"fold 'holdout'.*feature series IDs.*metric__@name:future",
+    ):
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+
+def test_metadata_validates_wide_schema_for_each_fold(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_stream_partitions(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            features=[
+                SeriesConfig(
+                    id="metric",
+                    stream="market.metrics",
+                    field="value",
+                ),
+                SeriesConfig(
+                    id="baseline",
+                    stream="market.baseline",
+                    field="value",
+                ),
+            ],
+            split=TimeSplitConfig(
+                intervals=[
+                    TimeInterval(id="train_0", until="2024-01-01T02:00:00Z"),
+                    TimeInterval(id="validation_0", until="2024-01-01T04:00:00Z"),
+                    TimeInterval(id="train_1", until="2024-01-01T06:00:00Z"),
+                    TimeInterval(id="validation_1"),
+                ],
+                folds=[
+                    DatasetFold(
+                        id="fold_0",
+                        train=["train_0"],
+                        validation=["validation_0"],
+                    ),
+                    DatasetFold(
+                        id="fold_1",
+                        train=["train_1"],
+                        validation=["validation_1"],
+                    ),
+                ],
+            ),
+        ),
+        {
+            "market.metrics": ("bucket",),
+            "market.baseline": (),
+        },
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(0),
+                (),
+                {
+                    "metric__@bucket:legacy": 1.0,
+                    "baseline": 10.0,
+                },
+                {},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(5),
+                (),
+                {"baseline": 20.0},
+                {},
+                frozenset(),
+            ),
+        ],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"fold 'fold_1'.*configured feature series.*metric",
+    ):
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+
+def test_metadata_accepts_wide_feature_present_in_fold_training(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_stream_partitions(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            features=[
+                SeriesConfig(
+                    id="metric",
+                    stream="market.metrics",
+                    field="value",
+                )
+            ],
+            split=_holdout_split(),
+        ),
+        {"market.metrics": ("name",)},
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(0),
+                (),
+                {"metric__@name:known": [1.0, 2.0]},
+                {},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(2),
+                (),
+                {"metric__@name:known": [None, 3.0]},
+                {},
+                frozenset(),
+            ),
+        ],
+    )
+
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+    payload = json.loads(
+        (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
+    )
+    assert payload["layout"]["kind"] == "folded"
+    training = payload["layout"]["folds"][0]["training_schema"]
+    assert [entry["id"] for entry in training["features"]] == ["metric__@name:known"]
+
+
+def test_metadata_rejects_wide_shape_not_established_by_fold_training(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_stream_partitions(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            features=[
+                SeriesConfig(
+                    id="metric",
+                    stream="market.metrics",
+                    field="value",
+                )
+            ],
+            split=_holdout_split(),
+        ),
+        {"market.metrics": ("name",)},
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(0),
+                (),
+                {"metric__@name:known": None},
+                {},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(2),
+                (),
+                {"metric__@name:known": [1.0, 2.0]},
+                {},
+                frozenset(),
+            ),
+        ],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"fold 'holdout'.*feature series IDs.*metric__@name:known",
+    ):
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+
+def test_metadata_rejects_static_shape_not_established_by_fold_training(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_config(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            features=[
+                SeriesConfig(
+                    id="metric",
+                    stream="market.metrics",
+                    field="value",
+                )
+            ],
+            split=_holdout_split(),
+        ),
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(_hour(0), (), {"metric": None}, {}, frozenset()),
+            SeriesRow(
+                _hour(2),
+                (),
+                {"metric": [1.0, 2.0]},
+                {},
+                frozenset(),
+            ),
+        ],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"fold 'holdout'.*feature series IDs.*metric",
+    ):
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+
+def test_hash_fold_domain_does_not_synthesize_holdout_entity_into_training(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_config(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h", keys=["entity"]),
+            features=[
+                SeriesConfig(
+                    id="price",
+                    stream="market.prices",
+                    field="value",
+                )
+            ],
+            split=HashSplitConfig(
+                ratios={"train": 0.5, "validation": 0.5},
+                folds=[
+                    DatasetFold(
+                        id="fold",
+                        train=["train"],
+                        validation=["validation"],
+                    )
+                ],
+                seed=1,
+            ),
+        ),
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(14),
+                ("HOLDOUT",),
+                {"price": 14.0},
+                {},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(15),
+                ("BASE",),
+                {"price": 15.0},
+                {},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(16),
+                ("BASE",),
+                {"price": 16.0},
+                {},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(16),
+                ("HOLDOUT",),
+                {"price": 16.0},
+                {},
+                frozenset(),
+            ),
+        ],
+    )
+
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+    payload = json.loads(
+        (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
+    )
+    fold = payload["layout"]["folds"][0]
+    training = next(output for output in fold["outputs"] if output["role"] == "train")
+    assert training["sample"]["domain"] == [
+        {
+            "key": ["BASE"],
+            "start": "2024-01-01T15:00:00Z",
+            "end": "2024-01-01T16:00:00Z",
+        }
+    ]
+
+
+def test_schedule_placeholder_does_not_establish_training_membership(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_config(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h", keys=["entity"]),
+            features=[
+                SeriesConfig(
+                    id="price",
+                    stream="market.prices",
+                    field="value",
+                )
+            ],
+            split=TimeSplitConfig(
+                intervals=[
+                    TimeInterval(id="train", until="2024-01-01T02:00:00Z"),
+                    TimeInterval(id="validation"),
+                ],
+                folds=[
+                    DatasetFold(
+                        id="fold",
+                        train=["train"],
+                        validation=["validation"],
+                    )
+                ],
+            ),
+        ),
+    )
+    placeholder = frozenset({"price"})
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(0),
+                ("BASE",),
+                {"price": 1.0},
+                {},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(0),
+                ("HOLDOUT",),
+                {"price": None},
+                {},
+                placeholder,
+            ),
+            SeriesRow(
+                _hour(1),
+                ("BASE",),
+                {"price": None},
+                {},
+                placeholder,
+            ),
+            SeriesRow(
+                _hour(1),
+                ("HOLDOUT",),
+                {"price": None},
+                {},
+                placeholder,
+            ),
+            SeriesRow(
+                _hour(2),
+                ("BASE",),
+                {"price": None},
+                {},
+                placeholder,
+            ),
+            SeriesRow(
+                _hour(2),
+                ("HOLDOUT",),
+                {"price": 2.0},
+                {},
+                frozenset(),
+            ),
+        ],
+    )
+
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+    payload = json.loads(
+        (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
+    )
+    fold = payload["layout"]["folds"][0]
+    training = next(output for output in fold["outputs"] if output["role"] == "train")
+    assert training["sample"]["domain"] == [
+        {
+            "key": ["BASE"],
+            "start": "2024-01-01T00:00:00Z",
+            "end": "2024-01-01T01:00:00Z",
+        }
+    ]
+
+
+def test_fold_domain_starts_at_first_genuine_observation(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_config(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h", keys=["entity"]),
+            features=[
+                SeriesConfig(
+                    id="price",
+                    stream="market.prices",
+                    field="value",
+                )
+            ],
+            split=TimeSplitConfig(
+                intervals=[
+                    TimeInterval(id="train", until="2024-01-01T03:00:00Z"),
+                    TimeInterval(id="validation"),
+                ],
+                folds=[
+                    DatasetFold(
+                        id="fold",
+                        train=["train"],
+                        validation=["validation"],
+                    )
+                ],
+            ),
+        ),
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(0),
+                ("AAPL",),
+                {"price": None},
+                {},
+                frozenset({"price"}),
+            ),
+            SeriesRow(
+                _hour(1),
+                ("AAPL",),
+                {"price": 1.0},
+                {},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(2),
+                ("AAPL",),
+                {"price": None},
+                {},
+                frozenset({"price"}),
+            ),
+        ],
+    )
+
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+    payload = json.loads(
+        (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
+    )
+    fold = payload["layout"]["folds"][0]
+    training = next(output for output in fold["outputs"] if output["role"] == "train")
+    assert training["sample"]["domain"] == [
+        {
+            "key": ["AAPL"],
+            "start": "2024-01-01T01:00:00Z",
+            "end": "2024-01-01T02:00:00Z",
+        }
+    ]
+
+
+def test_fold_domain_continues_after_training_observation(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_config(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h", keys=["entity"]),
+            features=[
+                SeriesConfig(
+                    id="price",
+                    stream="market.prices",
+                    field="value",
+                )
+            ],
+            split=TimeSplitConfig(
+                intervals=[
+                    TimeInterval(id="train", until="2024-01-01T02:00:00Z"),
+                    TimeInterval(id="validation"),
+                ],
+                folds=[
+                    DatasetFold(
+                        id="fold",
+                        train=["train"],
+                        validation=["validation"],
+                    )
+                ],
+            ),
+        ),
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(0),
+                ("AAPL",),
+                {"price": 1.0},
+                {},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(2),
+                ("AAPL",),
+                {"price": None},
+                {},
+                frozenset({"price"}),
+            ),
+            SeriesRow(
+                _hour(3),
+                ("AAPL",),
+                {"price": None},
+                {},
+                frozenset({"price"}),
+            ),
+        ],
+    )
+
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+    payload = json.loads(
+        (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
+    )
+    fold = payload["layout"]["folds"][0]
+    validation = next(
+        output for output in fold["outputs"] if output["role"] == "validation"
+    )
+    assert validation["sample"]["domain"] == [
+        {
+            "key": ["AAPL"],
+            "start": "2024-01-01T02:00:00Z",
+            "end": "2024-01-01T03:00:00Z",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("window_mode", "expected_start"),
+    [
+        ("union", "2024-01-01T00:00:00Z"),
+        ("intersection", "2024-01-01T01:00:00Z"),
+    ],
+)
+def test_fold_window_uses_feature_base_ranges(
+    monkeypatch,
+    tmp_path,
+    window_mode,
+    expected_start,
+) -> None:
+    runtime = _runtime_with_config(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            features=[
+                SeriesConfig(id="price", stream="market", field="price"),
+                SeriesConfig(id="volume", stream="market", field="volume"),
+            ],
+            split=_holdout_split(),
+        ),
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(0),
+                (),
+                {"price": 1.0, "volume": None},
+                {},
+                frozenset({"volume"}),
+            ),
+            SeriesRow(
+                _hour(1),
+                (),
+                {"price": 2.0, "volume": 10.0},
+                {},
+                frozenset(),
+            ),
+        ],
+    )
+
+    build_metadata_artifact(
+        runtime,
+        MetadataTask(output="metadata.json", window_mode=window_mode),
+    )
+
+    payload = json.loads(
+        (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
+    )
+    training = next(
+        output
+        for output in payload["layout"]["folds"][0]["outputs"]
+        if output["role"] == "train"
+    )
+    assert training["window"]["start"] == expected_start
+    assert training["window"]["end"] == "2024-01-01T01:00:00Z"
+
+
+def test_fold_strict_window_uses_each_wide_series_id(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_config(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            features=[
+                SeriesConfig(id="metric", stream="market.metrics", field="value")
+            ],
+            split=_holdout_split(),
+        ),
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(0),
+                (),
+                {
+                    "metric__@name:a": 1.0,
+                    "metric__@name:b": None,
+                },
+                {},
+                frozenset({"metric__@name:b"}),
+            ),
+            SeriesRow(
+                _hour(1),
+                (),
+                {
+                    "metric__@name:a": 2.0,
+                    "metric__@name:b": 3.0,
+                },
+                {},
+                frozenset(),
+            ),
+        ],
+    )
+
+    build_metadata_artifact(
+        runtime,
+        MetadataTask(output="metadata.json", window_mode="strict"),
+    )
+
+    payload = json.loads(
+        (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
+    )
+    training = next(
+        output
+        for output in payload["layout"]["folds"][0]["outputs"]
+        if output["role"] == "train"
+    )
+    assert training["window"] == {
+        "start": "2024-01-01T01:00:00Z",
+        "end": "2024-01-01T01:00:00Z",
+        "mode": "strict",
+        "size": 1,
+    }
+
+
+def test_hash_fold_validation_cannot_establish_training_domain(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_config(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h", keys=["entity"]),
+            features=[
+                SeriesConfig(
+                    id="price",
+                    stream="market.prices",
+                    field="value",
+                )
+            ],
+            split=HashSplitConfig(
+                ratios={"train": 0.5, "validation": 0.5},
+                folds=[
+                    DatasetFold(
+                        id="fold",
+                        train=["train"],
+                        validation=["validation"],
+                    )
+                ],
+                seed=42,
+            ),
+        ),
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(_hour(0), ("A",), {"price": 10.0}, {}, frozenset()),
+            SeriesRow(_hour(0), ("C",), {"price": 20.0}, {}, frozenset()),
+            SeriesRow(
+                _hour(5),
+                ("A",),
+                {"price": 10.0},
+                {},
+                frozenset({"price"}),
+            ),
+        ],
+    )
+
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+    payload = json.loads(
+        (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
+    )
+    training = next(
+        output
+        for output in payload["layout"]["folds"][0]["outputs"]
+        if output["role"] == "train"
+    )
+    assert training["sample"]["domain"] == [
+        {
+            "key": ["C"],
+            "start": "2024-01-01T00:00:00Z",
+            "end": "2024-01-01T00:00:00Z",
+        }
+    ]
+
+
+def test_fold_metadata_normalizes_interval_offsets_to_utc(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_config(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            features=[
+                SeriesConfig(
+                    id="price",
+                    stream="market.prices",
+                    field="value",
+                )
+            ],
+            split=TimeSplitConfig(
+                intervals=[
+                    TimeInterval(
+                        id="train",
+                        until="2024-01-01T02:00:00+01:00",
+                    ),
+                    TimeInterval(id="validation"),
+                ],
+                folds=[
+                    DatasetFold(
+                        id="fold",
+                        train=["train"],
+                        validation=["validation"],
+                    )
+                ],
+            ),
+        ),
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(0),
+                (),
+                {"price": 1.0},
+                {},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(1),
+                (),
+                {"price": 2.0},
+                {},
+                frozenset(),
+            ),
+        ],
+    )
+
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+    payload = json.loads(
+        (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
+    )
+    outputs = payload["layout"]["folds"][0]["outputs"]
+    training = next(output for output in outputs if output["role"] == "train")
+    validation = next(output for output in outputs if output["role"] == "validation")
+    assert training["window"] == {
+        "end": "2024-01-01T00:00:00Z",
+        "mode": "intersection",
+        "size": 1,
+        "start": "2024-01-01T00:00:00Z",
+    }
+    assert validation["window"] == {
+        "end": "2024-01-01T01:00:00Z",
+        "mode": "intersection",
+        "size": 1,
+        "start": "2024-01-01T01:00:00Z",
+    }
+
+
+def test_metadata_excludes_target_horizon_boundary_from_wide_training_schema(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_stream_partitions(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            features=[
+                SeriesConfig(
+                    id="metric",
+                    stream="market.metrics",
+                    field="value",
+                )
+            ],
+            targets=[
+                TargetSeriesConfig(
+                    id="return",
+                    stream="market.returns",
+                    field="value",
+                    horizon="1h",
+                )
+            ],
+            split=_holdout_split(),
+        ),
+        {
+            "market.metrics": ("name",),
+            "market.returns": (),
+        },
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(0),
+                (),
+                {"metric__@name:known": 1.0},
+                {"return": 0.1},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(1),
+                (),
+                {"metric__@name:future": 2.0},
+                {"return": 0.2},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(2),
+                (),
+                {"metric__@name:future": 3.0},
+                {"return": 0.3},
+                frozenset(),
+            ),
+        ],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"fold 'holdout'.*feature series IDs.*metric__@name:future",
+    ):
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+
+def test_metadata_rejects_wide_target_missing_from_fold_training(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime = _runtime_with_stream_partitions(
+        tmp_path,
+        DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            features=[
+                SeriesConfig(
+                    id="price",
+                    stream="market.prices",
+                    field="value",
+                )
+            ],
+            targets=[
+                TargetSeriesConfig(
+                    id="return",
+                    stream="market.returns",
+                    field="value",
+                    horizon="0s",
+                )
+            ],
+            split=_holdout_split(),
+        ),
+        {
+            "market.prices": (),
+            "market.returns": ("name",),
+        },
+    )
+    _mock_series_rows(
+        monkeypatch,
+        runtime,
+        [
+            SeriesRow(
+                _hour(0),
+                (),
+                {"price": 1.0},
+                {"return__@name:known": 0.1},
+                frozenset(),
+            ),
+            SeriesRow(
+                _hour(2),
+                (),
+                {"price": 2.0},
+                {
+                    "return__@name:known": 0.2,
+                    "return__@name:future": 0.3,
+                },
+                frozenset(),
+            ),
+        ],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"fold 'holdout'.*target series IDs.*return__@name:future",
+    ):
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
 
 def test_metadata_materialization_closes_rows_after_collection_error(
@@ -475,15 +1378,21 @@ def test_metadata_materialization_closes_rows_after_collection_error(
     def failing_rows():
         nonlocal closed
         try:
-            yield SeriesRow(_hour(0), (), {"history": [1.0]}, {})
-            yield SeriesRow(_hour(1), (), {"history": [2.0, 3.0]}, {})
+            yield SeriesRow(_hour(0), (), {"history": [1.0]}, {}, frozenset())
+            yield SeriesRow(
+                _hour(1),
+                (),
+                {"history": [2.0, 3.0]},
+                {},
+                frozenset(),
+            )
         finally:
             closed = True
 
     _mock_series_rows(monkeypatch, runtime, failing_rows())
 
     with pytest.raises(ValueError, match="different lengths"):
-        materialize_metadata(runtime, MetadataTask(output="metadata.json"))
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     assert closed
 

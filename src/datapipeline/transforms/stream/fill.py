@@ -1,5 +1,4 @@
 from collections.abc import Iterator
-from itertools import groupby
 from math import isfinite
 
 from datapipeline.domain.record import TemporalRecord
@@ -9,11 +8,11 @@ from datapipeline.transforms.rolling_window import (
     RollingWindow,
 )
 from datapipeline.transforms.utils import (
+    adjacent_partitions,
     clone_record_with_field,
-    finite_number,
+    finite_number_or_none,
     get_field,
     is_missing,
-    partition_key,
 )
 
 
@@ -43,14 +42,13 @@ class StatisticalFillTransform:
         self.min_samples = min_samples
 
     def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
-        for _, records in groupby(
-            stream,
-            key=lambda record: partition_key(record, self.partition_fields),
-        ):
+        for _, records in adjacent_partitions(stream, self.partition_fields):
             history = self._window_type(self.window)
             for record in records:
-                raw_value = get_field(record, self.field)
-                if is_missing(raw_value):
+                numeric_value = finite_number_or_none(
+                    get_field(record, self.field), self.field
+                )
+                if numeric_value is None:
                     value = (
                         history.result()
                         if history.sample_count >= self.min_samples
@@ -58,7 +56,6 @@ class StatisticalFillTransform:
                     )
                     history.append(None)
                 else:
-                    numeric_value = finite_number(raw_value, self.field)
                     history.append(numeric_value)
                     value = numeric_value
                 if value is not None and not isfinite(value):
@@ -83,18 +80,10 @@ class ForwardFillTransform:
         self.partition_fields = partition_fields
 
     def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
-        for _, records in groupby(
-            stream,
-            key=lambda record: partition_key(record, self.partition_fields),
-        ):
+        for _, records in adjacent_partitions(stream, self.partition_fields):
             last_value = None
-            has_value = False
             for record in records:
                 value = get_field(record, self.field)
-                if is_missing(value):
-                    output = last_value if has_value else None
-                else:
+                if not is_missing(value):
                     last_value = value
-                    has_value = True
-                    output = value
-                yield clone_record_with_field(record, self.to, output)
+                yield clone_record_with_field(record, self.to, last_value)

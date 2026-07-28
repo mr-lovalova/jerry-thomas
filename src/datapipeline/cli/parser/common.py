@@ -2,7 +2,7 @@ import argparse
 import math
 
 from datapipeline.config.options import VISUAL_CHOICES
-from datapipeline.config.profiles import ARTIFACT_MODES
+from datapipeline.config.profiles.build import ARTIFACT_MODES
 
 
 def _heartbeat_interval_seconds(value: str) -> float:

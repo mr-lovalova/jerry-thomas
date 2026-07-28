@@ -1,5 +1,4 @@
 from collections.abc import Iterator
-from itertools import groupby
 from math import isfinite
 
 from datapipeline.domain.record import TemporalRecord
@@ -13,11 +12,10 @@ from datapipeline.transforms.rolling_window import (
     RollingWindow,
 )
 from datapipeline.transforms.utils import (
+    adjacent_partitions,
     clone_record_with_field,
-    finite_number,
+    finite_number_or_none,
     get_field,
-    is_missing,
-    partition_key,
 )
 
 
@@ -51,19 +49,11 @@ class RollingTransform:
         self.min_samples = window if min_samples is None else min_samples
 
     def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
-        for _, records in groupby(
-            stream,
-            key=lambda record: partition_key(record, self.partition_fields),
-        ):
+        for _, records in adjacent_partitions(stream, self.partition_fields):
             rolling_window = self._window_type(self.window)
 
             for record in records:
-                raw_value = get_field(record, self.field)
-                if is_missing(raw_value):
-                    value = None
-                else:
-                    value = finite_number(raw_value, self.field)
-
+                value = finite_number_or_none(get_field(record, self.field), self.field)
                 rolling_window.append(value)
                 if rolling_window.sample_count >= self.min_samples:
                     rolled = rolling_window.result()

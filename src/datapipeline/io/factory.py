@@ -9,7 +9,6 @@ from datapipeline.io.sinks.files import AtomicTextFileSink
 from datapipeline.io.sinks.stdout import StdoutTextSink
 from datapipeline.io.writers.base import LineWriter
 from datapipeline.io.writers.csv_writer import CsvFileWriter
-from datapipeline.io.writers.jsonl import JsonLinesFileWriter
 from datapipeline.io.writers.pickle_writer import PickleFileWriter
 from datapipeline.io.writers.parquet import DEFAULT_ROW_GROUP_ROWS, ParquetFileWriter
 
@@ -33,12 +32,14 @@ def writer_factory(target: OutputTarget, overwrite: bool = True) -> Writer:
     text_encoding = target.encoding or "utf-8"
 
     if target.format == "jsonl":
-        return JsonLinesFileWriter(
-            destination,
-            view=target.view,
-            encoding=text_encoding,
-            overwrite=overwrite,
-            compression=target.compression,
+        return LineWriter(
+            AtomicTextFileSink(
+                destination,
+                encoding=text_encoding,
+                overwrite=overwrite,
+                compression=target.compression,
+            ),
+            json_line_serializer(target.view),
         )
     if target.format == "csv":
         if target.view != "flat":

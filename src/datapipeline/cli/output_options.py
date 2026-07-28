@@ -3,7 +3,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from datapipeline.config.profiles import ServeOutputConfig
+from datapipeline.config.profiles.output import ServeOutputConfig
 from datapipeline.services.path_policy import resolve_workspace_path
 
 

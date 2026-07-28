@@ -1,7 +1,8 @@
 from pathlib import Path
 
 from datapipeline.artifacts.fingerprints import calculate_artifact_hashes
-from datapipeline.config.tasks import ArtifactTask, RuntimeTask
+from datapipeline.artifacts.planning import build_artifact_graph
+from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask
 from datapipeline.services.dataset import (
     dataset_from_document,
     validate_dataset_streams,
@@ -13,7 +14,7 @@ from datapipeline.services.operations import (
 )
 from datapipeline.services.project import load_project
 from datapipeline.services.streams.loader import load_streams
-from datapipeline.utils.load import read_yaml_document
+from datapipeline.io.yaml import read_yaml_document
 
 
 def load_project_definition(project_yaml: Path) -> ProjectDefinition:
@@ -30,17 +31,22 @@ def load_project_definition(project_yaml: Path) -> ProjectDefinition:
     runtime_operations = tuple(
         operation for operation in operations if isinstance(operation, RuntimeTask)
     )
+    artifact_graph = build_artifact_graph(
+        artifact_operations,
+        dataset,
+        streams,
+    )
     artifact_hashes = calculate_artifact_hashes(
         project,
         dataset,
         streams,
-        artifact_operations,
+        artifact_graph,
     )
     return ProjectDefinition(
         project=project,
         dataset=dataset,
         streams=streams,
-        artifact_operations=artifact_operations,
+        artifact_graph=artifact_graph,
         runtime_operations=runtime_operations,
         artifact_hashes=artifact_hashes,
     )

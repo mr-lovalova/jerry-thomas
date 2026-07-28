@@ -4,9 +4,9 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
-from datapipeline.cli.visuals.execution import ExecutionMessage
 from datapipeline.cli.visuals.execution_context import current_execution_event_handler
 from datapipeline.cli.visuals.execution_context import current_terminal_log_handler
+from datapipeline.execution.observability import ExecutionMessage
 from datapipeline.execution.settings import LogOutputSettings, LogOutputTarget
 
 

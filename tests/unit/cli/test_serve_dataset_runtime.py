@@ -7,40 +7,133 @@ from types import SimpleNamespace
 import pyarrow.parquet as parquet
 import pytest
 
-from datapipeline.artifacts.models import ScalarVectorMetadataEntry
+from datapipeline.artifacts.models import (
+    FoldedMetadataLayout,
+    FoldOutputMetadata,
+    ScalarVectorMetadataEntry,
+    UnsplitMetadataLayout,
+    VectorMetadata,
+    VectorMetadataCatalog,
+    VectorMetadataCounts,
+    VectorMetadataFold,
+    VectorSchema,
+    Window,
+)
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
+from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
 from datapipeline.config.preview import PreviewStage
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.pipeline import Input, Pipeline, Stage
 from datapipeline.io.dataset_table import DatasetTable
 from datapipeline.io.output import OutputTarget
 from datapipeline.operations.persistence import (
     DatasetTableOutput,
     RoutedDatasetTableOutput,
     RoutedRuntimeOutput,
+    RuntimeOutput,
     persist_runtime_result,
 )
 from datapipeline.operations.runtime.dataset import run_dataset_operation
 
+START = datetime(2020, 1, 1, tzinfo=timezone.utc)
+BOUNDARY = datetime(2021, 1, 1, tzinfo=timezone.utc)
+END = datetime(2022, 1, 1, tzinfo=timezone.utc)
+
+
+class _CloseTrackingIterator:
+    def __init__(self, *items):
+        self._items = iter(items)
+        self.close_calls = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return next(self._items)
+
+    def close(self):
+        self.close_calls += 1
+
 
 def _runtime(streams=None):
     runtime = SimpleNamespace(
-        window_bounds=None,
-        pipeline_observer=None,
         observe_node_events=True,
         heartbeat_interval_seconds=None,
-        output_ids=(),
         streams=streams or {},
     )
     runtime.dataset = _dataset()
+
+    def load_artifact(spec):
+        assert spec.key == "metadata"
+        return _metadata(split=runtime.dataset.split is not None)
+
+    runtime.artifacts = SimpleNamespace(load=load_artifact)
     return runtime
 
 
+def _schema() -> VectorSchema:
+    return VectorSchema(
+        features=(
+            ScalarVectorMetadataEntry(
+                id="price",
+                base_id="price",
+                kind="scalar",
+                present_count=1,
+                null_count=0,
+                value_types=("float",),
+            ),
+        ),
+        counts=VectorMetadataCounts(feature_vectors=1, target_vectors=0),
+    )
+
+
+def _window(start: datetime, end: datetime) -> Window:
+    return Window(start=start, end=end, mode="union", size=1)
+
+
+def _metadata(split: bool = False) -> VectorMetadata:
+    schema = _schema()
+    catalog = VectorMetadataCatalog(
+        features=schema.features,
+        targets=schema.targets,
+        counts=schema.counts,
+        window=_window(START, END),
+    )
+    layout = (
+        FoldedMetadataLayout(
+            kind="folded",
+            folds=(
+                VectorMetadataFold(
+                    id="holdout",
+                    training_schema=schema,
+                    outputs=(
+                        FoldOutputMetadata(
+                            role="train",
+                            labels=("train",),
+                            window=_window(START, BOUNDARY),
+                        ),
+                        FoldOutputMetadata(
+                            role="validation",
+                            labels=("val",),
+                            window=_window(BOUNDARY, END),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        if split
+        else UnsplitMetadataLayout(kind="unsplit")
+    )
+    return VectorMetadata(
+        schema_version=4,
+        catalog=catalog,
+        layout=layout,
+    )
+
+
 def _dataset(
-    targets: list[SeriesConfig] | None = None,
+    targets: list[TargetSeriesConfig] | None = None,
     split: TimeSplitConfig | None = None,
 ) -> DatasetConfig:
     return DatasetConfig(
@@ -115,54 +208,16 @@ def _serve(
     dataset,
     target,
     preview: PreviewStage | None,
+    output_ids: tuple[str, ...] = (),
 ):
     runtime.dataset = dataset
     return run_dataset_operation(
         runtime=runtime,
+        output_ids=output_ids,
         limit=None,
         target=target,
         throttle_ms=None,
         preview=preview,
-    )
-
-
-def _sample_preview_pipeline():
-    return Pipeline(
-        name="dataset",
-        input=Input(
-            name="assemble_samples",
-            open=lambda: iter(["sample"]),
-        ),
-        stages=(
-            Stage(
-                name="conform_features",
-                apply=lambda stream: (f"post:{item}" for item in stream),
-            ),
-        ),
-    )
-
-
-def _record_preview_pipeline():
-    return Pipeline(
-        name="stream:prices",
-        input=Input(
-            name="open_source",
-            open=lambda: iter(["source"]),
-        ),
-        stages=(
-            Stage(
-                name="map_records",
-                apply=lambda rows: (f"mapped:{row}" for row in rows),
-            ),
-            Stage(
-                name="floor_time",
-                apply=lambda rows: (f"transformed:{row}" for row in rows),
-            ),
-            Stage(
-                name="ensure_record_order",
-                apply=lambda rows: (f"records:{row}" for row in rows),
-            ),
-        ),
     )
 
 
@@ -175,10 +230,6 @@ def test_dataset_operation_reraises_keyboard_interrupt_and_marks_run_failed(
     target = _target()
 
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.resolve_window_bounds",
-        lambda runtime_obj, rectangular_required: (None, None),
-    )
-    monkeypatch.setattr(
         "datapipeline.operations.runtime.dataset.run_dataset_pipeline",
         lambda *args, **kwargs: _samples(),
     )
@@ -189,6 +240,7 @@ def test_dataset_operation_reraises_keyboard_interrupt_and_marks_run_failed(
 
     result = run_dataset_operation(
         runtime=runtime,
+        output_ids=(),
         limit=None,
         target=target,
         throttle_ms=None,
@@ -207,10 +259,6 @@ def test_dataset_operation_returns_parquet_dataset_output(monkeypatch, tmp_path)
     runtime = _runtime()
     dataset = _dataset()
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.resolve_window_bounds",
-        lambda runtime_obj, rectangular_required: ("start", "end"),
-    )
-    monkeypatch.setattr(
         "datapipeline.operations.runtime.dataset.run_dataset_pipeline",
         lambda *args, **kwargs: iter(()),
     )
@@ -226,17 +274,11 @@ def test_dataset_operation_returns_parquet_dataset_output(monkeypatch, tmp_path)
         preview=None,
     )
 
-    assert isinstance(result.outputs[0], DatasetTableOutput)
+    assert isinstance(result, DatasetTableOutput)
 
 
 def test_dataset_operation_returns_split_fanout_output(monkeypatch, tmp_path):
-    runtime = SimpleNamespace(
-        window_bounds=None,
-        pipeline_observer=None,
-        observe_node_events=True,
-        heartbeat_interval_seconds=None,
-        output_ids=("holdout.train", "holdout.validation"),
-    )
+    runtime = _runtime()
     dataset = _dataset(
         split=TimeSplitConfig(
             intervals=[
@@ -260,10 +302,6 @@ def test_dataset_operation_returns_split_fanout_output(monkeypatch, tmp_path):
     ]
 
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.resolve_window_bounds",
-        lambda runtime_obj, rectangular_required: ("start", "end"),
-    )
-    monkeypatch.setattr(
         "datapipeline.operations.runtime.dataset.run_fold_outputs_pipeline",
         lambda *args, **kwargs: iter(
             (
@@ -273,34 +311,31 @@ def test_dataset_operation_returns_split_fanout_output(monkeypatch, tmp_path):
         ),
     )
 
-    result = _serve(runtime, dataset, target, preview=None)
+    result = _serve(
+        runtime,
+        dataset,
+        target,
+        preview=None,
+        output_ids=("holdout.train", "holdout.validation"),
+    )
 
-    assert runtime.window_bounds == ("start", "end")
-    assert len(result.outputs) == 1
-    output = result.outputs[0]
-    assert isinstance(output, RoutedRuntimeOutput)
+    assert isinstance(result, RoutedRuntimeOutput)
     assert (
-        output.targets["holdout.train"].destination
+        result.targets["holdout.train"].destination
         == tmp_path / "dataset.holdout.train.jsonl"
     )
     assert (
-        output.targets["holdout.validation"].destination
+        result.targets["holdout.validation"].destination
         == tmp_path / "dataset.holdout.validation.jsonl"
     )
-    assert list(output.rows) == [
+    assert list(result.rows) == [
         ("holdout.train", samples[0]),
         ("holdout.validation", samples[1]),
     ]
 
 
 def test_dataset_operation_returns_parquet_split_outputs(monkeypatch, tmp_path):
-    runtime = SimpleNamespace(
-        window_bounds=None,
-        pipeline_observer=None,
-        observe_node_events=True,
-        heartbeat_interval_seconds=None,
-        output_ids=("holdout.train", "holdout.validation"),
-    )
+    runtime = _runtime()
     dataset = _dataset(
         split=TimeSplitConfig(
             intervals=[
@@ -318,10 +353,6 @@ def test_dataset_operation_returns_parquet_split_outputs(monkeypatch, tmp_path):
     )
     runtime.dataset = dataset
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.resolve_window_bounds",
-        lambda runtime_obj, rectangular_required: ("start", "end"),
-    )
-    monkeypatch.setattr(
         "datapipeline.operations.runtime.dataset.run_fold_outputs_pipeline",
         lambda *args, **kwargs: iter(()),
     )
@@ -335,12 +366,17 @@ def test_dataset_operation_returns_parquet_split_outputs(monkeypatch, tmp_path):
         dataset,
         _parquet_target(tmp_path / "dataset.parquet"),
         preview=None,
+        output_ids=("holdout.train", "holdout.validation"),
     )
 
-    assert isinstance(result.outputs[0], RoutedDatasetTableOutput)
+    assert isinstance(result, RoutedDatasetTableOutput)
+    assert set(result.tables) == {
+        "holdout.train",
+        "holdout.validation",
+    }
     assert {
         target.destination.name
-        for target in result.outputs[0].targets.values()
+        for target in result.targets.values()
         if target.destination is not None
     } == {
         "dataset.holdout.train.parquet",
@@ -351,24 +387,48 @@ def test_dataset_operation_returns_parquet_split_outputs(monkeypatch, tmp_path):
 def test_samples_preview_stops_before_postprocess(monkeypatch):
     runtime = _runtime()
     dataset = _dataset(
-        targets=[SeriesConfig(id="target", stream="targets", field="value")]
+        targets=[
+            TargetSeriesConfig(
+                id="target",
+                stream="targets",
+                field="value",
+                horizon="0s",
+            )
+        ]
     )
     target = _target()
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.resolve_window_bounds",
-        lambda runtime_obj, rectangular_required: ("start", "end"),
-    )
-    monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_dataset_pipeline",
-        lambda *args, **kwargs: _sample_preview_pipeline(),
+        "datapipeline.operations.runtime.dataset.run_sample_pipeline",
+        lambda *args, **kwargs: iter(["sample"]),
     )
 
     result = _serve(runtime, dataset, target, preview="samples")
 
-    assert runtime.window_bounds == ("start", "end")
-    assert len(result.outputs) == 1
-    assert result.outputs[0].target == target
-    assert list(result.outputs[0].rows) == ["sample"]
+    assert isinstance(result, RuntimeOutput)
+    assert result.target == target
+    assert list(result.rows) == ["sample"]
+
+
+@pytest.mark.parametrize("throttle_ms", [None, 1])
+def test_limited_preview_closes_sample_pipeline_once(monkeypatch, throttle_ms):
+    stream = _CloseTrackingIterator("first", "second")
+    monkeypatch.setattr(
+        "datapipeline.operations.runtime.dataset.run_sample_pipeline",
+        lambda *args, **kwargs: stream,
+    )
+
+    result = run_dataset_operation(
+        runtime=_runtime(),
+        output_ids=(),
+        limit=1,
+        target=_target(),
+        throttle_ms=throttle_ms,
+        preview="samples",
+    )
+
+    assert isinstance(result, RuntimeOutput)
+    assert list(result.rows) == ["first"]
+    assert stream.close_calls == 1
 
 
 def test_samples_preview_writes_schema_aware_parquet(monkeypatch, tmp_path):
@@ -376,27 +436,19 @@ def test_samples_preview_writes_schema_aware_parquet(monkeypatch, tmp_path):
         key=(datetime(2024, 1, 1, tzinfo=timezone.utc),),
         features=Vector(values={"price": 10.0}),
     )
-    pipeline = Pipeline(
-        name="dataset",
-        input=Input(name="assemble_samples", open=lambda: iter((sample,))),
+    monkeypatch.setattr(
+        "datapipeline.operations.runtime.dataset.run_sample_pipeline",
+        lambda *args, **kwargs: iter((sample,)),
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.resolve_window_bounds",
-        lambda runtime_obj, rectangular_required: ("start", "end"),
-    )
-    monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_dataset_pipeline",
-        lambda *args, **kwargs: pipeline,
-    )
-    monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset._assembled_dataset_table",
+        "datapipeline.operations.runtime.dataset._dataset_table",
         lambda *args: _parquet_table(),
     )
     target = _parquet_target(tmp_path / "samples.parquet")
 
     result = _serve(_runtime(), _dataset(), target, preview="samples")
 
-    assert isinstance(result.outputs[0], DatasetTableOutput)
+    assert isinstance(result, DatasetTableOutput)
     persist_runtime_result(
         result,
         target=target,
@@ -412,7 +464,7 @@ def test_parquet_preview_rejects_non_dataset_stage_before_opening_stream(
     tmp_path,
 ) -> None:
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_stream_pipeline",
+        "datapipeline.operations.runtime.dataset.run_stream_preview_pipeline",
         lambda *args, **kwargs: pytest.fail("record preview must not be opened"),
     )
 
@@ -433,16 +485,17 @@ def test_parquet_preview_rejects_non_dataset_stage_before_opening_stream(
         ("records", "records:transformed:mapped:source"),
     ],
 )
-def test_record_previews_stop_at_the_named_stage(monkeypatch, preview, expected):
+def test_record_previews_use_stream_preview_pipeline(monkeypatch, preview, expected):
     captured = {}
 
-    def build_pipeline(context, stream_id):
+    def run_preview(runtime, stream_id, selected_preview):
         captured["stream_id"] = stream_id
-        return _record_preview_pipeline()
+        captured["preview"] = selected_preview
+        return iter((expected,))
 
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_stream_pipeline",
-        build_pipeline,
+        "datapipeline.operations.runtime.dataset.run_stream_preview_pipeline",
+        run_preview,
     )
     result = _serve(
         _runtime({"derived.prices": object()}),
@@ -451,7 +504,7 @@ def test_record_previews_stop_at_the_named_stage(monkeypatch, preview, expected)
         preview=preview,
     )
 
-    assert captured == {"stream_id": "derived.prices"}
+    assert captured == {"stream_id": "derived.prices", "preview": preview}
     assert list(result.outputs[0].rows) == [expected]
 
 
@@ -509,17 +562,14 @@ def test_postprocess_preview_runs_postprocess(monkeypatch):
     target = _target()
 
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.resolve_window_bounds",
-        lambda runtime_obj, rectangular_required: (None, None),
-    )
-    monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_dataset_pipeline",
-        lambda *args, **kwargs: _sample_preview_pipeline(),
+        "datapipeline.operations.runtime.dataset.run_dataset_pipeline",
+        lambda *args, **kwargs: iter(["post:sample"]),
     )
 
     result = _serve(runtime, dataset, target, preview="postprocess")
 
-    assert list(result.outputs[0].rows) == ["post:sample"]
+    assert isinstance(result, RuntimeOutput)
+    assert list(result.rows) == ["post:sample"]
 
 
 @pytest.mark.parametrize(
@@ -541,20 +591,28 @@ def test_all_preview_stages_write_gzip_through_the_shared_output_path(
     output_id,
 ) -> None:
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_stream_pipeline",
-        lambda *args, **kwargs: _record_preview_pipeline(),
+        "datapipeline.operations.runtime.dataset.run_stream_preview_pipeline",
+        lambda _context, _stream_id, selected_preview: iter(
+            (
+                {
+                    "input": "source",
+                    "canonical": "mapped:source",
+                    "records": "records:transformed:mapped:source",
+                }[selected_preview],
+            )
+        ),
     )
     monkeypatch.setattr(
         "datapipeline.operations.runtime.dataset.run_series_pipeline",
         lambda *args, **kwargs: iter(["series"]),
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.resolve_window_bounds",
-        lambda runtime_obj, rectangular_required: (None, None),
+        "datapipeline.operations.runtime.dataset.run_sample_pipeline",
+        lambda _context, _schema, _key_plan: iter(("sample",)),
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.build_dataset_pipeline",
-        lambda *args, **kwargs: _sample_preview_pipeline(),
+        "datapipeline.operations.runtime.dataset.run_dataset_pipeline",
+        lambda _context, _schema, _key_plan: iter(("post:sample",)),
     )
 
     target = _fs_target(tmp_path / "preview.jsonl.gz", compression="gzip")

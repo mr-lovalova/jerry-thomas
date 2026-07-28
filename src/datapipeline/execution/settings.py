@@ -1,4 +1,6 @@
 import logging
+import math
+import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -6,6 +8,7 @@ from pathlib import Path
 from datapipeline.config.observability import LogOutputConfig, ObservabilityConfig
 from datapipeline.config.options import LOG_SCOPE_CHOICES, LOG_TRANSPORT_CHOICES
 
+DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60.0
 LOG_TRANSPORT_SET = set(LOG_TRANSPORT_CHOICES)
 LOG_SCOPE_SET = set(LOG_SCOPE_CHOICES)
 
@@ -39,19 +42,19 @@ def resolve_visuals(
 
 
 def resolve_heartbeat_interval_seconds(
-    cli_heartbeat_interval_seconds: float | None,
-    config_heartbeat_interval_seconds: float | None,
-) -> float | None:
-    value = (
-        cli_heartbeat_interval_seconds
-        if cli_heartbeat_interval_seconds is not None
-        else config_heartbeat_interval_seconds
-    )
+    value: float | None,
+) -> float:
     if value is None:
-        return None
+        return DEFAULT_HEARTBEAT_INTERVAL_SECONDS
     interval = float(value)
+    if not math.isfinite(interval):
+        raise ValueError("heartbeat_interval_seconds must be finite")
     if interval < 0:
         raise ValueError("heartbeat_interval_seconds must be non-negative")
+    if interval > threading.TIMEOUT_MAX:
+        raise ValueError(
+            f"heartbeat_interval_seconds must not exceed {threading.TIMEOUT_MAX:g}"
+        )
     return interval
 
 
@@ -89,6 +92,14 @@ class LogOutputTarget:
 
 
 @dataclass(frozen=True)
+class CommandObservability:
+    visuals: str | None = None
+    heartbeat_interval_seconds: float | None = None
+    log_level: str | None = None
+    log_outputs: tuple[LogOutputTarget, ...] = ()
+
+
+@dataclass(frozen=True)
 class LogOutputSettings:
     outputs: tuple[LogOutputTarget, ...]
 
@@ -96,7 +107,7 @@ class LogOutputSettings:
 @dataclass(frozen=True)
 class ObservabilitySettings:
     visuals: str
-    heartbeat_interval_seconds: float | None
+    heartbeat_interval_seconds: float
     log_decision: LogLevelDecision
     log_output: LogOutputSettings
 
@@ -242,12 +253,7 @@ def resolve_log_output(
 def resolve_observability_settings(
     project_path: Path | None,
     observability: ObservabilityConfig | None,
-    *,
-    cli_visuals: str | None,
-    cli_heartbeat_interval_seconds: float | None,
-    cli_log_level: str | None,
-    cli_log_outputs: Sequence[LogOutputTarget] | None,
-    base_log_level: str,
+    command_observability: CommandObservability,
 ) -> ObservabilitySettings:
     logging_config = observability.logging if observability is not None else None
     configured_output_specs = (
@@ -260,27 +266,29 @@ def resolve_observability_settings(
         if project_path is not None
         else []
     )
+    configured_heartbeat_interval = (
+        observability.heartbeat_interval_seconds if observability is not None else None
+    )
+    heartbeat_interval = (
+        command_observability.heartbeat_interval_seconds
+        if command_observability.heartbeat_interval_seconds is not None
+        else configured_heartbeat_interval
+    )
 
     return ObservabilitySettings(
         visuals=resolve_visuals(
-            cli_visuals,
+            command_observability.visuals,
             observability.visuals if observability is not None else None,
         ),
         heartbeat_interval_seconds=resolve_heartbeat_interval_seconds(
-            cli_heartbeat_interval_seconds,
-            (
-                observability.heartbeat_interval_seconds
-                if observability is not None
-                else None
-            ),
+            heartbeat_interval,
         ),
         log_decision=resolve_log_level(
-            cli_log_level,
+            command_observability.log_level,
             logging_config.level if logging_config is not None else None,
-            base_log_level,
         ),
         log_output=resolve_log_output(
-            cli_outputs=cli_log_outputs,
+            cli_outputs=command_observability.log_outputs,
             config_outputs=configured_outputs,
             allow_execution_scope=True,
         ),

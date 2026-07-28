@@ -10,8 +10,9 @@ for custom loaders, parsers, mappers, and stream combiners.
 
 > **Core assumptions**
 >
-> - Every record carries a timezone-aware `time` attribute. Time-zone awareness
->   is a quality gate for correct sample assembly.
+> - Every canonical record carries a UTC `time` attribute. Mappers and
+>   combiners may return any timezone-aware representation; Jerry normalizes
+>   it before downstream processing.
 > - Samples are grouped by `sample.cadence`, plus optional
 >   `sample.keys` such as `security_id`.
 > - `partition_by` is the complete identity of an independent record series.
@@ -131,7 +132,7 @@ These live under `lib/<plugin>/src/<package>/`:
 - `parsers/*.py`: raw -> DTO parsers (referenced by source YAML via entry point).
 - `domains/<domain>/model.py`: domain record models.
 - `mappers/*.py`: iterator mappings from parsed values to domain records.
-- `combiners/*.py`: functions combining broadcast or aligned domain records.
+- `combiners/*.py`: functions combining exact, as-of, or aligned domain records.
 - `loaders/*.py`: optional custom loaders for inputs beyond built-in filesystem
   and HTTP transports.
 - `pyproject.toml`: entry points for loaders, parsers, mappers, and combiners
@@ -143,7 +144,8 @@ These live under `lib/<plugin>/src/<package>/`:
   `reader`. Custom loaders handle other protocols.
 - A parser converts each row into a source-shaped DTO and may drop invalid rows.
 - A mapper converts DTOs into canonical domain records shared by downstream
-  streams. Every record has a timezone-aware `time` field.
+  streams. Every record has a timezone-aware `time` field, which Jerry
+  normalizes to UTC at the mapper boundary.
 - Custom loaders are for behavior such as pagination, authentication, or
   proprietary protocols. See [Extending the runtime](docs/extending.md).
 
@@ -151,10 +153,14 @@ These live under `lib/<plugin>/src/<package>/`:
 
 - **Preprocess transforms** run on mapped domain records before ordering. Each transform operates on one record at a time. Configure source-backed streams under `preprocess:`.
 - **Ordered transforms** run after ordering (dedupe, cadence enforcement, lag/lead, rolling, derive, fills). These operate across a sequence of records for a partition because they depend on sorted partition/time order and cadence. Configure streams under `transforms:`.
-- **Series shaping** runs after stream regularization. `sequence` shapes the
-  per-series payload for vectorization; `scale` marks feature or target
-  vectors that receive the selected dataset fold's scaler during full serving.
-- **Postprocess policies** select assembled vector columns and filter samples by coverage. Configure them under `postprocess:` in `dataset.yaml`.
+- **Series shaping** runs after stream regularization. `sequence` creates
+  rolling windows; `collect` requires a fixed number of values inside each
+  sample-cadence bucket. Without either policy, a series must emit at most one
+  value per bucket. `scale` marks feature or target vectors that receive the
+  selected dataset fold's scaler during full serving.
+  Each target also declares its maximum elapsed `horizon`, which time folds use
+  to remove boundary samples whose future support reaches the next role.
+- **Postprocess policies** filter assembled samples by feature or target coverage. Configure them under `postprocess:` in `dataset.yaml`.
 - Transform lists contain flat, validated built-in operations. Each item has an
   `operation` discriminator and that operation's fields. See the
   [transform guide](docs/transforms/index.md) for the supported operations.

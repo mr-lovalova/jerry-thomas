@@ -17,7 +17,6 @@ from rich.text import Text
 
 from datapipeline.cli.visuals.execution import (
     ExecutionEventFormatter,
-    ExecutionLogEvent,
 )
 from datapipeline.cli.visuals.execution_context import (
     reset_current_execution_event_handler,
@@ -36,6 +35,7 @@ from datapipeline.execution.events import (
 )
 from datapipeline.execution.observability import (
     CommandFinished,
+    ExecutionEvent,
     FileResult,
     OperationFinished,
     OperationProgress,
@@ -87,11 +87,11 @@ class _ExecutionProgress:
         self._operation_task: TaskID | None = None
         self._pipeline_stack: list[str] = []
         self._pipeline_task: TaskID | None = None
-        self._node_tasks: dict[int, TaskID] = {}
-        self._open_nodes: list[int] = []
-        self._visible_node: int | None = None
+        self._node_tasks: dict[tuple[str, int], TaskID] = {}
+        self._open_nodes: list[tuple[str, int]] = []
+        self._visible_node: tuple[str, int] | None = None
 
-    def handle(self, event: ExecutionLogEvent) -> None:
+    def handle(self, event: ExecutionEvent) -> None:
         if isinstance(event, OperationStarted):
             self._start_operation(event)
         elif isinstance(event, OperationProgress):
@@ -177,46 +177,52 @@ class _ExecutionProgress:
         self._progress.refresh()
 
     def _start_node(self, event: NodeStarted) -> None:
-        if not self._owns_live_node(event.pipeline_name):
-            return
+        if event.pipeline_name not in self._pipeline_stack:
+            raise RuntimeError("Cannot start node progress for an inactive pipeline")
+        node = event.pipeline_name, event.node_index
         label = f"[{event.pipeline_name}/{event.node_name}]"
         status = Text.assemble(("0", "cyan"), " out")
-        self._node_tasks[event.node_index] = self._progress.add_task(
+        self._node_tasks[node] = self._progress.add_task(
             label,
             total=None,
             status=status,
             visible=self._debug,
         )
-        self._open_nodes.append(event.node_index)
+        self._open_nodes.append(node)
         if not self._debug:
-            self._show_node(event.node_index)
+            self._show_node(node)
 
     def _update_node(self, event: NodeProgress) -> None:
-        if not self._owns_live_node(event.pipeline_name):
-            return
+        if event.pipeline_name not in self._pipeline_stack:
+            raise RuntimeError("Cannot update node progress for an inactive pipeline")
+        node = event.pipeline_name, event.node_index
         self._update_task(
-            self._node_tasks[event.node_index],
+            self._node_tasks[node],
             completed=event.progress.completed,
             total=event.progress.total,
             status=_progress_status(event.progress),
         )
         if not self._debug and (
-            event.heartbeat
-            or event.progress.total is not None
-            or event.progress.phase is not None
-            or event.progress.detail is not None
-            or event.progress.resource is not None
-            or event.progress.unit not in ("items", "out")
-            or self._open_nodes[-1] == event.node_index
+            event.pipeline_name == self._pipeline_stack[-1]
+            and (
+                event.heartbeat
+                or event.progress.total is not None
+                or event.progress.phase is not None
+                or event.progress.detail is not None
+                or event.progress.resource is not None
+                or event.progress.unit not in ("items", "out")
+                or self._open_nodes[-1] == node
+            )
         ):
-            self._show_node(event.node_index)
+            self._show_node(node)
 
     def _finish_node(self, event: NodeFinished) -> None:
-        if not self._owns_live_node(event.pipeline_name):
-            return
-        task_id = self._node_tasks.pop(event.node_index)
-        self._open_nodes.remove(event.node_index)
-        was_visible = self._visible_node == event.node_index
+        if event.pipeline_name not in self._pipeline_stack:
+            raise RuntimeError("Cannot finish node progress for an inactive pipeline")
+        node = event.pipeline_name, event.node_index
+        task_id = self._node_tasks.pop(node)
+        self._open_nodes.remove(node)
+        was_visible = self._visible_node == node
         if was_visible:
             self._visible_node = None
         self._progress.remove_task(task_id)
@@ -224,25 +230,16 @@ class _ExecutionProgress:
             self._show_node(self._open_nodes[-1])
         self._progress.refresh()
 
-    def _show_node(self, node_index: int) -> None:
-        if self._visible_node == node_index:
+    def _show_node(self, node: tuple[str, int]) -> None:
+        if self._visible_node == node:
             return
         if self._visible_node is not None:
             self._progress.update(
                 self._node_tasks[self._visible_node],
                 visible=False,
             )
-        self._progress.update(self._node_tasks[node_index], visible=True)
-        self._visible_node = node_index
-
-    def _owns_live_node(self, pipeline_name: str) -> bool:
-        if not self._pipeline_stack:
-            raise RuntimeError("Cannot handle node progress before its root pipeline")
-        if pipeline_name == self._pipeline_stack[0]:
-            return True
-        if pipeline_name in self._pipeline_stack:
-            return False
-        raise RuntimeError("Node progress belongs to an inactive pipeline")
+        self._progress.update(self._node_tasks[node], visible=True)
+        self._visible_node = node
 
     def _update_task(
         self,
@@ -299,7 +296,7 @@ class _RichExecutionRenderer:
         self._console = console
         self._progress = progress
 
-    def render(self, event: ExecutionLogEvent) -> None:
+    def render(self, event: ExecutionEvent) -> None:
         if self._progress is not None and isinstance(event, PipelineProgress):
             return
         if self._progress is not None and isinstance(
@@ -343,7 +340,7 @@ class _RichExecutionRenderer:
         table.add_row(f"{event.label}:", result)
         return table
 
-    def _render_event(self, event: ExecutionLogEvent) -> Text:
+    def _render_event(self, event: ExecutionEvent) -> Text:
         level = ExecutionEventFormatter.level(event)
         text = Text(ExecutionEventFormatter.message(event))
         if isinstance(

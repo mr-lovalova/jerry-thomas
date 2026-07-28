@@ -3,9 +3,9 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from datapipeline.cli.visuals.execution import ExecutionLogEvent
+    from datapipeline.execution.observability import ExecutionEvent
 
-ExecutionEventHandler = Callable[["ExecutionLogEvent"], None]
+ExecutionEventHandler = Callable[["ExecutionEvent"], None]
 
 _CURRENT_EXECUTION_EVENT_HANDLER: ContextVar[ExecutionEventHandler | None] = ContextVar(
     "datapipeline_visual_current_execution_event_handler",

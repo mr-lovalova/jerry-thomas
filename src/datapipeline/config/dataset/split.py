@@ -71,6 +71,14 @@ class DatasetFold(BaseModel):
             )
         return self
 
+    @property
+    def role_labels(self) -> tuple[tuple[FoldRole, tuple[str, ...]], ...]:
+        return (
+            ("train", tuple(self.train)),
+            ("validation", tuple(self.validation)),
+            ("test", tuple(self.test)),
+        )
+
 
 class TimeInterval(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -203,11 +211,8 @@ class TimeSplitConfig(BaseModel):
 
             previous_positions: list[int] | None = None
             previous_role: FoldRole | None = None
-            for role in FOLD_ROLES:
-                positions = [
-                    interval_positions[interval_id]
-                    for interval_id in getattr(fold, role)
-                ]
+            for role, labels in fold.role_labels:
+                positions = [interval_positions[interval_id] for interval_id in labels]
                 if not positions:
                     continue
                 if previous_positions is not None and max(previous_positions) >= min(
@@ -236,18 +241,17 @@ def split_output_ids(config: SplitConfig) -> tuple[str, ...]:
     return tuple(
         fold_output_id(fold.id, role)
         for fold in config.folds
-        for role in FOLD_ROLES
-        if getattr(fold, role)
+        for role, labels in fold.role_labels
+        if labels
     )
 
 
 def resolve_fold_output(
     config: SplitConfig,
     output_id: str,
-) -> tuple[DatasetFold, tuple[str, ...]]:
+) -> tuple[DatasetFold, FoldRole, tuple[str, ...]]:
     for fold in config.folds:
-        for role in FOLD_ROLES:
-            labels = getattr(fold, role)
+        for role, labels in fold.role_labels:
             if labels and output_id == fold_output_id(fold.id, role):
-                return fold, tuple(labels)
+                return fold, role, labels
     raise KeyError(f"dataset fold output {output_id!r} is not defined")

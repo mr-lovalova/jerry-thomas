@@ -2,7 +2,11 @@ from collections.abc import Iterator
 
 import pytest
 
-from datapipeline.artifacts.scaler import ScalerStatistics, StandardScalerArtifact
+from datapipeline.artifacts.scaler import (
+    PositionalScalerStatistics,
+    ScalerStatistics,
+    StandardScalerArtifact,
+)
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
 from datapipeline.transforms.vector.scaler import SampleScaler
@@ -25,6 +29,23 @@ def _artifact(
                 count=2,
             ),
             "return": ScalerStatistics(mean=1.0, std=0.5, count=1),
+        },
+    )
+
+
+def _positional_artifact() -> StandardScalerArtifact:
+    return StandardScalerArtifact(
+        with_mean=True,
+        with_std=True,
+        epsilon=1e-12,
+        observations=4,
+        statistics={
+            "embedding": PositionalScalerStatistics(
+                positions=(
+                    ScalerStatistics(mean=2.0, std=1.0, count=2),
+                    ScalerStatistics(mean=150.0, std=50.0, count=2),
+                )
+            )
         },
     )
 
@@ -78,6 +99,55 @@ def test_sample_scaler_respects_disabled_options() -> None:
     )
 
     assert scaler.scale(sample).features.values["price"] == [10.0, 12.0]
+
+
+def test_sample_scaler_scales_intrinsic_lists_by_position() -> None:
+    scaler = SampleScaler(
+        _positional_artifact(),
+        scaled_feature_ids={"embedding"},
+        scaled_target_ids=(),
+    )
+
+    scaled = scaler.scale(_sample({"embedding": [1.0, 200.0]}))
+
+    assert scaled.features.values["embedding"] == [-1.0, 1.0]
+
+
+def test_sample_scaler_preserves_missing_intrinsic_list_positions() -> None:
+    scaler = SampleScaler(
+        _positional_artifact(),
+        scaled_feature_ids={"embedding"},
+        scaled_target_ids=(),
+    )
+
+    scaled = scaler.scale(_sample({"embedding": [None, 200.0]}))
+
+    assert scaled.features.values["embedding"] == [None, 1.0]
+
+
+def test_sample_scaler_requires_positional_list_width() -> None:
+    scaler = SampleScaler(
+        _positional_artifact(),
+        scaled_feature_ids={"embedding"},
+        scaled_target_ids=(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"'embedding' requires 2 values.*got 1",
+    ):
+        scaler.scale(_sample({"embedding": [1.0]}))
+
+
+def test_sample_scaler_rejects_scalar_for_positional_statistics() -> None:
+    scaler = SampleScaler(
+        _positional_artifact(),
+        scaled_feature_ids={"embedding"},
+        scaled_target_ids=(),
+    )
+
+    with pytest.raises(TypeError, match=r"'embedding' requires a list value"):
+        scaler.scale(_sample({"embedding": 1.0}))
 
 
 @pytest.mark.parametrize(

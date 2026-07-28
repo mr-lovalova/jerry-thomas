@@ -7,7 +7,7 @@ from datapipeline.artifacts.registry import SCALER_SPEC
 from datapipeline.artifacts.scaler import save_scaler_artifact
 from datapipeline.artifacts.specs import SCALER_STATISTICS
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
+from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.transforms import (
     FillConfig,
@@ -16,7 +16,6 @@ from datapipeline.config.transforms import (
 )
 from datapipeline.domain.series import SeriesRecord
 from datapipeline.domain.record import TemporalRecord
-from datapipeline.execution.context import PipelineContext
 from datapipeline.pipelines.series.pipeline import run_series_pipeline
 from datapipeline.pipelines.sample.input import open_samples
 from datapipeline.runtime import Runtime, SourceRuntimeStream
@@ -74,8 +73,6 @@ def _runtime_with_streams(
     )
 
     stream_transforms = stream_transforms or {}
-    start_time: datetime | None = None
-    end_time: datetime | None = None
     for alias, rows in streams.items():
         runtime.streams[alias] = SourceRuntimeStream(
             source=_StubSource(rows),
@@ -85,30 +82,18 @@ def _runtime_with_streams(
             presorted=False,
             transforms=tuple(stream_transforms.get(alias, ())),
         )
-        for rec in rows:
-            ts = getattr(rec, "time", None)
-            if isinstance(ts, datetime):
-                start_time = ts if start_time is None else min(start_time, ts)
-                end_time = ts if end_time is None else max(end_time, ts)
 
-    runtime.window_bounds = (start_time, end_time)
     return runtime
 
 
-def _register_scaler(
-    runtime: Runtime, configs: list[SeriesConfig], group_by: str
-) -> None:
+def _register_scaler(runtime: Runtime, configs: list[SeriesConfig]) -> None:
     sanitized = [
-        cfg.model_copy(update={"scale": False, "sequence": None}) for cfg in configs
+        cfg.model_copy(update={"scale": False, "sequence": None, "collect": None})
+        for cfg in configs
     ]
-    context = PipelineContext(runtime)
     accumulator = ScalerAccumulator()
     for cfg in sanitized:
-        stream = run_series_pipeline(
-            context,
-            cfg,
-            group_by_cadence=group_by,
-        )
+        stream = run_series_pipeline(runtime, cfg)
         try:
             for feature in stream:
                 if not isinstance(feature, SeriesRecord):
@@ -155,7 +140,6 @@ def test_sample_targets_respect_partitioned_ids(tmp_path) -> None:
         partition_by=("municipality",),
     )
 
-    context = PipelineContext(runtime)
     feature_cfgs = [
         SeriesConfig(
             stream="wind_speed_stream",
@@ -164,16 +148,27 @@ def test_sample_targets_respect_partitioned_ids(tmp_path) -> None:
         ),
     ]
     target_cfgs = [
-        SeriesConfig(
+        TargetSeriesConfig(
             stream="wind_production_stream",
             id="wind_production",
             field="value",
+            horizon="0s",
         ),
     ]
     register_series(runtime, feature_cfgs, "1h", targets=target_cfgs)
 
     samples = list(
-        open_samples(context, feature_cfgs, "1h", target_configs=target_cfgs)
+        open_samples(
+            runtime,
+            {
+                "wind_speed__@municipality:06019",
+                "wind_speed__@municipality:06030",
+            },
+            target_ids={
+                "wind_production__@municipality:06019",
+                "wind_production__@municipality:06030",
+            },
+        )
     )
 
     assert len(samples) == 1
@@ -205,7 +200,6 @@ def test_samples_can_group_by_record_key_fields(tmp_path) -> None:
         ],
     }
     runtime = _runtime_with_streams(tmp_path, streams)
-    context = PipelineContext(runtime)
     feature_cfgs = [
         SeriesConfig(
             stream="momentum_stream",
@@ -214,10 +208,11 @@ def test_samples_can_group_by_record_key_fields(tmp_path) -> None:
         ),
     ]
     target_cfgs = [
-        SeriesConfig(
+        TargetSeriesConfig(
             stream="return_stream",
             id="forward_return",
             field="value",
+            horizon="0s",
         ),
     ]
     register_series(
@@ -230,12 +225,9 @@ def test_samples_can_group_by_record_key_fields(tmp_path) -> None:
 
     samples = list(
         open_samples(
-            context,
-            feature_cfgs,
-            "1h",
-            target_configs=target_cfgs,
-            rectangular=False,
-            sample_keys=["security_id"],
+            runtime,
+            [config.id for config in feature_cfgs],
+            target_ids=[config.id for config in target_cfgs],
         )
     )
 
@@ -277,17 +269,23 @@ def test_samples_keep_entity_buckets_contiguous(tmp_path) -> None:
         ],
     }
     runtime = _runtime_with_streams(tmp_path, streams)
-    context = PipelineContext(runtime)
+    for stream_id in streams:
+        runtime.streams[stream_id] = replace(
+            runtime.streams[stream_id],
+            partition_by=("security_id",),
+        )
     feature_cfgs = [
         SeriesConfig(
             stream="momentum_stream",
             id="momentum",
             field="value",
+            collect=2,
         ),
         SeriesConfig(
             stream="volume_stream",
             id="volume",
             field="value",
+            collect=2,
         ),
     ]
     register_series(
@@ -299,11 +297,8 @@ def test_samples_keep_entity_buckets_contiguous(tmp_path) -> None:
 
     samples = list(
         open_samples(
-            context,
-            feature_cfgs,
-            "1d",
-            rectangular=False,
-            sample_keys=["security_id"],
+            runtime,
+            [config.id for config in feature_cfgs],
         )
     )
 
@@ -336,7 +331,6 @@ def test_sequence_series_are_windowed_by_sample_keys(tmp_path) -> None:
         runtime.streams["monthly_returns"],
         partition_by=("security_id",),
     )
-    context = PipelineContext(runtime)
     feature_cfgs = [
         SeriesConfig(
             stream="monthly_returns",
@@ -354,11 +348,8 @@ def test_sequence_series_are_windowed_by_sample_keys(tmp_path) -> None:
 
     samples = list(
         open_samples(
-            context,
-            feature_cfgs,
-            "1h",
-            rectangular=False,
-            sample_keys=["security_id"],
+            runtime,
+            [config.id for config in feature_cfgs],
         )
     )
 
@@ -372,7 +363,7 @@ def test_sequence_series_are_windowed_by_sample_keys(tmp_path) -> None:
     ]
 
 
-def test_partition_fields_outside_sample_keys_form_wide_feature_identity(
+def test_sample_input_selects_exact_wide_feature_ids(
     tmp_path,
 ) -> None:
     def _equity_record(hour: int, security_id: str, value: float) -> TemporalRecord:
@@ -383,7 +374,9 @@ def test_partition_fields_outside_sample_keys_form_wide_feature_identity(
     streams = {
         "monthly_returns": [
             _equity_record(0, "AAPL", 1.0),
+            _equity_record(0, "MSFT", 10.0),
             _equity_record(1, "AAPL", 2.0),
+            _equity_record(1, "MSFT", 20.0),
         ],
     }
     runtime = _runtime_with_streams(tmp_path, streams)
@@ -391,7 +384,6 @@ def test_partition_fields_outside_sample_keys_form_wide_feature_identity(
         runtime.streams["monthly_returns"],
         partition_by=("security_id",),
     )
-    context = PipelineContext(runtime)
     feature_cfgs = [
         SeriesConfig(
             stream="monthly_returns",
@@ -408,10 +400,8 @@ def test_partition_fields_outside_sample_keys_form_wide_feature_identity(
 
     samples = list(
         open_samples(
-            context,
-            feature_cfgs,
-            "1h",
-            rectangular=False,
+            runtime,
+            ["monthly_return__@security_id:AAPL"],
         )
     )
 
@@ -453,7 +443,6 @@ def test_stream_transforms_use_explicit_stream_partition(tmp_path) -> None:
         runtime.streams["daily_prices"],
         partition_by=("security_id",),
     )
-    context = PipelineContext(runtime)
     feature_cfgs = [
         SeriesConfig(
             stream="daily_prices",
@@ -470,11 +459,8 @@ def test_stream_transforms_use_explicit_stream_partition(tmp_path) -> None:
 
     samples = list(
         open_samples(
-            context,
-            feature_cfgs,
-            "1h",
-            rectangular=False,
-            sample_keys=["security_id"],
+            runtime,
+            [config.id for config in feature_cfgs],
         )
     )
 
@@ -503,6 +489,7 @@ def test_regression_scaled_shapes_airpressure_high_freq_and_windspeed_hourly(
         _record(_ts(0, 55), 1000.0),
         _record(_ts(1, 5), 1005.0),
         _record(_ts(1, 15), 1007.0),
+        _record(_ts(1, 45), 1009.0),
     ]
     # hourly mock series (single sample per hour)
     hourly_raw = [
@@ -523,6 +510,7 @@ def test_regression_scaled_shapes_airpressure_high_freq_and_windspeed_hourly(
             id="air_pressure",
             field="value",
             scale=True,
+            collect=3,
         ),
         SeriesConfig(
             stream="wind_speed",
@@ -532,14 +520,16 @@ def test_regression_scaled_shapes_airpressure_high_freq_and_windspeed_hourly(
         ),
     ]
 
-    _register_scaler(runtime, configs, group_by)
+    _register_scaler(runtime, configs)
     register_series(runtime, configs, group_by)
-    context = PipelineContext(runtime)
 
-    raw = open_samples(context, configs, group_by)
+    raw = open_samples(
+        runtime,
+        [config.id for config in configs],
+    )
     out = list(
         SampleScaler(
-            context.require_artifact(SCALER_SPEC),
+            runtime.artifacts.load(SCALER_SPEC),
             scaled_feature_ids=[config.id for config in configs],
             scaled_target_ids=(),
         ).apply(raw)
@@ -553,7 +543,7 @@ def test_regression_scaled_shapes_airpressure_high_freq_and_windspeed_hourly(
     v1 = out[1].features.values
 
     assert isinstance(v0["air_pressure"], list) and len(v0["air_pressure"]) == 3
-    assert isinstance(v1["air_pressure"], list) and len(v1["air_pressure"]) == 2
+    assert isinstance(v1["air_pressure"], list) and len(v1["air_pressure"]) == 3
     assert not isinstance(v0["wind_speed"], list)
     assert not isinstance(v1["wind_speed"], list)
 
@@ -614,6 +604,7 @@ def test_regression_fill_then_scale_with_missing_values(tmp_path) -> None:
             id="air_pressure",
             field="value",
             scale=True,
+            collect=3,
         ),
         SeriesConfig(
             stream="ws",
@@ -623,13 +614,15 @@ def test_regression_fill_then_scale_with_missing_values(tmp_path) -> None:
         ),
     ]
 
-    _register_scaler(runtime, configs, group_by)
+    _register_scaler(runtime, configs)
     register_series(runtime, configs, group_by)
-    context = PipelineContext(runtime)
-    raw = open_samples(context, configs, group_by)
+    raw = open_samples(
+        runtime,
+        [config.id for config in configs],
+    )
     out = list(
         SampleScaler(
-            context.require_artifact(SCALER_SPEC),
+            runtime.artifacts.load(SCALER_SPEC),
             scaled_feature_ids=[config.id for config in configs],
             scaled_target_ids=(),
         ).apply(raw)

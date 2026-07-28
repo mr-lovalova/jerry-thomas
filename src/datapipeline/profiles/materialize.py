@@ -4,14 +4,17 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Sequence
 
-from datapipeline.cli.visuals.execution import emit_execution_message
-from datapipeline.config.profiles import MaterializeProfile
+from datapipeline.config.profiles.materialize import MaterializeProfile
 from datapipeline.execution.settings import (
-    LogOutputTarget,
+    CommandObservability,
     resolve_execution_log_outputs,
     resolve_observability_settings,
 )
-from datapipeline.execution.observability import emit_file_result, operation_scope
+from datapipeline.execution.observability import (
+    emit_execution_message,
+    emit_file_result,
+    operation_scope,
+)
 from datapipeline.io.output import output_destination_key
 from datapipeline.profiles.models import MaterializeJob
 from datapipeline.runtime import Runtime
@@ -29,11 +32,7 @@ def resolve_materialize_jobs(
     execution_dir: Path,
     overwrite: bool | None,
     cli_output: Path | None,
-    cli_visuals: str | None,
-    cli_heartbeat_interval_seconds: float | None,
-    cli_log_level: str | None,
-    cli_log_outputs: Sequence[LogOutputTarget],
-    base_log_level: str,
+    command_observability: CommandObservability,
 ) -> list[MaterializeJob]:
     if cli_output is not None and len(profiles) != 1:
         raise ValueError("A materialize output override requires one selected profile.")
@@ -43,11 +42,7 @@ def resolve_materialize_jobs(
         observability = resolve_observability_settings(
             project_path,
             profile.observability,
-            cli_visuals=cli_visuals,
-            cli_heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
-            cli_log_level=cli_log_level,
-            cli_log_outputs=cli_log_outputs,
-            base_log_level=base_log_level,
+            command_observability,
         )
         observability = replace(
             observability,

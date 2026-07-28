@@ -2,50 +2,56 @@ import json
 
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import VECTOR_METADATA
+from datapipeline.artifacts.models import VectorMetadataCatalog
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.postprocess import PostprocessConfig
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.context import PipelineContext
-from datapipeline.pipelines.dataset.postprocess import (
-    apply_postprocess,
-    build_postprocess_plan,
-)
+from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.dataset.pipeline import build_dataset_pipeline
 from datapipeline.runtime import Runtime
 
 
 def _runtime(
     tmp_path,
-    metadata: dict,
-    postprocess: PostprocessConfig | None = None,
+    catalog: dict,
+    dataset: DatasetConfig | None = None,
 ) -> Runtime:
     artifacts_root = tmp_path / "artifacts"
     artifacts_root.mkdir()
     project = tmp_path / "project.yaml"
-    project.write_text("schema_version: 3\nartifact_revision: 1\n", encoding="utf-8")
-    if postprocess is None:
-        postprocess = PostprocessConfig()
+    project.write_text("schema_version: 4\nartifact_revision: 1\n", encoding="utf-8")
+    if dataset is None:
+        dataset = DatasetConfig(sample=SampleConfig(cadence="1h"))
     runtime = Runtime(
         project_yaml=project,
         artifacts_root=artifacts_root,
-        dataset=DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
-            postprocess=postprocess,
-        ),
+        dataset=dataset,
     )
 
     metadata_path = artifacts_root / "metadata.json"
-    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "catalog": catalog,
+                "layout": {"kind": "unsplit"},
+            }
+        ),
+        encoding="utf-8",
+    )
     runtime.artifacts.register(VECTOR_METADATA, metadata_path.name)
     return runtime
+
+
+def _catalog(runtime: Runtime) -> VectorMetadataCatalog:
+    return runtime.artifacts.load(VECTOR_METADATA_SPEC).catalog
 
 
 def test_dataset_pipeline_assembles_before_postprocess(tmp_path) -> None:
     runtime = _runtime(
         tmp_path,
-        metadata={
-            "schema_version": 3,
+        catalog={
             "counts": {"feature_vectors": 0, "target_vectors": 0},
             "features": [
                 {
@@ -60,7 +66,11 @@ def test_dataset_pipeline_assembles_before_postprocess(tmp_path) -> None:
         },
     )
 
-    pipeline = build_dataset_pipeline(PipelineContext(runtime), [], "1h")
+    pipeline = build_dataset_pipeline(
+        runtime,
+        _catalog(runtime),
+        None,
+    )
 
     assert pipeline.name == "dataset"
     assert pipeline.input.name == "assemble_samples"
@@ -74,8 +84,7 @@ def test_dataset_pipeline_assembles_before_postprocess(tmp_path) -> None:
 def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
     runtime = _runtime(
         tmp_path,
-        metadata={
-            "schema_version": 3,
+        catalog={
             "counts": {"feature_vectors": 2, "target_vectors": 0},
             "features": [
                 {
@@ -95,13 +104,11 @@ def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
             ],
             "targets": [],
         },
-        postprocess=PostprocessConfig.model_validate(
-            {
-                "columns": {
-                    "features": {"threshold": 1.0, "ids": ["sparse"]},
-                },
-                "samples": {"features": {"threshold": 1.0, "ids": ["value"]}},
-            }
+        dataset=DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            postprocess=PostprocessConfig.model_validate(
+                {"samples": {"features": {"threshold": 1.0, "ids": ["value"]}}}
+            ),
         ),
     )
     samples = [
@@ -112,26 +119,24 @@ def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
         ),
     ]
 
-    context = PipelineContext(runtime)
-    plan = build_postprocess_plan(context)
-    output = list(apply_postprocess(context, iter(samples)))
+    schema = _catalog(runtime)
+    plan = build_postprocess_plan(runtime.dataset.postprocess, schema)
+    output = list(plan.apply(iter(samples)))
 
-    assert [entry.id for entry in plan.feature_entries] == ["value"]
-    assert plan.target_entries == ()
     assert [stage.name for stage in plan.stages] == [
-        "select_features",
         "conform_features",
         "reject_undeclared_targets",
         "filter_samples_by_features",
     ]
-    assert [sample.features.values for sample in output] == [{"value": 2.0}]
+    assert [sample.features.values for sample in output] == [
+        {"sparse": None, "value": 2.0}
+    ]
 
 
 def test_postprocess_applies_explicit_target_policies(tmp_path) -> None:
     runtime = _runtime(
         tmp_path,
-        metadata={
-            "schema_version": 3,
+        catalog={
             "counts": {"feature_vectors": 1, "target_vectors": 1},
             "features": [
                 {
@@ -159,12 +164,27 @@ def test_postprocess_applies_explicit_target_policies(tmp_path) -> None:
                 },
             ],
         },
-        postprocess=PostprocessConfig.model_validate(
+        dataset=DatasetConfig.model_validate(
             {
-                "columns": {
-                    "targets": {"threshold": 1.0, "ids": ["sparse"]},
+                "sample": {"cadence": "1h"},
+                "features": [{"id": "feature", "stream": "features", "field": "value"}],
+                "targets": [
+                    {
+                        "id": "sparse",
+                        "stream": "targets",
+                        "field": "sparse",
+                        "horizon": "0s",
+                    },
+                    {
+                        "id": "target",
+                        "stream": "targets",
+                        "field": "value",
+                        "horizon": "0s",
+                    },
+                ],
+                "postprocess": {
+                    "samples": {"targets": {"threshold": 1.0, "ids": ["target"]}}
                 },
-                "samples": {"targets": {"threshold": 1.0, "ids": ["target"]}},
             }
         ),
     )
@@ -174,20 +194,24 @@ def test_postprocess_applies_explicit_target_policies(tmp_path) -> None:
         targets=Vector(values={"sparse": None, "target": 1.0}),
     )
 
-    output = list(apply_postprocess(PipelineContext(runtime), iter([sample])))
+    output = list(
+        build_postprocess_plan(
+            runtime.dataset.postprocess,
+            _catalog(runtime),
+        ).apply(iter([sample]))
+    )
 
     assert output[0].features.values == {"feature": 2.0}
     assert output[0].targets is not None
-    assert output[0].targets.values == {"target": 1.0}
+    assert output[0].targets.values == {"sparse": None, "target": 1.0}
 
 
-def test_column_selection_uses_metadata_counts_without_mutating_metadata(
+def test_metadata_coverage_counts_never_change_the_dataset_schema(
     tmp_path,
 ) -> None:
     runtime = _runtime(
         tmp_path,
-        metadata={
-            "schema_version": 3,
+        catalog={
             "counts": {"feature_vectors": 100, "target_vectors": 0},
             "window": {
                 "start": "2024-01-01T00:00:00Z",
@@ -213,19 +237,21 @@ def test_column_selection_uses_metadata_counts_without_mutating_metadata(
             ],
             "targets": [],
         },
-        postprocess=PostprocessConfig.model_validate(
-            {"columns": {"features": {"threshold": 0.5}}}
-        ),
     )
-    context = PipelineContext(runtime)
     sample = Sample(
         key=(0,),
         features=Vector(values={"sparse": 1.0, "complete": 2.0}),
     )
 
-    output = list(apply_postprocess(context, iter([sample])))
+    output = list(
+        build_postprocess_plan(
+            runtime.dataset.postprocess,
+            _catalog(runtime),
+        ).apply(iter([sample]))
+    )
 
-    assert output[0].features.values == {"complete": 2.0}
+    assert output[0].features.values == {"sparse": 1.0, "complete": 2.0}
     assert [
-        entry.id for entry in context.require_artifact(VECTOR_METADATA_SPEC).features
+        entry.id
+        for entry in runtime.artifacts.load(VECTOR_METADATA_SPEC).catalog.features
     ] == ["sparse", "complete"]

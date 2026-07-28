@@ -6,10 +6,7 @@ import pytest
 import datapipeline.execution.observability as observability
 from datapipeline.cli.visuals.execution import (
     ExecutionEventFormatter,
-    ExecutionMessage,
-    emit_execution_message,
-    make_pipeline_observer,
-    make_operation_observer,
+    make_execution_observer,
 )
 from datapipeline.cli.visuals.execution_context import (
     reset_current_execution_event_handler,
@@ -28,14 +25,16 @@ from datapipeline.execution.events import (
 )
 from datapipeline.execution.observability import (
     CommandFinished,
+    ExecutionMessage,
     FileResult,
     OperationFinished,
     OperationProgress,
     OperationStarted,
     RowsWritten,
+    emit_execution_message,
     emit_file_result,
     emit_operation_progress,
-    operation_observer,
+    execution_observer,
     operation_scope,
 )
 
@@ -213,7 +212,7 @@ def test_failed_terminal_events_are_errors() -> None:
 
 def test_observer_logs_root_lifecycle_and_summary_at_info(caplog) -> None:
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.root")
-    observer = make_pipeline_observer(logger)
+    observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.INFO, logger=logger.name):
         observer(PipelineStarted(pipeline_name="stream:prices"))
@@ -241,7 +240,7 @@ def test_observer_logs_root_lifecycle_and_summary_at_info(caplog) -> None:
 
 def test_observer_logs_stages_at_debug(caplog) -> None:
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.stages")
-    observer = make_pipeline_observer(logger)
+    observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.DEBUG, logger=logger.name):
         observer(
@@ -270,7 +269,7 @@ def test_observer_logs_stages_at_debug(caplog) -> None:
 
 def test_observer_logs_pipeline_heartbeat_at_info(caplog) -> None:
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.progress")
-    observer = make_pipeline_observer(logger)
+    observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.INFO, logger=logger.name):
         observer(
@@ -300,7 +299,7 @@ def test_observer_logs_pipeline_heartbeat_at_info(caplog) -> None:
 
 def test_observer_logs_only_heartbeat_node_progress_at_debug(caplog) -> None:
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.node-progress")
-    observer = make_pipeline_observer(logger)
+    observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.DEBUG, logger=logger.name):
         observer(
@@ -330,7 +329,7 @@ def test_observer_logs_only_heartbeat_node_progress_at_debug(caplog) -> None:
 
 def test_observer_includes_error_details_on_failure(caplog) -> None:
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.error")
-    observer = make_pipeline_observer(logger)
+    observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.INFO, logger=logger.name):
         observer(
@@ -354,12 +353,14 @@ def test_observer_includes_error_details_on_failure(caplog) -> None:
     )
 
 
-def test_make_pipeline_observer_routes_to_logger_and_context_handler(caplog) -> None:
+def test_execution_observer_routes_pipeline_events_to_logger_and_handler(
+    caplog,
+) -> None:
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.context")
     capture = _CaptureHandler()
     token = set_current_execution_event_handler(capture)
     try:
-        observer = make_pipeline_observer(logger=logger)
+        observer = make_execution_observer(logger=logger)
         with caplog.at_level(logging.INFO, logger=logger.name):
             observer(PipelineStarted(pipeline_name="dataset"))
             observer(
@@ -388,7 +389,7 @@ def test_context_handler_is_resolved_when_each_event_is_emitted(caplog) -> None:
     capture = _CaptureHandler()
     token = set_current_execution_event_handler(capture)
     try:
-        observer = make_pipeline_observer(logger=logger)
+        observer = make_execution_observer(logger=logger)
         observer(PipelineStarted(pipeline_name="dataset"))
     finally:
         reset_current_execution_event_handler(token)
@@ -407,29 +408,21 @@ def test_context_handler_is_resolved_when_each_event_is_emitted(caplog) -> None:
     assert caplog.records[-1].getMessage().startswith("[dataset] finished")
 
 
-def test_emit_execution_message_uses_context_and_logger(caplog) -> None:
+def test_execution_message_uses_execution_observer_and_logger(caplog) -> None:
     capture = _CaptureHandler()
     logger = logging.getLogger("datapipeline.cli.visuals.execution.test.message")
     token = set_current_execution_event_handler(capture)
     try:
         with caplog.at_level(logging.INFO, logger=logger.name):
-            emit_execution_message("Saved 2 items", logger=logger)
+            observer = make_execution_observer(logger)
+            with execution_observer(observer):
+                assert emit_execution_message("Saved 2 items")
     finally:
         reset_current_execution_event_handler(token)
 
     assert len(capture.events) == 1
     assert capture.events[0] == ExecutionMessage(message="Saved 2 items")
     assert caplog.records[-1].getMessage() == "Saved 2 items"
-
-
-def test_emit_execution_message_logs_without_context_handler(caplog) -> None:
-    logger = logging.getLogger("datapipeline.cli.visuals.execution.test.default")
-
-    with caplog.at_level(logging.INFO, logger=logger.name):
-        emit_execution_message("Saved 3 items", logger=logger)
-
-    assert caplog.records[-1].getMessage() == "Saved 3 items"
-    assert getattr(caplog.records[-1], "dp_event_kind", None) == "execution"
 
 
 def test_operation_scope_emits_flat_lifecycle_result_and_progress(
@@ -443,9 +436,9 @@ def test_operation_scope_emits_flat_lifecycle_result_and_progress(
     token = set_current_execution_event_handler(capture)
     try:
         with caplog.at_level(logging.INFO, logger=logger.name):
-            observer = make_operation_observer(logger)
-            with operation_observer(observer), operation_scope("build:model_grid"):
-                assert emit_file_result("Model grid", Path("/tmp/model_grid.jsonl"))
+            observer = make_execution_observer(logger)
+            with execution_observer(observer), operation_scope("build:schedule"):
+                assert emit_file_result("Schedule", Path("/tmp/schedule.jsonl"))
                 assert emit_operation_progress(
                     "write_artifact",
                     3,
@@ -460,13 +453,13 @@ def test_operation_scope_emits_flat_lifecycle_result_and_progress(
         OperationProgress,
         OperationFinished,
     ]
-    assert capture.events[1].path == Path("/tmp/model_grid.jsonl")
+    assert capture.events[1].path == Path("/tmp/schedule.jsonl")
     assert capture.events[2].step == "write_artifact"
     messages = [record.getMessage() for record in caplog.records]
-    assert "Operation build:model_grid started" in messages
-    assert "Model grid: /tmp/model_grid.jsonl" in messages
+    assert "Operation build:schedule started" in messages
+    assert "Schedule: /tmp/schedule.jsonl" in messages
     assert (
-        "Operation build:model_grid · write_artifact · running "
+        "Operation build:schedule · write_artifact · running "
         "reported_at=1.0s rows=3" in messages
     )
-    assert messages[-1].startswith("Operation build:model_grid finished status=success")
+    assert messages[-1].startswith("Operation build:schedule finished status=success")

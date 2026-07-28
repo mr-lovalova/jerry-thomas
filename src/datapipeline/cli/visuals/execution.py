@@ -1,5 +1,4 @@
 import logging
-from dataclasses import dataclass
 from functools import partial
 
 from datapipeline.cli.visuals.execution_context import (
@@ -9,7 +8,6 @@ from datapipeline.execution.events import (
     NodeFinished,
     NodeProgress,
     NodeStarted,
-    PipelineEvent,
     PipelineFinished,
     PipelineProgress,
     PipelineStarted,
@@ -17,33 +15,16 @@ from datapipeline.execution.events import (
     format_elapsed,
     format_node_progress,
 )
-from datapipeline.execution.observer import PipelineObserver
 from datapipeline.execution.observability import (
     CommandFinished,
+    ExecutionEvent,
+    ExecutionMessage,
+    ExecutionObserver,
     FileResult,
-    OperationObserver,
     OperationFinished,
     OperationProgress,
     OperationStarted,
     RowsWritten,
-)
-
-
-@dataclass(frozen=True, kw_only=True)
-class ExecutionMessage:
-    message: str
-    log_level: int = logging.INFO
-
-
-ExecutionLogEvent = (
-    ExecutionMessage
-    | CommandFinished
-    | FileResult
-    | PipelineEvent
-    | OperationStarted
-    | OperationFinished
-    | OperationProgress
-    | RowsWritten
 )
 
 
@@ -65,7 +46,7 @@ class ExecutionEventFormatter:
         return format_node_progress(event.progress, event.elapsed_seconds)
 
     @staticmethod
-    def level(event: ExecutionLogEvent) -> int:
+    def level(event: ExecutionEvent) -> int:
         if isinstance(event, ExecutionMessage):
             return int(event.log_level)
         if isinstance(
@@ -93,7 +74,7 @@ class ExecutionEventFormatter:
         raise TypeError(f"Unsupported execution event: {type(event).__name__}")
 
     @classmethod
-    def message(cls, event: ExecutionLogEvent) -> str:
+    def message(cls, event: ExecutionEvent) -> str:
         if isinstance(event, FileResult):
             return f"{event.label}: {event.path}"
         if isinstance(event, RowsWritten):
@@ -154,7 +135,7 @@ class ExecutionEventFormatter:
 
 
 def route_execution_event(
-    event: ExecutionLogEvent,
+    event: ExecutionEvent,
     logger: logging.Logger | None = None,
 ) -> None:
     if not isinstance(event, NodeProgress) or event.heartbeat:
@@ -172,30 +153,9 @@ def route_execution_event(
         handler(event)
 
 
-def emit_execution_message(
-    message: str,
-    level: int = logging.INFO,
+def make_execution_observer(
     logger: logging.Logger | None = None,
-) -> None:
-    event = ExecutionMessage(
-        message=message,
-        log_level=int(level),
-    )
-    route_execution_event(event, logger)
-
-
-def make_operation_observer(
-    logger: logging.Logger | None = None,
-) -> OperationObserver:
-    return partial(
-        route_execution_event,
-        logger=logger or logging.getLogger(__name__),
-    )
-
-
-def make_pipeline_observer(
-    logger: logging.Logger | None = None,
-) -> PipelineObserver:
+) -> ExecutionObserver:
     return partial(
         route_execution_event,
         logger=logger or logging.getLogger(__name__),

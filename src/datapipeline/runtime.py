@@ -2,18 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from datapipeline.artifacts.registry import ArtifactRegistry
 from datapipeline.config.dataset.dataset import DatasetConfig
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.transforms import PreprocessConfig, TransformConfig
 from datapipeline.domain.stream import RecordStream
-
-if TYPE_CHECKING:
-    from datapipeline.execution.observer import PipelineObserver
 
 RecordStage = Callable[[Iterator[Any]], Iterable[Any]]
 
@@ -45,6 +42,28 @@ class BroadcastRuntimeStream:
 
 
 @dataclass(frozen=True)
+class AsOfRuntimeStream:
+    input_stream: str
+    lookup_stream: str
+    combine: RecordStage
+    partition_by: tuple[str, ...]
+    max_age: timedelta | None
+    require_match: bool
+    transforms: tuple[TransformConfig, ...]
+
+
+@dataclass(frozen=True)
+class BroadcastAsOfRuntimeStream:
+    input_stream: str
+    lookup_stream: str
+    combine: RecordStage
+    partition_by: tuple[str, ...]
+    max_age: timedelta | None
+    require_match: bool
+    transforms: tuple[TransformConfig, ...]
+
+
+@dataclass(frozen=True)
 class AlignedRuntimeStream:
     inputs: tuple[str, ...]
     combine: RecordStage
@@ -52,27 +71,26 @@ class AlignedRuntimeStream:
     transforms: tuple[TransformConfig, ...]
 
 
-RuntimeStream = (
-    SourceRuntimeStream
-    | DerivedRuntimeStream
-    | BroadcastRuntimeStream
+CombinedRuntimeStream = (
+    BroadcastRuntimeStream
+    | AsOfRuntimeStream
+    | BroadcastAsOfRuntimeStream
     | AlignedRuntimeStream
 )
+
+RuntimeStream = SourceRuntimeStream | DerivedRuntimeStream | CombinedRuntimeStream
 
 
 @dataclass
 class Runtime:
-    """Holds the active project context and prepared streams."""
+    """Holds the active project state and prepared streams."""
 
     project_yaml: Path
     artifacts_root: Path
     dataset: DatasetConfig
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     streams: dict[str, RuntimeStream] = field(default_factory=dict)
-    output_ids: tuple[str, ...] = ()
-    window_bounds: tuple[datetime | None, datetime | None] | None = None
     heartbeat_interval_seconds: float | None = None
-    pipeline_observer: PipelineObserver | None = None
     observe_node_events: bool = True
     artifacts: ArtifactRegistry = field(init=False)
 

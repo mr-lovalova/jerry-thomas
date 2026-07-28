@@ -1,4 +1,5 @@
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -14,7 +15,11 @@ from datapipeline.execution.settings import (
     resolve_log_level,
     resolve_log_output,
 )
+from datapipeline.profiles.errors import ProfileCommandError
 from datapipeline.services.path_policy import resolve_workspace_path, workspace_cwd
+
+
+logger = logging.getLogger(__name__)
 
 
 def _dataset_to_project_path(
@@ -92,7 +97,7 @@ def _configure_cli_logging(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
     workspace_context: WorkspaceContext | None,
-) -> tuple[str | None, str, list[LogOutputTarget]]:
+) -> tuple[str | None, list[LogOutputTarget]]:
     cli_level_arg = args.log_level
     cli_log_output_specs = args.log_output
 
@@ -116,7 +121,7 @@ def _configure_cli_logging(
         raise SystemExit(2) from exc
 
     configure_root_logging(level=base_level.value, output=base_log_output)
-    return cli_level_arg, base_level.name, cli_log_outputs
+    return cli_level_arg, cli_log_outputs
 
 
 def main() -> None:
@@ -129,11 +134,7 @@ def main() -> None:
         except (OSError, TypeError, ValueError) as exc:
             parser.error(f"Failed to load workspace: {exc}")
     _resolve_project_arguments(args=args, workspace_context=workspace_context)
-    (
-        cli_level_arg,
-        base_level_name,
-        cli_log_outputs,
-    ) = _configure_cli_logging(
+    cli_level_arg, cli_log_outputs = _configure_cli_logging(
         parser=parser,
         args=args,
         workspace_context=workspace_context,
@@ -146,9 +147,13 @@ def main() -> None:
             plugin_root=plugin_root,
             workspace_context=workspace_context,
             cli_level_arg=cli_level_arg,
-            base_level_name=base_level_name,
             cli_log_outputs=cli_log_outputs,
         )
+    except ProfileCommandError as exc:
+        logger.error("%s", exc)
+        for note in getattr(exc, "__notes__", ()):
+            logger.error("%s", note)
+        raise SystemExit(2) from exc
     except KeyboardInterrupt:
         message = (
             "Serve interrupted by user"

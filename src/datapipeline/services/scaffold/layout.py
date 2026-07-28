@@ -1,11 +1,16 @@
 import re
 
-from datapipeline.services.scaffold.templates import camel
-
 
 def to_snake(name: str) -> str:
     s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
     return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
+
+
+def _pascal_case(name: str) -> str:
+    snake = to_snake(name)
+    prefix_length = len(snake) - len(snake.lstrip("_"))
+    words = snake[prefix_length:].split("_")
+    return snake[:prefix_length] + "".join(part.capitalize() for part in words if part)
 
 
 def slugify(text: str) -> str:
@@ -32,15 +37,16 @@ TPL_DOMAIN_RECORD = "record.py.j2"
 
 
 def loader_class_name(name: str) -> str:
-    return f"{camel(name)}Loader"
+    class_name = _pascal_case(name)
+    return class_name if class_name.endswith("Loader") else f"{class_name}Loader"
 
 
 def domain_record_class(domain: str) -> str:
-    return f"{camel(domain)}Record"
+    return f"{_pascal_case(domain)}Record"
 
 
 def dto_class_name(base: str) -> str:
-    return f"{camel(base)}DTO"
+    return f"{_pascal_case(base)}DTO"
 
 
 def dto_module_path(package: str, dto_class: str) -> str:

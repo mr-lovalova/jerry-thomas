@@ -55,13 +55,13 @@ class FsGlobTransport(SourceTransport):
         self.pattern = pattern
         self.chunk_size = chunk_size
         self.compression = compression
-        self._files = sorted(_glob.glob(pattern))
+        self._files = tuple(sorted(_glob.glob(pattern)))
         if not self._files:
             raise FileNotFoundError(f"Source glob matched no files: {pattern}")
 
     @property
-    def files(self) -> list[str]:
-        return list(self._files)
+    def files(self) -> tuple[str, ...]:
+        return self._files
 
     def resources(self) -> Iterator[SourceResource]:
         for p in self._files:

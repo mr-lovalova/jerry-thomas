@@ -2,18 +2,17 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.profiles import MaterializeProfile
-from datapipeline.config.tasks import (
+from datapipeline.config.profiles.materialize import MaterializeProfile
+from datapipeline.config.tasks.base import (
     ArtifactTask,
-    CoverageTask,
-    DatasetTask,
-    MatrixOptions,
-    MatrixTask,
+    PluginRuntimeTask,
     RuntimeTask,
 )
+from datapipeline.config.tasks.coverage import CoverageTask
+from datapipeline.config.tasks.dataset import DatasetTask
+from datapipeline.config.tasks.matrix import MatrixOptions, MatrixTask
 from datapipeline.profiles.loader import (
     apply_profile_defaults,
-    profile_specs,
     profile_specs_with_defaults,
 )
 from datapipeline.services.operations import (
@@ -37,19 +36,19 @@ def _all_tasks(project_yaml: Path):
 
 
 def _serve_profiles(project_yaml: Path):
-    return list(profile_specs(load_project(project_yaml), cmd="serve"))
+    return profile_specs_with_defaults(load_project(project_yaml), cmd="serve")[0]
 
 
 def _build_profiles(project_yaml: Path):
-    return list(profile_specs(load_project(project_yaml), cmd="build"))
+    return profile_specs_with_defaults(load_project(project_yaml), cmd="build")[0]
 
 
 def _inspect_profiles(project_yaml: Path):
-    return list(profile_specs(load_project(project_yaml), cmd="inspect"))
+    return profile_specs_with_defaults(load_project(project_yaml), cmd="inspect")[0]
 
 
 def _materialize_profiles(project_yaml: Path):
-    return list(profile_specs(load_project(project_yaml), cmd="materialize"))
+    return profile_specs_with_defaults(load_project(project_yaml), cmd="materialize")[0]
 
 
 def _serve_defaults(project_yaml: Path):
@@ -63,7 +62,7 @@ def _materialize_defaults(project_yaml: Path):
 def _write_project(tmp_path: Path, operations_ref: str | None = None) -> Path:
     project_yaml = tmp_path / "project.yaml"
     lines = [
-        "schema_version: 3",
+        "schema_version: 4",
         "artifact_revision: 1",
         "paths:",
         "  streams: streams",
@@ -95,9 +94,9 @@ def _profile_kind_dir(project_yaml: Path) -> Path:
     return path
 
 
-def test_runtime_task_rejects_non_serializable_options() -> None:
+def test_plugin_runtime_task_rejects_non_serializable_options() -> None:
     with pytest.raises(ValueError, match="JSON-serializable"):
-        RuntimeTask(
+        PluginRuntimeTask(
             id="plugin",
             entrypoint="plugin.runtime",
             options={"value": object()},
@@ -181,69 +180,87 @@ def test_legacy_series_override_is_not_a_core_operation(
         _tasks(project_yaml)
 
 
-def test_ticks_artifact_task_loads_arbitrary_id(tmp_path):
+def test_schedule_artifact_task_loads_arbitrary_id(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
-    (config_dir / "dataset_ticks.yaml").write_text(
+    (config_dir / "dataset_schedule.yaml").write_text(
         (
             "kind: artifact\n"
-            "entrypoint: core.artifact.ticks\n"
+            "entrypoint: core.artifact.schedule\n"
             "stream: reference.stream\n"
-            "output: build/dataset_ticks.jsonl\n"
+            "partition_by: []\n"
+            "output: build/dataset_schedule.jsonl\n"
         ),
         encoding="utf-8",
     )
 
     tasks = _artifact_tasks(project_yaml)
 
-    task = next(task for task in tasks if task.id == "dataset_ticks")
-    assert task.id == "dataset_ticks"
-    assert task.entrypoint == "core.artifact.ticks"
+    task = next(task for task in tasks if task.id == "dataset_schedule")
+    assert task.id == "dataset_schedule"
+    assert task.entrypoint == "core.artifact.schedule"
     assert task.stream == "reference.stream"
-    assert task.grid_by == []
-    assert task.output == "build/dataset_ticks.jsonl"
+    assert task.partition_by == []
+    assert task.output == "build/dataset_schedule.jsonl"
 
 
-def test_ticks_artifact_task_loads_grid_by(tmp_path):
+def test_schedule_artifact_task_loads_partition_by(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
-    (config_dir / "model_grid.yaml").write_text(
+    (config_dir / "schedule.yaml").write_text(
         (
             "kind: artifact\n"
-            "entrypoint: core.artifact.ticks\n"
+            "entrypoint: core.artifact.schedule\n"
             "stream: reference.stream\n"
-            "grid_by: [security_id]\n"
-            "output: build/model_grid.jsonl\n"
+            "partition_by: [security_id]\n"
+            "output: build/schedule.jsonl\n"
         ),
         encoding="utf-8",
     )
 
     tasks = _artifact_tasks(project_yaml)
 
-    task = next(task for task in tasks if task.id == "model_grid")
-    assert task.grid_by == ["security_id"]
+    task = next(task for task in tasks if task.id == "schedule")
+    assert task.partition_by == ["security_id"]
+
+
+def test_schedule_artifact_requires_explicit_partition_by(tmp_path) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    config_dir = _operations_dir(project_yaml)
+    (config_dir / "schedule.yaml").write_text(
+        (
+            "kind: artifact\n"
+            "entrypoint: core.artifact.schedule\n"
+            "stream: reference.stream\n"
+            "output: build/schedule.jsonl\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="partition_by"):
+        _artifact_tasks(project_yaml)
 
 
 @pytest.mark.parametrize(
     "body",
     [
         "stream: '   '\n",
-        "stream: reference.stream\ngrid_by: ['']\n",
-        "stream: reference.stream\ngrid_by: [security_id, security_id]\n",
+        "stream: reference.stream\npartition_by: ['']\n",
+        "stream: reference.stream\npartition_by: [security_id, security_id]\n",
     ],
 )
-def test_ticks_artifact_rejects_invalid_identity_fields(
+def test_schedule_artifact_rejects_invalid_identity_fields(
     tmp_path: Path,
     body: str,
 ) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
-    (config_dir / "model_grid.yaml").write_text(
+    (config_dir / "schedule.yaml").write_text(
         (
             "kind: artifact\n"
-            "entrypoint: core.artifact.ticks\n"
+            "entrypoint: core.artifact.schedule\n"
             f"{body}"
-            "output: build/model_grid.jsonl\n"
+            "output: build/schedule.jsonl\n"
         ),
         encoding="utf-8",
     )
@@ -273,9 +290,10 @@ def test_core_operation_rejects_entrypoint_override(tmp_path):
     config_dir = _operations_dir(project_yaml)
     (config_dir / "metadata.yaml").write_text(
         (
-            "entrypoint: core.artifact.ticks\n"
+            "entrypoint: core.artifact.schedule\n"
             "stream: reference.stream\n"
-            "output: build/metadata_ticks.jsonl\n"
+            "partition_by: []\n"
+            "output: build/metadata_schedule.jsonl\n"
         ),
         encoding="utf-8",
     )
@@ -482,7 +500,7 @@ def test_serve_profiles_interpolate_project_globals(tmp_path):
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 3",
+                "schema_version: 4",
                 "artifact_revision: 1",
                 "name: momentum",
                 "variant: price",
@@ -532,7 +550,7 @@ def test_profile_defaults_interpolate_project_globals(tmp_path):
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 3",
+                "schema_version: 4",
                 "artifact_revision: 1",
                 "name: momentum",
                 "variant: price",
@@ -917,7 +935,7 @@ def test_command_load_ignores_malformed_other_profile_kinds(tmp_path):
 
     assert [profile.name for profile in _serve_profiles(project_yaml)] == ["train"]
     with pytest.raises(TypeError, match="one mapping profile"):
-        profile_specs(load_project(project_yaml))
+        _build_profiles(project_yaml)
 
 
 def test_execution_policy_is_not_allowed_on_concrete_profiles(tmp_path):
@@ -982,32 +1000,30 @@ def test_coverage_operation_options_are_typed(tmp_path):
     assert operation.options.threshold == 0.8
 
 
-@pytest.mark.parametrize(
-    ("entrypoint", "model_cls"),
-    [
-        ("core.runtime.dataset", DatasetTask),
-        ("core.runtime.matrix", MatrixTask),
-    ],
-)
-def test_runtime_tasks_without_options_accept_empty_options(
-    tmp_path: Path,
-    entrypoint: str,
-    model_cls: type[RuntimeTask],
-) -> None:
+def test_typed_runtime_options_accept_an_empty_mapping(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "runtime.yaml").write_text(
-        (f"kind: runtime\nentrypoint: {entrypoint}\noptions: {{}}\n"),
+        "kind: runtime\nentrypoint: core.runtime.matrix\noptions: {}\n",
         encoding="utf-8",
     )
 
     operation = next(task for task in _all_tasks(project_yaml) if task.id == "runtime")
 
-    assert isinstance(operation, model_cls)
-    if isinstance(operation, MatrixTask):
-        assert operation.options == MatrixOptions()
-    else:
-        assert operation.options == {}
+    assert isinstance(operation, MatrixTask)
+    assert operation.options == MatrixOptions()
+
+
+def test_dataset_runtime_rejects_options(tmp_path: Path) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    config_dir = _operations_dir(project_yaml)
+    (config_dir / "runtime.yaml").write_text(
+        "kind: runtime\nentrypoint: core.runtime.dataset\noptions: {}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        _all_tasks(project_yaml)
 
 
 @pytest.mark.parametrize(
@@ -1035,7 +1051,7 @@ def test_unknown_core_runtime_entrypoint_is_rejected_during_loading(
         (
             "core.runtime.dataset",
             "  sort: missing\n",
-            "dataset operation does not accept options",
+            "Extra inputs are not permitted",
         ),
         (
             "core.runtime.matrix",
@@ -1117,9 +1133,23 @@ def test_plugin_runtime_options_remain_plugin_owned(tmp_path: Path) -> None:
 
     task = next(task for task in _all_tasks(project_yaml) if task.id == "custom")
 
-    assert type(task) is RuntimeTask
+    assert type(task) is PluginRuntimeTask
     assert task.requires == ("custom_snapshot",)
     assert task.options == {"nested": {"value": 3}}
+
+
+def test_plugin_runtime_options_default_to_an_empty_mapping(tmp_path: Path) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    config_dir = _operations_dir(project_yaml)
+    (config_dir / "custom.yaml").write_text(
+        "kind: runtime\nentrypoint: plugin.runtime.custom\n",
+        encoding="utf-8",
+    )
+
+    task = next(task for task in _all_tasks(project_yaml) if task.id == "custom")
+
+    assert type(task) is PluginRuntimeTask
+    assert task.options == {}
 
 
 @pytest.mark.parametrize(
@@ -1325,6 +1355,22 @@ def test_nested_profile_files_are_rejected(tmp_path):
     )
 
     with pytest.raises(ValueError, match="flat under profiles/"):
+        _serve_profiles(project_yaml)
+
+
+def test_missing_profile_directory_uses_empty_profiles_and_defaults(tmp_path):
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+
+    assert _serve_profiles(project_yaml) == []
+    assert _serve_defaults(project_yaml).cmd == "serve"
+
+
+def test_profile_path_must_be_a_directory(tmp_path):
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    profiles_root = project_yaml.parent / "profiles"
+    profiles_root.write_text("not a directory\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Profiles path must be a directory"):
         _serve_profiles(project_yaml)
 
 

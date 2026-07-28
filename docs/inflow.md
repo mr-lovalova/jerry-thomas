@@ -32,8 +32,8 @@ This produces (paths may vary):
 - `src/<package>/parsers/weather_noaa_dto_parser.py`
 - `src/<package>/domains/weather/model.py`
 - `src/<package>/mappers/map_weather_noaa_dto_to_weather.py`
-- `config/<dataset>/sources/noaa.weather.yaml`
-- `config/<dataset>/streams/weather.weather.yaml`
+- `your-dataset/sources/noaa.weather.yaml`
+- `your-dataset/streams/weather.weather.yaml`
 
 ## Identity vs Custom
 
@@ -58,10 +58,10 @@ shape (timezone‑aware `time` plus any identity fields). Otherwise choose
 1. Fill placeholders in `sources/*.yaml` (paths/URLs/auth/etc.).
 2. Reference your stream id in `dataset.yaml` under `stream: <stream_id>`
    and select a `field` for each feature/target.
-3. Reinstall the plugin if entry points were added:
+3. From the plugin root, reinstall it if entry points were added:
 
 ```bash
-python -m pip install -e lib/<plugin>
+python -m pip install -e .
 ```
 
 ## Troubleshooting

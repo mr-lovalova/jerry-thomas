@@ -12,7 +12,7 @@ from datapipeline.services.project_definition import load_project_definition
 from datapipeline.services.project import load_project
 from datapipeline.services.streams.loader import load_streams
 from datapipeline.services.streams.source import build_source
-from datapipeline.utils.placeholders import is_missing
+from datapipeline.config.interpolation import is_missing_interpolation
 
 
 def _project_variables(project_yaml: Path):
@@ -36,7 +36,7 @@ def _write_project_yaml(
 ) -> Path:
     project_yaml = project_root / "project.yaml"
     lines = [
-        "schema_version: 3",
+        "schema_version: 4",
         "artifact_revision: 1",
         "name: sample",
     ]
@@ -91,12 +91,21 @@ def test_project_requires_schema_version(tmp_path: Path) -> None:
 
     with pytest.raises(
         ValueError,
-        match="Project config requires schema_version: 3",
+        match="Project config requires schema_version: 4",
     ):
         load_project(project_yaml)
 
 
-@pytest.mark.parametrize("value", ["1", "2", "4"])
+def test_project_resolves_default_profiles_directory(tmp_path: Path) -> None:
+    project_yaml = _write_project_yaml(tmp_path)
+
+    project = load_project(project_yaml)
+
+    assert project.config.paths.profiles == "./profiles"
+    assert project.profiles_dir == (tmp_path / "profiles").resolve()
+
+
+@pytest.mark.parametrize("value", ["1", "2", "3"])
 def test_project_rejects_unsupported_schema_version(
     tmp_path: Path,
     value: str,
@@ -106,7 +115,7 @@ def test_project_rejects_unsupported_schema_version(
 
     with pytest.raises(
         ValueError,
-        match=rf"Unsupported project schema version {value}; expected 3",
+        match=rf"Unsupported project schema version {value}; expected 4",
     ):
         load_project(project_yaml)
 
@@ -119,7 +128,7 @@ def test_project_schema_version_must_be_integer(
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(f"schema_version: {value}\n", encoding="utf-8")
 
-    with pytest.raises(TypeError, match="schema_version must be the integer 3"):
+    with pytest.raises(TypeError, match="schema_version must be the integer 4"):
         load_project(project_yaml)
 
 
@@ -176,6 +185,33 @@ def test_config_refs_resolve_full_and_embedded_env_values(tmp_path: Path) -> Non
         "root": "data/raw",
         "path": "data/raw/prices.jsonl",
         "files": ["data/raw/prices.jsonl"],
+    }
+
+
+def test_project_manifest_resolves_env_before_project_variables(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CONFIG_VALUE", "${window}")
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    _write_project_files(project_root)
+    project = load_project(
+        _write_project_yaml(
+            project_root,
+            globals_lines=["window: 21"],
+        )
+    )
+    monkeypatch.setenv("CONFIG_VALUE", "999")
+
+    assert project.resolve_config(
+        {
+            "embedded": "raw/${env:CONFIG_VALUE}",
+            "typed": "${env:CONFIG_VALUE}",
+        }
+    ) == {
+        "embedded": "raw/21",
+        "typed": 21,
     }
 
 
@@ -305,7 +341,7 @@ def test_project_paths_validate_interpolation_without_declared_variables(
     _write_project_files(tmp_path)
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        """schema_version: 3
+        """schema_version: 4
 artifact_revision: 1
 paths:
   streams: streams
@@ -355,7 +391,7 @@ def test_global_reference_to_null_stays_missing(tmp_path: Path) -> None:
     globals_ = _project_variables(project_yaml)
 
     assert globals_["optional_root"] is None
-    assert is_missing(globals_["derived_root"])
+    assert is_missing_interpolation(globals_["derived_root"])
 
 
 def test_missing_global_cannot_be_embedded_in_another_global(tmp_path: Path) -> None:

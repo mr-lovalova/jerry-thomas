@@ -2,14 +2,16 @@ from pathlib import Path
 
 from datapipeline.analysis.vector.coverage_stats import CoverageStatsAccumulator
 from datapipeline.artifacts.models import CoverageStatsArtifact
+from datapipeline.artifacts.output import ArtifactOutput
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
-from datapipeline.config.tasks import CoverageStatsTask
-from datapipeline.execution.context import PipelineContext
-from datapipeline.operations.persistence import ArtifactOutput
-from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
-from datapipeline.pipelines.sample.input import open_samples
+from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
+from datapipeline.io.json_file import write_json_object
+from datapipeline.pipelines.dataset.pipeline import (
+    run_dataset_pipeline,
+    run_sample_pipeline,
+)
+from datapipeline.pipelines.sample.keys import require_metadata_key_plan
 from datapipeline.runtime import Runtime
-from datapipeline.utils.json_artifact import write_json_artifact
 
 
 def build_coverage_stats_artifact(
@@ -17,28 +19,22 @@ def build_coverage_stats_artifact(
     task_cfg: CoverageStatsTask,
 ) -> ArtifactOutput:
     dataset = runtime.dataset
-    context = PipelineContext(runtime)
-    metadata = context.require_artifact(VECTOR_METADATA_SPEC)
-    context.window_bounds(rectangular_required=True)
-
-    samples = open_samples(
-        context,
-        dataset.features,
+    metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
+    schema = metadata.catalog
+    key_plan = require_metadata_key_plan(
+        schema.window,
+        schema.sample,
         dataset.sample.cadence,
-        target_configs=dataset.targets,
-        rectangular=True,
-        sample_keys=dataset.sample.keys,
+        dataset.sample.keys,
     )
-    feature_entries = metadata.features
-    target_entries = metadata.targets
-    if task_cfg.stage == "postprocessed":
-        plan = build_postprocess_plan(context)
-        feature_entries = plan.feature_entries
-        target_entries = plan.target_entries
-        samples = plan.apply(samples)
 
-    feature_accumulator = CoverageStatsAccumulator(feature_entries)
-    target_accumulator = CoverageStatsAccumulator(target_entries)
+    if task_cfg.stage == "postprocessed":
+        samples = run_dataset_pipeline(runtime, schema, key_plan)
+    else:
+        samples = run_sample_pipeline(runtime, schema, key_plan)
+
+    feature_accumulator = CoverageStatsAccumulator(schema.features)
+    target_accumulator = CoverageStatsAccumulator(schema.targets)
     total_samples = 0
     empty_samples = 0
     try:
@@ -63,10 +59,9 @@ def build_coverage_stats_artifact(
     )
     relative_path = Path(task_cfg.output)
     destination = (runtime.artifacts_root / relative_path).resolve()
-    write_json_artifact(destination, artifact.model_dump(mode="json"))
+    write_json_object(destination, artifact.model_dump(mode="json"))
 
     return ArtifactOutput(
-        relative_path=str(relative_path),
         meta={
             "stage": task_cfg.stage,
             "samples": total_samples,

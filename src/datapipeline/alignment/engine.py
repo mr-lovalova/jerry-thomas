@@ -1,6 +1,7 @@
 from collections.abc import Generator, Iterator, Sequence
 from datetime import datetime
 
+from datapipeline.alignment._lifecycle import closing_alignment_inputs
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.transforms.utils import partition_key
 
@@ -16,8 +17,7 @@ def align_streams(
     streams = [records for _, records in inputs]
     current_records: list[TemporalRecord] = []
     current_keys: list[_CanonicalKey] = []
-    alignment_failed = False
-    try:
+    with closing_alignment_inputs(streams):
         if len(streams) < 2:
             raise ValueError("Alignment requires at least two input streams")
 
@@ -83,23 +83,6 @@ def align_streams(
             for index in range(len(streams)):
                 if not advance(index):
                     return
-    except GeneratorExit:
-        raise
-    except BaseException:
-        alignment_failed = True
-        raise
-    finally:
-        close_error: BaseException | None = None
-        for records in streams:
-            close = getattr(records, "close", None)
-            if callable(close):
-                try:
-                    close()
-                except BaseException as exc:
-                    if close_error is None:
-                        close_error = exc
-        if not alignment_failed and close_error is not None:
-            raise close_error
 
 
 def _canonical_key(

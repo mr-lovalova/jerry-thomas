@@ -5,6 +5,7 @@ import pytest
 from datapipeline.cli import app
 from datapipeline.cli.workspace import WorkspaceContext
 from datapipeline.config.workspace import WorkspaceConfig
+from datapipeline.profiles.errors import ProfileCommandError
 
 
 def test_source_add_skips_dataset_resolution(monkeypatch, tmp_path):
@@ -71,7 +72,7 @@ def test_dataset_path_resolves_relative_to_workspace_root(monkeypatch, tmp_path)
     project_file = workspace_root / "projects" / "weather" / "project.yaml"
     project_file.parent.mkdir(parents=True)
     project_file.write_text(
-        "schema_version: 3\nartifact_revision: 1\nname: weather\npaths: {}\n",
+        "schema_version: 4\nartifact_revision: 1\nname: weather\npaths: {}\n",
         encoding="utf-8",
     )
 
@@ -100,7 +101,7 @@ def test_resolve_project_from_args_uses_workspace_default_dataset(tmp_path):
     project_file = tmp_path / "datasets" / "demo" / "project.yaml"
     project_file.parent.mkdir(parents=True)
     project_file.write_text(
-        "schema_version: 3\nartifact_revision: 1\nname: demo\npaths: {}\n",
+        "schema_version: 4\nartifact_revision: 1\nname: demo\npaths: {}\n",
         encoding="utf-8",
     )
 
@@ -171,6 +172,35 @@ def test_main_handles_keyboard_interrupt_at_top_level(monkeypatch, capsys):
     assert "Serve interrupted by user" in captured.err
 
 
+def test_main_converts_profile_error_to_cli_exit(monkeypatch):
+    error = ProfileCommandError("invalid serve profile")
+    error.add_note("additional profile detail")
+    messages: list[str] = []
+
+    def fail(**_kwargs) -> None:
+        raise error
+
+    monkeypatch.setattr(app, "load_workspace_context", lambda _cwd: None)
+    monkeypatch.setattr(app, "execute_command", fail)
+    monkeypatch.setattr(
+        app.logger,
+        "error",
+        lambda message, *args: messages.append(message % args),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["jerry", "serve", "--project", "project.yaml"],
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        app.main()
+
+    assert raised.value.code == 2
+    assert raised.value.__cause__ is error
+    assert messages == ["invalid serve profile", "additional profile detail"]
+
+
 def test_main_parses_help_before_loading_workspace(monkeypatch, capsys):
     def fail_workspace_load(_cwd):
         raise AssertionError("help must not load the workspace")
@@ -218,7 +248,7 @@ def test_main_resolves_project_for_serve_with_workspace_default(monkeypatch, tmp
     project_file = tmp_path / "datasets" / "demo" / "project.yaml"
     project_file.parent.mkdir(parents=True)
     project_file.write_text(
-        "schema_version: 3\nartifact_revision: 1\nname: demo\npaths: {}\n",
+        "schema_version: 4\nartifact_revision: 1\nname: demo\npaths: {}\n",
         encoding="utf-8",
     )
     workspace = WorkspaceContext(

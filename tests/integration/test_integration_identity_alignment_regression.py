@@ -1,12 +1,15 @@
 import math
+import shutil
 
 import pytest
 
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
+from datapipeline.artifacts.models import FoldedMetadataLayout
 from datapipeline.artifacts.registry import (
     SCALER_SPEC,
     VECTOR_METADATA_SPEC,
 )
+from datapipeline.artifacts.scaler import FoldedScalerArtifact
 from datapipeline.artifacts.specs import SERIES
 from datapipeline.services.runtime_compiler import compile_runtime
 from datapipeline.artifacts.series import load_series_manifest
@@ -43,13 +46,15 @@ def test_long_and_hybrid_identity_with_aligned_derived_stream(copy_fixture) -> N
     assert price_statistics.std == pytest.approx(math.sqrt(296 / 3))
 
     metadata_artifact = runtime.artifacts.load(VECTOR_METADATA_SPEC)
-    assert metadata_artifact.counts.feature_vectors == 6
-    assert metadata_artifact.counts.target_vectors == 0
-    assert metadata_artifact.sample is not None
-    assert metadata_artifact.sample.keys == ["ticker"]
-    assert [entry.key for entry in metadata_artifact.sample.domain] == [["A"], ["B"]]
+    assert metadata_artifact.layout.kind == "unsplit"
+    catalog = metadata_artifact.catalog
+    assert catalog.counts.feature_vectors == 6
+    assert catalog.counts.target_vectors == 0
+    assert catalog.sample is not None
+    assert catalog.sample.keys == ["ticker"]
+    assert [entry.key for entry in catalog.sample.domain] == [["A"], ["B"]]
 
-    assert [(entry.id, entry.kind) for entry in metadata_artifact.features] == [
+    assert [(entry.id, entry.kind) for entry in catalog.features] == [
         ("price_scaled", "scalar"),
         ("price_history", "list"),
         ("price_mean_2", "scalar"),
@@ -59,10 +64,10 @@ def test_long_and_hybrid_identity_with_aligned_derived_stream(copy_fixture) -> N
         ("fundamental__@metric:debt", "scalar"),
         ("fundamental__@metric:revenue", "scalar"),
     ]
-    price_history = metadata_artifact.features[1]
+    price_history = catalog.features[1]
     assert price_history.kind == "list"
     assert price_history.length == 2
-    assert metadata_artifact.targets == ()
+    assert catalog.targets == ()
 
     dataset_path = request.serve_run_plans[0].paths.dataset_dir / "dataset.jsonl"
     samples = read_jsonl(dataset_path)
@@ -149,3 +154,124 @@ def test_long_and_hybrid_identity_with_aligned_derived_stream(copy_fixture) -> N
             }
         )
         assert sample["targets"] is None
+
+
+def test_validation_availability_does_not_change_hybrid_wide_training_contract(
+    copy_fixture,
+    tmp_path,
+) -> None:
+    project_root = copy_fixture("identity_alignment_project")
+    changed_root = tmp_path / "identity_alignment_changed_validation"
+    shutil.copytree(project_root, changed_root)
+    dataset = """sample:
+  cadence: 1d
+  keys: [ticker]
+features:
+  - id: price
+    stream: market.price
+    field: value
+    scale: true
+  - id: fundamental
+    stream: company.fundamental
+    field: value
+    scale: true
+split:
+  mode: time
+  intervals:
+    - {id: train, until: "2024-01-03T00:00:00Z"}
+    - {id: validation}
+  folds:
+    - id: holdout
+      train: [train]
+      validation: [validation]
+"""
+    for root in (project_root, changed_root):
+        (root / "dataset.yaml").write_text(dataset, encoding="utf-8")
+        (root / "operations/metadata.yaml").write_text(
+            "window_mode: intersection\n",
+            encoding="utf-8",
+        )
+
+    fundamentals_path = project_root / "data" / "fundamentals.jsonl"
+    training_gap = (
+        "\n".join(
+            line
+            for line in fundamentals_path.read_text(encoding="utf-8").splitlines()
+            if '"time":"2024-01-02T00:00:00Z"' not in line
+        )
+        + "\n"
+    )
+    fundamentals_path.write_text(training_gap, encoding="utf-8")
+    (changed_root / "data/fundamentals.jsonl").write_text(
+        "\n".join(
+            line
+            for line in training_gap.splitlines()
+            if '"time":"2024-01-03T00:00:00Z"' not in line
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    baseline_request = serve_dataset(project_root)
+    changed_request = serve_dataset(changed_root)
+    baseline_outputs = baseline_request.serve_run_plans[0].paths.dataset_dir
+    changed_outputs = changed_request.serve_run_plans[0].paths.dataset_dir
+    baseline_validation = read_jsonl(
+        baseline_outputs / "dataset.holdout.validation.jsonl"
+    )
+    changed_validation = read_jsonl(
+        changed_outputs / "dataset.holdout.validation.jsonl"
+    )
+
+    baseline_train_path = baseline_outputs / "dataset.holdout.train.jsonl"
+    changed_train_path = changed_outputs / "dataset.holdout.train.jsonl"
+    baseline_train = read_jsonl(baseline_train_path)
+    assert [row["key"] for row in baseline_train] == [
+        ["2024-01-01 00:00:00+00:00", "A"],
+        ["2024-01-01 00:00:00+00:00", "B"],
+    ]
+    assert changed_train_path.read_bytes() == baseline_train_path.read_bytes()
+
+    fundamental_ids = (
+        "fundamental__@metric:debt",
+        "fundamental__@metric:revenue",
+    )
+    assert [row["key"] for row in changed_validation] == [
+        row["key"] for row in baseline_validation
+    ]
+    assert all(
+        row["features"]["values"][feature_id] is not None
+        for row in baseline_validation
+        for feature_id in fundamental_ids
+    )
+    assert all(
+        row["features"]["values"][feature_id] is None
+        for row in changed_validation
+        for feature_id in fundamental_ids
+    )
+
+    baseline_runtime = compile_runtime(baseline_request.definition)
+    hydrate_runtime_artifacts_for_pipeline(
+        baseline_runtime,
+        baseline_request.definition,
+    )
+    changed_runtime = compile_runtime(changed_request.definition)
+    hydrate_runtime_artifacts_for_pipeline(
+        changed_runtime,
+        changed_request.definition,
+    )
+
+    baseline_scaler = baseline_runtime.artifacts.load(SCALER_SPEC)
+    changed_scaler = changed_runtime.artifacts.load(SCALER_SPEC)
+    assert isinstance(baseline_scaler, FoldedScalerArtifact)
+    assert isinstance(changed_scaler, FoldedScalerArtifact)
+    assert changed_scaler.for_fold("holdout") == baseline_scaler.for_fold("holdout")
+
+    baseline_metadata = baseline_runtime.artifacts.load(VECTOR_METADATA_SPEC)
+    changed_metadata = changed_runtime.artifacts.load(VECTOR_METADATA_SPEC)
+    assert isinstance(baseline_metadata.layout, FoldedMetadataLayout)
+    assert isinstance(changed_metadata.layout, FoldedMetadataLayout)
+    assert (
+        changed_metadata.layout.folds[0].training_schema
+        == baseline_metadata.layout.folds[0].training_schema
+    )

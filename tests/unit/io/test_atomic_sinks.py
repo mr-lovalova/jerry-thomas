@@ -93,7 +93,7 @@ def test_atomic_binary_sink_abort_removes_temporary_file(tmp_path) -> None:
 
 def test_gzip_sink_commits_readable_file(tmp_path) -> None:
     destination = tmp_path / "output.jsonl.gz"
-    sink = GzipBinarySink(destination)
+    sink = GzipBinarySink(destination, compression_level=3)
 
     sink.write_bytes(b'{"value": 1}\n')
     sink.close()

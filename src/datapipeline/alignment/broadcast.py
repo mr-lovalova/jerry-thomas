@@ -1,6 +1,7 @@
 from collections.abc import Generator, Iterator
 from datetime import datetime
 
+from datapipeline.alignment._lifecycle import closing_alignment_inputs
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.transforms.utils import partition_key
 
@@ -15,9 +16,8 @@ def broadcast_stream(
 ) -> Generator[tuple[TemporalRecord, TemporalRecord], None, None]:
     """Pair each partitioned primary record with broadcast data at the same time."""
     broadcast_by_time: dict[datetime, TemporalRecord] = {}
-    processing_failed = False
 
-    try:
+    with closing_alignment_inputs((primary, broadcast)):
         previous_broadcast_time: datetime | None = None
         for broadcast_record in broadcast:
             broadcast_time = broadcast_record.time
@@ -62,25 +62,3 @@ def broadcast_stream(
                 ) from exc
 
             yield primary_record, broadcast_record
-    except GeneratorExit:
-        raise
-    except BaseException:
-        processing_failed = True
-        raise
-    finally:
-        try:
-            primary_close = getattr(primary, "close", None)
-            if callable(primary_close):
-                primary_close()
-        except BaseException:
-            if not processing_failed:
-                processing_failed = True
-                raise
-        finally:
-            try:
-                broadcast_close = getattr(broadcast, "close", None)
-                if callable(broadcast_close):
-                    broadcast_close()
-            except BaseException:
-                if not processing_failed:
-                    raise

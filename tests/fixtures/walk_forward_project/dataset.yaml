@@ -12,6 +12,7 @@ targets:
     stream: regression.outcome
     field: value
     scale: true
+    horizon: 0s
 
 split:
   mode: time

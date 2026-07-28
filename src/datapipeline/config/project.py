@@ -1,20 +1,15 @@
 from datetime import datetime
-from typing import Annotated, Literal, Self
+from typing import Literal, Self
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
     field_validator,
     model_validator,
 )
 
-
-ProjectPath = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
+from datapipeline.config.constraints import NonEmptyString as ProjectPath
 
 
 class ProjectPaths(BaseModel):
@@ -25,7 +20,7 @@ class ProjectPaths(BaseModel):
     dataset: ProjectPath
     artifacts: ProjectPath
     operations: ProjectPath | None = None
-    profiles: ProjectPath | None = None
+    profiles: ProjectPath = "./profiles"
 
     @field_validator("streams", "sources")
     @classmethod
@@ -62,7 +57,7 @@ class ProjectGlobals(BaseModel):
 class ProjectConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[3]
+    schema_version: Literal[4]
     artifact_revision: int = Field(strict=True, gt=0)
     name: str | None = None
     variant: str | None = None

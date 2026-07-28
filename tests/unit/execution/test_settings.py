@@ -1,15 +1,20 @@
 import logging
+import threading
 from pathlib import Path
 
 import pytest
 
+from datapipeline.config.observability import ObservabilityConfig
 from datapipeline.execution.settings import (
+    CommandObservability,
+    DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogOutputSettings,
     LogOutputTarget,
     resolve_execution_log_outputs,
     resolve_heartbeat_interval_seconds,
     resolve_log_level,
     resolve_log_output,
+    resolve_observability_settings,
     resolve_visuals,
 )
 
@@ -20,16 +25,54 @@ def test_resolve_visuals_applies_cli_config_default_precedence():
     assert resolve_visuals(None, None) == "on"
 
 
-def test_resolve_heartbeat_interval_applies_cli_config_precedence():
-    assert resolve_heartbeat_interval_seconds(10, 60) == 10
-    assert resolve_heartbeat_interval_seconds(None, 30) == 30
-    assert resolve_heartbeat_interval_seconds(0, 30) == 0
-    assert resolve_heartbeat_interval_seconds(None, None) is None
+def test_resolve_heartbeat_interval_applies_default():
+    assert (
+        resolve_heartbeat_interval_seconds(None) == DEFAULT_HEARTBEAT_INTERVAL_SECONDS
+    )
+    assert resolve_heartbeat_interval_seconds(0) == 0
+    assert resolve_heartbeat_interval_seconds(180) == 180
 
 
-def test_resolve_heartbeat_interval_rejects_negative_values():
-    with pytest.raises(ValueError, match="must be non-negative"):
-        resolve_heartbeat_interval_seconds(-1, None)
+@pytest.mark.parametrize(
+    ("interval", "message"),
+    [
+        (-1, "non-negative"),
+        (float("nan"), "finite"),
+        (float("inf"), "finite"),
+        (threading.TIMEOUT_MAX + 1, "must not exceed"),
+    ],
+)
+def test_resolve_heartbeat_interval_rejects_invalid_values(interval, message):
+    with pytest.raises(ValueError, match=message):
+        resolve_heartbeat_interval_seconds(interval)
+
+
+def test_resolve_observability_settings_applies_heartbeat_precedence():
+    configured = ObservabilityConfig(heartbeat_interval_seconds=180)
+
+    cli = resolve_observability_settings(
+        None,
+        configured,
+        CommandObservability(heartbeat_interval_seconds=0),
+    )
+    profile = resolve_observability_settings(
+        None,
+        configured,
+        CommandObservability(),
+    )
+    default = resolve_observability_settings(
+        None,
+        None,
+        CommandObservability(),
+    )
+
+    assert cli.heartbeat_interval_seconds == 0
+    assert profile.heartbeat_interval_seconds == 180
+    assert default.heartbeat_interval_seconds == DEFAULT_HEARTBEAT_INTERVAL_SECONDS
+    assert (
+        default.effective_config()["heartbeat_interval_seconds"]
+        == DEFAULT_HEARTBEAT_INTERVAL_SECONDS
+    )
 
 
 def test_resolve_log_level_applies_cli_config_default_precedence():

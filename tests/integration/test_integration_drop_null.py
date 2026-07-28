@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
+from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import VECTOR_METADATA
-from datapipeline.config.tasks import MetadataTask
-from datapipeline.execution.context import PipelineContext
-from datapipeline.operations.artifacts.metadata import materialize_metadata
-from datapipeline.pipelines.dataset.postprocess import apply_postprocess
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.operations.artifacts.metadata import build_metadata_artifact
+from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.sample.input import open_samples
 from datapipeline.services.project_definition import load_project_definition
 from datapipeline.services.runtime_compiler import compile_runtime
@@ -19,33 +19,35 @@ def test_drop_with_metadata_and_partitioned_streams(copy_fixture):
     runtime = compile_runtime(definition)
     hydrate_runtime_artifacts_for_pipeline(runtime, definition)
     dataset = definition.dataset
-    context = PipelineContext(runtime)
     register_series(
         runtime,
         dataset.features,
         dataset.sample.cadence,
         targets=dataset.targets,
     )
-    metadata = materialize_metadata(
-        runtime,
-        MetadataTask(id="metadata", output="metadata.json"),
-    )
+    metadata_task = MetadataTask(id="metadata", output="metadata.json")
+    build_metadata_artifact(runtime, metadata_task)
     runtime.artifacts.register(
         VECTOR_METADATA,
-        relative_path=metadata.relative_path,
+        relative_path=metadata_task.output,
     )
+    metadata_artifact = runtime.artifacts.load(VECTOR_METADATA_SPEC)
+    schema = metadata_artifact.catalog
     assembled_samples = open_samples(
-        context,
-        dataset.features,
-        dataset.sample.cadence,
-        target_configs=dataset.targets,
-        rectangular=False,
+        runtime,
+        [entry.id for entry in schema.features],
+        target_ids=[entry.id for entry in schema.targets],
+        key_plan=None,
     )
-    samples = list(apply_postprocess(context, assembled_samples))
+    samples = list(
+        build_postprocess_plan(
+            dataset.postprocess,
+            schema,
+        ).apply(assembled_samples)
+    )
 
     # Source emits ticks every 2h; ensure_cadence fills 1h gaps with None.
-    # drop with axis=horizontal, threshold=1.0 removes the filled (None) buckets,
-    # keeping only the original ticks.
+    # Full feature coverage keeps only the original ticks.
     expected_hours = [0, 2, 4]
     assert len(samples) == len(expected_hours)
     for sample, hour in zip(samples, expected_hours):

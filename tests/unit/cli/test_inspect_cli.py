@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -8,15 +9,14 @@ from datapipeline.artifacts.models import CoverageStatsArtifact, VectorMetadata
 from datapipeline.artifacts.specs import COVERAGE_STATS, VECTOR_METADATA
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.config.tasks import CoverageTask, MatrixTask
+from datapipeline.config.tasks.coverage import CoverageTask
+from datapipeline.config.tasks.matrix import MatrixTask
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.pipeline import Stage
 from datapipeline.io.output import OutputTarget
 from datapipeline.operations.persistence import persist_runtime_result
 from datapipeline.operations.runtime import coverage as coverage_ops
 from datapipeline.operations.runtime import matrix as matrix_ops
-from datapipeline.pipelines.dataset.postprocess import PostprocessPlan
 
 
 def _coverage_stats() -> CoverageStatsArtifact:
@@ -52,43 +52,40 @@ def _coverage_stats() -> CoverageStatsArtifact:
 def _metadata() -> VectorMetadata:
     return VectorMetadata.model_validate(
         {
-            "schema_version": 3,
-            "features": [
-                {
-                    "id": "speed",
-                    "base_id": "speed",
-                    "kind": "scalar",
-                    "present_count": 1,
-                    "null_count": 0,
-                    "value_types": ["float"],
-                }
-            ],
-            "targets": [],
-            "counts": {"feature_vectors": 1, "target_vectors": 0},
+            "schema_version": 4,
+            "catalog": {
+                "features": [
+                    {
+                        "id": "speed",
+                        "base_id": "speed",
+                        "kind": "scalar",
+                        "present_count": 1,
+                        "null_count": 0,
+                        "value_types": ["float"],
+                    }
+                ],
+                "targets": [],
+                "counts": {"feature_vectors": 1, "target_vectors": 0},
+                "window": {
+                    "start": datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    "end": datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    "mode": "union",
+                    "size": 1,
+                },
+            },
+            "layout": {"kind": "unsplit"},
         }
     )
 
 
-class _CoverageContext:
-    def __init__(self, runtime):
-        self.runtime = runtime
-
-    def require_artifact(self, spec):
-        assert spec.key == COVERAGE_STATS
-        return _coverage_stats()
+def _load_coverage_stats(spec):
+    assert spec.key == COVERAGE_STATS
+    return _coverage_stats()
 
 
-class _MatrixContext:
-    def __init__(self, runtime):
-        self.runtime = runtime
-
-    def require_artifact(self, spec):
-        assert spec.key == VECTOR_METADATA
-        return _metadata()
-
-    def window_bounds(self, rectangular_required: bool):
-        assert rectangular_required is True
-        return None, None
+def _load_metadata(spec):
+    assert spec.key == VECTOR_METADATA
+    return _metadata()
 
 
 def _matrix_runtime():
@@ -96,28 +93,22 @@ def _matrix_runtime():
         dataset=DatasetConfig(
             sample=SampleConfig(cadence="1h"),
             features=[SeriesConfig(id="speed", stream="stream", field="value")],
-        )
+        ),
+        artifacts=SimpleNamespace(load=_load_metadata),
     )
 
 
 def _patch_matrix(monkeypatch) -> None:
-    metadata = _metadata()
-    monkeypatch.setattr(matrix_ops, "PipelineContext", _MatrixContext)
+    samples = [Sample(key="g0", features=Vector(values={"speed": 1.0}))]
     monkeypatch.setattr(
         matrix_ops,
-        "open_samples",
-        lambda *_args, **_kwargs: iter(
-            [Sample(key="g0", features=Vector(values={"speed": 1.0}))]
-        ),
+        "run_sample_pipeline",
+        lambda *_args: iter(samples),
     )
     monkeypatch.setattr(
         matrix_ops,
-        "build_postprocess_plan",
-        lambda _context: PostprocessPlan(
-            feature_entries=metadata.features,
-            target_entries=metadata.targets,
-            stages=(),
-        ),
+        "run_dataset_pipeline",
+        lambda *_args: iter(samples),
     )
 
 
@@ -133,11 +124,10 @@ def test_inspect_coverage_reads_typed_coverage_stats_artifact(
     monkeypatch,
     tmp_path,
 ) -> None:
-    monkeypatch.setattr(coverage_ops, "PipelineContext", _CoverageContext)
     destination = (tmp_path / "coverage.txt").resolve()
 
     result = coverage_ops.run_coverage_operation(
-        runtime=SimpleNamespace(),
+        runtime=SimpleNamespace(artifacts=SimpleNamespace(load=_load_coverage_stats)),
         task=CoverageTask(id="coverage", options={"threshold": 0.8}),
     )
     _persist_result(
@@ -159,11 +149,10 @@ def test_inspect_coverage_reads_typed_coverage_stats_artifact(
 
 
 def test_inspect_coverage_writes_one_json_report(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(coverage_ops, "PipelineContext", _CoverageContext)
     destination = (tmp_path / "coverage.jsonl").resolve()
 
     result = coverage_ops.run_coverage_operation(
-        runtime=SimpleNamespace(),
+        runtime=SimpleNamespace(artifacts=SimpleNamespace(load=_load_coverage_stats)),
         task=CoverageTask(id="coverage"),
     )
     _persist_result(
@@ -248,10 +237,14 @@ def test_inspect_matrix_writes_html(monkeypatch, tmp_path) -> None:
 def test_assembled_matrix_does_not_postprocess(monkeypatch) -> None:
     _patch_matrix(monkeypatch)
 
-    def fail_plan(*_args):
-        raise AssertionError("assembled matrix must not build a postprocess plan")
+    def fail_postprocessed_pipeline(*_args):
+        raise AssertionError("assembled matrix must not run postprocessing")
 
-    monkeypatch.setattr(matrix_ops, "build_postprocess_plan", fail_plan)
+    monkeypatch.setattr(
+        matrix_ops,
+        "run_dataset_pipeline",
+        fail_postprocessed_pipeline,
+    )
     matrix_ops.run_matrix_operation(
         runtime=_matrix_runtime(),
         task=MatrixTask(id="matrix", options={"stage": "assembled"}),
@@ -260,30 +253,14 @@ def test_assembled_matrix_does_not_postprocess(monkeypatch) -> None:
 
 def test_matrix_limit_caps_samples_after_postprocess(monkeypatch) -> None:
     _patch_matrix(monkeypatch)
-    metadata = _metadata()
     samples = [
         Sample(key=f"g{index}", features=Vector(values={"speed": float(index)}))
         for index in range(3)
     ]
     monkeypatch.setattr(
         matrix_ops,
-        "open_samples",
-        lambda *_args, **_kwargs: iter(samples),
-    )
-
-    def drop_first(items):
-        iterator = iter(items)
-        next(iterator)
-        return iterator
-
-    monkeypatch.setattr(
-        matrix_ops,
-        "build_postprocess_plan",
-        lambda _context: PostprocessPlan(
-            feature_entries=metadata.features,
-            target_entries=metadata.targets,
-            stages=(Stage(name="drop_first", apply=drop_first),),
-        ),
+        "run_dataset_pipeline",
+        lambda *_args: iter(samples[1:]),
     )
 
     result = matrix_ops.run_matrix_operation(
@@ -301,16 +278,10 @@ def test_postprocessed_matrix_keeps_headers_when_every_sample_is_dropped(
     tmp_path,
 ) -> None:
     _patch_matrix(monkeypatch)
-    metadata = _metadata()
-    drop_all = Stage(name="drop_all", apply=lambda _samples: iter(()))
     monkeypatch.setattr(
         matrix_ops,
-        "build_postprocess_plan",
-        lambda _context: PostprocessPlan(
-            feature_entries=metadata.features,
-            target_entries=metadata.targets,
-            stages=(drop_all,),
-        ),
+        "run_dataset_pipeline",
+        lambda *_args: iter(()),
     )
     destination = (tmp_path / "empty-matrix.html").resolve()
 

@@ -16,6 +16,7 @@ features:
 #   - id: target_feature
 #     stream: your.target.stream
 #     field: some_field
+#     horizon: 0s
 
 split:
   mode: hash
@@ -28,9 +29,6 @@ split:
       test: [test]
 
 postprocess:
-  columns:
-    features:
-      threshold: 0.9
   samples:
     features:
       threshold: 1.0

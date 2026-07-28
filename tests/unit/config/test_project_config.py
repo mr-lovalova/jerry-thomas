@@ -7,7 +7,7 @@ from datapipeline.services.config_refs import project_vars_from_data
 
 def _project_data(**overrides):
     data = {
-        "schema_version": 3,
+        "schema_version": 4,
         "artifact_revision": 1,
         "name": "momentum",
         "paths": {
@@ -69,6 +69,20 @@ def test_project_config_accepts_multiple_discovery_roots() -> None:
 
     assert cfg.paths.streams == ["streams", "../common/streams"]
     assert cfg.paths.sources == ["sources", "../common/sources"]
+
+
+def test_project_config_defaults_profiles_path() -> None:
+    cfg = ProjectConfig.model_validate(_project_data())
+
+    assert cfg.paths.profiles == "./profiles"
+
+
+def test_project_config_rejects_null_profiles_path() -> None:
+    data = _project_data()
+    data["paths"]["profiles"] = None
+
+    with pytest.raises(ValidationError, match="paths.profiles"):
+        ProjectConfig.model_validate(data)
 
 
 def test_project_config_rejects_empty_discovery_roots() -> None:
@@ -161,5 +175,5 @@ def test_project_config_rejects_unknown_path_fields() -> None:
 
 
 def test_project_schema_version_is_three() -> None:
-    with pytest.raises(ValidationError, match="Input should be 3"):
+    with pytest.raises(ValidationError, match="Input should be 4"):
         ProjectConfig.model_validate(_project_data(schema_version=1))

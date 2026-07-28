@@ -3,12 +3,13 @@ from typing import Annotated, Any, Final, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from datapipeline.config.dataset.split import FoldRole
 from datapipeline.domain.sample_key import SampleKeyContract
 from datapipeline.utils.time import CADENCE_PATTERN
 
 
 WindowMode = Literal["union", "intersection", "strict"]
-VECTOR_METADATA_VERSION: Final = 3
+VECTOR_METADATA_VERSION: Final = 4
 
 
 class Window(BaseModel):
@@ -146,17 +147,12 @@ class VectorMetadataCounts(BaseModel):
     target_vectors: int = Field(strict=True, ge=0)
 
 
-class VectorMetadata(BaseModel):
-    """Typed contract for build/metadata.json."""
-
+class VectorSchema(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[3]
-    window: Window | None = None
     features: tuple[VectorMetadataEntry, ...] = ()
     targets: tuple[VectorMetadataEntry, ...] = ()
     counts: VectorMetadataCounts
-    sample: SampleMetadata | None = None
 
     @model_validator(mode="after")
     def _validate_counts_and_ids(self) -> Self:
@@ -185,6 +181,104 @@ class VectorMetadata(BaseModel):
                 "vector metadata ids must be unique across features and targets"
             )
         return self
+
+
+class VectorMetadataCatalog(VectorSchema):
+    """Global descriptive metadata for every observed vector."""
+
+    window: Window | None = None
+    sample: SampleMetadata | None = None
+
+
+class UnsplitMetadataLayout(BaseModel):
+    """The global catalog is the operational contract for an unsplit dataset."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["unsplit"]
+
+
+class FoldOutputMetadata(BaseModel):
+    """Resolved contract for one configured role within a fold."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    role: FoldRole
+    labels: tuple[str, ...] = Field(min_length=1)
+    window: Window | None = None
+    sample: SampleMetadata | None = None
+
+    @model_validator(mode="after")
+    def _validate_labels(self) -> Self:
+        if any(not label.strip() for label in self.labels):
+            raise ValueError("fold output labels must not be empty")
+        if any(label != label.strip() for label in self.labels):
+            raise ValueError("fold output labels must not contain outer whitespace")
+        if len(self.labels) != len(set(self.labels)):
+            raise ValueError("fold output labels must be unique")
+        return self
+
+
+class VectorMetadataFold(BaseModel):
+    """Training-owned schema and role contracts for one dataset fold."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(min_length=1)
+    training_schema: VectorSchema
+    outputs: tuple[FoldOutputMetadata, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_id_and_outputs(self) -> Self:
+        if not self.id.strip():
+            raise ValueError("vector metadata fold id must not be empty")
+        if self.id != self.id.strip():
+            raise ValueError(
+                "vector metadata fold id must not contain outer whitespace"
+            )
+
+        roles = [output.role for output in self.outputs]
+        if len(roles) != len(set(roles)):
+            raise ValueError("vector metadata fold output roles must be unique")
+        if "train" not in roles:
+            raise ValueError("vector metadata fold requires one train output")
+
+        labels = [label for output in self.outputs for label in output.labels]
+        if len(labels) != len(set(labels)):
+            raise ValueError(
+                "vector metadata fold labels must belong to only one output role"
+            )
+        return self
+
+
+class FoldedMetadataLayout(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["folded"]
+    folds: tuple[VectorMetadataFold, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_fold_ids(self) -> Self:
+        fold_ids = [fold.id for fold in self.folds]
+        if len(fold_ids) != len(set(fold_ids)):
+            raise ValueError("vector metadata fold ids must be unique")
+        return self
+
+
+VectorMetadataLayout = Annotated[
+    UnsplitMetadataLayout | FoldedMetadataLayout,
+    Field(discriminator="kind"),
+]
+
+
+class VectorMetadata(BaseModel):
+    """Typed contract for build/metadata.json."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[4]
+    catalog: VectorMetadataCatalog
+    layout: VectorMetadataLayout
 
 
 class CoverageBaseStats(BaseModel):

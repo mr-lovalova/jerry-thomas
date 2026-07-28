@@ -119,7 +119,12 @@ class AtomicBinaryFileSink:
 
 
 class GzipBinarySink:
-    def __init__(self, dest: Path, overwrite: bool = True):
+    def __init__(
+        self,
+        dest: Path,
+        compression_level: int,
+        overwrite: bool = True,
+    ):
         self._dest = dest
         self._overwrite = overwrite
         fd, self._tmp = _temporary_file(dest)
@@ -128,6 +133,7 @@ class GzipBinarySink:
             filename="",
             fileobj=self._raw,
             mode="wb",
+            compresslevel=compression_level,
             mtime=0,
         )
 

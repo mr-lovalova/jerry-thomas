@@ -6,7 +6,8 @@ These live under the dataset “project root” directory (the folder containing
 
 - `project.yaml`: paths + globals (single source of truth).
 - `sources/*.yaml`: raw sources (loader + parser wiring).
-- `streams/*.yaml`: source-backed, derived, broadcast, or aligned canonical streams.
+- `streams/*.yaml`: source-backed, derived, exact/as-of fan-in, or aligned
+  canonical streams.
 - `dataset.yaml`: sample, feature/target, split, and postprocess policy.
 - `profiles/serve.<name>.yaml`: serve profiles.
 - `profiles/build.<name>.yaml`: build profiles.
@@ -35,7 +36,7 @@ All dataset configuration is rooted at a single `project.yaml` file. Other YAML 
 ### `project.yaml`
 
 ```yaml
-schema_version: 3
+schema_version: 4
 artifact_revision: 1
 name: default
 paths:
@@ -141,6 +142,40 @@ Less commonly imported runtime types moved from `sources.models.source.Source`
 to `sources.source.Source` and from `sources.models.parsing_error.ParsingError`
 to `sources.parser.ParsingError`.
 
+#### Migrating project schema 3 to 4
+
+Schema 4 makes target timing and fold-owned dataset contracts explicit:
+
+```yaml
+# project.yaml
+schema_version: 4
+
+# dataset.yaml
+targets:
+  - id: current_return
+    stream: equity.returns
+    field: current
+    horizon: 0s
+  - id: forward_return
+    stream: equity.returns
+    field: forward_21
+    horizon: 21d
+```
+
+- Add `horizon: 0s` to contemporaneous targets and a conservative wall-clock
+  horizon to every future-derived target.
+- Remove `postprocess.columns`. Declare the intended feature and target columns
+  directly; postprocess now filters rows only.
+- When a split is configured, positive target horizons and sequences require
+  a time split. Hash splits cannot isolate their temporal support.
+- Replace any older `metadata.window_mode: relaxed` override with `union`.
+
+Upgrade Jerry and project plugins together, then run the normal command in
+`AUTO` mode. Jerry rebuilds incompatible series, scaler, metadata, and dependent
+artifacts. Existing served runs remain immutable, so rerun `serve` to publish a
+dataset with the corrected fold contracts. Do not increment `artifact_revision`
+or delete build state solely for this migration.
+
 ### Serve Profiles (`profiles/serve.<name>.yaml`)
 
 ```yaml
@@ -183,9 +218,10 @@ throttle_ms: null # milliseconds to sleep between emitted samples
   outputs; Jerry does not infer compression from a filename.
 - Dataset Parquet output is filesystem-only and schema-aware. It uses bounded
   Zstandard-compressed row groups and the stable columns `sample.time`,
-  `sample.<key>`, `features.<id>`, and `targets.<id>`; fixed sequences expand
-  to numbered columns. It is supported for full datasets and the `samples` and
-  `postprocess` preview stages. Install `jerry-thomas[parquet]` to enable it.
+  `sample.<key>`, `features.<id>`, and `targets.<id>`; fixed-length lists
+  expand to numbered columns. It is supported for full datasets and the
+  `samples` and `postprocess` preview stages. Install
+  `jerry-thomas[parquet]` to enable it.
 - Output values use `None` as the canonical missing value. A transient floating
   `NaN` is emitted as null (`None` in pickle and an empty CSV cell); positive
   and negative infinity fail the output operation.
@@ -207,11 +243,11 @@ throttle_ms: null # milliseconds to sleep between emitted samples
 - Visuals: set `observability.visuals: ON|OFF` in the profile or use `--visuals on|off`.
 - Pipeline heartbeat: set `observability.heartbeat_interval_seconds` or use
   `--heartbeat-interval`; `0` disables logged heartbeats, not live
-  progress when visuals are enabled.
-- The shared artifact prerequisite phase uses only the CLI
-  `--heartbeat-interval` override. A profile heartbeat setting starts applying
-  when that profile itself runs; Jerry does not select one profile's setting for
-  shared prerequisite work.
+  progress when visuals are enabled. The built-in interval is 60 seconds.
+- The shared artifact prerequisite phase uses the command defaults and any CLI
+  `--heartbeat-interval` override. A concrete profile heartbeat setting starts
+  applying when that profile itself runs; Jerry does not select one profile's
+  setting for shared prerequisite work.
 - Add additional `serve.<name>.yaml` files under `profiles/`
   for distinct serve policies; `jerry serve` runs each enabled profile unless
   you pass `--profile <name>`.
@@ -335,6 +371,13 @@ options:
 # operations/coverage_stats.yaml — optional summary-stage override
 stage: assembled
 
+# operations/schedule.yaml — explicit expected-timestamp artifact
+kind: artifact
+entrypoint: core.artifact.schedule
+stream: exchange.sessions
+partition_by: []
+output: build/schedule.jsonl
+
 # operations/custom_report.yaml — custom operation
 kind: runtime
 entrypoint: my_plugin.report
@@ -343,6 +386,12 @@ options: {}
 ```
 
 - Stable core operations are registered by Jerry and need no YAML declarations.
+- A schedule is source-specific and therefore remains an explicit artifact
+  operation rather than a core override. Its required `partition_by` must match
+  each consuming stream; an empty list means one global schedule. Streams
+  reference it with
+  `{ operation: ensure_schedule, schedule: schedule }`. See
+  [Artifacts](artifacts.md) for completion behavior and migration details.
 - Each file contains one mapping, and its filename supplies the operation ID.
   Do not repeat `id`. Core overrides also omit `kind` and `entrypoint`.
 - Custom operations declare `kind: artifact|runtime` and an `entrypoint`.
@@ -381,6 +430,9 @@ replace `OperationTask` with `RuntimeTask`, `PipelineTask` with `DatasetTask`,
 and `run_pipeline_operation` with `run_dataset_operation`. Normal
 `operation: dataset` profiles require no change, and this rename does not
 invalidate artifacts.
+
+Jerry 8 gives custom runtime plugins their own task type. Plugin implementations
+replace `RuntimeTask` with `PluginRuntimeTask`; operation YAML is unchanged.
 
 ### Workspace Routing (`jerry.yaml`)
 
@@ -482,8 +534,8 @@ transforms:
 ```
 
 The mapper receives the parsed source iterator and returns canonical domain
-records. `preprocess` contains only per-record operations and runs before
-ordering. `transforms` runs after ordering and may use partition history.
+records. Jerry normalizes their timezone-aware `time` fields to UTC before
+`preprocess`, ordering, and downstream transforms.
 
 ### Derived Streams
 
@@ -528,6 +580,10 @@ transforms:
   target ID in partition order (for example, `temp__@station_id:XYZ`). Putting
   every partition field in `sample.keys` produces long/entity-keyed output;
   putting none there produces wide output; using a subset produces a hybrid.
+  For split datasets, each fold's eligible training rows must establish every
+  generated wide or hybrid series ID, including its scalar/list shape and value
+  types. Metadata building fails rather than let validation or test data alter
+  the training schema.
   Dataset feature and target IDs cannot contain the reserved `__` separator.
   Generated suffixes escape strings and tag non-string scalar values so
   different component tuples cannot produce the same series ID.
@@ -574,6 +630,59 @@ Notes:
   `None` to skip that primary record.
 - The broadcast stream outputs records; its own `transforms` apply afterward.
 
+### As-of Streams
+
+An as-of stream attaches the latest lookup record available at or before each
+primary record. Use `as_of` when both inputs have the same partition identity:
+
+```yaml
+id: equity.price_with_fundamentals
+from:
+  stream: equity.price.daily
+  as_of: equity.fundamentals.reported
+max_age: 180d
+require_match: true
+combine:
+  entrypoint: combine_price_and_fundamentals
+  args: {}
+```
+
+Use `broadcast_as_of` when one global lookup history applies to every primary
+partition:
+
+```yaml
+id: equity.return_with_market_factor
+from:
+  stream: equity.return.daily
+  broadcast_as_of: market.factors.published
+max_age: 7d
+combine:
+  entrypoint: combine_return_and_factor
+  args: {}
+```
+
+Notes:
+
+- Matching is strictly backward-looking: the selected lookup has the greatest
+  `time` satisfying `lookup.time <= primary.time`. Exact timestamps are
+  eligible. There is no nearest or forward match.
+- Lookup `time` is its availability time. Keep an effective or reporting period
+  in a separate record field when it differs.
+- `max_age` is optional and inclusive. It accepts a positive timecode such as
+  `30min`, `12h`, or `180d`.
+- `require_match` defaults to `true`. With `false`, an unmatched lookup is
+  passed to the combiner as `None`.
+- `from.as_of` must have the same `partition_by` as the primary. Both may be
+  unpartitioned. Matching streams in canonical order uses constant memory.
+- `from.broadcast_as_of` must be unpartitioned, while its primary must be
+  partitioned. Jerry indexes the finite lookup history in memory so it can be
+  reused when time restarts for each primary partition.
+- Primary and lookup canonical keys must be unique and ordered.
+- Combine signature is `combine(primary_record, lookup_record, **args)`, where
+  `lookup_record` may be `None` only when `require_match: false`. The combiner
+  must preserve the primary time and partition and may return `None` to drop it.
+- The stream's own `transforms` run after combining.
+
 ### Aligned Streams (Engineered Domains)
 
 Aligned streams intersect two or more input streams with the same
@@ -615,6 +724,7 @@ Notes:
   positional combine arguments.
 - `combine` is required and cannot be replaced by the iterator-level `map`.
 - `combine.entrypoint` resolves from the `datapipeline.combiners` plugin group.
+- Jerry normalizes timezone-aware combiner output timestamps to UTC.
 - Inputs must use the same `partition_by`; the aligned stream inherits it.
 - Alignment validates and merges the already ordered inputs in one pass. Each
   source-backed stream establishes canonical `[*partition_by, time]` order
@@ -633,7 +743,7 @@ Defines which canonical streams become features and targets and how samples are 
 
 ```yaml
 sample:
-  cadence: 1h
+  cadence: 1d
   keys: [security_id]
 
 features:
@@ -642,11 +752,16 @@ features:
     field: close
     scale: true
     sequence: { size: 6, stride: 1 }
+  - id: intraday_volume
+    stream: equity.volume.hourly
+    field: volume
+    collect: 24
 
 targets:
-  - id: returns_1d
+  - id: forward_return_1d
     stream: equity.ohlcv
-    field: returns_1d
+    field: forward_return_1d
+    horizon: 1d
 
 split:
   mode: time # hash | time
@@ -663,11 +778,6 @@ split:
       test: [test]
 
 postprocess:
-  columns:
-    features:
-      threshold: 0.8
-    targets:
-      threshold: 0.9
   samples:
     features:
       threshold: 0.95
@@ -691,26 +801,49 @@ postprocess:
 - `partition_by` is the complete series identity. `sample.keys` select which
   partition fields identify output rows; remaining partition fields suffix
   series IDs such as `close__@security_id:AAPL`. This supports long, wide, and
-  hybrid layouts without a separate format or series-identity setting.
+  hybrid layouts without a separate format or series-identity setting. In a
+  split dataset, each fold's eligible training rows must establish every
+  resulting wide or hybrid ID's shape and value types.
 - `field` selects the record attribute used as the feature/target value.
+- Every target requires `horizon`. It is the conservative maximum elapsed
+  time between the sample key and the latest observation used to compute that
+  target. Use `0s` for a contemporaneous target. Jerry does not infer this
+  contract from `lead`, `forward_sum`, or custom transforms.
+- Features do not accept a horizon: a feature must be observable at its sample
+  time. Use `lag` or a trailing `sequence` for historical feature context;
+  future-derived feature values are leakage.
 - `None` is the canonical missing series value. A floating `NaN` produced by
   a parser, mapper, or transform is converted to `None` when the field is
   projected; positive and negative infinity are rejected. Identity fields
-  reject every non-finite float rather than treating it as missing.
+  reject every non-finite float rather than treating it as missing. Series
+  values must be scalars or non-empty flat lists of scalars; mappings, tuples,
+  empty lists, and nested lists are rejected.
 - Every `id` must be unique across both `features` and `targets`. Scaler and
   metadata operations plus postprocess policies use this shared vector-ID
   space.
-- `scale: true` scales assembled scalar or sequence values with the managed
-  `build/scaler.json` artifact when a dataset output is produced. Fitting
-  options belong to the scaler operation and cannot be overridden per vector.
-  `None` and transient `NaN` remain missing; other nonnumeric values and
-  infinity fail.
+- `scale: true` scales assembled scalar or fixed-length list values with the
+  managed `build/scaler.json` artifact when a dataset output is produced.
+  Fitting options belong to the scaler operation and cannot be overridden per
+  vector. `None` and transient `NaN` remain missing; other nonnumeric values
+  and infinity fail. Intrinsically list-valued fields are fitted independently
+  by position. Lists created from scalar `sequence` or `collect` inputs use the
+  scalar series' shared statistics at every position.
 - `sequence` emits `SeriesSequence` windows and accepts `size` plus
   optional `stride` (default `1`). Regularize cadence with ordered transforms
   before series projection when contiguous ticks are required. The resolved
   stream partition keeps every independent series in one contiguous ordered
-  group.
-- Series configuration exposes only `scale` and `sequence`; it does not accept
+  group. Sequence inputs must be scalar; Jerry does not implicitly create or
+  flatten nested list values.
+- `collect` requires exactly `size` ordered scalar values in each populated
+  `sample.cadence` bucket. Zero values leave that series absent. `None` and
+  cadence placeholders count as positions; underfilled and overfilled buckets
+  fail. Collection validates cardinality, not temporal spacing, so regularize
+  the stream first when positions must follow a fixed grid.
+- `sequence` and `collect` are mutually exclusive. Without either policy, each
+  concrete series ID may emit at most one value per sample bucket.
+- Feature and target series support `scale`, `sequence`, and `collect`; targets
+  additionally require `horizon`. A collected target's horizon must cover its
+  latest supporting observation. Series configuration does not accept
   arbitrary transform entry-point clauses.
 - `split` first assigns each sample one primitive label. Hash splits assign from
   the complete sample key and require `ratios`. Time splits require ordered
@@ -722,6 +855,11 @@ postprocess:
   IDs are `<fold-id>.train`, `<fold-id>.validation`, and `<fold-id>.test` for
   the nonempty roles. Labels omitted from every fold are purge/embargo
   intervals and are not published.
+- For time folds with future targets, Jerry removes each role's trailing
+  samples unless `sample time + maximum target horizon` is strictly before the
+  next nonempty role starts. Equality is excluded. Omitted purge/embargo
+  intervals may absorb that support window. The final nonempty role has no
+  later fold boundary.
 - Fold labels must exist as hash-ratio labels or time-interval IDs and cannot
   belong to two roles within the same fold. A fold ID names the output plan; it
   does not need to match any interval ID. Time-fold roles must be chronological.
@@ -767,21 +905,17 @@ postprocess:
 
 - Hash-ratio mappings are canonicalized by label, so YAML key order does not
   change sample assignment. Hash splits are not allowed when any feature or
-  target uses `sequence`, because overlapping windows could share observations
-  across partitions. Use a time split for sequence datasets.
-- `postprocess.columns` and `postprocess.samples` are structural policies that
-  run after assembly and before serving.
-
-- `postprocess.columns.features` and `postprocess.columns.targets` have separate
-  selection policies.
+  target uses `sequence`, or when any target has a positive horizon, because
+  temporal support could cross hash partitions. Use a time split for temporal
+  datasets.
 - `postprocess.samples.features` and `postprocess.samples.targets` filter
   complete rows after typed conformance.
-- `ids` is optional. Selection and sample filters default to every retained ID.
+- `ids` is optional. Sample filters default to every declared ID.
   Empty, duplicate, or unknown IDs are errors.
-- Column selection and conformance use the same typed `build/metadata.json`
-  artifact.
-- Execution order is fixed: column selection, typed conformance, then sample
+- Execution order is fixed: typed conformance, then feature and target sample
   filters.
+- Postprocess never selects columns from observed coverage. Use coverage reports
+  to evaluate the declared series explicitly.
 - Postprocess does not mutate values. Configure missing-value repair on the
   ordered record stream before feature extraction.
 

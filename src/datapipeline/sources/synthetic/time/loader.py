@@ -1,8 +1,8 @@
 from collections.abc import Iterator
 from typing import Any
 
+from datapipeline.config.interpolation import coalesce_missing_interpolation
 from datapipeline.sources.loader import GeneratorLoader
-from datapipeline.utils.placeholders import coalesce_missing
 from datapipeline.utils.time import parse_datetime, parse_timecode
 
 
@@ -29,9 +29,9 @@ def make_time_loader(
     frequency: str | None = "1h",
 ) -> GeneratorLoader:
     """Build a bounded synthetic time source."""
-    start_value = coalesce_missing(start)
-    end_value = coalesce_missing(end)
-    frequency_value = coalesce_missing(frequency, default="1h")
+    start_value = coalesce_missing_interpolation(start)
+    end_value = coalesce_missing_interpolation(end)
+    frequency_value = coalesce_missing_interpolation(frequency, default="1h")
 
     if start_value is None or end_value is None:
         raise ValueError(

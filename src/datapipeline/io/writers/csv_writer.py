@@ -2,7 +2,6 @@ import csv
 from pathlib import Path
 
 from datapipeline.io.compression import Compression
-from datapipeline.io.csv_projection import CsvTableProjector
 from datapipeline.io.normalization import flat_payload
 from datapipeline.io.sinks.files import AtomicTextFileSink
 
@@ -23,15 +22,23 @@ class CsvFileWriter:
             compression=compression,
         )
         self.writer = csv.writer(self.sink.fh)
-        self._header_written = False
-        self._projector = CsvTableProjector(flat_payload)
+        self._header: tuple[str, ...] | None = None
+        self._header_fields: frozenset[str] = frozenset()
 
     def write(self, item: object) -> None:
-        projected = self._projector.project(item)
-        if not self._header_written:
-            self.writer.writerow(projected.header)
-            self._header_written = True
-        self.writer.writerow(projected.values)
+        row = flat_payload(item)
+        if self._header is None:
+            self._header = tuple(row)
+            self._header_fields = frozenset(self._header)
+            self.writer.writerow(self._header)
+        else:
+            unexpected = [field for field in row if field not in self._header_fields]
+            if unexpected:
+                raise ValueError(
+                    "CSV row contains fields not present in header: "
+                    + ", ".join(unexpected)
+                )
+        self.writer.writerow(row.get(field, "") for field in self._header)
 
     def close(self) -> None:
         self.sink.close()

@@ -5,23 +5,21 @@ from typing import Literal
 
 from datapipeline.artifacts.errors import ArtifactResolutionError
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
-from datapipeline.artifacts.planning import ArtifactGraph
 from datapipeline.artifacts.validation import validate_artifact_plan
-from datapipeline.cli.visuals.execution import emit_execution_message
-from datapipeline.config.tasks import (
-    ArtifactTask,
-    CoverageTask,
-    DatasetTask,
-    MatrixTask,
+from datapipeline.config.tasks.base import ArtifactTask, PluginRuntimeTask
+from datapipeline.config.tasks.coverage import CoverageTask
+from datapipeline.config.tasks.dataset import DatasetTask
+from datapipeline.config.tasks.matrix import MatrixTask
+from datapipeline.execution.observability import (
+    emit_execution_message,
+    operation_scope,
 )
-from datapipeline.execution.observability import operation_scope
 from datapipeline.operations.persistence import persist_runtime_result
 from datapipeline.operations.runtime.coverage import run_coverage_operation
 from datapipeline.operations.runtime.dataset import run_dataset_operation
 from datapipeline.operations.runtime.matrix import run_matrix_operation
-from datapipeline.plugins import RUNTIME_OPERATIONS_EP
+from datapipeline.plugins import RUNTIME_OPERATIONS_EP, load_entrypoint
 from datapipeline.services.definitions import ProjectDefinition
-from datapipeline.utils.load import load_ep
 
 from .models import RuntimeJob
 
@@ -36,21 +34,19 @@ class RuntimeJobPlan:
 
 def validate_build_job(
     task: ArtifactTask,
-    graph: ArtifactGraph,
     definition: ProjectDefinition,
 ) -> None:
+    graph = definition.artifact_graph
     roots = {task.id}
-    artifact_keys = set(graph.dependency_closure(roots))
-    if graph.requires_dataset(artifact_keys):
-        artifact_keys = set(graph.active_dependency_closure(roots, definition.dataset))
+    artifact_keys = set(graph.dependency_closure(roots, definition.dataset))
     validate_artifact_plan(definition.streams, graph, artifact_keys)
 
 
 def plan_runtime_job(
     job: RuntimeJob,
-    graph: ArtifactGraph,
     definition: ProjectDefinition,
 ) -> RuntimeJobPlan:
+    graph = definition.artifact_graph
     if job.output.format == "parquet" and not isinstance(job.task, DatasetTask):
         raise ValueError("Parquet output is supported only by the dataset operation.")
     if job.output.format == "parquet" and job.preview not in {
@@ -82,25 +78,27 @@ def run_runtime_operation(job: RuntimeJob) -> object:
     task = job.task
     if isinstance(task, DatasetTask):
         return run_dataset_operation(
-            job.runtime,
-            job.limit,
-            job.output,
-            job.throttle_ms,
-            job.preview,
+            runtime=job.runtime,
+            output_ids=job.output_ids,
+            limit=job.limit,
+            target=job.output,
+            throttle_ms=job.throttle_ms,
+            preview=job.preview,
         )
     if isinstance(task, MatrixTask):
         return run_matrix_operation(job.runtime, task, job.limit)
     if isinstance(task, CoverageTask):
         return run_coverage_operation(job.runtime, task)
+    if not isinstance(task, PluginRuntimeTask):
+        raise TypeError(f"Unsupported runtime task: {type(task).__name__}")
 
-    plugin = load_ep(RUNTIME_OPERATIONS_EP, task.entrypoint)
+    plugin = load_entrypoint(RUNTIME_OPERATIONS_EP, task.entrypoint)
     return plugin(job.runtime, task, job.limit)
 
 
 def execute_runtime_job(
     command: Literal["serve", "inspect"],
     definition: ProjectDefinition,
-    graph: ArtifactGraph,
     plan: RuntimeJobPlan,
 ) -> None:
     job = plan.job
@@ -108,7 +106,6 @@ def execute_runtime_job(
         hydrate_runtime_artifacts_for_pipeline(
             job.runtime,
             definition,
-            graph=graph,
         )
     )
     unavailable = [
@@ -152,7 +149,6 @@ def execute_runtime_job(
                 indent=2,
             ),
             level=logging.DEBUG,
-            logger=logger,
         )
         result = run_runtime_operation(job)
         persist_runtime_result(

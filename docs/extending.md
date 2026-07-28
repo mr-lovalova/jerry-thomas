@@ -25,15 +25,19 @@ Each extension follows the contract of its entry-point group. A stream `map`
 receives an iterator and returns an iterable. An aligned stream `combine`
 receives one matching record from each configured input. A broadcast stream
 `combine` receives the partitioned primary record followed by its exact-time
-unpartitioned record. Both return one record or `None`. Combiner inputs are
-read-only; a broadcast record object is reused across primary partitions at its
-timestamp. Combiners belong to `datapipeline.combiners`, not the
-iterator-oriented `datapipeline.mappers` group.
+unpartitioned record. An as-of combiner receives the primary followed by the
+latest eligible lookup; the lookup can be `None` when `require_match: false`.
+All combiners return one record or `None`. Combiner inputs are read-only;
+indexed broadcast records may be reused across primary partitions. Combiners
+belong to `datapipeline.combiners`, not the iterator-oriented
+`datapipeline.mappers` group. Mapper and combiner outputs must have
+timezone-aware timestamps; Jerry normalizes them to UTC before downstream
+processing.
 
 A custom runtime operation receives exactly three positional arguments:
 
 ```python
-from datapipeline.config.tasks import RuntimeTask
+from datapipeline.config.tasks.base import PluginRuntimeTask
 from datapipeline.operations.persistence import (
     RoutedRuntimeOutput,
     RuntimeOutput,
@@ -44,12 +48,13 @@ from datapipeline.runtime import Runtime
 
 def run_report(
     runtime: Runtime,
-    task: RuntimeTask,
+    task: PluginRuntimeTask,
     limit: int | None,
 ) -> RuntimeOutput | RoutedRuntimeOutput | RuntimeOutputBatch | None: ...
 ```
 
-`runtime` is the compiled `Runtime`, `task` is the configured `RuntimeTask`,
+`runtime` is the compiled `Runtime`, `task` is the configured
+`PluginRuntimeTask`,
 and `limit` is the CLI cap or `None`. Return `RuntimeOutput`,
 `RoutedRuntimeOutput`, `RuntimeOutputBatch`, or `None`. Jerry persists the result
 using the profile output. A routed output yields `(output_id, row)` pairs, where

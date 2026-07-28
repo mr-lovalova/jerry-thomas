@@ -6,19 +6,15 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
     field_validator,
     model_validator,
 )
 
-from datapipeline.utils.placeholders import is_missing
+from datapipeline.config.constraints import NonEmptyString
+from datapipeline.config.interpolation import is_missing_interpolation
 from datapipeline.utils.time import parse_cadence, parse_datetime, parse_timecode
 
 
-NonEmptyString = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
 PositiveInt = Annotated[int, Field(strict=True, gt=0)]
 
 
@@ -35,7 +31,7 @@ class WhereConfig(_TransformConfig):
 
     @model_validator(mode="after")
     def validate_comparand(self) -> "WhereConfig":
-        if is_missing(self.comparand):
+        if is_missing_interpolation(self.comparand):
             raise ValueError("where comparand must resolve to a value")
         if self.operator in {"in", "not_in"}:
             if not isinstance(self.comparand, (list, tuple)):
@@ -121,10 +117,10 @@ class EnsureCadenceConfig(_TransformConfig):
         return cadence
 
 
-class EnsureTicksConfig(_TransformConfig):
-    operation: Literal["ensure_ticks"] = "ensure_ticks"
+class EnsureScheduleConfig(_TransformConfig):
+    operation: Literal["ensure_schedule"] = "ensure_schedule"
 
-    artifact: NonEmptyString
+    schedule: NonEmptyString
 
 
 class FillConfig(_TransformConfig):
@@ -211,19 +207,14 @@ class DeriveConfig(_TransformConfig):
 
     @model_validator(mode="after")
     def validate_right_operand(self) -> "DeriveConfig":
-        has_field = "right_field" in self.model_fields_set
-        has_value = "right_value" in self.model_fields_set
+        has_field = self.right_field is not None
+        has_value = self.right_value is not None
         if has_field == has_value:
             raise ValueError(
                 "derive requires exactly one of right_field or right_value"
             )
-        if has_field and self.right_field is None:
-            raise ValueError("derive right_field must not be null")
-        if has_value:
-            if self.right_value is None:
-                raise ValueError("derive right_value must not be null")
-            if isinstance(self.right_value, float) and not isfinite(self.right_value):
-                raise ValueError("derive right_value must be finite")
+        if isinstance(self.right_value, float) and not isfinite(self.right_value):
+            raise ValueError("derive right_value must be finite")
         return self
 
 
@@ -238,7 +229,7 @@ TransformConfig = Annotated[
     | LeadConfig
     | ForwardSumConfig
     | EnsureCadenceConfig
-    | EnsureTicksConfig
+    | EnsureScheduleConfig
     | FillConfig
     | ForwardFillConfig
     | CollapseConfig

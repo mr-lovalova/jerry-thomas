@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.profiles import ServeOutputConfig
+from datapipeline.config.profiles.output import ServeOutputConfig
 from datapipeline.io.output import resolve_output_target
 from datapipeline.io.runs import get_run_paths
 

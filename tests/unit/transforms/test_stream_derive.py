@@ -162,6 +162,27 @@ def test_derive_requires_exactly_one_right_operand() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "config",
+    [
+        DeriveConfig(
+            left="left",
+            operator="add",
+            right_field="right",
+            to="derived",
+        ),
+        DeriveConfig(
+            left="left",
+            operator="add",
+            right_value=0,
+            to="derived",
+        ),
+    ],
+)
+def test_derive_config_round_trips(config: DeriveConfig) -> None:
+    assert DeriveConfig.model_validate(config.model_dump()) == config
+
+
 def test_derive_rejects_unknown_operator() -> None:
     with pytest.raises(ValidationError, match="operator"):
         DeriveConfig(

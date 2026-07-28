@@ -11,7 +11,7 @@ class CoverageOptions(BaseModel):
     threshold: StrictFloat = Field(default=0.95, ge=0.0, le=1.0)
 
 
-class CoverageTask(RuntimeTask[CoverageOptions]):
+class CoverageTask(RuntimeTask):
     entrypoint: Literal["core.runtime.coverage"] = Field(
         default="core.runtime.coverage"
     )

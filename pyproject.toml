@@ -1,14 +1,15 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "jerry-thomas"
-version = "7.0.2"
+version = "8.0.0"
 description = "Jerry-Thomas: a stream-first, plugin-friendly data pipeline (mixology-themed CLI)"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Anders Skott Lind" }]
 urls = { "Homepage" = "https://github.com/mr-lovalova/datapipeline", "Repository" = "https://github.com/mr-lovalova/datapipeline", "Issues" = "https://github.com/mr-lovalova/datapipeline/issues" }
 dependencies = [
@@ -89,14 +90,13 @@ identity = "datapipeline.mappers.noop:identity"
 [project.entry-points."datapipeline.parsers"]
 identity = "datapipeline.parsers.identity:IdentityParser"
 "core.temporal_record" = "datapipeline.parsers.temporal_record:TemporalRecordParser"
-"core.synthetic.ticks" = "datapipeline.sources.synthetic.time.parser:TimeRowParser"
 
 [project.entry-points."datapipeline.operations.build"]
 "core.artifact.series" = "datapipeline.operations.artifacts.series:build_series_artifact"
-"core.artifact.metadata" = "datapipeline.operations.artifacts.metadata:materialize_metadata"
-"core.artifact.scaler" = "datapipeline.operations.artifacts.scaler:materialize_scaler_statistics"
+"core.artifact.metadata" = "datapipeline.operations.artifacts.metadata:build_metadata_artifact"
+"core.artifact.scaler" = "datapipeline.operations.artifacts.scaler:build_scaler_artifact"
 "core.artifact.coverage_stats" = "datapipeline.operations.artifacts.coverage_stats:build_coverage_stats_artifact"
-"core.artifact.ticks" = "datapipeline.operations.artifacts.ticks:materialize_ticks"
+"core.artifact.schedule" = "datapipeline.operations.artifacts.schedule:build_schedule_artifact"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -105,7 +105,9 @@ testpaths = ["tests"]
 [tool.mutmut]
 source_paths = ["src/datapipeline/"]
 only_mutate = [
+  "src/datapipeline/alignment/as_of.py",
   "src/datapipeline/alignment/broadcast.py",
+  "src/datapipeline/alignment/broadcast_as_of.py",
   "src/datapipeline/alignment/engine.py",
   "src/datapipeline/domain/value.py",
   "src/datapipeline/operations/artifacts/utils.py",

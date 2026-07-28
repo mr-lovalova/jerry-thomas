@@ -8,12 +8,20 @@ import pytest
 
 import datapipeline.integrations.ml as ml
 from datapipeline.artifacts.models import (
+    FoldedMetadataLayout,
+    FoldOutputMetadata,
     ListVectorMetadataEntry,
     ScalarVectorMetadataEntry,
+    VectorMetadata,
+    VectorMetadataCatalog,
+    VectorMetadataCounts,
     VectorMetadataEntry,
+    VectorMetadataFold,
+    VectorSchema,
 )
+from datapipeline.artifacts.specs import VECTOR_METADATA
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
+from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.dataset.split import (
     DatasetFold,
     TimeInterval,
@@ -21,6 +29,7 @@ from datapipeline.config.dataset.split import (
 )
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
+from datapipeline.pipelines.dataset.pipeline import FoldOutputPlan
 from datapipeline.runtime import Runtime
 
 
@@ -38,7 +47,12 @@ def test_iter_samples_closes_dataset_pipeline_after_partial_read(
         finally:
             closed = True
 
-    source = ml._SampleSource(_runtime(tmp_path, _dataset()), None, ())
+    source = ml._SampleSource(
+        _runtime(tmp_path, _dataset()),
+        None,
+        _schema((_scalar("value"),)),
+        None,
+    )
     _use_source(monkeypatch, source)
     monkeypatch.setattr(
         ml,
@@ -59,6 +73,7 @@ def test_iter_samples_runs_selected_fold_and_hydrates_artifacts(
 ) -> None:
     dataset = _dataset(split=_split(), scale=True)
     runtime = _runtime(tmp_path, dataset)
+    _register_folded_metadata(runtime)
     definition = SimpleNamespace(dataset=dataset)
     calls: list[tuple[str, object]] = []
 
@@ -74,13 +89,18 @@ def test_iter_samples_runs_selected_fold_and_hydrates_artifacts(
 
     def run_fold(
         _context: object,
-        _features: object,
-        _cadence: object,
-        fold: DatasetFold,
-        labels: Sequence[str],
-        **_kwargs: object,
+        output: FoldOutputPlan,
     ) -> Iterator[Sample]:
-        calls.append(("fold", (fold.id, tuple(labels))))
+        calls.append(
+            (
+                "fold",
+                (
+                    output.fold_id,
+                    tuple(output.outputs),
+                    tuple(entry.id for entry in output.schema.features),
+                ),
+            )
+        )
         yield _sample(("selected",), {"value": -1.0})
 
     monkeypatch.setattr(ml, "run_fold_dataset_pipeline", run_fold)
@@ -90,7 +110,7 @@ def test_iter_samples_runs_selected_fold_and_hydrates_artifacts(
     ]
     assert calls == [
         ("hydrate", (runtime, definition)),
-        ("fold", ("walk_1", ("train_0", "validation_0", "train_1"))),
+        ("fold", ("walk_1", ("walk_1.train",), ("value",))),
     ]
 
 
@@ -99,7 +119,12 @@ def test_iter_samples_uses_scaler_for_unsplit_scaled_dataset(
     tmp_path: Path,
 ) -> None:
     dataset = _dataset(scale=True)
-    source = ml._SampleSource(_runtime(tmp_path, dataset), None, ())
+    source = ml._SampleSource(
+        _runtime(tmp_path, dataset),
+        None,
+        _schema((_scalar("value"),)),
+        None,
+    )
     _use_source(monkeypatch, source)
     calls: list[str] = []
 
@@ -225,16 +250,16 @@ def test_model_batches_are_lazy_bounded_and_metadata_ordered(
     assert closed
 
 
-def test_model_batches_preserve_separate_feature_and_target_names(
+def test_model_batches_preserve_feature_and_target_columns(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     _install_batch_pipeline(
         monkeypatch,
         tmp_path,
-        lambda: iter([_sample(("row",), {"value": 1.0}, {"value": 2.0})]),
-        (_scalar("value"),),
-        (_scalar("value"),),
+        lambda: iter([_sample(("row",), {"feature": 1.0}, {"target": 2.0})]),
+        (_scalar("feature"),),
+        (_scalar("target"),),
     )
 
     [batch] = ml.iter_model_batches(
@@ -243,8 +268,8 @@ def test_model_batches_preserve_separate_feature_and_target_names(
         dtype="float32",
     )
 
-    assert batch.feature_columns == ("value",)
-    assert batch.target_columns == ("value",)
+    assert batch.feature_columns == ("feature",)
+    assert batch.target_columns == ("target",)
     assert batch.targets is not None
     np.testing.assert_array_equal(batch.features, [[1.0]])
     np.testing.assert_array_equal(batch.targets, [[2.0]])
@@ -277,8 +302,26 @@ def test_model_batches_use_none_for_feature_only_targets(
     [
         (None, ValueError, r"history\[1\].*missing.*sample \('row',\)"),
         (True, TypeError, r"history\[1\].*sample \('row',\).*numeric"),
+        (np.bool_(True), TypeError, r"history\[1\].*sample \('row',\).*numeric"),
+        (np.array(1.0), TypeError, r"history\[1\].*sample \('row',\).*numeric"),
         ("bad", TypeError, r"history\[1\].*sample \('row',\).*numeric"),
+        ("1.0", TypeError, r"history\[1\].*sample \('row',\).*numeric"),
+        (1.0 + 2.0j, TypeError, r"history\[1\].*sample \('row',\).*numeric"),
+        ([1.0, 2.0], TypeError, r"history\[1\].*sample \('row',\).*numeric"),
+        (float("nan"), ValueError, r"history\[1\].*sample \('row',\).*finite"),
         (float("inf"), ValueError, r"history\[1\].*sample \('row',\).*finite"),
+    ],
+    ids=[
+        "missing",
+        "boolean",
+        "numpy-boolean",
+        "zero-dimensional-array",
+        "string",
+        "numeric-string",
+        "complex",
+        "nested-list",
+        "nan",
+        "infinity",
     ],
 )
 def test_model_batches_reject_invalid_values_with_column_and_sample(
@@ -354,6 +397,23 @@ def test_model_batches_reject_values_not_representable_by_dtype(
         )
 
 
+@pytest.mark.parametrize("values", [[1.0], [1.0, 2.0, 3.0]])
+def test_model_batches_reject_rows_that_do_not_match_declared_columns(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    values: list[float],
+) -> None:
+    _install_batch_pipeline(
+        monkeypatch,
+        tmp_path,
+        lambda: iter([_sample(("row",), {"history": values})]),
+        (_sequence("history", 2),),
+    )
+
+    with pytest.raises(ValueError, match="rows do not match the declared columns"):
+        list(ml.iter_model_batches("project.yaml", batch_size=1))
+
+
 def test_closing_model_batches_closes_dataset_pipeline(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -424,16 +484,9 @@ def _install_batch_pipeline(
     target_entries: Sequence[VectorMetadataEntry] = (),
 ) -> None:
     dataset = _dataset(with_targets=bool(target_entries))
-    source = ml._SampleSource(_runtime(tmp_path, dataset), None, ())
+    schema = _schema(tuple(feature_entries), tuple(target_entries))
+    source = ml._SampleSource(_runtime(tmp_path, dataset), None, schema, None)
     _use_source(monkeypatch, source)
-    monkeypatch.setattr(
-        ml,
-        "build_postprocess_plan",
-        lambda _context: SimpleNamespace(
-            feature_entries=tuple(feature_entries),
-            target_entries=tuple(target_entries),
-        ),
-    )
 
     def run_dataset(*_args: object, **_kwargs: object) -> Iterator[Sample]:
         yield from sample_stream()
@@ -486,6 +539,62 @@ def _sequence(identifier: str, length: int) -> VectorMetadataEntry:
     )
 
 
+def _schema(
+    features: tuple[VectorMetadataEntry, ...],
+    targets: tuple[VectorMetadataEntry, ...] = (),
+) -> VectorSchema:
+    return VectorSchema(
+        features=features,
+        targets=targets,
+        counts=VectorMetadataCounts(
+            feature_vectors=5 if features else 0,
+            target_vectors=5 if targets else 0,
+        ),
+    )
+
+
+def _register_folded_metadata(runtime: Runtime) -> None:
+    schema = _schema((_scalar("value"),))
+    metadata = VectorMetadata(
+        schema_version=4,
+        catalog=VectorMetadataCatalog.model_validate(schema.model_dump()),
+        layout=FoldedMetadataLayout(
+            kind="folded",
+            folds=(
+                VectorMetadataFold(
+                    id="walk_0",
+                    training_schema=schema,
+                    outputs=(
+                        FoldOutputMetadata(role="train", labels=("train_0",)),
+                        FoldOutputMetadata(
+                            role="validation",
+                            labels=("validation_0",),
+                        ),
+                    ),
+                ),
+                VectorMetadataFold(
+                    id="walk_1",
+                    training_schema=schema,
+                    outputs=(
+                        FoldOutputMetadata(
+                            role="train",
+                            labels=("train_0", "validation_0", "train_1"),
+                        ),
+                        FoldOutputMetadata(
+                            role="validation",
+                            labels=("validation_1",),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    runtime.artifacts_root.mkdir(parents=True, exist_ok=True)
+    path = runtime.artifacts_root / "metadata.json"
+    path.write_text(metadata.model_dump_json(), encoding="utf-8")
+    runtime.artifacts.register(VECTOR_METADATA, path.name)
+
+
 def _dataset(
     *,
     split: TimeSplitConfig | None = None,
@@ -504,10 +613,11 @@ def _dataset(
         ],
         targets=(
             [
-                SeriesConfig(
+                TargetSeriesConfig(
                     id="label",
                     stream="labels",
                     field="label",
+                    horizon="0s",
                 )
             ]
             if with_targets

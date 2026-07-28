@@ -33,6 +33,15 @@ def test_finish_run_requires_started_run_metadata(tmp_path: Path) -> None:
         runs.finish_run_success(paths)
 
 
+def test_finish_run_rejects_non_object_metadata(tmp_path: Path) -> None:
+    paths = runs.get_run_paths(tmp_path / "serve", "invalid")
+    paths.run_root.mkdir(parents=True)
+    paths.metadata_path.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Expected JSON object"):
+        runs.finish_run_success(paths)
+
+
 def test_latest_run_is_a_replaceable_symlink(
     tmp_path: Path,
     monkeypatch,
@@ -74,6 +83,29 @@ def test_latest_run_is_a_replaceable_symlink(
     assert latest.is_symlink()
     assert latest.resolve() == second.run_root.resolve()
     assert not (serve_root / ".latest-second").exists()
+
+
+def test_latest_run_resolves_relative_serve_root(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    probe_target = tmp_path / "probe-target"
+    probe_target.mkdir()
+    probe_link = tmp_path / "probe-link"
+    try:
+        probe_link.symlink_to(probe_target, target_is_directory=True)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"Symbolic links are unavailable: {exc}")
+    probe_link.unlink()
+
+    monkeypatch.chdir(tmp_path)
+    paths = runs.get_run_paths(Path("serve"), "run")
+    paths.run_root.mkdir(parents=True)
+
+    runs.set_latest_run(paths)
+
+    assert paths.serve_root == (tmp_path / "serve").resolve()
+    assert (tmp_path / "serve" / "latest").resolve() == paths.run_root
 
 
 def test_latest_run_does_not_copy_when_symlinks_fail(

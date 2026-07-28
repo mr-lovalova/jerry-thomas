@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from datapipeline.artifacts.output import ArtifactOutput
 from datapipeline.artifacts.series import (
     SERIES_MANIFEST_VERSION,
     SeriesEntry,
@@ -18,21 +19,20 @@ from datapipeline.artifacts.series import (
     write_series_rows,
 )
 from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.config.tasks import SeriesTask
+from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.domain.sample_key import SampleKeyContract
 from datapipeline.domain.series import SeriesSequence
 from datapipeline.domain.series_id import base_id
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.pipeline import Input, Pipeline, Stage
 from datapipeline.execution.runner import run_pipeline
-from datapipeline.operations.persistence import ArtifactOutput
+from datapipeline.io.json_file import write_json_object
 from datapipeline.pipelines.series.projector import SeriesProjector
 from datapipeline.pipelines.series.stages import SeriesSequencer
 from datapipeline.pipelines.sort import SortProgress, batch_sort
 from datapipeline.pipelines.stream.pipeline import build_stream_pipeline
 from datapipeline.runtime import Runtime, require_runtime_stream
 from datapipeline.services.path_policy import resolve_artifact_output_path
-from datapipeline.utils.json_artifact import write_json_artifact
+from datapipeline.transforms.utils import record_establishes_domain
 from datapipeline.utils.time import floor_time_to_cadence, parse_cadence
 
 logger = logging.getLogger(__name__)
@@ -49,12 +49,14 @@ class _StreamPlan:
 class _ProjectedScalar:
     id: str
     value: Any
+    establishes_domain: bool
 
 
 @dataclass(frozen=True)
 class _ProjectedSequence:
     id: str
     values: list[Any]
+    establishes_domain: bool
 
 
 _ProjectedValue = _ProjectedScalar | _ProjectedSequence
@@ -83,7 +85,6 @@ def build_series_artifact(
     staging_root = cache_root / f".staging-{generation}"
     generation_root = cache_root / generation
     data_path = staging_root / "series.jsonl.gz"
-    context = PipelineContext(runtime)
     sample_keys = SampleKeyContract(dataset.sample.keys)
     feature_counts: Counter[str] = Counter()
     target_counts: Counter[str] = Counter()
@@ -91,7 +92,7 @@ def build_series_artifact(
     try:
         staging_root.mkdir(parents=True)
         projected = _ordered_projected_rows(
-            context,
+            runtime,
             _stream_plans(dataset.features, dataset.targets),
             sample_keys,
             parse_cadence(dataset.sample.cadence),
@@ -132,14 +133,13 @@ def build_series_artifact(
         raise
 
     try:
-        write_json_artifact(destination, manifest.model_dump(mode="json"))
+        write_json_object(destination, manifest.model_dump(mode="json"))
     except BaseException:
         _remove_failed_generation(generation_root)
         raise
 
     companion_path = relative_path.parent / manifest.path
     return ArtifactOutput(
-        relative_path=str(relative_path),
         companion_paths=(str(companion_path),),
         meta={
             "features": len(manifest.features),
@@ -179,7 +179,7 @@ def _stream_plans(
 
 
 def _ordered_projected_rows(
-    context: PipelineContext,
+    runtime: Runtime,
     plans: Sequence[_StreamPlan],
     sample_keys: SampleKeyContract,
     cadence: timedelta,
@@ -191,7 +191,7 @@ def _ordered_projected_rows(
             name="project_streams",
             open=partial(
                 _project_streams,
-                context,
+                runtime,
                 plans,
                 sample_keys,
                 cadence,
@@ -202,7 +202,7 @@ def _ordered_projected_rows(
                 name="order_series",
                 apply=partial(
                     batch_sort,
-                    buffer_bytes=context.runtime.execution.sort_buffer_bytes,
+                    buffer_bytes=runtime.execution.sort_buffer_bytes,
                     key=lambda row: (row.key, row.time),
                     progress=sort_progress,
                 ),
@@ -210,29 +210,29 @@ def _ordered_projected_rows(
             ),
         ),
     )
-    return run_pipeline(context, pipeline)
+    return run_pipeline(runtime, pipeline)
 
 
 def _project_streams(
-    context: PipelineContext,
+    runtime: Runtime,
     plans: Sequence[_StreamPlan],
     sample_keys: SampleKeyContract,
     cadence: timedelta,
 ) -> Iterator[_ProjectedRow]:
     for plan in plans:
-        yield from _project_stream(context, plan, sample_keys, cadence)
+        yield from _project_stream(runtime, plan, sample_keys, cadence)
 
 
 def _project_stream(
-    context: PipelineContext,
+    runtime: Runtime,
     plan: _StreamPlan,
     sample_keys: SampleKeyContract,
     cadence: timedelta,
 ) -> Iterator[_ProjectedRow]:
-    stream = require_runtime_stream(context.runtime, plan.stream_id)
+    stream = require_runtime_stream(runtime, plan.stream_id)
     configs = (*plan.features, *plan.targets)
     feature_ids = {config.id for config in plan.features}
-    projector = SeriesProjector(stream.partition_by, sample_keys)
+    projector = SeriesProjector(stream.partition_by, sample_keys, configs)
     sequencers = {
         config.id: SeriesSequencer(config.sequence)
         for config in configs
@@ -245,10 +245,11 @@ def _project_stream(
             targets: list[_ProjectedValue] = []
             row_key: tuple[Any, ...] | None = None
             row_time: datetime | None = None
+            sample_time: datetime | None = None
 
             for config, projected in zip(
                 configs,
-                projector.project(record, configs),
+                projector.project(record),
                 strict=True,
             ):
                 sequencer = sequencers.get(config.id)
@@ -256,10 +257,9 @@ def _project_stream(
                 if result is None:
                     continue
 
-                key = (
-                    floor_time_to_cadence(result.time, cadence),
-                    *result.entity_key,
-                )
+                if sample_time is None:
+                    sample_time = floor_time_to_cadence(result.time, cadence)
+                key = (sample_time, *result.entity_key)
                 if row_key is None:
                     row_key = key
                     row_time = result.time
@@ -271,9 +271,17 @@ def _project_stream(
 
                 value: _ProjectedValue
                 if isinstance(result, SeriesSequence):
-                    value = _ProjectedSequence(result.id, result.values)
+                    value = _ProjectedSequence(
+                        result.id,
+                        result.values,
+                        record_establishes_domain(result),
+                    )
                 else:
-                    value = _ProjectedScalar(result.id, result.value)
+                    value = _ProjectedScalar(
+                        result.id,
+                        result.value,
+                        record_establishes_domain(result),
+                    )
                 if config.id in feature_ids:
                     features.append(value)
                 else:
@@ -287,7 +295,7 @@ def _project_stream(
                     targets=tuple(targets),
                 )
 
-    record_pipeline = build_stream_pipeline(context, plan.stream_id)
+    record_pipeline = build_stream_pipeline(runtime, plan.stream_id)
     pipeline = Pipeline(
         name=f"series:{plan.stream_id}",
         input=record_pipeline.input,
@@ -297,7 +305,7 @@ def _project_stream(
         ),
         summary=record_pipeline.summary,
     )
-    projected = run_pipeline(context, pipeline)
+    projected = run_pipeline(runtime, pipeline)
     try:
         yield from projected
     finally:
@@ -313,6 +321,11 @@ def _group_series_rows(
 ) -> Iterator[SeriesRow]:
     feature_order = {config.id: index for index, config in enumerate(feature_configs)}
     target_order = {config.id: index for index, config in enumerate(target_configs)}
+    collection_sizes = {
+        config.id: config.collect
+        for config in (*feature_configs, *target_configs)
+        if config.collect is not None
+    }
 
     for key, group in groupby(projected, key=lambda row: row.key):
         feature_records: list[_ProjectedValue] = []
@@ -321,8 +334,16 @@ def _group_series_rows(
             feature_records.extend(row.features)
             target_records.extend(row.targets)
 
-        features = _assemble_values(feature_records, feature_order)
-        targets = _assemble_values(target_records, target_order)
+        features, feature_placeholders = _assemble_values(
+            feature_records,
+            feature_order,
+            collection_sizes,
+        )
+        targets, target_placeholders = _assemble_values(
+            target_records,
+            target_order,
+            collection_sizes,
+        )
         feature_counts.update({base_id(series_id) for series_id in features})
         target_counts.update({base_id(series_id) for series_id in targets})
         yield SeriesRow(
@@ -330,41 +351,57 @@ def _group_series_rows(
             entity_key=tuple(key[1:]),
             features=features,
             targets=targets,
+            placeholder_ids=feature_placeholders | target_placeholders,
         )
 
 
 def _assemble_values(
     records: Iterable[_ProjectedValue],
     config_order: dict[str, int],
-) -> dict[str, Any]:
-    values_by_id: dict[str, list[Any]] = {}
-    sequence_ids: set[str] = set()
+    collection_sizes: dict[str, int],
+) -> tuple[dict[str, Any], frozenset[str]]:
+    values_by_id: dict[str, Any] = {}
+    collections: dict[str, list[Any]] = {}
+    established: set[str] = set()
     for record in records:
-        if record.id in values_by_id and isinstance(record, _ProjectedSequence) != (
-            record.id in sequence_ids
-        ):
-            raise ValueError(
-                f"Series {record.id!r} contains both scalar and sequence values."
-            )
-        values = values_by_id.setdefault(record.id, [])
         if isinstance(record, _ProjectedSequence):
-            sequence_ids.add(record.id)
-            values.extend(record.values)
+            if record.id in values_by_id:
+                raise ValueError(
+                    f"Series {record.id!r} emits multiple sequences in one "
+                    "sample cadence bucket; increase sequence stride or use a "
+                    "finer dataset sample cadence."
+                )
+            values_by_id[record.id] = list(record.values)
+        elif base_id(record.id) in collection_sizes:
+            if isinstance(record.value, list):
+                raise TypeError(f"Series {record.id!r} collect requires scalar values.")
+            collections.setdefault(record.id, []).append(record.value)
         else:
-            values.append(record.value)
+            if record.id in values_by_id:
+                raise ValueError(
+                    f"Series {record.id!r} emits multiple values in one sample "
+                    "cadence bucket; configure collect explicitly or use a finer "
+                    "dataset sample cadence."
+                )
+            values_by_id[record.id] = record.value
+        if record.establishes_domain:
+            established.add(record.id)
+
+    for series_id, values in collections.items():
+        required = collection_sizes[base_id(series_id)]
+        if len(values) != required:
+            raise ValueError(
+                f"Series {series_id!r} collect requires {required} values in each "
+                f"populated sample cadence bucket; got {len(values)}."
+            )
+        values_by_id[series_id] = values
 
     ordered_ids = sorted(
         values_by_id,
         key=lambda series_id: (config_order[base_id(series_id)], series_id),
     )
-    return {
-        series_id: (
-            values_by_id[series_id]
-            if series_id in sequence_ids or len(values_by_id[series_id]) != 1
-            else values_by_id[series_id][0]
-        )
-        for series_id in ordered_ids
-    }
+    assembled = {series_id: values_by_id[series_id] for series_id in ordered_ids}
+    return assembled, frozenset(values_by_id.keys() - established)
 
 
 def _remove_failed_generation(generation_root: Path) -> None:

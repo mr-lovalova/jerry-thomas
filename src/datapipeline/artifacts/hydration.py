@@ -1,8 +1,8 @@
 from collections.abc import Iterable
 
-from datapipeline.artifacts.planning import ArtifactGraph, build_artifact_graph
-from datapipeline.artifacts.validation import nested_tick_dependencies
-from datapipeline.build.state import BuildState, load_build_state
+from datapipeline.artifacts.planning import ArtifactGraph
+from datapipeline.artifacts.validation import nested_schedule_dependencies
+from datapipeline.artifacts.state import BuildState, load_build_state
 from datapipeline.runtime import Runtime
 from datapipeline.services.definitions import ArtifactHashes, ProjectDefinition
 
@@ -46,40 +46,28 @@ def hydrate_runtime_artifacts(
 def hydrate_runtime_artifacts_for_pipeline(
     runtime: Runtime,
     definition: ProjectDefinition,
-    *,
-    graph: ArtifactGraph | None = None,
 ) -> tuple[str, ...]:
     state = load_build_state(definition.project.artifacts_root)
     if state is None:
         runtime.artifacts.clear()
         return ()
 
-    if graph is None:
-        graph = build_artifact_graph(
-            definition.artifact_operations,
-            definition.dataset,
-            definition.streams,
-        )
-
+    graph = definition.artifact_graph
     artifact_roots = graph.declared_artifact_keys()
-    artifact_keys = set(graph.dependency_closure(artifact_roots))
+    artifact_keys = set(graph.dependency_closure(artifact_roots, definition.dataset))
     if not artifact_keys:
         runtime.artifacts.clear()
         return ()
-    if graph.requires_dataset(artifact_keys):
-        artifact_keys = set(
-            graph.active_dependency_closure(artifact_roots, definition.dataset)
-        )
-    nested_ticks = {
+    nested_schedules = {
         dependency.task.id
-        for dependency in nested_tick_dependencies(
+        for dependency in nested_schedule_dependencies(
             definition.streams,
             graph,
             artifact_keys,
         )
     }
-    artifact_keys -= nested_ticks | graph.dependents_of(
-        nested_ticks,
+    artifact_keys -= nested_schedules | graph.dependents_of(
+        nested_schedules,
         active_keys=artifact_keys,
     )
     return hydrate_runtime_artifacts(

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from datapipeline.profiles.loader import profile_specs
+from datapipeline.profiles.loader import profile_specs_with_defaults
 from datapipeline.services.project import load_project
 from datapipeline.services.scaffold.plugin import scaffold_plugin
 from datapipeline.services.scaffold.templates import render
@@ -125,9 +125,11 @@ def test_template_profiles_separate_builds_from_runtime_actions() -> None:
     assert {path.name for path in demo_profiles.glob("*.yaml")} == demo_expected
 
     project = load_project(_DATASET_SKELETON_ROOT / "your-dataset" / "project.yaml")
+    serve_profiles, _ = profile_specs_with_defaults(project, cmd="serve")
+    inspect_profiles, _ = profile_specs_with_defaults(project, cmd="inspect")
     assert [
         (profile.cmd, profile.name, profile.operation)
-        for profile in profile_specs(project)
+        for profile in [*serve_profiles, *inspect_profiles]
     ] == [
         ("serve", "dataset", "dataset"),
         ("inspect", "coverage", "coverage"),
@@ -158,7 +160,7 @@ def test_scaffold_plugin_normalizes_hyphenated_name(tmp_path: Path) -> None:
 
     pyproject = (plugin_root / "pyproject.toml").read_text()
     assert 'name = "test-datapipeline"' in pyproject
-    assert '"jerry-thomas>=7.0.0"' in pyproject
+    assert '"jerry-thomas>=8.0.0"' in pyproject
     assert '[project.entry-points."datapipeline.combiners"]' in pyproject
 
     readme = (plugin_root / "README.md").read_text()

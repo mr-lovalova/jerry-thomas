@@ -1,15 +1,18 @@
+from datetime import timedelta
 from math import log, log1p
 
 from datapipeline.domain.record import TemporalRecord
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.events import PipelineEvent, PipelineStarted
-from datapipeline.operations.runtime.dataset import _record_preview_stream
+from datapipeline.execution.observability import execution_observer
 from datapipeline.pipelines.stream.pipeline import (
     build_stream_pipeline,
+    run_stream_preview_pipeline,
     run_stream_pipeline,
 )
 from datapipeline.plugins import COMBINERS_EP
 from datapipeline.runtime import (
+    AsOfRuntimeStream,
+    BroadcastAsOfRuntimeStream,
     BroadcastRuntimeStream,
     DerivedRuntimeStream,
     SourceRuntimeStream,
@@ -38,7 +41,7 @@ def _write_test_project(tmp_path):
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
         """\
-schema_version: 3
+schema_version: 4
 artifact_revision: 1
 name: runtime-compiler-test
 paths:
@@ -148,7 +151,7 @@ transforms:
 
     assert isinstance(derived, DerivedRuntimeStream)
     assert derived.partition_by == ("ticker",)
-    records = list(run_stream_pipeline(PipelineContext(runtime), "filtered"))
+    records = list(run_stream_pipeline(runtime, "filtered"))
     assert [(record.time.day, record.ticker, record.value) for record in records] == [
         (2, "A", 2)
     ]
@@ -234,7 +237,7 @@ transforms:
         return record
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         lambda group, entrypoint: attach_reference,
     )
 
@@ -247,7 +250,7 @@ transforms:
     assert enriched.partition_by == ("station",)
     assert len(enriched.transforms) == 5
 
-    records = list(run_stream_pipeline(PipelineContext(runtime), "enriched"))
+    records = list(run_stream_pipeline(runtime, "enriched"))
     assert [
         (
             record.station,
@@ -265,6 +268,150 @@ transforms:
         ("A", 2, 24, 48, log(20), log1p(2), 0.1, None),
         ("B", 1, 15, 30, log(10), log1p(3), None, 4.0),
         ("B", 2, 26, 52, log(20), log1p(4), 0.1, None),
+    ]
+
+
+def test_yaml_as_of_streams_compile_and_run(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    project_yaml, sources_dir, streams_dir, data_dir = _write_test_project(tmp_path)
+    rows_by_input = {
+        "prices": [
+            '{"time":"2025-01-04T00:00:00Z","ticker":"B","value":40}',
+            '{"time":"2025-01-02T00:00:00Z","ticker":"A","value":2}',
+            '{"time":"2025-01-04T00:00:00Z","ticker":"A","value":4}',
+            '{"time":"2025-01-02T00:00:00Z","ticker":"B","value":20}',
+        ],
+        "reports": [
+            '{"time":"2025-01-01T00:00:00Z","ticker":"B","value":1000}',
+            '{"time":"2025-01-04T00:00:00Z","ticker":"A","value":400}',
+            '{"time":"2025-01-01T00:00:00Z","ticker":"A","value":100}',
+        ],
+        "factors": [
+            '{"time":"2025-01-03T00:00:00Z","value":30}',
+            '{"time":"2025-01-01T00:00:00Z","value":10}',
+        ],
+    }
+    for input_name, rows in rows_by_input.items():
+        (data_dir / f"{input_name}.jsonl").write_text(
+            "\n".join(rows) + "\n",
+            encoding="utf-8",
+        )
+        (sources_dir / f"{input_name}.yaml").write_text(
+            f"""\
+id: {input_name}.source
+parser:
+  entrypoint: core.temporal_record
+loader:
+  transport: fs
+  path: data/{input_name}.jsonl
+  reader:
+    format: jsonl
+""",
+            encoding="utf-8",
+        )
+        partition = "partition_by: [ticker]\n" if input_name != "factors" else ""
+        (streams_dir / f"{input_name}.yaml").write_text(
+            f"""\
+id: {input_name}
+from: {{source: {input_name}.source}}
+{partition}map: {{entrypoint: identity}}
+""",
+            encoding="utf-8",
+        )
+
+    (streams_dir / "reported.yaml").write_text(
+        """\
+id: reported
+from:
+  stream: prices
+  as_of: reports
+max_age: 1d
+require_match: false
+combine:
+  entrypoint: attach_report
+transforms:
+  - {operation: derive, left: price, operator: mul, right_value: 2, to: doubled}
+""",
+        encoding="utf-8",
+    )
+    (streams_dir / "factor_adjusted.yaml").write_text(
+        """\
+id: factor_adjusted
+from:
+  stream: prices
+  broadcast_as_of: factors
+max_age: 2d
+combine:
+  entrypoint: attach_factor
+""",
+        encoding="utf-8",
+    )
+
+    def attach_report(price, report):
+        record = TemporalRecord(time=price.time)
+        record.ticker = price.ticker
+        record.price = price.value
+        record.report = None if report is None else report.value
+        return record
+
+    def attach_factor(price, factor):
+        record = TemporalRecord(time=price.time)
+        record.ticker = price.ticker
+        record.price = price.value
+        record.factor = factor.value
+        return record
+
+    combiners = {
+        "attach_report": attach_report,
+        "attach_factor": attach_factor,
+    }
+    monkeypatch.setattr(
+        "datapipeline.services.streams.combine.load_entrypoint",
+        lambda group, entrypoint: combiners[entrypoint],
+    )
+
+    runtime = compile_runtime(load_project_definition(project_yaml))
+    reported = runtime.streams["reported"]
+    factor_adjusted = runtime.streams["factor_adjusted"]
+
+    assert isinstance(reported, AsOfRuntimeStream)
+    assert reported.partition_by == ("ticker",)
+    assert reported.max_age == timedelta(days=1)
+    assert reported.require_match is False
+    assert isinstance(factor_adjusted, BroadcastAsOfRuntimeStream)
+    assert factor_adjusted.partition_by == ("ticker",)
+    assert factor_adjusted.max_age == timedelta(days=2)
+    assert factor_adjusted.require_match is True
+
+    reported_canonical = list(
+        run_stream_preview_pipeline(runtime, "reported", "canonical")
+    )
+    assert [record.report for record in reported_canonical] == [100, 400, 1000, None]
+
+    reported_records = list(run_stream_pipeline(runtime, "reported"))
+    assert [
+        (record.ticker, record.time.day, record.price, record.report, record.doubled)
+        for record in reported_records
+    ] == [
+        ("A", 2, 2, 100, 4),
+        ("A", 4, 4, 400, 8),
+        ("B", 2, 20, 1000, 40),
+        ("B", 4, 40, None, 80),
+    ]
+
+    factor_records = list(
+        run_stream_preview_pipeline(runtime, "factor_adjusted", "canonical")
+    )
+    assert [
+        (record.ticker, record.time.day, record.price, record.factor)
+        for record in factor_records
+    ] == [
+        ("A", 2, 2, 10),
+        ("A", 4, 4, 30),
+        ("B", 2, 20, 10),
+        ("B", 4, 40, 30),
     ]
 
 
@@ -341,31 +488,30 @@ combine:
         return combine
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_ep",
+        "datapipeline.services.streams.combine.load_entrypoint",
         load_mapper,
     )
 
     runtime = compile_runtime(load_project_definition(project_yaml))
-    context = PipelineContext(runtime)
-    pipeline = build_stream_pipeline(context, "combined")
+    pipeline = build_stream_pipeline(runtime, "combined")
     assert pipeline.name == "stream:combined"
     assert pipeline.input.name == "align_inputs"
     assert [stage.name for stage in pipeline.stages] == ["combine_records"]
     assert pipeline.input.progress is None
     assert [stage.progress is not None for stage in pipeline.stages] == [False]
-    input_rows = list(_record_preview_stream(context, "combined", "input"))
+    input_rows = list(run_stream_preview_pipeline(runtime, "combined", "input"))
     assert [[record.value for record in row] for row in input_rows] == [
         [1, 10],
         [2, 20],
     ]
-    canonical = list(_record_preview_stream(context, "combined", "canonical"))
+    canonical = list(run_stream_preview_pipeline(runtime, "combined", "canonical"))
     assert [record.value for record in canonical] == [115, 225]
 
     observer = _PipelineObserver()
-    runtime.pipeline_observer = observer
 
     assert runtime.streams["combined"].partition_by == ("ticker",)
-    records = list(run_stream_pipeline(PipelineContext(runtime), "combined"))
+    with execution_observer(observer):
+        records = list(run_stream_pipeline(runtime, "combined"))
     assert [(record.time.day, record.ticker, record.value) for record in records] == [
         (1, "A", 115),
         (2, "A", 225),

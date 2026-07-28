@@ -2,10 +2,9 @@ from typing import Literal
 
 from pydantic import Field, field_validator
 
-from datapipeline.config.observability import ObservabilityConfig
 from datapipeline.config.preview import PreviewStage
 
-from .base import Profile, normalize_profile_operation
+from .base import OperationProfile
 from .output import ServeOutputConfig
 
 
@@ -32,20 +31,13 @@ def normalize_include_outputs(value: object) -> list[str] | None:
     return output_ids
 
 
-class ServeProfile(Profile):
+class ServeProfile(OperationProfile):
     cmd: Literal["serve"]
-    operation: str
     output: ServeOutputConfig | None = None
-    observability: ObservabilityConfig | None = Field(default=None)
     include_outputs: list[str] | None = Field(default=None, min_length=1)
     limit: int | None = Field(default=None, ge=1)
     preview: PreviewStage | None = None
     throttle_ms: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
-
-    @field_validator("operation", mode="before")
-    @classmethod
-    def _normalize_operation(cls, value: object) -> str:
-        return normalize_profile_operation(value)
 
     @field_validator("include_outputs", mode="before")
     @classmethod

@@ -24,7 +24,7 @@ def source_progress(
     resources_by_id: dict[str, ProgressResource] = {}
     resource: ProgressResource | None = None
     if isinstance(loader, ParquetLoader) and loader.is_glob:
-        files = list(loader.files)
+        files = loader.files
         total = len(files)
         root = _glob_root(files)
         resources_by_id = {
@@ -81,7 +81,7 @@ def source_summary(stream_source: RecordStream[object]) -> str | None:
         return None
     loader = stream_source.loader
     if isinstance(loader, ParquetLoader):
-        files = list(loader.files)
+        files = loader.files
         if not loader.is_glob:
             return f"transport=fs.file file={Path(loader.path).name or loader.path}"
         total = len(files)
@@ -133,7 +133,7 @@ def _transport_source_summary(transport: SourceTransport) -> str | None:
     return None
 
 
-def _glob_root(files: list[str]) -> Path:
+def _glob_root(files: tuple[str, ...]) -> Path:
     if len(files) == 1:
         return Path(files[0]).parent
     return Path(os.path.commonpath(files))

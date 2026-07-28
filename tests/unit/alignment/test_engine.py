@@ -388,7 +388,7 @@ def test_early_close_surfaces_cleanup_failure_and_closes_every_input() -> None:
     aligned = align_streams(
         [
             ("left", records("left", fail_close=True)),
-            ("right", records("right")),
+            ("right", records("right", fail_close=True)),
         ],
         partition_by=("id_",),
     )

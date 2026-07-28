@@ -1,30 +1,33 @@
 import json
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
 from datapipeline.artifacts.errors import ArtifactResolutionError
 from datapipeline.artifacts.fingerprints import calculate_artifact_hashes
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts
-from datapipeline.artifacts.planning import ArtifactGraph
+from datapipeline.artifacts.output import (
+    ArtifactOutput,
+    fingerprint_artifact_output,
+)
 from datapipeline.artifacts.settings import BuildSettings
 from datapipeline.artifacts.validation import validate_artifact_plan
-from datapipeline.build.state import (
+from datapipeline.artifacts.state import (
     BuildState,
     load_build_state,
     save_build_state,
 )
-from datapipeline.cli.visuals.execution import emit_execution_message
-from datapipeline.config.profiles import ArtifactMode
-from datapipeline.config.tasks import ArtifactTask
-from datapipeline.execution.observability import emit_file_result, operation_scope
-from datapipeline.operations.persistence import persist_artifact_output
-from datapipeline.plugins import BUILD_OPERATIONS_EP
+from datapipeline.config.profiles.build import ArtifactMode
+from datapipeline.config.tasks.base import ArtifactTask
+from datapipeline.execution.observability import (
+    emit_execution_message,
+    emit_file_result,
+    operation_scope,
+)
+from datapipeline.plugins import BUILD_OPERATIONS_EP, load_entrypoint
 from datapipeline.runtime import Runtime
-from datapipeline.services.definitions import ArtifactHashes, ProjectDefinition
+from datapipeline.services.definitions import ProjectDefinition
 from datapipeline.services.path_policy import resolve_artifact_output_path
-from datapipeline.utils.load import load_ep
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +55,7 @@ class BuildPlan:
     reason: Literal["force", "missing", "stale"]
     artifacts: tuple[str, ...]
     jobs: tuple[ArtifactBuildJob, ...]
-    artifact_hashes: ArtifactHashes
     previous_state: BuildState | None
-    graph: ArtifactGraph
 
 
 ArtifactPlan = BuildPlan | SkippedBuild
@@ -88,18 +89,17 @@ def _report_artifact_plan(
             indent=2,
         ),
         level=logging.DEBUG,
-        logger=logger,
     )
 
 
 def _plan_build(
     *,
     definition: ProjectDefinition,
-    graph: ArtifactGraph,
     required_artifacts: set[str],
     mode: ArtifactMode,
     resolved_artifacts: set[str] | None = None,
 ) -> ArtifactPlan:
+    graph = definition.artifact_graph
     try:
         selected_roots = set(required_artifacts)
         selected_keys = set(graph.dependency_closure(selected_roots))
@@ -114,7 +114,7 @@ def _plan_build(
     dataset = None
     if graph.requires_dataset(selected_keys):
         dataset = definition.dataset
-        selected_keys = set(graph.active_dependency_closure(selected_roots, dataset))
+        selected_keys = set(graph.dependency_closure(selected_roots, dataset))
     if not selected_keys:
         return SkippedBuild(reason="not_required", artifacts=())
 
@@ -167,7 +167,7 @@ def _plan_build(
         )
     all_active_keys = (
         set(
-            graph.active_dependency_closure(
+            graph.dependency_closure(
                 (definition.key for definition in graph.definitions),
                 dataset,
             )
@@ -196,9 +196,7 @@ def _plan_build(
         ),
         artifacts=expanded_artifacts,
         jobs=jobs,
-        artifact_hashes=artifact_hashes,
         previous_state=previous_state,
-        graph=graph,
     )
 
 
@@ -217,7 +215,7 @@ def _execute_build_jobs(
         else BuildState()
     )
     for job in plan.jobs:
-        artifact_hash = plan.artifact_hashes.for_artifact(job.task.id)
+        artifact_hash = definition.artifact_hashes.for_artifact(job.task.id)
         with operation_scope(f"build:{job.task.id}"):
             _require_stable_artifact_inputs(
                 definition,
@@ -240,33 +238,30 @@ def _execute_build_jobs(
                     indent=2,
                 ),
                 level=logging.DEBUG,
-                logger=logger,
             )
             for key in job.invalidated_artifacts:
                 current_state.artifacts.pop(key, None)
             hydrate_runtime_artifacts(
                 runtime=runtime,
-                graph=plan.graph,
+                graph=definition.artifact_graph,
                 state=current_state,
-                artifact_hashes=plan.artifact_hashes,
+                artifact_hashes=definition.artifact_hashes,
                 artifact_keys=plan.artifacts,
             )
 
-            runner = load_ep(BUILD_OPERATIONS_EP, job.task.entrypoint)
-            output = runner(
+            runner = load_entrypoint(BUILD_OPERATIONS_EP, job.task.entrypoint)
+            operation_result = runner(
                 runtime=runtime,
                 task_cfg=job.task,
             )
-            result = persist_artifact_output(
+            if not isinstance(operation_result, ArtifactOutput):
+                raise TypeError("Build operation must return ArtifactOutput.")
+            output = operation_result
+            files = fingerprint_artifact_output(
                 output,
-                artifact_key=job.task.id,
-                expected_relative_path=job.task.output,
-                runtime=runtime,
+                task=job.task,
+                artifacts_root=runtime.artifacts_root,
             )
-            if result is None:
-                raise RuntimeError(
-                    f"Artifact operation '{job.task.id}' produced no artifact."
-                )
             _require_stable_artifact_inputs(
                 definition,
                 job.task.id,
@@ -274,19 +269,18 @@ def _execute_build_jobs(
             )
             current_state.register(
                 job.task.id,
-                result.relative_path,
                 artifact_hash=artifact_hash,
-                files=result.files,
-                meta=result.meta,
+                files=files,
+                meta=output.meta,
             )
             save_build_state(current_state, runtime.artifacts_root)
             runtime.artifacts.register(
                 job.task.id,
-                relative_path=result.relative_path,
-                meta=result.meta,
+                relative_path=job.task.output,
+                meta=output.meta,
             )
             label = job.task.id.replace("_", " ").capitalize()
-            path = (Path(runtime.artifacts_root) / result.relative_path).resolve()
+            path = (runtime.artifacts_root / job.task.output).resolve()
             emit_file_result(label, path)
     return current_state
 
@@ -300,7 +294,7 @@ def _require_stable_artifact_inputs(
         definition.project,
         definition.dataset,
         definition.streams,
-        definition.artifact_operations,
+        definition.artifact_graph,
     )
     if current_hashes.for_artifact(artifact_id) != expected_hash:
         raise RuntimeError(
@@ -312,7 +306,6 @@ def _require_stable_artifact_inputs(
 def run_build_if_needed(
     definition: ProjectDefinition,
     *,
-    graph: ArtifactGraph,
     required_artifacts: set[str],
     settings: BuildSettings,
     runtime: Runtime,
@@ -320,10 +313,10 @@ def run_build_if_needed(
 ) -> bool:
     """Execute artifact-producing operations when selected artifacts are missing or stale."""
     mode = settings.mode
+    graph = definition.artifact_graph
 
     plan = _plan_build(
         definition=definition,
-        graph=graph,
         required_artifacts=required_artifacts,
         mode=mode,
         resolved_artifacts=resolved_artifacts,

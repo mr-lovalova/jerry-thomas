@@ -9,7 +9,6 @@ from datapipeline.config.dataset.series import SequenceConfig, SeriesConfig
 from datapipeline.domain.series import SeriesRecord
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.domain.sample_key import SampleKeyContract
-from datapipeline.execution.context import PipelineContext
 from datapipeline.pipelines.series.stages import (
     SeriesSequencer,
     project_series,
@@ -18,6 +17,10 @@ from datapipeline.pipelines.series.stages import (
 from datapipeline.pipelines.series.pipeline import build_series_stages
 from datapipeline.pipelines.series.projector import SeriesProjector
 from datapipeline.runtime import Runtime, SourceRuntimeStream
+from datapipeline.transforms.utils import (
+    record_establishes_domain,
+    set_record_domain_anchor,
+)
 
 
 class _EmptySource:
@@ -29,14 +32,17 @@ def _identity(records):
     return records
 
 
-def _context(
+def _runtime(
     tmp_path,
     partition_by: tuple[str, ...] = (),
-) -> PipelineContext:
+    sample_keys: tuple[str, ...] = (),
+) -> Runtime:
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(
+            sample=SampleConfig(cadence="1h", keys=list(sample_keys))
+        ),
     )
     runtime.streams["stream"] = SourceRuntimeStream(
         source=_EmptySource(),
@@ -46,7 +52,7 @@ def _context(
         partition_by=partition_by,
         presorted=False,
     )
-    return PipelineContext(runtime)
+    return runtime
 
 
 def _series_record(
@@ -60,12 +66,13 @@ def _series_record(
         time=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=position),
         value=value,
         entity_key=entity_key,
+        _establishes_domain=True,
     )
 
 
 def test_series_stages_sequence_without_scaling(tmp_path) -> None:
     stages = build_series_stages(
-        _context(tmp_path),
+        _runtime(tmp_path),
         SeriesConfig(
             stream="stream",
             id="x",
@@ -73,7 +80,6 @@ def test_series_stages_sequence_without_scaling(tmp_path) -> None:
             scale=True,
             sequence=SequenceConfig(size=3, stride=2),
         ),
-        group_by_cadence="1h",
     )
 
     assert [stage.name for stage in stages] == [
@@ -84,7 +90,7 @@ def test_series_stages_sequence_without_scaling(tmp_path) -> None:
 
 def test_series_stages_omit_disabled_stages(tmp_path) -> None:
     stages = build_series_stages(
-        _context(tmp_path),
+        _runtime(tmp_path),
         SeriesConfig(stream="stream", id="x", field="value"),
     )
 
@@ -93,10 +99,12 @@ def test_series_stages_omit_disabled_stages(tmp_path) -> None:
 
 def test_partitioned_series_stages_include_ordering(tmp_path) -> None:
     stages = build_series_stages(
-        _context(tmp_path, partition_by=("symbol",)),
+        _runtime(
+            tmp_path,
+            partition_by=("symbol",),
+            sample_keys=("symbol",),
+        ),
         SeriesConfig(stream="stream", id="x", field="value"),
-        sample_keys=("symbol",),
-        group_by_cadence="1h",
     )
 
     assert [stage.name for stage in stages] == [
@@ -154,20 +162,66 @@ def test_sequence_series_preserves_none_values() -> None:
     assert sequence.values == [1.0, None]
 
 
+def test_sequence_series_rejects_intrinsic_list_values() -> None:
+    records = iter(
+        [
+            _series_record([1.0, 2.0], 0),
+            _series_record([3.0, 4.0], 1),
+        ]
+    )
+
+    with pytest.raises(TypeError, match=r"sequence requires scalar values"):
+        list(sequence_series(SequenceConfig(size=2), records))
+
+
+def test_sequence_establishes_domain_when_any_input_record_does() -> None:
+    placeholder = _series_record(None, 0)
+    set_record_domain_anchor(placeholder, False)
+    observed = _series_record(1.0, 1)
+
+    [sequence] = sequence_series(
+        SequenceConfig(size=2),
+        iter([placeholder, observed]),
+    )
+
+    assert record_establishes_domain(sequence)
+
+
+def test_sequence_of_placeholders_does_not_establish_domain() -> None:
+    records = [_series_record(None, position) for position in range(2)]
+    for record in records:
+        set_record_domain_anchor(record, False)
+
+    [sequence] = sequence_series(SequenceConfig(size=2), iter(records))
+
+    assert not record_establishes_domain(sequence)
+
+
 def test_projected_series_does_not_retain_source_record() -> None:
     source_record = TemporalRecord(time=datetime(2024, 1, 1, tzinfo=timezone.utc))
     source_record.value = 1.0
     record_ref = weakref.ref(source_record)
-    [projected] = SeriesProjector((), SampleKeyContract(())).project(
-        source_record,
-        (SeriesConfig(stream="stream", id="x", field="value"),),
-    )
+    config = SeriesConfig(stream="stream", id="x", field="value")
+    projector = SeriesProjector((), SampleKeyContract(()), (config,))
+    [projected] = projector.project(source_record)
 
     del source_record
     gc.collect()
 
     assert record_ref() is None
     assert projected.time == datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+
+def test_projected_series_preserves_domain_anchor() -> None:
+    source_record = TemporalRecord(time=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    source_record.value = None
+    set_record_domain_anchor(source_record, False)
+
+    config = SeriesConfig(stream="stream", id="x", field="value")
+    projector = SeriesProjector((), SampleKeyContract(()), (config,))
+    [projected] = projector.project(source_record)
+
+    assert not record_establishes_domain(projected)
 
 
 def test_project_series_rejects_sample_key_type_drift() -> None:
@@ -177,6 +231,7 @@ def test_project_series_rejects_sample_key_type_drift() -> None:
     second = TemporalRecord(time=datetime(2024, 1, 2, tzinfo=timezone.utc))
     second.value = 2.0
     second.security_id = 1
+    config = SeriesConfig(stream="stream", id="value", field="value")
 
     with pytest.raises(TypeError, match="changed type"):
         list(
@@ -184,8 +239,8 @@ def test_project_series_rejects_sample_key_type_drift() -> None:
                 SeriesProjector(
                     ("security_id",),
                     SampleKeyContract(["security_id"]),
+                    (config,),
                 ),
-                SeriesConfig(stream="stream", id="value", field="value"),
                 iter([first, second]),
             )
         )

@@ -3,7 +3,7 @@ from pathlib import Path
 
 from datapipeline.config.workspace import WorkspaceConfig
 from datapipeline.services.path_policy import resolve_workspace_path, workspace_cwd
-from datapipeline.utils.load import load_yaml
+from datapipeline.io.yaml import load_yaml
 
 
 @dataclass(frozen=True)

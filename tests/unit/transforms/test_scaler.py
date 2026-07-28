@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from datapipeline.artifacts.scaler import (
     FoldedScalerArtifact,
+    PositionalScalerStatistics,
     ScalerStatistics,
     StandardScalerArtifact,
     load_scaler_artifact,
@@ -46,7 +47,7 @@ def test_accumulator_fits_population_statistics() -> None:
     assert artifact.with_std is True
     assert artifact.epsilon == 1e-12
     assert artifact.observations == 3
-    assert artifact.version == 3
+    assert artifact.version == 4
 
 
 def test_accumulator_uses_epsilon_for_constant_values() -> None:
@@ -64,6 +65,66 @@ def test_accumulator_ignores_none() -> None:
 
     assert accumulator.observations == 1
     assert accumulator.artifact().statistics["x"].count == 1
+
+
+def test_accumulator_fits_list_positions_independently() -> None:
+    accumulator = ScalerAccumulator()
+
+    accumulator.observe("x", [1.0, None])
+    accumulator.observe("x", [3.0, 5.0])
+
+    artifact = accumulator.artifact()
+    statistics = artifact.statistics["x"]
+    assert isinstance(statistics, PositionalScalerStatistics)
+    first, second = statistics.positions
+    assert first.count == 2
+    assert first.mean == 2.0
+    assert first.std == 1.0
+    assert second.count == 1
+    assert second.mean == 5.0
+    assert second.std == 1e-12
+    assert statistics.count == 3
+    assert artifact.observations == 3
+
+
+def test_accumulator_requires_an_observation_at_each_list_position() -> None:
+    accumulator = ScalerAccumulator()
+    accumulator.observe("x", [1.0, None])
+    accumulator.observe("x", [2.0, None])
+
+    with pytest.raises(RuntimeError, match=r"'x' positions: 1"):
+        accumulator.artifact()
+
+
+def test_accumulator_rejects_changing_list_width_without_mutation() -> None:
+    accumulator = ScalerAccumulator()
+    accumulator.observe("x", [1.0, 2.0])
+
+    with pytest.raises(ValueError, match=r"'x'.*different lengths: 2 and 1"):
+        accumulator.observe("x", [3.0])
+
+    statistics = accumulator.artifact().statistics["x"]
+    assert isinstance(statistics, PositionalScalerStatistics)
+    assert statistics.positions == (
+        ScalerStatistics(mean=1.0, std=1e-12, count=1),
+        ScalerStatistics(mean=2.0, std=1e-12, count=1),
+    )
+
+
+def test_accumulator_rejects_scalar_after_list() -> None:
+    accumulator = ScalerAccumulator()
+    accumulator.observe("x", [1.0])
+
+    with pytest.raises(ValueError, match=r"'x'.*mixes scalar and list"):
+        accumulator.observe("x", 2.0)
+
+
+def test_accumulator_rejects_list_after_scalar() -> None:
+    accumulator = ScalerAccumulator()
+    accumulator.observe("x", 1.0)
+
+    with pytest.raises(ValueError, match=r"'x'.*mixes scalar and list"):
+        accumulator.observe("x", [2.0])
 
 
 def test_accumulator_requires_an_observation() -> None:
@@ -90,10 +151,27 @@ def test_accumulator_rejects_invalid_epsilon(
         ScalerAccumulator(epsilon=epsilon)  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("value", [True, "1.0", [1.0]])
+@pytest.mark.parametrize("value", [True, "1.0", [1.0, "2.0"], [[1.0]]])
 def test_accumulator_rejects_non_numeric_values(value: object) -> None:
     with pytest.raises(TypeError, match="numeric or None"):
         ScalerAccumulator().observe("x", value)
+
+
+def test_accumulator_does_not_partially_observe_an_invalid_list() -> None:
+    accumulator = ScalerAccumulator()
+    accumulator.observe("x", [1.0, 2.0])
+
+    with pytest.raises(TypeError, match="numeric or None"):
+        accumulator.observe("x", [3.0, "invalid"])
+
+    artifact = accumulator.artifact()
+    assert artifact.observations == 2
+    assert artifact.statistics["x"] == PositionalScalerStatistics(
+        positions=(
+            ScalerStatistics(mean=1.0, std=1e-12, count=1),
+            ScalerStatistics(mean=2.0, std=1e-12, count=1),
+        )
+    )
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
@@ -113,6 +191,25 @@ def test_standard_scaler_rejects_inconsistent_observation_count() -> None:
                 "x": ScalerStatistics(mean=0.0, std=1.0, count=1),
             },
         )
+
+
+def test_standard_scaler_counts_positional_observations() -> None:
+    artifact = StandardScalerArtifact(
+        with_mean=True,
+        with_std=True,
+        epsilon=1e-12,
+        observations=3,
+        statistics={
+            "x": PositionalScalerStatistics(
+                positions=(
+                    ScalerStatistics(mean=1.0, std=1.0, count=2),
+                    ScalerStatistics(mean=2.0, std=1.0, count=1),
+                )
+            )
+        },
+    )
+
+    assert artifact.observations == 3
 
 
 def test_folded_scaler_is_keyed_by_fold_id() -> None:
@@ -147,6 +244,20 @@ def test_folded_scaler_rejects_invalid_fold_ids(fold_id: str) -> None:
     "artifact",
     [
         _standard_artifact(),
+        StandardScalerArtifact(
+            with_mean=True,
+            with_std=True,
+            epsilon=1e-12,
+            observations=2,
+            statistics={
+                "x": PositionalScalerStatistics(
+                    positions=(
+                        ScalerStatistics(mean=1.0, std=1.0, count=1),
+                        ScalerStatistics(mean=2.0, std=1.0, count=1),
+                    )
+                )
+            },
+        ),
         FoldedScalerArtifact(folds={"walk_0": _standard_artifact()}),
     ],
 )
@@ -177,11 +288,20 @@ def test_scaler_artifact_round_trip(tmp_path, artifact) -> None:
             "with_std": True,
             "epsilon": 1e-12,
             "observations": 1,
+            "statistics": {"x": {"mean": 0.0, "std": 1.0, "count": 1}},
+        },
+        {
+            "kind": "standard_scaler",
+            "version": 4,
+            "with_mean": True,
+            "with_std": True,
+            "epsilon": 1e-12,
+            "observations": 1,
             "statistics": {"x": {"mean": 0.0, "count": 1}},
         },
         {
             "kind": "standard_scaler",
-            "version": 3,
+            "version": 4,
             "with_mean": "false",
             "with_std": True,
             "epsilon": 1e-12,

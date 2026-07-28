@@ -1,13 +1,20 @@
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from datapipeline.cli.command_router import execute_command
+from datapipeline.cli.commands.profile_runner import execute_profile_request
 from datapipeline.cli.output_options import build_cli_output_config
 from datapipeline.cli.parser_builder import build_parser
-from datapipeline.config.profiles import ServeOutputConfig
+from datapipeline.config.execution import ExecutionConfig
+from datapipeline.config.profiles.output import ServeOutputConfig
+from datapipeline.execution.observability import CommandFinished
+from datapipeline.execution.settings import CommandObservability
+from datapipeline.profiles.errors import ProfileCommandError
+from datapipeline.profiles.models import BuildRunRequest
 
 
 def _serve_args() -> SimpleNamespace:
@@ -45,6 +52,34 @@ def _inspect_args() -> SimpleNamespace:
         visuals="on",
         heartbeat_interval_seconds=None,
     )
+
+
+def _runtime_request(visuals: str = "off") -> SimpleNamespace:
+    return SimpleNamespace(
+        command="serve",
+        artifact_settings=SimpleNamespace(
+            observability=SimpleNamespace(visuals=visuals)
+        ),
+        jobs=(),
+    )
+
+
+def _build_run_request(visuals: str = "off") -> BuildRunRequest:
+    job = SimpleNamespace(
+        settings=SimpleNamespace(
+            observability=SimpleNamespace(visuals=visuals),
+        )
+    )
+    return BuildRunRequest(
+        definition=SimpleNamespace(),
+        jobs=(job,),
+        execution=ExecutionConfig(),
+    )
+
+
+@contextmanager
+def _noop_visual_summary(_level, _enabled):
+    yield
 
 
 def test_build_cli_output_config_fs_requires_directory() -> None:
@@ -212,14 +247,14 @@ def test_execute_serve_propagates_keyboard_interrupt(monkeypatch) -> None:
         lambda **kwargs: object(),
     )
 
-    calls = {"run_profiles": 0}
+    calls = {"execute_profile_request": 0}
 
     def _interrupting_execute(request):
-        calls["run_profiles"] += 1
+        calls["execute_profile_request"] += 1
         raise KeyboardInterrupt()
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.run_profiles",
+        "datapipeline.cli.commands.profile_runner.execute_profile_request",
         _interrupting_execute,
     )
 
@@ -229,11 +264,10 @@ def test_execute_serve_propagates_keyboard_interrupt(monkeypatch) -> None:
             plugin_root=None,
             workspace_context=None,
             cli_level_arg=None,
-            base_level_name="INFO",
             cli_log_outputs=[],
         )
 
-    assert calls["run_profiles"] == 1
+    assert calls["execute_profile_request"] == 1
 
 
 def test_execute_serve_runs_request_from_builder(monkeypatch) -> None:
@@ -255,7 +289,8 @@ def test_execute_serve_runs_request_from_builder(monkeypatch) -> None:
         seen["request"] = request
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.run_profiles", _capture
+        "datapipeline.cli.commands.profile_runner.execute_profile_request",
+        _capture,
     )
 
     args = _serve_args()
@@ -265,7 +300,6 @@ def test_execute_serve_runs_request_from_builder(monkeypatch) -> None:
         plugin_root=None,
         workspace_context=None,
         cli_level_arg=None,
-        base_level_name="INFO",
         cli_log_outputs=[],
     )
 
@@ -273,6 +307,7 @@ def test_execute_serve_runs_request_from_builder(monkeypatch) -> None:
     assert seen["request"] is sentinel_request
     assert captured["command"] == "serve"
     assert captured["artifact_mode"] == "FORCE"
+    assert captured["command_observability"] == CommandObservability(visuals="on")
 
 
 @pytest.mark.parametrize("command", ["serve", "inspect"])
@@ -292,7 +327,7 @@ def test_runtime_command_propagates_gzip_output_override(
         _capture_request,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.run_profiles",
+        "datapipeline.cli.commands.profile_runner.execute_profile_request",
         lambda request: None,
     )
     args = build_parser().parse_args(
@@ -314,7 +349,6 @@ def test_runtime_command_propagates_gzip_output_override(
         plugin_root=None,
         workspace_context=None,
         cli_level_arg=None,
-        base_level_name="INFO",
         cli_log_outputs=[],
     )
 
@@ -340,7 +374,6 @@ def test_execute_serve_skips_when_no_enabled_profiles(monkeypatch, caplog) -> No
             plugin_root=None,
             workspace_context=None,
             cli_level_arg=None,
-            base_level_name="INFO",
             cli_log_outputs=[],
         )
 
@@ -360,7 +393,7 @@ def test_execute_build_passes_profile_and_force(monkeypatch) -> None:
         _capture_request,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.run_profiles",
+        "datapipeline.cli.commands.profile_runner.execute_profile_request",
         lambda request: None,
     )
 
@@ -377,13 +410,16 @@ def test_execute_build_passes_profile_and_force(monkeypatch) -> None:
         plugin_root=None,
         workspace_context=None,
         cli_level_arg="DEBUG",
-        base_level_name="DEBUG",
         cli_log_outputs=[],
     )
 
     assert result is None
     assert captured["profile_name"] == "nightly"
     assert captured["force"] is True
+    assert captured["command_observability"] == CommandObservability(
+        visuals="off",
+        log_level="DEBUG",
+    )
 
 
 def test_execute_inspect_passes_command_and_profile(monkeypatch) -> None:
@@ -398,7 +434,7 @@ def test_execute_inspect_passes_command_and_profile(monkeypatch) -> None:
         _capture_request,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.run_profiles",
+        "datapipeline.cli.commands.profile_runner.execute_profile_request",
         lambda request: None,
     )
 
@@ -409,13 +445,16 @@ def test_execute_inspect_passes_command_and_profile(monkeypatch) -> None:
         plugin_root=None,
         workspace_context=None,
         cli_level_arg="INFO",
-        base_level_name="INFO",
         cli_log_outputs=[],
     )
 
     assert result is None
     assert captured["command"] == "inspect"
     assert captured["profile_name"] == "report"
+    assert captured["command_observability"] == CommandObservability(
+        visuals="on",
+        log_level="INFO",
+    )
 
 
 def test_execute_inspect_skips_when_no_enabled_profiles(monkeypatch, caplog) -> None:
@@ -432,9 +471,228 @@ def test_execute_inspect_skips_when_no_enabled_profiles(monkeypatch, caplog) -> 
             plugin_root=None,
             workspace_context=None,
             cli_level_arg=None,
-            base_level_name="INFO",
             cli_log_outputs=[],
         )
 
     assert result is None
     assert "No enabled inspect profiles; skipping inspect." in caplog.text
+
+
+def test_profile_request_logs_expected_error_before_error_summary(monkeypatch) -> None:
+    error = ProfileCommandError("invalid profile")
+    error.add_note("failed to finalize run")
+    order: list[tuple[str, object]] = []
+
+    def fail(_request) -> None:
+        raise error
+
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.run_profiles",
+        fail,
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.logger.error",
+        lambda message, *args: order.append(("log", message % args)),
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.route_execution_event",
+        lambda event, _logger: order.append(("event", event)),
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.visual_summary",
+        _noop_visual_summary,
+    )
+    times = iter((10.0, 11.5))
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.time.perf_counter",
+        lambda: next(times),
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        execute_profile_request(_runtime_request())
+
+    assert raised.value.code == 2
+    assert raised.value.__cause__ is error
+    assert order == [
+        ("log", "invalid profile"),
+        ("log", "failed to finalize run"),
+        ("event", CommandFinished("serve", "error", 1.5)),
+    ]
+
+
+def test_profile_request_emits_one_success_summary(monkeypatch) -> None:
+    events: list[CommandFinished] = []
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.run_profiles",
+        lambda _request: None,
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.route_execution_event",
+        lambda event, _logger: events.append(event),
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.visual_summary",
+        _noop_visual_summary,
+    )
+    times = iter((3.0, 5.0))
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.time.perf_counter",
+        lambda: next(times),
+    )
+
+    execute_profile_request(_runtime_request())
+
+    assert events == [CommandFinished("serve", "success", 2.0)]
+
+
+def test_profile_request_preserves_unexpected_failure(monkeypatch) -> None:
+    error = RuntimeError("broken execution")
+    events: list[CommandFinished] = []
+
+    def fail(_request) -> None:
+        raise error
+
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.run_profiles",
+        fail,
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.route_execution_event",
+        lambda event, _logger: events.append(event),
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.visual_summary",
+        _noop_visual_summary,
+    )
+    times = iter((6.0, 7.0))
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.time.perf_counter",
+        lambda: next(times),
+    )
+
+    with pytest.raises(RuntimeError) as raised:
+        execute_profile_request(_runtime_request())
+
+    assert raised.value is error
+    assert events == [CommandFinished("serve", "error", 1.0)]
+
+
+def test_profile_request_summary_failure_does_not_replace_command_failure(
+    monkeypatch,
+) -> None:
+    command_error = RuntimeError("broken execution")
+
+    def fail_command(_request) -> None:
+        raise command_error
+
+    def fail_summary(_event, _logger) -> None:
+        raise OSError("broken reporter")
+
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.run_profiles",
+        fail_command,
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.route_execution_event",
+        fail_summary,
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.visual_summary",
+        _noop_visual_summary,
+    )
+
+    with pytest.raises(RuntimeError) as raised:
+        execute_profile_request(_runtime_request())
+
+    assert raised.value is command_error
+    assert raised.value.__notes__ == [
+        "Reporting command completion also failed: broken reporter"
+    ]
+
+
+@pytest.mark.parametrize("error", [KeyboardInterrupt(), SystemExit(7)])
+def test_profile_request_preserves_process_control_exceptions(
+    monkeypatch,
+    error,
+) -> None:
+    events: list[CommandFinished] = []
+    messages: list[str] = []
+    error.add_note("failed to finalize run")
+
+    def fail(_request) -> None:
+        raise error
+
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.run_profiles",
+        fail,
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.route_execution_event",
+        lambda event, _logger: events.append(event),
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.logger.error",
+        lambda message, *args: messages.append(message % args),
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.visual_summary",
+        _noop_visual_summary,
+    )
+    times = iter((1.0, 1.25))
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.time.perf_counter",
+        lambda: next(times),
+    )
+
+    with pytest.raises(type(error)) as raised:
+        execute_profile_request(_runtime_request())
+
+    assert raised.value is error
+    assert messages == ["failed to finalize run"]
+    assert events == [CommandFinished("serve", "error", 0.25)]
+
+
+@pytest.mark.parametrize(
+    "profile_request",
+    (_runtime_request(visuals="on"), _build_run_request(visuals="on")),
+    ids=("runtime", "build"),
+)
+def test_profile_request_routes_summary_inside_enabled_visuals(
+    monkeypatch,
+    profile_request,
+) -> None:
+    order: list[object] = []
+
+    @contextmanager
+    def visual_summary(_level, enabled):
+        order.append(("enter", enabled))
+        try:
+            yield
+        finally:
+            order.append(("exit", enabled))
+
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.run_profiles",
+        lambda _request: None,
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.route_execution_event",
+        lambda event, _logger: order.append(event),
+    )
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.visual_summary",
+        visual_summary,
+    )
+    times = iter((2.0, 3.0))
+    monkeypatch.setattr(
+        "datapipeline.cli.commands.profile_runner.time.perf_counter",
+        lambda: next(times),
+    )
+
+    execute_profile_request(profile_request)
+
+    assert order == [
+        ("enter", True),
+        CommandFinished(profile_request.command, "success", 1.0),
+        ("exit", True),
+    ]

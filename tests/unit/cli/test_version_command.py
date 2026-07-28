@@ -23,7 +23,6 @@ def test_version_command_prints_short_version(capsys) -> None:
         plugin_root=None,
         workspace_context=None,
         cli_level_arg=None,
-        base_level_name="INFO",
         cli_log_outputs=[],
     )
 
@@ -39,7 +38,6 @@ def test_env_command_prints_diagnostic_report(capsys) -> None:
         plugin_root=None,
         workspace_context=None,
         cli_level_arg=None,
-        base_level_name="INFO",
         cli_log_outputs=[],
     )
 

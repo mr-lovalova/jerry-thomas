@@ -1,18 +1,17 @@
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence, TypeAlias
 
-from datapipeline.build.state import ArtifactFileFingerprint
 from datapipeline.domain.sample import Sample
-from datapipeline.execution.runner import resolve_heartbeat_interval_seconds
 from datapipeline.execution.observability import (
     OperationProgressTracker,
     emit_file_result,
     emit_rows_written,
 )
+from datapipeline.execution.settings import resolve_heartbeat_interval_seconds
 from datapipeline.io.factory import writer_factory
 from datapipeline.io.factory import dataset_writer_factory
 from datapipeline.io.dataset_table import DatasetTable
@@ -21,20 +20,6 @@ from datapipeline.io.output import OutputTarget, output_destination_key
 from datapipeline.io.protocols import Writer
 from datapipeline.io.sinks.files import AtomicTextFileSink
 from datapipeline.io.writers.parquet import DEFAULT_ROW_GROUP_ROWS
-
-
-@dataclass(frozen=True)
-class ArtifactOutput:
-    relative_path: str
-    companion_paths: tuple[str, ...] = ()
-    meta: Mapping[str, object] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class PersistedArtifact:
-    relative_path: str
-    files: tuple[ArtifactFileFingerprint, ...]
-    meta: Mapping[str, object]
 
 
 @dataclass(frozen=True)
@@ -68,9 +53,24 @@ class DatasetTableOutput:
 @dataclass(frozen=True)
 class RoutedDatasetTableOutput:
     rows: Iterable[tuple[str, Sample]]
-    table: DatasetTable
+    tables: Mapping[str, DatasetTable]
     targets: Mapping[str, OutputTarget]
     limit_per_output: int | None = None
+
+    def __post_init__(self) -> None:
+        missing_table_ids = sorted(set(self.targets) - set(self.tables))
+        if missing_table_ids:
+            raise ValueError(
+                "Routed dataset table output is missing tables for output IDs: "
+                f"{missing_table_ids}."
+            )
+
+        unmatched_table_ids = sorted(set(self.tables) - set(self.targets))
+        if unmatched_table_ids:
+            raise ValueError(
+                "Routed dataset table output has tables without targets for output "
+                f"IDs: {unmatched_table_ids}."
+            )
 
 
 RoutedOutput: TypeAlias = RoutedRuntimeOutput | RoutedDatasetTableOutput
@@ -81,61 +81,6 @@ RuntimeOutputItem = RuntimeOutput | RoutedOutput | DatasetTableOutput
 @dataclass(frozen=True)
 class RuntimeOutputBatch:
     outputs: Sequence[RuntimeOutputItem]
-    on_complete: Callable[[bool], None] | None = None
-
-
-def persist_artifact_output(
-    result: object,
-    *,
-    artifact_key: str,
-    expected_relative_path: str | None = None,
-    runtime,
-) -> PersistedArtifact | None:
-    if result is None:
-        return None
-    if not isinstance(result, ArtifactOutput):
-        raise TypeError("Build operation must return ArtifactOutput or None.")
-    if expected_relative_path is not None and Path(result.relative_path) != Path(
-        expected_relative_path
-    ):
-        raise ValueError(
-            f"Artifact '{artifact_key}' returned path '{result.relative_path}', "
-            f"but its operation declares '{expected_relative_path}'."
-        )
-    relative_paths = (result.relative_path, *result.companion_paths)
-    normalized_paths = tuple(Path(relative_path) for relative_path in relative_paths)
-    path_keys = {output_destination_key(path) for path in normalized_paths}
-    if len(normalized_paths) != len(path_keys):
-        raise ValueError(f"Artifact '{artifact_key}' output paths must be unique.")
-
-    artifacts_root = Path(runtime.artifacts_root).resolve()
-    files: list[ArtifactFileFingerprint] = []
-    for relative_path, normalized_path in zip(relative_paths, normalized_paths):
-        if normalized_path.is_absolute() or ".." in normalized_path.parts:
-            raise ValueError(
-                f"Artifact '{artifact_key}' output path '{relative_path}' must be "
-                "relative to the artifacts root."
-            )
-        full_path = (artifacts_root / normalized_path).resolve()
-        try:
-            full_path.relative_to(artifacts_root)
-        except ValueError as exc:
-            raise ValueError(
-                f"Artifact '{artifact_key}' output must stay under {artifacts_root}."
-            ) from exc
-        if not full_path.is_file():
-            raise RuntimeError(
-                f"Artifact '{artifact_key}' did not create its declared output: "
-                f"{full_path}."
-            )
-        files.append(ArtifactFileFingerprint.from_path(str(normalized_path), full_path))
-
-    persisted = PersistedArtifact(
-        relative_path=str(normalized_paths[0]),
-        files=tuple(files),
-        meta=dict(result.meta),
-    )
-    return persisted
 
 
 def _close_runtime_rows(rows: Iterable[Any]) -> None:
@@ -358,7 +303,7 @@ def _persist_routed_output(
                 writers[output_id] = (
                     dataset_writer_factory(
                         target,
-                        result.table,
+                        result.tables[output_id],
                         row_group_rows=parquet_row_group_rows,
                     )
                     if isinstance(result, RoutedDatasetTableOutput)
@@ -411,16 +356,15 @@ def _close_pending_runtime_outputs(
             )
 
 
-def _persist_runtime_batch(
-    result: RuntimeOutputBatch,
+def _persist_runtime_outputs(
+    outputs: Sequence[RuntimeOutputItem],
     target: OutputTarget | None,
     heartbeat_interval_seconds: float | None,
     logger: logging.Logger,
 ) -> None:
-    success = False
     attempted = 0
     try:
-        for output in result.outputs:
+        for output in outputs:
             attempted += 1
             if isinstance(output, RoutedOutput):
                 _persist_routed_output(
@@ -442,21 +386,9 @@ def _persist_runtime_batch(
                     heartbeat_interval_seconds=heartbeat_interval_seconds,
                     logger=logger,
                 )
-        success = True
-    finally:
-        if not success:
-            _close_pending_runtime_outputs(result.outputs[attempted:], logger)
-        if result.on_complete is not None:
-            try:
-                result.on_complete(success)
-            except BaseException:
-                if success:
-                    raise
-                logger.debug(
-                    "Runtime output completion callback failed after an earlier "
-                    "persistence failure",
-                    exc_info=True,
-                )
+    except BaseException:
+        _close_pending_runtime_outputs(outputs[attempted:], logger)
+        raise
 
 
 def persist_runtime_result(
@@ -468,40 +400,15 @@ def persist_runtime_result(
 ) -> None:
     if result is None:
         return
-    if not isinstance(
-        result,
-        RuntimeOutput | RoutedOutput | DatasetTableOutput | RuntimeOutputBatch,
-    ):
-        raise TypeError("Runtime operation returned an unsupported output type.")
     if isinstance(result, RuntimeOutputBatch):
-        _persist_runtime_batch(
-            result,
-            target,
-            heartbeat_interval_seconds,
-            logger,
-        )
-        return
-
-    if isinstance(result, RoutedOutput):
-        _persist_routed_output(
-            result,
-            heartbeat_interval_seconds=heartbeat_interval_seconds,
-            logger=logger,
-        )
-        return
-
-    if isinstance(result, DatasetTableOutput):
-        _persist_dataset_table_output(
-            result,
-            target=target,
-            heartbeat_interval_seconds=heartbeat_interval_seconds,
-            logger=logger,
-        )
-        return
-
-    _persist_runtime_output(
-        result,
-        target=target,
-        heartbeat_interval_seconds=heartbeat_interval_seconds,
-        logger=logger,
+        outputs = result.outputs
+    elif isinstance(result, RuntimeOutputItem):
+        outputs = (result,)
+    else:
+        raise TypeError("Runtime operation returned an unsupported output type.")
+    _persist_runtime_outputs(
+        outputs,
+        target,
+        heartbeat_interval_seconds,
+        logger,
     )

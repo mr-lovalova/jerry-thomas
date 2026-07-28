@@ -3,8 +3,8 @@ from collections.abc import Sequence
 
 from datapipeline.artifacts.specs import SERIES
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.config.tasks import SeriesTask
+from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
+from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.operations.artifacts.series import build_series_artifact
 from datapipeline.runtime import Runtime
 
@@ -14,7 +14,7 @@ def register_series(
     features: Sequence[SeriesConfig],
     cadence: str,
     *,
-    targets: Sequence[SeriesConfig] = (),
+    targets: Sequence[TargetSeriesConfig] = (),
     sample_keys: Sequence[str] = (),
 ) -> None:
     current = runtime.dataset
@@ -26,9 +26,10 @@ def register_series(
         postprocess=current.postprocess,
     )
     shutil.rmtree(runtime.artifacts_root / "build/series", ignore_errors=True)
-    result = build_series_artifact(runtime, SeriesTask())
+    task = SeriesTask()
+    result = build_series_artifact(runtime, task)
     runtime.artifacts.register(
         SERIES,
-        relative_path=result.relative_path,
+        relative_path=task.output,
         meta=result.meta,
     )

@@ -2,7 +2,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from unicodedata import normalize
 
-from datapipeline.config.profiles import Format, ServeOutputConfig, Transport, View
+from datapipeline.config.profiles.output import (
+    Format,
+    ServeOutputConfig,
+    Transport,
+    View,
+)
 from datapipeline.io.compression import Compression
 from datapipeline.io.runs import RunPaths
 from datapipeline.services.path_policy import (

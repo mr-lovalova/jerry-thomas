@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+from datapipeline.execution.settings import CommandObservability
+from datapipeline.profiles.errors import ProfileCommandError
 from datapipeline.profiles.request_builder import (
     build_build_run_request,
     build_runtime_run_request,
@@ -13,7 +15,7 @@ def _write_project(tmp_path: Path) -> Path:
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 3",
+                "schema_version: 4",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: streams",
@@ -87,7 +89,7 @@ def test_inspect_request_defaults_to_enabled_profiles(tmp_path: Path):
     assert job.limit == 7
 
 
-def test_inspect_request_rejects_preview(tmp_path: Path, caplog) -> None:
+def test_inspect_request_rejects_preview(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
@@ -96,18 +98,17 @@ def test_inspect_request_rejects_preview(tmp_path: Path, caplog) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_runtime_run_request(
             command="inspect",
             project=str(project_yaml),
             preview="input",
         )
 
-    assert exc.value.code == 2
-    assert "Inspect profiles do not support previews" in caplog.text
+    assert "Inspect profiles do not support previews" in str(exc.value)
 
 
-def test_serve_profile_rejects_artifact_operation(tmp_path: Path, caplog):
+def test_serve_profile_rejects_artifact_operation(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
@@ -116,21 +117,20 @@ def test_serve_profile_rejects_artifact_operation(tmp_path: Path, caplog):
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_runtime_run_request(
             command="serve",
             project=str(project_yaml),
             profile_name="metadata",
         )
 
-    assert exc.value.code == 2
     assert (
         "must reference a runtime operation; 'metadata' is an artifact operation"
-        in caplog.text
+        in str(exc.value)
     )
 
 
-def test_inspect_profile_rejects_artifact_operation(tmp_path: Path, caplog):
+def test_inspect_profile_rejects_artifact_operation(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
@@ -139,17 +139,16 @@ def test_inspect_profile_rejects_artifact_operation(tmp_path: Path, caplog):
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_runtime_run_request(command="inspect", project=str(project_yaml))
 
-    assert exc.value.code == 2
     assert (
         "must reference a runtime operation; 'coverage_stats' is an artifact operation"
-        in caplog.text
+        in str(exc.value)
     )
 
 
-def test_build_profile_rejects_runtime_operation(tmp_path: Path, caplog):
+def test_build_profile_rejects_runtime_operation(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
@@ -158,17 +157,16 @@ def test_build_profile_rejects_runtime_operation(tmp_path: Path, caplog):
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_build_run_request(project=str(project_yaml))
 
-    assert exc.value.code == 2
     assert (
         "must reference an artifact operation; 'dataset' is a runtime operation"
-        in caplog.text
+        in str(exc.value)
     )
 
 
-def test_build_profile_rejects_unknown_operation(tmp_path: Path, caplog):
+def test_build_profile_rejects_unknown_operation(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
@@ -177,14 +175,13 @@ def test_build_profile_rejects_unknown_operation(tmp_path: Path, caplog):
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_build_run_request(project=str(project_yaml))
 
-    assert exc.value.code == 2
-    assert "references unknown operation 'scheam'" in caplog.text
+    assert "references unknown operation 'scheam'" in str(exc.value)
 
 
-def test_serve_profile_rejects_removed_pipeline_operation_id(tmp_path: Path, caplog):
+def test_serve_profile_rejects_removed_pipeline_operation_id(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
@@ -193,11 +190,10 @@ def test_serve_profile_rejects_removed_pipeline_operation_id(tmp_path: Path, cap
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ProfileCommandError) as exc:
         build_runtime_run_request(command="serve", project=str(project_yaml))
 
-    assert exc.value.code == 2
-    assert "references unknown operation 'pipeline'" in caplog.text
+    assert "references unknown operation 'pipeline'" in str(exc.value)
 
 
 def test_serve_request_orders_enabled_profiles_and_run_selects_named_profile(
@@ -269,9 +265,11 @@ def test_cli_artifact_mode_overrides_serve_defaults(tmp_path: Path):
         command="serve",
         project=str(project_yaml),
         artifact_mode="force",
-        cli_heartbeat_interval_seconds=0,
-        cli_log_level="debug",
-        cli_visuals="on",
+        command_observability=CommandObservability(
+            visuals="on",
+            heartbeat_interval_seconds=0,
+            log_level="debug",
+        ),
     )
 
     assert request is not None
@@ -422,6 +420,43 @@ def test_serve_profile_nested_observability_deep_merges_defaults(
     job = request.jobs[0]
     assert job.observability.log_decision.name == "DEBUG"
     assert job.observability.log_output.outputs[0].transport == "stdout"
+
+
+def test_serve_heartbeat_preserves_prerequisite_and_profile_precedence(
+    tmp_path: Path,
+):
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir(parents=True, exist_ok=True)
+    (profiles / "serve.defaults.yaml").write_text(
+        "observability:\n  heartbeat_interval_seconds: 30\n",
+        encoding="utf-8",
+    )
+    (profiles / "serve.train.yaml").write_text(
+        ("operation: dataset\nobservability:\n  heartbeat_interval_seconds: 180\n"),
+        encoding="utf-8",
+    )
+
+    request = build_runtime_run_request(
+        command="serve",
+        project=str(project_yaml),
+        profile_name="train",
+    )
+    cli_override = build_runtime_run_request(
+        command="serve",
+        project=str(project_yaml),
+        profile_name="train",
+        command_observability=CommandObservability(
+            heartbeat_interval_seconds=0,
+        ),
+    )
+
+    assert request is not None
+    assert request.artifact_settings.observability.heartbeat_interval_seconds == 30
+    assert request.jobs[0].observability.heartbeat_interval_seconds == 180
+    assert cli_override is not None
+    assert cli_override.artifact_settings.observability.heartbeat_interval_seconds == 0
+    assert cli_override.jobs[0].observability.heartbeat_interval_seconds == 0
 
 
 def test_build_defaults_apply_to_build_profiles(tmp_path: Path):

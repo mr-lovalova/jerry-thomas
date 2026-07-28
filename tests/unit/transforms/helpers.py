@@ -22,6 +22,7 @@ def make_feature_record(
         id=feature_id,
         time=datetime(2024, 1, 1, hour=hour, tzinfo=timezone.utc),
         value=value,
+        _establishes_domain=True,
     )
 
 

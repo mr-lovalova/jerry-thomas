@@ -24,9 +24,9 @@ phase has visuals enabled.
   - `canonical`: domain records after source mapping or fan-in combining;
     derived streams pass their input through unchanged at this boundary.
   - `records`: records after configured transforms and ordering.
-  - `series`: ordered feature/target records after sequence construction.
-    Values remain unscaled because scaling is selected by the full dataset
-    output's fold.
+  - `series`: ordered feature/target records after sequence construction and
+    before `collect` assembly. Values remain unscaled because scaling is
+    selected by the full dataset output's fold.
   - `samples`: assembled samples before postprocess.
   - `postprocess`: samples after the configured postprocess pipeline.
     Preview stages remain unscaled; omit `--preview` to apply each selected
@@ -39,7 +39,7 @@ phase has visuals enabled.
     selected profiles and prepares that union once. The artifact graph orders
     those internal jobs; it never changes profile order.
 - `jerry serve --project <project.yaml> --output-transport <stdout|fs> --output-format <jsonl|csv|parquet|pickle> [--output-view flat|raw] [--output-encoding <codec>] [--output-compression gzip] --limit N [--artifact-mode AUTO|FORCE|OFF] [--log-level LEVEL] [--visuals on|off] [--heartbeat-interval SECONDS] [--profile name]`
-  - Applies postprocess selection and filtering before emitting. A configured dataset split routes a full dataset serve to one fs output per fold role, named `<profile-or-filename>.<fold-id>.<role>.<ext>`; profile `include_outputs` can narrow the set using IDs such as `fold_0.train`. Preview emits one combined stage and cannot be combined with explicit `include_outputs`. `--limit` applies separately to each output.
+  - Conforms samples to the declared schema and applies configured row filters before emitting. A configured dataset split routes a full dataset serve to one fs output per fold role, named `<profile-or-filename>.<fold-id>.<role>.<ext>`; profile `include_outputs` can narrow the set using IDs such as `fold_0.train`. Preview emits one combined stage and cannot be combined with explicit `include_outputs`. `--limit` applies separately to each output.
   - Use `--output-transport fs --output-format jsonl --output-directory build/serve` (or `csv`, `parquet`, `pickle`) to write outputs under `<output-directory>/runs/<run_id>/dataset/`.
   - `--output-view` controls payload shape:
     - `flat`: key + kind + flattened fields for JSONL/CSV; Parquet uses the
@@ -56,7 +56,7 @@ phase has visuals enabled.
     every preview stage and routed split output. Compression is never inferred
     from the filename.
   - Set `--log-level DEBUG` (or set `observability.logging.level: DEBUG` in the serve profile) to increase log detail while previewing a stage.
-  - Set `--heartbeat-interval 0` to disable logged pipeline heartbeats. Live progress remains enabled when visuals are on. The CLI value also controls the shared artifact prerequisite phase; profile `observability.heartbeat_interval_seconds` begins applying only when that profile runs.
+  - The built-in heartbeat interval is 60 seconds. Set `--heartbeat-interval 0` to disable logged pipeline heartbeats. Live progress remains enabled when visuals are on. The CLI value also controls the shared artifact prerequisite phase; concrete profile `observability.heartbeat_interval_seconds` begins applying only when that profile runs.
   - When multiple serve profiles exist, add `--profile <name>` to select a
     single profile; otherwise every enabled profile is executed in its exact
     configured order.

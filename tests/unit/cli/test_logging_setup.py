@@ -12,8 +12,7 @@ from datapipeline.cli.logging_setup import (
     root_logging_scope,
 )
 from datapipeline.cli.visuals.execution import (
-    ExecutionMessage,
-    make_operation_observer,
+    make_execution_observer,
     route_execution_event,
 )
 from datapipeline.cli.visuals.execution_context import (
@@ -25,9 +24,10 @@ from datapipeline.cli.visuals.execution_context import (
 from datapipeline.cli.visuals.rich.progress import visual_summary
 from datapipeline.execution.observability import (
     CommandFinished,
+    ExecutionMessage,
     emit_file_result,
     emit_operation_progress,
-    operation_observer,
+    execution_observer,
     operation_scope,
 )
 from datapipeline.execution.settings import LogOutputSettings, LogOutputTarget
@@ -40,7 +40,7 @@ def _flush_root_handlers() -> None:
 
 
 def _emit_materialize_outputs(logger: logging.Logger) -> None:
-    with operation_observer(make_operation_observer(logger)):
+    with execution_observer(make_execution_observer(logger)):
         with operation_scope("materialize:adv.20"):
             emit_file_result("Output", Path("/tmp/adv.20.jsonl"))
 
@@ -143,7 +143,7 @@ def test_operation_heartbeat_stays_in_file_during_visuals(
     logger = logging.getLogger("datapipeline.tests.logging_setup.heartbeat")
     token = set_current_execution_event_handler(handler)
     try:
-        with operation_observer(make_operation_observer(logger)):
+        with execution_observer(make_execution_observer(logger)):
             with operation_scope("serve:dataset"):
                 assert emit_operation_progress("write_output", 2_592_885, "rows")
     finally:

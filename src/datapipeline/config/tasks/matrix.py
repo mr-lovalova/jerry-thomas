@@ -12,6 +12,6 @@ class MatrixOptions(BaseModel):
     max_cells: StrictInt = Field(default=1_000_000, gt=0)
 
 
-class MatrixTask(RuntimeTask[MatrixOptions]):
+class MatrixTask(RuntimeTask):
     entrypoint: Literal["core.runtime.matrix"] = Field(default="core.runtime.matrix")
     options: MatrixOptions = Field(default_factory=MatrixOptions)

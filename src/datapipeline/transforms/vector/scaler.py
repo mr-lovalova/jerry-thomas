@@ -1,10 +1,13 @@
 import math
-from collections import defaultdict
 from collections.abc import Collection, Iterator
 from dataclasses import dataclass, replace
 from numbers import Real
 
-from datapipeline.artifacts.scaler import ScalerStatistics, StandardScalerArtifact
+from datapipeline.artifacts.scaler import (
+    PositionalScalerStatistics,
+    ScalerStatistics,
+    StandardScalerArtifact,
+)
 from datapipeline.domain.series_id import base_id
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
@@ -51,9 +54,10 @@ class ScalerAccumulator:
         self.with_mean: bool = with_mean
         self.with_std: bool = with_std
         self.epsilon: float = epsilon
-        self._statistics: dict[str, _RunningStatistics] = defaultdict(
-            _RunningStatistics
-        )
+        self._statistics: dict[
+            str,
+            _RunningStatistics | tuple[_RunningStatistics, ...],
+        ] = {}
         self.observations: int = 0
 
     def observe(self, vector_id: str, value: object) -> None:
@@ -61,21 +65,74 @@ class ScalerAccumulator:
             raise ValueError("vector_id must not be empty")
         if value is None:
             return
-        self._statistics[vector_id].observe(_finite_number(value))
+        if isinstance(value, list):
+            self._observe_positions(vector_id, value)
+        else:
+            self._observe_scalar(vector_id, value)
+
+    def _observe_scalar(self, vector_id: str, value: object) -> None:
+        current = self._statistics.get(vector_id)
+        if isinstance(current, tuple):
+            raise ValueError(f"Vector {vector_id!r} mixes scalar and list values.")
+        number = _finite_number(value)
+        if current is None:
+            current = _RunningStatistics()
+            self._statistics[vector_id] = current
+        current.observe(number)
         self.observations += 1
+
+    def _observe_positions(self, vector_id: str, values: list[object]) -> None:
+        current = self._statistics.get(vector_id)
+        if isinstance(current, _RunningStatistics):
+            raise ValueError(f"Vector {vector_id!r} mixes scalar and list values.")
+        if not values:
+            raise ValueError(f"Vector {vector_id!r} cannot fit an empty list value.")
+        if current is not None and len(current) != len(values):
+            raise ValueError(
+                f"Vector {vector_id!r} contains list values with different "
+                f"lengths: {len(current)} and {len(values)}."
+            )
+        numbers = tuple(
+            None if value is None else _finite_number(value) for value in values
+        )
+        if current is None:
+            current = tuple(_RunningStatistics() for _ in values)
+        for statistics, number in zip(current, numbers, strict=True):
+            if number is not None:
+                statistics.observe(number)
+        self._statistics[vector_id] = current
+        self.observations += sum(number is not None for number in numbers)
 
     def artifact(self) -> StandardScalerArtifact:
         if not self._statistics:
             raise RuntimeError("Scaler fitting produced no numeric observations.")
+        statistics: dict[
+            str,
+            ScalerStatistics | PositionalScalerStatistics,
+        ] = {}
+        for vector_id, running in self._statistics.items():
+            if isinstance(running, tuple):
+                missing = [
+                    str(position)
+                    for position, entry in enumerate(running)
+                    if entry.count == 0
+                ]
+                if missing:
+                    raise RuntimeError(
+                        f"Scaler fitting produced no numeric observations for vector "
+                        f"{vector_id!r} positions: {', '.join(missing)}."
+                    )
+                statistics[vector_id] = PositionalScalerStatistics(
+                    positions=tuple(entry.finish(self.epsilon) for entry in running),
+                )
+            else:
+                statistics[vector_id] = running.finish(self.epsilon)
         return StandardScalerArtifact(
             with_mean=self.with_mean,
             with_std=self.with_std,
             epsilon=self.epsilon,
             observations=self.observations,
-            statistics={
-                vector_id: statistics.finish(self.epsilon)
-                for vector_id, statistics in self._statistics.items()
-            },
+            statistics=statistics,
         )
 
 
@@ -136,6 +193,20 @@ def _scale_value(
     if value is None:
         return None
     statistics = _statistics_for(vector_id, artifact)
+    if isinstance(statistics, PositionalScalerStatistics):
+        if not isinstance(value, list):
+            raise TypeError(
+                f"Vector {vector_id!r} requires a list value for positional scaling."
+            )
+        if len(value) != len(statistics.positions):
+            raise ValueError(
+                f"Vector {vector_id!r} requires {len(statistics.positions)} values "
+                f"for positional scaling, got {len(value)}."
+            )
+        return [
+            _scale_scalar(item, position, artifact)
+            for item, position in zip(value, statistics.positions, strict=True)
+        ]
     if isinstance(value, list):
         return [_scale_scalar(item, statistics, artifact) for item in value]
     return _scale_scalar(value, statistics, artifact)
@@ -144,7 +215,7 @@ def _scale_value(
 def _statistics_for(
     vector_id: str,
     artifact: StandardScalerArtifact,
-) -> ScalerStatistics:
+) -> ScalerStatistics | PositionalScalerStatistics:
     try:
         return artifact.statistics[vector_id]
     except KeyError as exc:

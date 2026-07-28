@@ -12,18 +12,31 @@ from rich.console import Console
 from rich.progress import Progress
 
 import datapipeline.operations.artifacts.series as series_operation
-from datapipeline.artifacts.models import SampleDomainEntry
+import datapipeline.pipelines.stream.stages as stream_stages
+from datapipeline.artifacts.models import SampleDomainEntry, VectorMetadataCatalog
+from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.artifacts.specs import (
     SERIES,
     VECTOR_METADATA,
 )
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, SequenceConfig
+from datapipeline.config.dataset.postprocess import PostprocessConfig
+from datapipeline.config.dataset.series import (
+    SeriesConfig,
+    SequenceConfig,
+    TargetSeriesConfig,
+)
+from datapipeline.config.dataset.split import (
+    DatasetFold,
+    TimeInterval,
+    TimeSplitConfig,
+)
 from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.tasks import SeriesTask
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.config.transforms import (
     EnsureCadenceConfig,
-    EnsureTicksConfig,
+    EnsureScheduleConfig,
     FloorTimeConfig,
     PreprocessConfig,
     TransformConfig,
@@ -32,26 +45,27 @@ from datapipeline.cli.visuals.rich.progress import (
     _ExecutionProgress,
     _RichExecutionRenderer,
 )
-from datapipeline.domain.series import SeriesSequence
+from datapipeline.domain.series import SeriesRecord, SeriesSequence
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.domain.sample import Sample
 from datapipeline.domain.vector import Vector
-from datapipeline.execution.context import PipelineContext
 from datapipeline.execution.events import (
     NodeStarted,
     PipelineEvent,
     PipelineStarted,
     ProgressSnapshot,
 )
+from datapipeline.execution.observability import execution_observer
 from datapipeline.execution.pipeline import Input
 from datapipeline.execution.runner import run_pipeline
+from datapipeline.operations.artifacts.metadata import build_metadata_artifact
 from datapipeline.operations.artifacts.series import build_series_artifact
-from datapipeline.operations.runtime.dataset import _record_preview_stream
 from datapipeline.parsers.identity import IdentityParser
-from datapipeline.pipelines.dataset.postprocess import apply_postprocess
+from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
 from datapipeline.pipelines.dataset.pipeline import (
     build_dataset_pipeline,
     run_dataset_pipeline,
+    run_sample_pipeline,
 )
 from datapipeline.pipelines.series.pipeline import (
     build_series_pipeline,
@@ -59,6 +73,7 @@ from datapipeline.pipelines.series.pipeline import (
 )
 from datapipeline.pipelines.stream.pipeline import (
     build_stream_pipeline,
+    run_stream_preview_pipeline,
     run_stream_pipeline,
 )
 from datapipeline.pipelines.sample import input as sample_input
@@ -66,9 +81,10 @@ from datapipeline.pipelines.sample.keys import (
     sample_domain_key_plan,
     window_key_plan,
 )
-from datapipeline.pipelines.sample.input import open_samples
+from datapipeline.pipelines.sample.input import build_sample_input, open_samples
 from datapipeline.runtime import (
     AlignedRuntimeStream,
+    AsOfRuntimeStream,
     BroadcastRuntimeStream,
     DerivedRuntimeStream,
     RecordStage,
@@ -328,7 +344,7 @@ def _runtime_with_rows(
     artifacts_root.mkdir(parents=True, exist_ok=True)
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 3\nartifact_revision: 1\n", encoding="utf-8"
+        "schema_version: 4\nartifact_revision: 1\n", encoding="utf-8"
     )
     runtime = Runtime(
         project_yaml=project_yaml,
@@ -358,29 +374,33 @@ def _set_source_mapper(runtime: Runtime, mapper: RecordStage) -> None:
     )
 
 
-def _register_price_metadata(runtime: Runtime) -> None:
+def _register_price_metadata(runtime: Runtime) -> VectorMetadataCatalog:
     metadata_path = runtime.artifacts_root / "metadata.json"
     metadata_path.write_text(
         json.dumps(
             {
-                "schema_version": 3,
-                "counts": {"feature_vectors": 1, "target_vectors": 0},
-                "features": [
-                    {
-                        "id": "price",
-                        "base_id": "price",
-                        "kind": "scalar",
-                        "present_count": 1,
-                        "null_count": 0,
-                    }
-                ],
-                "targets": [],
+                "schema_version": 4,
+                "catalog": {
+                    "counts": {"feature_vectors": 1, "target_vectors": 0},
+                    "features": [
+                        {
+                            "id": "price",
+                            "base_id": "price",
+                            "kind": "scalar",
+                            "present_count": 1,
+                            "null_count": 0,
+                        }
+                    ],
+                    "targets": [],
+                },
+                "layout": {"kind": "unsplit"},
             },
             indent=2,
         ),
         encoding="utf-8",
     )
     runtime.artifacts.register(VECTOR_METADATA, "metadata.json")
+    return runtime.artifacts.load(VECTOR_METADATA_SPEC).catalog
 
 
 def test_source_pipeline_carries_source_summary(tmp_path: Path) -> None:
@@ -396,7 +416,7 @@ def test_source_pipeline_carries_source_summary(tmp_path: Path) -> None:
         ),
     )
 
-    pipeline = build_stream_pipeline(PipelineContext(runtime), "prices")
+    pipeline = build_stream_pipeline(runtime, "prices")
 
     assert pipeline.name == "stream:prices"
     assert pipeline.summary == "transport=fs.file file=prices.jsonl"
@@ -430,7 +450,7 @@ def test_stream_pipeline_carries_source_summary(tmp_path: Path) -> None:
         transforms=(),
     )
 
-    pipeline = build_stream_pipeline(PipelineContext(runtime), "derived")
+    pipeline = build_stream_pipeline(runtime, "derived")
 
     assert pipeline.name == "stream:derived"
     assert pipeline.summary == (
@@ -462,16 +482,15 @@ def test_derived_stream_reuses_upstream_order_without_a_mapper(
         partition_by=("symbol",),
         transforms=(),
     )
-    context = PipelineContext(runtime)
 
-    pipeline = build_stream_pipeline(context, "derived")
+    pipeline = build_stream_pipeline(runtime, "derived")
 
     assert pipeline.input.name == "stream:stream/open_source"
     assert [stage.name for stage in pipeline.stages] == [
         "stream:stream/map_records",
         "stream:stream/ensure_record_order",
     ]
-    records = list(run_pipeline(context, pipeline))
+    records = list(run_pipeline(runtime, pipeline))
     assert [(record.symbol, record.time.hour) for record in records] == [
         ("A", 0),
         ("A", 2),
@@ -497,7 +516,7 @@ def test_derived_record_previews_use_records_before_derived_transforms(
         transforms=(EnsureCadenceConfig(cadence="1h"),),
     )
 
-    pipeline = build_stream_pipeline(PipelineContext(runtime), "derived")
+    pipeline = build_stream_pipeline(runtime, "derived")
     assert pipeline.input.name == "stream:stream/open_source"
     assert [stage.name for stage in pipeline.stages] == [
         "stream:stream/map_records",
@@ -505,8 +524,8 @@ def test_derived_record_previews_use_records_before_derived_transforms(
         "ensure_cadence",
     ]
 
-    records = _record_preview_stream(
-        PipelineContext(runtime),
+    records = run_stream_preview_pipeline(
+        runtime,
         "derived",
         preview,
     )
@@ -548,7 +567,7 @@ def test_aligned_pipeline_closes_inputs_after_partial_read(tmp_path: Path) -> No
         ),
     }
 
-    records = run_stream_pipeline(PipelineContext(runtime), "combined")
+    records = run_stream_pipeline(runtime, "combined")
     assert next(records).time == _ts(0)
     records.close()
 
@@ -609,9 +628,8 @@ def test_broadcast_pipeline_reuses_exact_input_across_partitions(
         ),
     }
 
-    context = PipelineContext(runtime)
-    pipeline = build_stream_pipeline(context, "enriched")
-    records = list(run_pipeline(context, pipeline))
+    pipeline = build_stream_pipeline(runtime, "enriched")
+    records = list(run_pipeline(runtime, pipeline))
 
     assert pipeline.summary == "primary=primary,broadcast=broadcast"
     assert pipeline.input.name == "broadcast_inputs"
@@ -627,6 +645,58 @@ def test_broadcast_pipeline_reuses_exact_input_across_partitions(
     ]
     assert primary.closes == 1
     assert broadcast.closes == 1
+
+
+def test_as_of_pipeline_validates_lookup_tail_after_primary_finishes(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(tmp_path, [])
+    primary = _StubSource([{"time": _ts(3), "id_": "A"}])
+    lookup = _StubSource(
+        [
+            {"time": _ts(1), "id_": "A"},
+            {"time": _ts(4), "id_": "A"},
+            {"time": _ts(2), "id_": "A"},
+        ]
+    )
+
+    def take_primary(rows):
+        for primary_record, _ in rows:
+            yield primary_record
+
+    runtime.streams = {
+        "primary": SourceRuntimeStream(
+            source=primary,
+            mapper=_mapper,
+            preprocess=(),
+            partition_by=("id_",),
+            presorted=True,
+            transforms=(),
+        ),
+        "lookup": SourceRuntimeStream(
+            source=lookup,
+            mapper=_mapper,
+            preprocess=(),
+            partition_by=("id_",),
+            presorted=True,
+            transforms=(),
+        ),
+        "enriched": AsOfRuntimeStream(
+            input_stream="primary",
+            lookup_stream="lookup",
+            combine=take_primary,
+            partition_by=("id_",),
+            max_age=None,
+            require_match=True,
+            transforms=(),
+        ),
+    }
+
+    with pytest.raises(ValueError, match="violates declared ordered_by"):
+        list(run_stream_pipeline(runtime, "enriched"))
+
+    assert primary.closes == 1
+    assert lookup.closes == 1
 
 
 def test_broadcast_pipeline_closes_inputs_after_partial_read(tmp_path: Path) -> None:
@@ -674,7 +744,7 @@ def test_broadcast_pipeline_closes_inputs_after_partial_read(tmp_path: Path) -> 
         ),
     }
 
-    records = run_stream_pipeline(PipelineContext(runtime), "enriched")
+    records = run_stream_pipeline(runtime, "enriched")
     assert next(records).time == _ts(0)
     records.close()
 
@@ -728,11 +798,10 @@ def test_broadcast_record_previews_preserve_stage_boundaries(tmp_path: Path) -> 
             transforms=(EnsureCadenceConfig(cadence="1h"),),
         ),
     }
-    context = PipelineContext(runtime)
 
-    input_rows = list(_record_preview_stream(context, "enriched", "input"))
-    canonical = list(_record_preview_stream(context, "enriched", "canonical"))
-    records = list(_record_preview_stream(context, "enriched", "records"))
+    input_rows = list(run_stream_preview_pipeline(runtime, "enriched", "input"))
+    canonical = list(run_stream_preview_pipeline(runtime, "enriched", "canonical"))
+    records = list(run_stream_preview_pipeline(runtime, "enriched", "records"))
 
     assert [
         (primary.time.hour, broadcast.time.hour) for primary, broadcast in input_rows
@@ -753,19 +822,16 @@ def test_source_pipeline_runs_map_then_preprocess(
         rows,
         preprocess=[FloorTimeConfig(cadence="1h")],
     )
-    ctx = PipelineContext(runtime)
+    ctx = runtime
 
-    pipeline = build_stream_pipeline(ctx, "stream")
-    input_rows = list(run_pipeline(ctx, pipeline.input_only()))
+    input_rows = list(run_stream_preview_pipeline(ctx, "stream", "input"))
     assert input_rows == rows
 
-    mapped = list(run_pipeline(ctx, pipeline.through_stage_count(1)))
+    mapped = list(run_stream_preview_pipeline(ctx, "stream", "canonical"))
     assert all(isinstance(record, TemporalRecord) for record in mapped)
     assert [record.time for record in mapped] == [rows[0]["time"], rows[1]["time"]]
 
-    preprocessed = list(
-        run_pipeline(ctx, pipeline.through_stage_named("preprocess_floor_time"))
-    )
+    preprocessed = list(run_stream_preview_pipeline(ctx, "stream", "records"))
     assert all(record.time.minute == 0 for record in preprocessed)
 
 
@@ -804,10 +870,12 @@ def test_source_pipeline_rejects_invalid_mapped_time(
     _set_source_mapper(runtime, map_record)
 
     with pytest.raises(error_type, match=message):
-        list(run_stream_pipeline(PipelineContext(runtime), "stream"))
+        list(run_stream_pipeline(runtime, "stream"))
 
 
-def test_source_pipeline_preserves_aware_mapped_time(tmp_path: Path) -> None:
+def test_source_pipeline_normalizes_aware_mapped_time_to_utc(
+    tmp_path: Path,
+) -> None:
     mapped_time = datetime(2024, 1, 1, tzinfo=timezone(timedelta(hours=5, minutes=45)))
     runtime = _runtime_with_rows(tmp_path, [{"raw": 1}])
 
@@ -817,9 +885,97 @@ def test_source_pipeline_preserves_aware_mapped_time(tmp_path: Path) -> None:
 
     _set_source_mapper(runtime, map_record)
 
-    [record] = list(run_stream_pipeline(PipelineContext(runtime), "stream"))
+    [record] = list(run_stream_pipeline(runtime, "stream"))
 
-    assert record.time is mapped_time
+    assert record.time == datetime(2023, 12, 31, 18, 15, tzinfo=timezone.utc)
+    assert record.time.tzinfo is timezone.utc
+
+
+def test_source_pipeline_keeps_fall_back_instants_distinct_in_utc(
+    tmp_path: Path,
+) -> None:
+    timezone_ny = ZoneInfo("America/New_York")
+    mapped_times = (
+        datetime(2024, 11, 3, 1, 30, tzinfo=timezone_ny, fold=0),
+        datetime(2024, 11, 3, 1, 30, tzinfo=timezone_ny, fold=1),
+    )
+    runtime = _runtime_with_rows(tmp_path, [{"raw": 1}, {"raw": 2}])
+
+    def map_record(rows):
+        for row, mapped_time in zip(rows, mapped_times, strict=True):
+            yield SimpleNamespace(time=mapped_time, raw=row["raw"])
+
+    _set_source_mapper(runtime, map_record)
+
+    records = list(run_stream_pipeline(runtime, "stream"))
+
+    assert [record.time for record in records] == [
+        datetime(2024, 11, 3, 5, 30, tzinfo=timezone.utc),
+        datetime(2024, 11, 3, 6, 30, tzinfo=timezone.utc),
+    ]
+
+
+def test_as_of_pipeline_does_not_use_future_fall_back_record(
+    tmp_path: Path,
+) -> None:
+    timezone_ny = ZoneInfo("America/New_York")
+    primary_time = datetime(2024, 11, 3, 1, 30, tzinfo=timezone_ny, fold=0)
+    future_lookup_time = datetime(
+        2024,
+        11,
+        3,
+        1,
+        30,
+        tzinfo=timezone_ny,
+        fold=1,
+    )
+    runtime = _runtime_with_rows(tmp_path, [])
+
+    def map_source_record(rows):
+        for row in rows:
+            yield SimpleNamespace(**row)
+
+    def mark_lookup_match(rows):
+        for primary_record, lookup_record in rows:
+            primary_record.lookup_matched = lookup_record is not None
+            yield primary_record
+
+    runtime.streams = {
+        "primary": SourceRuntimeStream(
+            source=_StubSource(
+                [{"time": primary_time, "id_": "A"}],
+            ),
+            mapper=map_source_record,
+            preprocess=(),
+            partition_by=("id_",),
+            presorted=True,
+            transforms=(),
+        ),
+        "lookup": SourceRuntimeStream(
+            source=_StubSource(
+                [{"time": future_lookup_time, "id_": "A"}],
+            ),
+            mapper=map_source_record,
+            preprocess=(),
+            partition_by=("id_",),
+            presorted=True,
+            transforms=(),
+        ),
+        "enriched": AsOfRuntimeStream(
+            input_stream="primary",
+            lookup_stream="lookup",
+            combine=mark_lookup_match,
+            partition_by=("id_",),
+            max_age=timedelta(minutes=30),
+            require_match=False,
+            transforms=(),
+        ),
+    }
+
+    [record] = list(run_stream_pipeline(runtime, "enriched"))
+
+    assert record.time == datetime(2024, 11, 3, 5, 30, tzinfo=timezone.utc)
+    assert record.lookup_matched is False
 
 
 def test_source_pipeline_closes_mapper_after_partial_read(tmp_path: Path) -> None:
@@ -844,7 +1000,7 @@ def test_source_pipeline_closes_mapper_after_partial_read(tmp_path: Path) -> Non
 
     _set_source_mapper(runtime, map_record)
 
-    records = run_stream_pipeline(PipelineContext(runtime), "stream")
+    records = run_stream_pipeline(runtime, "stream")
     next(records)
     records.close()
 
@@ -865,7 +1021,7 @@ def test_source_pipeline_surfaces_mapper_close_errors(tmp_path: Path) -> None:
             raise RuntimeError("mapper close failed")
 
     _set_source_mapper(runtime, map_record)
-    records = run_stream_pipeline(PipelineContext(runtime), "stream")
+    records = run_stream_pipeline(runtime, "stream")
     next(records)
 
     with pytest.raises(RuntimeError, match="mapper close failed"):
@@ -875,11 +1031,10 @@ def test_source_pipeline_surfaces_mapper_close_errors(tmp_path: Path) -> None:
 def test_pipeline_builders_expose_structure(tmp_path: Path) -> None:
     runtime = _runtime_with_rows(tmp_path, [{"time": _ts(0), "value": 1.0}])
     _register_price_metadata(runtime)
-    context = PipelineContext(runtime)
     cfg = SeriesConfig(stream="stream", id="price", field="value")
 
-    stream_pipeline = build_stream_pipeline(context, "stream")
-    series_pipeline = build_series_pipeline(context, cfg)
+    stream_pipeline = build_stream_pipeline(runtime, "stream")
+    series_pipeline = build_series_pipeline(runtime, cfg)
 
     assert stream_pipeline.input.name == "open_source"
     assert stream_pipeline.stages[0].name == "map_records"
@@ -900,7 +1055,7 @@ def test_source_pipeline_orders_by_partition_and_time(tmp_path: Path) -> None:
         {"time": _ts(2), "value": 6.0, "symbol": "A"},
     ]
     runtime = _runtime_with_rows(tmp_path, rows, partition_by=("symbol",))
-    ctx = PipelineContext(runtime)
+    ctx = runtime
 
     ordered = list(run_pipeline(ctx, build_stream_pipeline(ctx, "stream")))
     assert [(rec.symbol, rec.time.hour) for rec in ordered] == [
@@ -920,7 +1075,7 @@ def test_stream_pipeline_applies_stream_transforms(tmp_path: Path) -> None:
         rows,
         transforms=[EnsureCadenceConfig(cadence="1h")],
     )
-    ctx = PipelineContext(runtime)
+    ctx = runtime
 
     transformed = list(run_stream_pipeline(ctx, "stream"))
     assert [(rec.time.hour, rec.value) for rec in transformed] == [
@@ -943,7 +1098,7 @@ def test_ensure_cadence_placeholders_do_not_copy_payload_fields(
         partition_by=("symbol",),
         transforms=[EnsureCadenceConfig(cadence="1h")],
     )
-    ctx = PipelineContext(runtime)
+    ctx = runtime
 
     placeholder = list(run_stream_pipeline(ctx, "stream"))[1]
 
@@ -953,7 +1108,8 @@ def test_ensure_cadence_placeholders_do_not_copy_payload_fields(
     assert placeholder.volume is None
 
 
-def test_ensure_ticks_uses_stream_partition_for_tick_artifact(
+def test_ensure_schedule_uses_stream_partition_and_caches_artifact(
+    monkeypatch,
     tmp_path: Path,
 ) -> None:
     rows = [
@@ -963,9 +1119,9 @@ def test_ensure_ticks_uses_stream_partition_for_tick_artifact(
         tmp_path,
         rows,
         partition_by=("symbol",),
-        transforms=[EnsureTicksConfig(artifact="model_grid")],
+        transforms=[EnsureScheduleConfig(schedule="schedule")],
     )
-    artifact_path = runtime.artifacts_root / "model_grid.jsonl"
+    artifact_path = runtime.artifacts_root / "schedule.jsonl"
     artifact_path.write_text(
         "\n".join(
             [
@@ -978,19 +1134,35 @@ def test_ensure_ticks_uses_stream_partition_for_tick_artifact(
         encoding="utf-8",
     )
     runtime.artifacts.register(
-        "model_grid",
+        "schedule",
         artifact_path.name,
-        meta={"grid_by": ["symbol"]},
+        meta={"partition_by": ["symbol"]},
     )
-    ctx = PipelineContext(runtime)
+    read_count = 0
+    original_read_schedule = stream_stages.read_schedule
 
-    transformed = list(run_stream_pipeline(ctx, "stream"))
+    def counted_read_schedule(path, partition_by):
+        nonlocal read_count
+        read_count += 1
+        return original_read_schedule(path, partition_by)
 
-    assert [(rec.symbol, rec.time.hour, rec.value) for rec in transformed] == [
+    monkeypatch.setattr(stream_stages, "read_schedule", counted_read_schedule)
+    ctx = runtime
+
+    first = list(run_stream_pipeline(ctx, "stream"))
+    second = list(run_stream_pipeline(ctx, "stream"))
+
+    assert [(rec.symbol, rec.time.hour, rec.value) for rec in first] == [
         ("A", 0, None),
         ("A", 1, 1.0),
         ("A", 2, None),
     ]
+    assert [(rec.symbol, rec.time.hour, rec.value) for rec in second] == [
+        ("A", 0, None),
+        ("A", 1, 1.0),
+        ("A", 2, None),
+    ]
+    assert read_count == 1
 
 
 def test_series_pipeline_wraps_record_values(tmp_path: Path) -> None:
@@ -1000,7 +1172,7 @@ def test_series_pipeline_wraps_record_values(tmp_path: Path) -> None:
         rows,
         partition_by=("symbol",),
     )
-    ctx = PipelineContext(runtime)
+    ctx = runtime
     cfg = SeriesConfig(
         stream="stream",
         id="price",
@@ -1020,6 +1192,34 @@ def test_series_pipeline_wraps_record_values(tmp_path: Path) -> None:
     assert record.id == "price__@symbol:X"
 
 
+def test_series_preview_keeps_collection_values_unassembled(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "value": 1.0},
+            {"time": _ts(0, 30), "value": 2.0},
+        ],
+    )
+    config = SeriesConfig(
+        stream="stream",
+        id="price",
+        field="value",
+        collect=2,
+    )
+
+    records = list(
+        run_series_pipeline(
+            runtime,
+            config,
+        )
+    )
+
+    assert all(isinstance(record, SeriesRecord) for record in records)
+    assert [record.value for record in records] == [1.0, 2.0]
+
+
 def test_unpartitioned_series_pipeline_preserves_time_order(tmp_path: Path) -> None:
     rows = [
         {"time": _ts(2), "value": 3.0},
@@ -1030,7 +1230,7 @@ def test_unpartitioned_series_pipeline_preserves_time_order(tmp_path: Path) -> N
 
     records = list(
         run_series_pipeline(
-            PipelineContext(runtime),
+            runtime,
             SeriesConfig(stream="stream", id="price", field="value"),
         )
     )
@@ -1053,11 +1253,10 @@ def test_partitioned_series_pipeline_orders_across_partitions(tmp_path: Path) ->
         rows,
         partition_by=("symbol",),
     )
-    context = PipelineContext(runtime)
 
     records = list(
         run_series_pipeline(
-            context,
+            runtime,
             SeriesConfig(stream="stream", id="price", field="value"),
         )
     )
@@ -1077,7 +1276,7 @@ def test_series_pipeline_builds_sequences(tmp_path: Path) -> None:
         {"time": _ts(3), "value": 4.0},
     ]
     runtime = _runtime_with_rows(tmp_path, rows)
-    ctx = PipelineContext(runtime)
+    ctx = runtime
     cfg = SeriesConfig(
         stream="stream",
         id="price",
@@ -1119,9 +1318,8 @@ def test_series_pipeline_keeps_scaled_sequence_inputs_raw(
     )
 
     [sequence] = run_series_pipeline(
-        PipelineContext(runtime),
+        runtime,
         config,
-        group_by_cadence="1h",
     )
 
     assert isinstance(sequence, SeriesSequence)
@@ -1131,7 +1329,7 @@ def test_series_pipeline_keeps_scaled_sequence_inputs_raw(
 
 def test_postprocess_rejects_targets_absent_from_metadata(tmp_path: Path) -> None:
     runtime = _runtime_with_rows(tmp_path, [])
-    _register_price_metadata(runtime)
+    schema = _register_price_metadata(runtime)
     samples = [
         Sample(key=(_ts(0),), features=Vector(values={"price": 1.0})),
         Sample(
@@ -1142,7 +1340,12 @@ def test_postprocess_rejects_targets_absent_from_metadata(tmp_path: Path) -> Non
     ]
 
     with pytest.raises(RuntimeError, match="no target entries"):
-        list(apply_postprocess(PipelineContext(runtime), iter(samples)))
+        list(
+            build_postprocess_plan(
+                runtime.dataset.postprocess,
+                schema,
+            ).apply(iter(samples))
+        )
 
 
 def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -> None:
@@ -1151,52 +1354,61 @@ def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -
         {"time": _ts(1), "value": 2.0},
     ]
     runtime = _runtime_with_rows(tmp_path, rows)
-    _register_price_metadata(runtime)
-    ctx = PipelineContext(runtime)
+    runtime.dataset = runtime.dataset.model_copy(
+        update={
+            "postprocess": PostprocessConfig.model_validate(
+                {"samples": {"features": {"threshold": 1.0}}}
+            )
+        }
+    )
+    schema = _register_price_metadata(runtime)
+    ctx = runtime
     cfg = SeriesConfig(stream="stream", id="price", field="value")
     register_series(runtime, [cfg], "1h")
 
     pipeline = build_dataset_pipeline(
         ctx,
-        [cfg],
-        "1h",
-        rectangular=False,
+        schema,
+        None,
     )
     assert isinstance(pipeline.input, Input)
     assert pipeline.input.progress is None
 
-    dataset_out = list(run_dataset_pipeline(ctx, [cfg], "1h", rectangular=False))
+    samples_preview = list(run_sample_pipeline(ctx, schema, None))
+    postprocess_preview = list(run_dataset_pipeline(ctx, schema, None))
+    dataset_out = list(run_dataset_pipeline(ctx, schema, None))
 
-    manual = open_samples(ctx, [cfg], "1h", rectangular=False)
-    manual_out = list(apply_postprocess(ctx, manual))
+    manual = open_samples(ctx, [cfg.id])
+    manual_out = list(
+        build_postprocess_plan(runtime.dataset.postprocess, schema).apply(manual)
+    )
 
-    assert dataset_out == manual_out
+    assert [sample.features.values for sample in samples_preview] == [
+        {"price": None},
+        {"price": 2.0},
+    ]
+    assert postprocess_preview == dataset_out == manual_out
+    assert [sample.features.values for sample in postprocess_preview] == [
+        {"price": 2.0}
+    ]
 
 
 def test_rectangular_dataset_source_reuses_its_key_plan(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runtime = _runtime_with_rows(tmp_path, [])
-    runtime.window_bounds = (_ts(0, 10), _ts(2, 50))
-    _register_price_metadata(runtime)
-    context = PipelineContext(runtime)
+    schema = _register_price_metadata(runtime)
     cfg = SeriesConfig(stream="stream", id="price", field="value")
     feature_configs = [cfg]
     register_series(runtime, feature_configs, "1h")
 
-    original = sample_input.rectangular_key_plan
-    plan_count = 0
-
-    def count_plans(pipeline_context, cadence, sample_keys):
-        nonlocal plan_count
-        plan_count += 1
-        return original(pipeline_context, cadence, sample_keys)
-
-    monkeypatch.setattr(sample_input, "rectangular_key_plan", count_plans)
-
-    pipeline = build_dataset_pipeline(context, feature_configs, "1h")
-    feature_configs.clear()
+    key_plan = window_key_plan(_ts(0, 10), _ts(2, 50), "1h")
+    assert key_plan is not None
+    pipeline = build_dataset_pipeline(
+        runtime,
+        schema,
+        key_plan,
+    )
 
     assert isinstance(pipeline.input, Input)
     assert pipeline.input.progress is not None
@@ -1211,7 +1423,21 @@ def test_rectangular_dataset_source_reuses_its_key_plan(
         total=len(samples),
         unit="samples",
     )
-    assert plan_count == 1
+
+
+def test_sample_input_snapshots_selected_ids(tmp_path: Path) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [{"time": _ts(0), "value": 1.0}],
+    )
+    config = SeriesConfig(stream="stream", id="price", field="value")
+    register_series(runtime, [config], "1h")
+    feature_ids = [config.id]
+
+    sample_input = build_sample_input(runtime, feature_ids)
+    feature_ids.clear()
+
+    assert list(sample_input.open()) == list(open_samples(runtime, [config.id]))
 
 
 def test_rectangular_features_and_targets_share_every_planned_key(
@@ -1224,17 +1450,23 @@ def test_rectangular_features_and_targets_share_every_planned_key(
             {"time": _ts(2), "value": 3.0, "target": 30.0},
         ],
     )
-    runtime.window_bounds = (_ts(0), _ts(2))
     feature = SeriesConfig(stream="stream", id="price", field="value")
-    target = SeriesConfig(stream="stream", id="return", field="target")
+    target = TargetSeriesConfig(
+        stream="stream",
+        id="return",
+        field="target",
+        horizon="0s",
+    )
     register_series(runtime, [feature], "1h", targets=[target])
+    key_plan = window_key_plan(_ts(0), _ts(2), "1h")
+    assert key_plan is not None
 
     samples = list(
         open_samples(
-            PipelineContext(runtime),
-            [feature],
-            "1h",
-            target_configs=[target],
+            runtime,
+            [feature.id],
+            target_ids=[target.id],
+            key_plan=key_plan,
         )
     )
 
@@ -1283,19 +1515,17 @@ def test_series_artifact_feeds_serve_pipeline(tmp_path: Path) -> None:
     unrelated.parent.mkdir(parents=True)
     unrelated.write_text("keep", encoding="utf-8")
 
-    result = build_series_artifact(runtime, SeriesTask())
+    task = SeriesTask()
+    result = build_series_artifact(runtime, task)
     runtime.artifacts.register(
         SERIES,
-        relative_path=result.relative_path,
+        relative_path=task.output,
         meta=result.meta,
     )
     cached = _sample_payload(
         open_samples(
-            PipelineContext(runtime),
-            configs,
-            "1h",
-            rectangular=False,
-            sample_keys=["id_"],
+            runtime,
+            [config.id for config in configs],
         )
     )
 
@@ -1305,7 +1535,7 @@ def test_series_artifact_feeds_serve_pipeline(tmp_path: Path) -> None:
         "rows": 3,
         "format": "jsonl.gz",
     }
-    manifest_path = runtime.artifacts_root / result.relative_path
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     data_path = Path(manifest.path)
     assert data_path.parts[0] == "manifest.data"
@@ -1335,6 +1565,58 @@ def test_series_artifact_feeds_serve_pipeline(tmp_path: Path) -> None:
     ]
     assert source.opens == 1
     assert source.closes == 1
+
+
+def test_metadata_rejects_projected_wide_id_outside_fold_training(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "bucket": "known", "value": 1.0},
+            {"time": _ts(2), "bucket": "future", "value": 2.0},
+        ],
+        partition_by=("bucket",),
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                id="metric",
+                stream="stream",
+                field="value",
+            )
+        ],
+        split=TimeSplitConfig(
+            intervals=[
+                TimeInterval(id="train", until="2024-01-01T02:00:00Z"),
+                TimeInterval(id="validation"),
+            ],
+            folds=[
+                DatasetFold(
+                    id="holdout",
+                    train=["train"],
+                    validation=["validation"],
+                )
+            ],
+        ),
+    )
+
+    task = SeriesTask()
+    result = build_series_artifact(runtime, task)
+    runtime.artifacts.register(SERIES, task.output, meta=result.meta)
+    manifest_path = runtime.artifacts_root / task.output
+    manifest = load_series_manifest(manifest_path)
+
+    assert [tuple(row.features) for row in open_series(manifest_path, manifest)] == [
+        ("metric__@bucket:known",),
+        ("metric__@bucket:future",),
+    ]
+    with pytest.raises(
+        RuntimeError,
+        match=r"fold 'holdout'.*feature series IDs.*metric__@bucket:future",
+    ):
+        build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
 
 def test_series_shared_stream_matches_independent_series_pipelines(
@@ -1384,31 +1666,27 @@ def test_series_shared_stream_matches_independent_series_pipelines(
         scale=True,
         sequence=SequenceConfig(size=2),
     )
-    volume = SeriesConfig(
+    volume = TargetSeriesConfig(
         stream="stream",
         id="volume",
         field="volume",
+        horizon="0s",
     )
     runtime.dataset = DatasetConfig(
         sample=SampleConfig(cadence="1h", keys=["exchange"]),
         features=[price],
         targets=[volume],
     )
-    context = PipelineContext(runtime)
     expected_price = list(
         run_series_pipeline(
-            context,
+            runtime,
             price,
-            sample_keys=["exchange"],
-            group_by_cadence="1h",
         )
     )
     expected_volume = list(
         run_series_pipeline(
-            context,
+            runtime,
             volume,
-            sample_keys=["exchange"],
-            group_by_cadence="1h",
         )
     )
 
@@ -1420,6 +1698,8 @@ def test_series_shared_stream_matches_independent_series_pipelines(
     source.opens = 0
     source.closes = 0
     normal_batch_sort = series_operation.batch_sort
+    normal_floor_time = series_operation.floor_time_to_cadence
+    floor_calls = 0
 
     def spilling_batch_sort(items, buffer_bytes, key, progress=None):
         return normal_batch_sort(
@@ -1429,14 +1709,25 @@ def test_series_shared_stream_matches_independent_series_pipelines(
             progress=progress,
         )
 
+    def count_floor_time(timestamp, cadence):
+        nonlocal floor_calls
+        floor_calls += 1
+        return normal_floor_time(timestamp, cadence)
+
     monkeypatch.setattr(
         series_operation,
         "batch_sort",
         spilling_batch_sort,
     )
+    monkeypatch.setattr(
+        series_operation,
+        "floor_time_to_cadence",
+        count_floor_time,
+    )
 
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     actual_rows = list(open_series(manifest_path, manifest))
 
@@ -1462,6 +1753,7 @@ def test_series_shared_stream_matches_independent_series_pipelines(
         assert row.targets == expected_targets.get(row.key, {})
     assert source.opens == 1
     assert source.closes == 1
+    assert floor_calls == len(rows)
 
 
 def test_series_store_sequence_values_unscaled(
@@ -1485,14 +1777,374 @@ def test_series_store_sequence_values_unscaled(
         sample=SampleConfig(cadence="1h"),
         features=[config],
     )
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     [row] = open_series(manifest_path, manifest)
 
     assert row.time == _ts(1)
     assert row.features == {"price": [1.0, 11.0]}
     assert row.targets == {}
+
+
+def test_series_artifact_rejects_multiple_sequences_in_one_sample_bucket(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0, 0), "value": 1.0},
+            {"time": _ts(0, 15), "value": 2.0},
+            {"time": _ts(0, 30), "value": 3.0},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="history",
+                field="value",
+                sequence=SequenceConfig(size=2, stride=1),
+            )
+        ],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"history.*multiple sequences.*stride.*sample cadence",
+    ):
+        build_series_artifact(runtime, SeriesTask())
+
+
+def test_series_artifact_rejects_duplicate_scalars_within_sample_bucket(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0, 0), "value": 1.0},
+            {"time": _ts(0, 15), "value": 2.0},
+            {"time": _ts(0, 30), "value": 3.0},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+            )
+        ],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"price.*multiple values.*collect.*sample cadence",
+    ):
+        build_series_artifact(runtime, SeriesTask())
+
+
+def test_series_artifact_collects_an_explicit_fixed_size_bucket(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0, 30), "value": 3.0},
+            {"time": _ts(1, 15), "value": 5.0},
+            {"time": _ts(0, 0), "value": 1.0},
+            {"time": _ts(1, 30), "value": 6.0},
+            {"time": _ts(0, 15), "value": 2.0},
+            {"time": _ts(1, 0), "value": 4.0},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+                collect=3,
+            )
+        ],
+    )
+
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
+    manifest = load_series_manifest(manifest_path)
+    rows = list(open_series(manifest_path, manifest))
+
+    assert [(row.time, row.features) for row in rows] == [
+        (_ts(0), {"price": [1.0, 2.0, 3.0]}),
+        (_ts(1), {"price": [4.0, 5.0, 6.0]}),
+    ]
+
+
+def test_series_artifact_collect_size_one_remains_a_list(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [{"time": _ts(0), "value": None}],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+                collect=1,
+            )
+        ],
+    )
+
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
+    [row] = open_series(manifest_path)
+
+    assert row.features == {"price": [None]}
+
+
+def test_collected_series_produces_fixed_list_metadata(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "value": 1.0},
+            {"time": _ts(0, 30), "value": 2.0},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+                collect=2,
+            )
+        ],
+    )
+    series_task = SeriesTask()
+    series = build_series_artifact(runtime, series_task)
+    runtime.artifacts.register(SERIES, series_task.output, meta=series.meta)
+
+    metadata_task = MetadataTask(output="metadata.json")
+    build_metadata_artifact(runtime, metadata_task)
+    payload = json.loads(
+        (runtime.artifacts_root / metadata_task.output).read_text(encoding="utf-8")
+    )
+
+    [entry] = payload["catalog"]["features"]
+    assert entry["id"] == "price"
+    assert entry["kind"] == "list"
+    assert entry["length"] == 2
+    assert entry["element_types"] == ["float"]
+
+
+@pytest.mark.parametrize("count", [2, 4])
+def test_series_artifact_requires_the_declared_collection_size(
+    tmp_path: Path,
+    count: int,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [{"time": _ts(0, index * 10), "value": float(index)} for index in range(count)],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+                collect=3,
+            )
+        ],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=rf"price.*collect requires 3 values.*got {count}",
+    ):
+        build_series_artifact(runtime, SeriesTask())
+
+
+def test_series_artifact_preserves_a_list_valued_scalar(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [{"time": _ts(0), "value": [1.0, 2.0]}],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="embedding",
+                field="value",
+            )
+        ],
+    )
+
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
+    manifest = load_series_manifest(manifest_path)
+    [row] = open_series(manifest_path, manifest)
+
+    assert row.features == {"embedding": [1.0, 2.0]}
+
+
+def test_series_artifact_rejects_collecting_list_valued_records(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "value": [1.0, 2.0]},
+            {"time": _ts(0, 30), "value": [3.0, 4.0]},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="embedding",
+                field="value",
+                collect=2,
+            )
+        ],
+    )
+
+    with pytest.raises(TypeError, match=r"embedding.*collect requires scalar"):
+        build_series_artifact(runtime, SeriesTask())
+
+
+def test_series_artifact_collects_each_wide_series_independently(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "symbol": "AAPL", "value": 1.0},
+            {"time": _ts(0), "symbol": "MSFT", "value": 10.0},
+            {"time": _ts(1), "symbol": "AAPL", "value": 2.0},
+            {"time": _ts(1), "symbol": "MSFT", "value": 20.0},
+        ],
+        partition_by=("symbol",),
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1d"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+                collect=2,
+            )
+        ],
+    )
+
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
+    [row] = open_series(manifest_path)
+
+    assert row.features == {
+        "price__@symbol:AAPL": [1.0, 2.0],
+        "price__@symbol:MSFT": [10.0, 20.0],
+    }
+
+
+def test_series_artifact_collects_targets(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "price": 10.0, "return": 0.1},
+            {"time": _ts(0, 30), "price": 11.0, "return": 0.2},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="price",
+                collect=2,
+            )
+        ],
+        targets=[
+            TargetSeriesConfig(
+                stream="stream",
+                id="return",
+                field="return",
+                horizon="1h",
+                collect=2,
+            )
+        ],
+    )
+
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
+    [row] = open_series(manifest_path)
+
+    assert row.features == {"price": [10.0, 11.0]}
+    assert row.targets == {"return": [0.1, 0.2]}
+
+
+def test_series_artifact_collect_counts_and_tracks_cadence_placeholders(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "value": 1.0},
+            {"time": _ts(2, 30), "value": 2.0},
+        ],
+        transforms=[EnsureCadenceConfig(cadence="30m")],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                stream="stream",
+                id="price",
+                field="value",
+                collect=2,
+            )
+        ],
+    )
+
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
+    rows = list(open_series(manifest_path))
+
+    assert [row.features for row in rows] == [
+        {"price": [1.0, None]},
+        {"price": [None, None]},
+        {"price": [None, 2.0]},
+    ]
+    assert [row.placeholder_ids for row in rows] == [
+        frozenset(),
+        frozenset({"price"}),
+        frozenset(),
+    ]
 
 
 def test_series_manifest_counts_empty_series_from_a_shared_stream(
@@ -1522,8 +2174,9 @@ def test_series_manifest_counts_empty_series_from_a_shared_stream(
         ],
     )
 
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
 
     assert [(entry.id, entry.samples) for entry in manifest.features] == [
@@ -1557,9 +2210,10 @@ def test_series_record_sort_is_part_of_the_observed_stream_pipeline(
         observer(event)
         rich_renderer.render(event)
 
-    runtime.pipeline_observer = observe
-    result = build_series_artifact(runtime, SeriesTask())
-    manifest_path = runtime.artifacts_root / result.relative_path
+    task = SeriesTask()
+    with execution_observer(observe):
+        build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     [row] = open_series(manifest_path, manifest)
 
@@ -1617,8 +2271,8 @@ def test_failed_series_rebuild_preserves_previous_generation(
         ],
     )
     task = SeriesTask()
-    first = build_series_artifact(runtime, task)
-    manifest_path = runtime.artifacts_root / first.relative_path
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     previous_manifest = manifest_path.read_bytes()
     previous = load_series_manifest(manifest_path)
     previous_data = manifest_path.parent / previous.path
@@ -1660,8 +2314,8 @@ def test_failed_series_manifest_commit_removes_new_generation(
         features=[SeriesConfig(stream="stream", id="value", field="value")],
     )
     task = SeriesTask()
-    first = build_series_artifact(runtime, task)
-    manifest_path = runtime.artifacts_root / first.relative_path
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     previous_manifest = manifest_path.read_bytes()
     previous = load_series_manifest(manifest_path)
     previous_path = manifest_path.parent / previous.path
@@ -1671,7 +2325,7 @@ def test_failed_series_manifest_commit_removes_new_generation(
 
     monkeypatch.setattr(
         series_operation,
-        "write_json_artifact",
+        "write_json_object",
         fail_manifest,
     )
 
@@ -1696,8 +2350,8 @@ def test_identical_series_rebuild_publishes_a_new_generation(
     )
     task = SeriesTask()
 
-    first = build_series_artifact(runtime, task)
-    manifest_path = runtime.artifacts_root / first.relative_path
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     first_manifest = load_series_manifest(manifest_path)
     first_path = manifest_path.parent / first_manifest.path
 
@@ -1723,8 +2377,8 @@ def test_changed_series_rebuild_retains_previous_generation(
     )
     task = SeriesTask()
 
-    first = build_series_artifact(runtime, task)
-    manifest_path = runtime.artifacts_root / first.relative_path
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     first_manifest = load_series_manifest(manifest_path)
     first_path = manifest_path.parent / first_manifest.path
     first_rows = list(open_series(manifest_path, first_manifest))
@@ -1762,8 +2416,8 @@ def test_series_rebuild_replaces_a_corrupt_generation(
     )
     task = SeriesTask()
 
-    first = build_series_artifact(runtime, task)
-    manifest_path = runtime.artifacts_root / first.relative_path
+    build_series_artifact(runtime, task)
+    manifest_path = runtime.artifacts_root / task.output
     manifest = load_series_manifest(manifest_path)
     data_path = manifest_path.parent / manifest.path
     data_path.write_bytes(b"corrupt")
@@ -1803,20 +2457,22 @@ def test_series_rejects_symlinked_output_before_mutation(
     assert victim.read_text(encoding="utf-8") == "keep"
 
 
-@pytest.mark.parametrize("rectangular", [False, True])
+@pytest.mark.parametrize(
+    "key_plan",
+    [None, window_key_plan(_ts(0), _ts(1), "1h")],
+)
 def test_sample_input_requires_series_artifact(
     tmp_path: Path,
-    rectangular: bool,
+    key_plan,
 ) -> None:
     runtime = _runtime_with_rows(
         tmp_path,
         rows=[{"time": _ts(0), "value": 1.0}],
     )
-    context = PipelineContext(runtime)
     cfg = SeriesConfig(stream="stream", id="price", field="value")
 
     with pytest.raises(RuntimeError, match="Series artifact is required"):
-        list(open_samples(context, [cfg], "1h", rectangular=rectangular))
+        list(open_samples(runtime, [cfg.id], key_plan=key_plan))
 
 
 def test_cached_sample_input_rejects_manifest_cadence_mismatch(
@@ -1836,10 +2492,8 @@ def test_cached_sample_input_rejects_manifest_cadence_mismatch(
     with pytest.raises(RuntimeError, match="cadence does not match"):
         list(
             open_samples(
-                PipelineContext(runtime),
-                [cfg],
-                "1h",
-                rectangular=False,
+                runtime,
+                [cfg.id],
             )
         )
 
@@ -1861,10 +2515,8 @@ def test_cached_sample_input_verifies_manifest_rows(
     with pytest.raises(ValueError, match="declares 2 rows but contains 1"):
         list(
             open_samples(
-                PipelineContext(runtime),
-                [cfg],
-                "1h",
-                rectangular=False,
+                runtime,
+                [cfg.id],
             )
         )
 
@@ -1883,10 +2535,8 @@ def test_cached_sample_input_reads_requested_feature_subset(
 
     samples = list(
         open_samples(
-            PipelineContext(runtime),
-            [value_cfg],
-            "1h",
-            rectangular=False,
+            runtime,
+            [value_cfg.id],
         )
     )
 
@@ -1914,25 +2564,26 @@ def test_cached_series_rows_close_reader_when_stopped_early(
     register_series(runtime, configs, "1h")
     closed = False
     opens = 0
+    rows = [
+        SeriesRow(
+            time=_ts(0),
+            entity_key=(),
+            features={"a": 1.0, "b": 1.0},
+            targets={},
+            placeholder_ids=frozenset(),
+        ),
+        SeriesRow(
+            time=_ts(1),
+            entity_key=(),
+            features={"a": 2.0, "b": 2.0},
+            targets={},
+            placeholder_ids=frozenset(),
+        ),
+    ]
 
     class _ClosingRows:
         def __init__(self) -> None:
-            self.items = iter(
-                [
-                    SeriesRow(
-                        time=_ts(0),
-                        entity_key=(),
-                        features={"a": 1.0, "b": 1.0},
-                        targets={},
-                    ),
-                    SeriesRow(
-                        time=_ts(1),
-                        entity_key=(),
-                        features={"a": 2.0, "b": 2.0},
-                        targets={},
-                    ),
-                ]
-            )
+            self.items = iter(rows)
 
         def __iter__(self):
             return self
@@ -1957,12 +2608,12 @@ def test_cached_series_rows_close_reader_when_stopped_early(
     )
 
     samples = open_samples(
-        PipelineContext(runtime),
-        configs,
-        "1h",
-        rectangular=False,
+        runtime,
+        [config.id for config in configs],
     )
-    assert next(samples).features.values == {"a": 1.0, "b": 1.0}
+    first = next(samples)
+    assert first.features.values == {"a": 1.0, "b": 1.0}
+    assert first.features.values is rows[0].features
     assert opens == 1
     assert not closed
 
@@ -2002,10 +2653,8 @@ def test_cached_sample_input_opens_one_reader_for_many_series(
 
     samples = list(
         open_samples(
-            PipelineContext(runtime),
-            configs,
-            "1h",
-            rectangular=False,
+            runtime,
+            [config.id for config in configs],
         )
     )
 

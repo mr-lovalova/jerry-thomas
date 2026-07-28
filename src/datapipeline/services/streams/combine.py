@@ -1,19 +1,33 @@
 from collections.abc import Callable, Iterable, Iterator
+from datetime import datetime, timezone
 from typing import Any
 
-from datapipeline.config.streams import AlignedStreamConfig, BroadcastStreamConfig
-from datapipeline.plugins import COMBINERS_EP
-from datapipeline.transforms.utils import partition_key
-from datapipeline.utils.load import load_ep
-from datapipeline.utils.placeholders import normalize_args
+from datapipeline.config.streams import (
+    AlignedStreamConfig,
+    AsOfStreamConfig,
+    BroadcastAsOfStreamConfig,
+    BroadcastStreamConfig,
+)
+from datapipeline.config.interpolation import normalize_interpolated_args
+from datapipeline.plugins import COMBINERS_EP, load_entrypoint
+from datapipeline.transforms.utils import (
+    partition_key,
+    record_establishes_domain,
+    set_record_domain_anchor,
+)
 
 
 def build_combine_stage(
-    config: AlignedStreamConfig | BroadcastStreamConfig,
+    config: (
+        AlignedStreamConfig
+        | BroadcastStreamConfig
+        | AsOfStreamConfig
+        | BroadcastAsOfStreamConfig
+    ),
     partition_by: tuple[str, ...],
 ) -> Callable[[Iterator[tuple[Any, ...]]], Iterable[Any]]:
-    combine = load_ep(COMBINERS_EP, config.combine.entrypoint)
-    args = normalize_args(config.combine.args)
+    combine = load_entrypoint(COMBINERS_EP, config.combine.entrypoint)
+    args = normalize_interpolated_args(config.combine.args)
 
     def combine_records(rows: Iterator[tuple[Any, ...]]) -> Iterator[Any]:
         for records in rows:
@@ -32,14 +46,21 @@ def build_combine_stage(
                     "time and partition fields."
                 ) from exc
 
-            if (
-                type(actual_time) is not type(expected_time)
-                or actual_time != expected_time
-            ):
+            if not isinstance(actual_time, datetime):
+                raise TypeError(
+                    f"Stream '{config.id}' combine output time must be a "
+                    f"datetime; got {type(actual_time).__name__}."
+                )
+            if actual_time.tzinfo is None or actual_time.utcoffset() is None:
+                raise ValueError(
+                    f"Stream '{config.id}' combine output time must be timezone-aware."
+                )
+            if actual_time.astimezone(timezone.utc) != expected_time:
                 raise ValueError(
                     f"Stream '{config.id}' combine must preserve input time: "
                     f"expected {expected_time!r}, got {actual_time!r}."
                 )
+            record.time = expected_time
             for field, expected, actual in zip(
                 partition_by,
                 expected_partition,
@@ -51,6 +72,12 @@ def build_combine_stage(
                         f"Stream '{config.id}' combine must preserve partition "
                         f"field {field!r}: expected {expected!r}, got {actual!r}."
                     )
+            establishes_domain = (
+                any(record_establishes_domain(item) for item in records)
+                if isinstance(config, AlignedStreamConfig)
+                else record_establishes_domain(records[0])
+            )
+            set_record_domain_anchor(record, establishes_domain)
             yield record
 
     return combine_records

@@ -26,9 +26,9 @@ transforms:
 
 ## Built-In Transforms
 
-- `ensure_cadence`: insert placeholder ticks at a fixed duration within each
+- `ensure_cadence`: insert placeholder records at a fixed duration within each
   partition.
-- `ensure_ticks`: reindex records against a resolved tick-grid artifact.
+- `ensure_schedule`: complete records against a resolved schedule artifact.
 - `where`: filter ordered records using the record `where` operator language.
 - `lag` / `lead`: copy a prior or future field value into `to` by `periods`
   within each partition.
@@ -63,7 +63,7 @@ nonnumeric or infinite values.
   `x` variance fail explicitly.
 
 `rolling_slope` needs consecutive records, not merely consecutive values. Put
-`ensure_ticks` or `ensure_cadence` first when absent timestamps must reset the
+`ensure_schedule` or `ensure_cadence` first when absent timestamps must reset the
 window. To exclude the current record, lag both inputs explicitly:
 
 ```yaml
@@ -74,14 +74,20 @@ transforms:
 ```
 
 `forward_sum` also counts records rather than inferred sessions. Use
-`ensure_ticks` first for an exchange-session grid, or `ensure_cadence` for a
-fixed-duration series:
+`ensure_schedule` first for an explicit session schedule, or `ensure_cadence`
+for a fixed-duration series:
 
 ```yaml
 transforms:
-  - { operation: ensure_ticks, artifact: model_grid }
+  - { operation: ensure_schedule, schedule: schedule }
   - { operation: forward_sum, field: market_excess_return, window: 21, to: future_market_excess_return_21 }
 ```
+
+When a future-derived field is selected as a dataset target, declare its
+conservative wall-clock support under that target's `horizon`. The transform
+describes how values are calculated; the target horizon separately controls
+fold-boundary eligibility. Jerry deliberately does not guess one from the
+other.
 
 ```yaml
 transforms:
@@ -93,6 +99,6 @@ transforms:
 
 ```yaml
 transforms:
-  - { operation: ensure_ticks, artifact: model_grid }
+  - { operation: ensure_schedule, schedule: schedule }
   - { operation: forward_fill, field: gross_margin }
 ```

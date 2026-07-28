@@ -4,7 +4,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from datapipeline.utils.placeholders import MissingInterpolation, is_missing
+from datapipeline.config.interpolation import (
+    MissingInterpolation,
+    is_missing_interpolation,
+)
 
 
 _CONFIG_REF_RE = re.compile(r"\$\{([A-Za-z_][\w-]*):([^}]+)\}")
@@ -72,7 +75,7 @@ def _resolve_project_globals(
                 raise ConfigRefError(
                     f"Unknown interpolation variable '{key}' in project globals."
                 )
-            if value is None or is_missing(value):
+            if value is None or is_missing_interpolation(value):
                 return MissingInterpolation(key)
             return value
 
@@ -83,7 +86,7 @@ def _resolve_project_globals(
                 raise ConfigRefError(
                     f"Unknown interpolation variable '{key}' in project globals."
                 )
-            if value is None or is_missing(value):
+            if value is None or is_missing_interpolation(value):
                 raise ConfigRefError(
                     f"Interpolation variable '{key}' has no value and cannot be embedded "
                     "in project globals."
@@ -125,7 +128,7 @@ def interpolate_config_vars(obj: Any, vars_: Mapping[str, Any]) -> Any:
             key = match.group(1)
             if key in vars_:
                 value = vars_[key]
-                if value is None or is_missing(value):
+                if value is None or is_missing_interpolation(value):
                     return MissingInterpolation(key)
                 return value
             raise ConfigRefError(f"Unknown interpolation variable '{key}'.")
@@ -135,7 +138,7 @@ def interpolate_config_vars(obj: Any, vars_: Mapping[str, Any]) -> Any:
             if key not in vars_:
                 raise ConfigRefError(f"Unknown interpolation variable '{key}'.")
             value = vars_[key]
-            if value is None or is_missing(value):
+            if value is None or is_missing_interpolation(value):
                 raise ConfigRefError(
                     f"Interpolation variable '{key}' has no value and cannot be embedded "
                     "in text."

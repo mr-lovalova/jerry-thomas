@@ -24,6 +24,14 @@ TableValueType = Literal[
 
 _MIN_INT64 = -(2**63)
 _MAX_INT64 = 2**63 - 1
+_PYTHON_VALUE_TYPES: dict[TableValueType, type] = {
+    "boolean": bool,
+    "integer": int,
+    "float": float,
+    "string": str,
+    "datetime": datetime,
+    "date": date,
+}
 
 
 @dataclass(frozen=True)
@@ -270,14 +278,6 @@ def _table_value(column: TableColumn, value: Any) -> Any:
             return None
         raise ValueError(f"Dataset table column {column.name!r} must not be null.")
 
-    expected_types: dict[TableValueType, type] = {
-        "boolean": bool,
-        "integer": int,
-        "float": float,
-        "string": str,
-        "datetime": datetime,
-        "date": date,
-    }
     if column.value_type == "null":
         raise TypeError(f"Dataset table column {column.name!r} accepts only null.")
     if column.value_type == "float" and type(value) is int:
@@ -293,7 +293,7 @@ def _table_value(column: TableColumn, value: Any) -> Any:
                 f"integer {value!r} exactly as float64."
             )
         return converted
-    expected = expected_types[column.value_type]
+    expected = _PYTHON_VALUE_TYPES[column.value_type]
     if type(value) is not expected:
         raise TypeError(
             f"Dataset table column {column.name!r} requires "

@@ -1,11 +1,11 @@
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import pytest
 
 from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.domain.series_id import base_id, series_id_components
+from datapipeline.domain.series_id import base_id
 from datapipeline.domain.sample_key import SampleKeyContract
 from datapipeline.pipelines.series import projector as projector_module
 from datapipeline.pipelines.series.projector import SeriesProjector
@@ -16,6 +16,13 @@ class _Record:
     station_id: object = None
     sensor: object = None
     time: datetime = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    _establishes_domain: bool = field(default=True, init=False, repr=False)
+
+
+@dataclass
+class _Point:
+    latitude: float
+    longitude: float
 
 
 def _projected_id(
@@ -23,9 +30,13 @@ def _projected_id(
     partition_by: tuple[str, ...],
     sample_keys: tuple[str, ...] = (),
 ) -> str:
-    projector = SeriesProjector(partition_by, SampleKeyContract(sample_keys))
     config = SeriesConfig(stream="stream", id="temp", field="sensor")
-    return next(projector.project(record, (config,))).id
+    projector = SeriesProjector(
+        partition_by,
+        SampleKeyContract(sample_keys),
+        (config,),
+    )
+    return next(projector.project(record)).id
 
 
 def test_series_projector_without_id_components() -> None:
@@ -33,16 +44,17 @@ def test_series_projector_without_id_components() -> None:
 
 
 def test_series_projector_projects_long_identity_as_entity_key() -> None:
-    projector = SeriesProjector(
-        ("station_id",),
-        SampleKeyContract(("station_id",)),
-    )
     configs = (
         SeriesConfig(stream="stream", id="station", field="station_id"),
         SeriesConfig(stream="stream", id="sensor", field="sensor"),
     )
+    projector = SeriesProjector(
+        ("station_id",),
+        SampleKeyContract(("station_id",)),
+        configs,
+    )
 
-    records = tuple(projector.project(_Record("north", 7), configs))
+    records = tuple(projector.project(_Record("north", 7)))
 
     assert [(record.id, record.value) for record in records] == [
         ("station", "north"),
@@ -51,26 +63,86 @@ def test_series_projector_projects_long_identity_as_entity_key() -> None:
     assert [record.entity_key for record in records] == [("north",), ("north",)]
 
 
-def test_series_projector_normalizes_nested_nan_without_mutating_record() -> None:
-    source_record = _Record(sensor={"values": [1.0, float("nan")]})
-    projector = SeriesProjector((), SampleKeyContract(()))
+def test_series_projector_normalizes_list_nan_without_mutating_record() -> None:
+    source_record = _Record(sensor=[1.0, float("nan")])
     config = SeriesConfig(stream="stream", id="sensor", field="sensor")
+    projector = SeriesProjector((), SampleKeyContract(()), (config,))
 
-    [projected] = projector.project(source_record, (config,))
+    [projected] = projector.project(source_record)
 
-    assert projected.value == {"values": [1.0, None]}
-    assert isinstance(source_record.sensor, dict)
-    assert math.isnan(source_record.sensor["values"][1])
+    assert projected.value == [1.0, None]
+    assert isinstance(source_record.sensor, list)
+    assert math.isnan(source_record.sensor[1])
+
+
+def test_series_projector_normalizes_scalar_nan() -> None:
+    config = SeriesConfig(stream="stream", id="sensor", field="sensor")
+    projector = SeriesProjector((), SampleKeyContract(()), (config,))
+
+    [projected] = projector.project(_Record(sensor=float("nan")))
+
+    assert projected.value is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        False,
+        1,
+        1.5,
+        "temperature",
+        [None, False, 1, 1.5, "temperature"],
+    ],
+    ids=["null", "boolean", "integer", "float", "string", "flat-list"],
+)
+def test_series_projector_accepts_flat_series_values(value: object) -> None:
+    config = SeriesConfig(stream="stream", id="sensor", field="sensor")
+    projector = SeriesProjector((), SampleKeyContract(()), (config,))
+
+    [projected] = projector.project(_Record(sensor=value))
+
+    assert projected.value == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"latitude": 55.7, "longitude": 12.6},
+        _Point(55.7, 12.6),
+        (1.0, 2.0),
+        [[1.0, 2.0], [1.1, 2.1]],
+        [{"latitude": 55.7, "longitude": 12.6}],
+    ],
+    ids=["mapping", "domain-object", "tuple", "nested-list", "list-of-mapping"],
+)
+def test_series_projector_rejects_non_flat_series_values(value: object) -> None:
+    config = SeriesConfig(stream="stream", id="sensor", field="sensor")
+    projector = SeriesProjector((), SampleKeyContract(()), (config,))
+
+    with pytest.raises(
+        TypeError,
+        match="Series values must be a scalar or a flat list of scalar values",
+    ):
+        next(projector.project(_Record(sensor=value)))
+
+
+def test_series_projector_rejects_empty_list() -> None:
+    config = SeriesConfig(stream="stream", id="sensor", field="sensor")
+    projector = SeriesProjector((), SampleKeyContract(()), (config,))
+
+    with pytest.raises(ValueError, match="must not be empty"):
+        next(projector.project(_Record(sensor=[])))
 
 
 @pytest.mark.parametrize("value", [float("inf"), float("-inf")])
-def test_series_projector_rejects_nested_infinity(value: float) -> None:
-    record = _Record(sensor={"values": [1.0, value]})
-    projector = SeriesProjector((), SampleKeyContract(()))
+def test_series_projector_rejects_list_infinity(value: float) -> None:
+    record = _Record(sensor=[1.0, value])
     config = SeriesConfig(stream="stream", id="sensor", field="sensor")
+    projector = SeriesProjector((), SampleKeyContract(()), (config,))
 
     with pytest.raises(ValueError, match="must not contain infinity"):
-        next(projector.project(record, (config,)))
+        next(projector.project(record))
 
 
 def test_series_projector_derives_wide_series_identity() -> None:
@@ -92,28 +164,42 @@ def test_series_projector_derives_hybrid_series_identity() -> None:
     assert identifier == "temp__@sensor:temperature"
 
 
-def test_series_projector_encodes_id_components_once_per_record(monkeypatch) -> None:
+def test_series_projector_computes_shared_values_once_per_record(monkeypatch) -> None:
     encoded_fields: list[str] = []
+    domain_records: list[_Record] = []
     encode = projector_module.encode_series_id_component
+    establishes_domain = projector_module.record_establishes_domain
 
     def count_encode(field: str, value: object) -> str:
         encoded_fields.append(field)
         return encode(field, value)
 
+    def count_domain_record(record: _Record) -> bool:
+        domain_records.append(record)
+        return establishes_domain(record)
+
     monkeypatch.setattr(projector_module, "encode_series_id_component", count_encode)
-    projector = SeriesProjector(
-        ("station_id", "sensor"),
-        SampleKeyContract(()),
+    monkeypatch.setattr(
+        projector_module,
+        "record_establishes_domain",
+        count_domain_record,
     )
     configs = (
         SeriesConfig(stream="stream", id="temperature", field="sensor"),
         SeriesConfig(stream="stream", id="humidity", field="sensor"),
     )
+    projector = SeriesProjector(
+        ("station_id", "sensor"),
+        SampleKeyContract(()),
+        configs,
+    )
+    source_record = _Record("north", 7)
 
-    records = tuple(projector.project(_Record("north", 7), configs))
+    records = tuple(projector.project(source_record))
 
     assert len(records) == 2
     assert encoded_fields == ["station_id", "sensor"]
+    assert domain_records == [source_record]
 
 
 def test_series_projector_tags_non_string_scalar_types() -> None:
@@ -151,10 +237,6 @@ def test_series_projector_escapes_component_delimiters() -> None:
         "temp__@station_id:north__west%7C%40sensor%3Ax|@sensor:A%3AB%2F100%25"
     )
     assert base_id(identifier) == "temp"
-    assert series_id_components(identifier) == (
-        ("station_id", "north__west|@sensor:x"),
-        ("sensor", "A:B/100%"),
-    )
 
 
 def test_distinct_component_tuples_cannot_generate_the_same_id() -> None:

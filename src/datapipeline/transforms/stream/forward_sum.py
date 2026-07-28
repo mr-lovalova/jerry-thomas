@@ -1,16 +1,14 @@
 from collections import deque
 from collections.abc import Iterator
-from itertools import groupby
 from math import isfinite
 
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.transforms.rolling_window import RollingSum
 from datapipeline.transforms.utils import (
+    adjacent_partitions,
     clone_record_with_field,
-    finite_number,
+    finite_number_or_none,
     get_field,
-    is_missing,
-    partition_key,
 )
 
 
@@ -30,10 +28,7 @@ class ForwardSumTransform:
         self.partition_fields = partition_fields
 
     def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
-        for _, records in groupby(
-            stream,
-            key=lambda record: partition_key(record, self.partition_fields),
-        ):
+        for _, records in adjacent_partitions(stream, self.partition_fields):
             yield from self._sum_partition(records)
 
     def _sum_partition(
@@ -44,7 +39,9 @@ class ForwardSumTransform:
         total = RollingSum(self.window)
         for record in records:
             pending.append(record)
-            total.append(self._value(record))
+            total.append(
+                finite_number_or_none(get_field(record, self.field), self.field)
+            )
             if len(pending) <= self.window:
                 continue
 
@@ -58,9 +55,3 @@ class ForwardSumTransform:
 
         while pending:
             yield clone_record_with_field(pending.popleft(), self.to, None)
-
-    def _value(self, record: TemporalRecord) -> float | None:
-        value = get_field(record, self.field)
-        if is_missing(value):
-            return None
-        return finite_number(value, self.field)

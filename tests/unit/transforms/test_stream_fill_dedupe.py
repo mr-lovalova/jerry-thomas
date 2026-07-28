@@ -79,6 +79,22 @@ def test_forward_fill_carries_last_valid_value():
     assert [rec.value for rec in transformed] == [None, 10.0, 10.0, 12.0, 12.0]
 
 
+def test_forward_fill_preserves_falsey_values():
+    stream = iter(
+        [
+            make_time_record(float("nan"), 0),
+            make_time_record(0.0, 1),
+            make_time_record(float("nan"), 2),
+        ]
+    )
+
+    transformed = list(
+        ForwardFillTransform(field="value", partition_fields=()).apply(stream)
+    )
+
+    assert [record.value for record in transformed] == [None, 0.0, 0.0]
+
+
 def test_forward_fill_respects_partitions():
     a0 = make_time_record(10.0, 0)
     setattr(a0, "ticker", "A")

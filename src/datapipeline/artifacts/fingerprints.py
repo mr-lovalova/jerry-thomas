@@ -3,30 +3,31 @@ import hashlib
 import json
 import stat
 from collections.abc import Iterable, Mapping
+from datetime import timedelta
 from pathlib import Path
 
 from datapipeline.artifacts.models import VECTOR_METADATA_VERSION
-from datapipeline.artifacts.planning import build_artifact_graph
+from datapipeline.artifacts.planning import ArtifactGraph
+from datapipeline.artifacts.scaler import SCALER_ARTIFACT_VERSION
 from datapipeline.artifacts.series import SERIES_MANIFEST_VERSION
 from datapipeline.artifacts.specs import dataset_requires_scaler
 from datapipeline.config.dataset.dataset import DatasetConfig
+from datapipeline.config.dataset.split import TimeSplitConfig
 from datapipeline.config.sources import (
     FsLoaderConfig,
     SourceConfig,
 )
 from datapipeline.config.streams import SourceStreamConfig, StreamsConfig
-from datapipeline.config.tasks import (
-    ArtifactTask,
-    MetadataTask,
-    ScalerTask,
-    CoverageStatsTask,
-    TicksTask,
-    SeriesTask,
-)
+from datapipeline.config.tasks.base import ArtifactTask
+from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
+from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.scaler import ScalerTask
+from datapipeline.config.tasks.series import SeriesTask
+from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.services.definitions import ArtifactHashes, ProjectManifest
 
 # Increment when Jerry's core artifact semantics change without a config change.
-ARTIFACT_CACHE_VERSION = 7
+ARTIFACT_CACHE_VERSION = 9
 
 
 def _normalized_label(path: Path, base_dir: Path) -> str:
@@ -151,7 +152,7 @@ def _artifact_inputs(
     dataset: DatasetConfig,
     streams: StreamsConfig,
 ) -> tuple[dict[str, object], set[str]]:
-    if isinstance(task, TicksTask):
+    if isinstance(task, ScheduleTask):
         stream_config, source_ids = _stream_config_closure((task.stream,), streams)
         return {"streams": stream_config}, source_ids
 
@@ -161,20 +162,30 @@ def _artifact_inputs(
             (config.stream for config in scaled),
             streams,
         )
+        dataset_inputs: dict[str, object] = {
+            "sample": dataset.sample.model_dump(mode="json"),
+            "split": (
+                dataset.split.model_dump(mode="json")
+                if dataset.split is not None
+                else None
+            ),
+            "scaled_series": [
+                config.model_dump(
+                    mode="json",
+                    exclude={"collect", "horizon", "sequence"},
+                )
+                for config in scaled
+            ],
+        }
+        target_horizon = dataset.max_target_horizon
+        if isinstance(dataset.split, TimeSplitConfig) and target_horizon > timedelta():
+            dataset_inputs["target_horizon_seconds"] = int(
+                target_horizon.total_seconds()
+            )
         return (
             {
-                "dataset": {
-                    "sample": dataset.sample.model_dump(mode="json"),
-                    "split": (
-                        dataset.split.model_dump(mode="json")
-                        if dataset.split is not None
-                        else None
-                    ),
-                    "scaled_vectors": [
-                        config.model_dump(mode="json", exclude={"sequence"})
-                        for config in scaled
-                    ],
-                },
+                "scaler_format_version": SCALER_ARTIFACT_VERSION,
+                "dataset": dataset_inputs,
                 "streams": stream_config,
             },
             source_ids,
@@ -196,7 +207,10 @@ def _artifact_inputs(
                         for config in dataset.features
                     ],
                     "targets": [
-                        config.model_dump(mode="json", exclude={"scale"})
+                        config.model_dump(
+                            mode="json",
+                            exclude={"horizon", "scale"},
+                        )
                         for config in dataset.targets
                     ],
                 },
@@ -209,7 +223,13 @@ def _artifact_inputs(
         return {"postprocess": dataset.postprocess.model_dump(mode="json")}, set()
 
     if isinstance(task, MetadataTask):
-        return {"metadata_format_version": VECTOR_METADATA_VERSION}, set()
+        inputs: dict[str, object] = {"metadata_format_version": VECTOR_METADATA_VERSION}
+        if dataset.split is not None:
+            inputs["split"] = dataset.split.model_dump(mode="json")
+            inputs["target_horizon_seconds"] = int(
+                dataset.max_target_horizon.total_seconds()
+            )
+        return inputs, set()
 
     if isinstance(task, CoverageStatsTask):
         return {}, set()
@@ -251,16 +271,15 @@ def calculate_artifact_hashes(
     project: ProjectManifest,
     dataset: DatasetConfig,
     streams: StreamsConfig,
-    artifact_operations: tuple[ArtifactTask, ...],
+    graph: ArtifactGraph,
 ) -> ArtifactHashes:
     if dataset_requires_scaler(dataset) and not any(
-        isinstance(task, ScalerTask) for task in artifact_operations
+        isinstance(task, ScalerTask) for task in graph.tasks_by_id.values()
     ):
         raise ValueError("Required artifact operation 'scaler' is not declared.")
 
     base_dir = project.path.parent
-    graph = build_artifact_graph(artifact_operations, dataset, streams)
-    active_keys = graph.active_dependency_closure(
+    active_keys = graph.dependency_closure(
         graph.declared_artifact_keys(),
         dataset,
     )

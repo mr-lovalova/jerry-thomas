@@ -12,14 +12,13 @@ from datapipeline.config.dataset.split import (
     TimeSplitConfig,
 )
 from datapipeline.config.preview import PreviewStage
-from datapipeline.config.profiles import (
-    BuildProfile,
-    InspectProfile,
-    ServeOutputConfig,
-    ServeProfile,
-)
-from datapipeline.config.tasks import DatasetTask, RuntimeTask
-from datapipeline.execution.settings import LogOutputTarget
+from datapipeline.config.profiles.build import BuildProfile
+from datapipeline.config.profiles.inspect import InspectProfile
+from datapipeline.config.profiles.output import ServeOutputConfig
+from datapipeline.config.profiles.serve import ServeProfile
+from datapipeline.config.tasks.base import PluginRuntimeTask, RuntimeTask
+from datapipeline.config.tasks.dataset import DatasetTask
+from datapipeline.execution.settings import CommandObservability, LogOutputTarget
 from datapipeline.profiles.runtime_profiles import (
     resolve_inspect_profiles,
     resolve_serve_profiles,
@@ -59,11 +58,10 @@ def _resolve_serve(
         preview=preview,
         limit=limit,
         cli_output=cli_output,
-        cli_log_level=None,
-        cli_log_outputs=cli_log_outputs,
-        base_log_level="INFO",
-        cli_visuals=None,
-        cli_heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
+        command_observability=CommandObservability(
+            heartbeat_interval_seconds=cli_heartbeat_interval_seconds,
+            log_outputs=tuple(cli_log_outputs or ()),
+        ),
     )
 
 
@@ -339,7 +337,7 @@ def test_non_dataset_serve_profile_does_not_inherit_routed_outputs(tmp_path):
             folds=[DatasetFold(id="default", train=["train"])],
         ),
         runtime_operations=(
-            RuntimeTask(id="custom", entrypoint="plugin.runtime.custom"),
+            PluginRuntimeTask(id="custom", entrypoint="plugin.runtime.custom"),
         ),
     )
 

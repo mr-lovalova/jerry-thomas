@@ -1,11 +1,10 @@
-import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from datapipeline.config.preview import PreviewStage
-from datapipeline.utils.json_artifact import write_json_artifact
+from datapipeline.io.json_file import read_json_object, write_json_object
 
 RunStatus = Literal["running", "success", "failed"]
 
@@ -28,7 +27,6 @@ class RunPaths:
     """
 
     serve_root: Path
-    runs_root: Path
     run_id: str
     run_root: Path
     dataset_dir: Path
@@ -61,6 +59,7 @@ def get_run_paths(serve_root: Path, run_id: str | None = None) -> RunPaths:
     if run_id is None:
         run_id = make_run_id()
 
+    serve_root = serve_root.resolve()
     runs_root = serve_root / "runs"
     run_root = runs_root / run_id
     dataset_dir = run_root / "dataset"
@@ -68,7 +67,6 @@ def get_run_paths(serve_root: Path, run_id: str | None = None) -> RunPaths:
 
     return RunPaths(
         serve_root=serve_root,
-        runs_root=runs_root,
         run_id=run_id,
         run_root=run_root,
         dataset_dir=dataset_dir,
@@ -77,13 +75,11 @@ def get_run_paths(serve_root: Path, run_id: str | None = None) -> RunPaths:
 
 
 def _write_run_metadata(meta: RunMetadata, path: Path) -> None:
-    write_json_artifact(path, asdict(meta))
+    write_json_object(path, asdict(meta))
 
 
 def _load_run_metadata(path: Path) -> RunMetadata:
-    with path.open("r", encoding="utf-8") as f:
-        data: dict[str, Any] = json.load(f)
-    return RunMetadata(**data)
+    return RunMetadata(**read_json_object(path))
 
 
 def start_run(

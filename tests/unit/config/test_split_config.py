@@ -53,6 +53,20 @@ def test_dataset_fold_accepts_optional_validation_and_test_roles() -> None:
     assert fold.test == []
 
 
+def test_dataset_fold_exposes_ordered_role_labels() -> None:
+    fold = DatasetFold(
+        id="fold_0",
+        train=["train_0"],
+        validation=["validation_0"],
+    )
+
+    assert fold.role_labels == (
+        ("train", ("train_0",)),
+        ("validation", ("validation_0",)),
+        ("test", ()),
+    )
+
+
 @pytest.mark.parametrize(
     ("payload", "message"),
     [
@@ -407,6 +421,7 @@ def test_fold_output_helpers_expose_only_configured_roles() -> None:
     )
     assert resolve_fold_output(config, "walk_1.train") == (
         second,
+        "train",
         ("train_0", "validation_0", "train_1"),
     )
 
