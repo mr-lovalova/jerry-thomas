@@ -291,7 +291,7 @@ def test_unexpected_planning_runtime_error_propagates(
         raise error
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.build_artifact_graph",
+        "datapipeline.profiles.orchestration.validate_build_job",
         fail,
     )
 
@@ -485,9 +485,7 @@ def test_runtime_artifact_union_is_prepared_once_before_jobs(
     )
     monkeypatch.setattr(
         "datapipeline.profiles.orchestration.execute_runtime_job",
-        lambda _command, _project, _graph, plan: events.append(
-            ("job", plan.job.runtime)
-        ),
+        lambda _command, _project, plan: events.append(("job", plan.job.runtime)),
     )
 
     run_profiles(request)
@@ -659,7 +657,7 @@ def test_runtime_jobs_keep_order_and_apply_execution_settings(
         execution_runtimes.append(runtime)
         yield
 
-    def execute_job(_command, _project, _graph, plan):
+    def execute_job(_command, _project, plan):
         runtime = plan.job.runtime
         observed.append(
             (
@@ -717,8 +715,11 @@ def test_runtime_job_emits_resolved_config_at_debug(
 
     execute_runtime_job(
         "inspect",
-        project_definition(tmp_path / "project.yaml", dataset=runtime.dataset),
-        build_artifact_graph([]),
+        project_definition(
+            tmp_path / "project.yaml",
+            dataset=runtime.dataset,
+            streams=_stream_catalog(),
+        ),
         RuntimeJobPlan(job, ()),
     )
 
@@ -756,7 +757,6 @@ def test_runtime_job_does_not_hide_plugin_value_errors(
         execute_runtime_job(
             "inspect",
             project_definition(tmp_path / "project.yaml"),
-            build_artifact_graph([]),
             RuntimeJobPlan(job, ()),
         )
 
@@ -778,7 +778,6 @@ def test_runtime_job_reports_unavailable_artifacts(monkeypatch, tmp_path: Path) 
         execute_runtime_job(
             "inspect",
             project_definition(tmp_path / "project.yaml"),
-            build_artifact_graph([]),
             RuntimeJobPlan(job, ("snapshot",)),
         )
 

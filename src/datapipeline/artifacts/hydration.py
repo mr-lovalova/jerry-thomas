@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 
-from datapipeline.artifacts.planning import ArtifactGraph, build_artifact_graph
+from datapipeline.artifacts.planning import ArtifactGraph
 from datapipeline.artifacts.validation import nested_schedule_dependencies
 from datapipeline.build.state import BuildState, load_build_state
 from datapipeline.runtime import Runtime
@@ -46,21 +46,13 @@ def hydrate_runtime_artifacts(
 def hydrate_runtime_artifacts_for_pipeline(
     runtime: Runtime,
     definition: ProjectDefinition,
-    *,
-    graph: ArtifactGraph | None = None,
 ) -> tuple[str, ...]:
     state = load_build_state(definition.project.artifacts_root)
     if state is None:
         runtime.artifacts.clear()
         return ()
 
-    if graph is None:
-        graph = build_artifact_graph(
-            definition.artifact_operations,
-            definition.dataset,
-            definition.streams,
-        )
-
+    graph = definition.artifact_graph
     artifact_roots = graph.declared_artifact_keys()
     artifact_keys = set(graph.dependency_closure(artifact_roots, definition.dataset))
     if not artifact_keys:

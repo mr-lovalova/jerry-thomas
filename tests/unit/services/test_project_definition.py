@@ -4,6 +4,7 @@ import pytest
 
 from datapipeline.artifacts import fingerprints
 from datapipeline.artifacts.fingerprints import calculate_artifact_hashes
+from datapipeline.artifacts.planning import build_artifact_graph
 from datapipeline.artifacts.specs import (
     SCALER_STATISTICS,
     SERIES,
@@ -73,6 +74,28 @@ def test_load_project_definition_parses_each_config_document_once(
 
     assert definition.project.path == project_yaml.resolve()
     assert parsed_documents == 2
+
+
+def test_project_definition_owns_the_canonical_artifact_graph(
+    tmp_path: Path,
+) -> None:
+    definition = load_project_definition(_write_project(tmp_path))
+
+    assert tuple(definition.artifact_graph.tasks_by_id) == (
+        "scaler",
+        "series",
+        "metadata",
+        "coverage_stats",
+    )
+    assert (
+        calculate_artifact_hashes(
+            definition.project,
+            definition.dataset,
+            definition.streams,
+            definition.artifact_graph,
+        )
+        == definition.artifact_hashes
+    )
 
 
 def test_compile_runtime_uses_the_loaded_definition(tmp_path: Path) -> None:
@@ -399,18 +422,27 @@ def test_custom_artifact_change_does_not_change_core_artifact_hashes(
         output="build/first.json",
     )
     second_task = first_task.model_copy(update={"output": "build/second.json"})
+    base_tasks = tuple(definition.artifact_graph.tasks_by_id.values())
 
     first = calculate_artifact_hashes(
         definition.project,
         definition.dataset,
         definition.streams,
-        (*definition.artifact_operations, first_task),
+        build_artifact_graph(
+            (*base_tasks, first_task),
+            definition.dataset,
+            definition.streams,
+        ),
     )
     second = calculate_artifact_hashes(
         definition.project,
         definition.dataset,
         definition.streams,
-        (*definition.artifact_operations, second_task),
+        build_artifact_graph(
+            (*base_tasks, second_task),
+            definition.dataset,
+            definition.streams,
+        ),
     )
 
     assert first.for_artifact("snapshot") != second.for_artifact("snapshot")
@@ -429,7 +461,11 @@ def test_artifact_hashing_rejects_missing_metadata_dependencies(tmp_path: Path) 
             definition.project,
             definition.dataset,
             definition.streams,
-            (MetadataTask(),),
+            build_artifact_graph(
+                (MetadataTask(),),
+                definition.dataset,
+                definition.streams,
+            ),
         )
 
 
@@ -466,7 +502,11 @@ def test_artifact_hashing_rejects_missing_active_scaler(tmp_path: Path) -> None:
             definition.project,
             dataset,
             definition.streams,
-            (SeriesTask(),),
+            build_artifact_graph(
+                (SeriesTask(),),
+                dataset,
+                definition.streams,
+            ),
         )
 
 
@@ -488,13 +528,13 @@ def test_scaling_policy_does_not_invalidate_unscaled_series(
         definition.project,
         unscaled,
         streams,
-        operations,
+        build_artifact_graph(operations, unscaled, streams),
     )
     scaled_hashes = calculate_artifact_hashes(
         definition.project,
         scaled,
         streams,
-        operations,
+        build_artifact_graph(operations, scaled, streams),
     )
 
     assert scaled_hashes.for_artifact(SERIES) == (unscaled_hashes.for_artifact(SERIES))
@@ -536,13 +576,13 @@ def test_collection_policy_invalidates_series_but_not_scaler(
         definition.project,
         scalar,
         streams,
-        operations,
+        build_artifact_graph(operations, scalar, streams),
     )
     collected_hashes = calculate_artifact_hashes(
         definition.project,
         collected,
         streams,
-        operations,
+        build_artifact_graph(operations, collected, streams),
     )
 
     assert collected_hashes.for_artifact(SCALER_STATISTICS) == (
@@ -628,11 +668,16 @@ def test_scaler_and_metadata_hashes_track_every_fold_role(tmp_path: Path) -> Non
     )
 
     def artifact_hashes(dataset: DatasetConfig):
+        graph = build_artifact_graph(
+            (ScalerTask(), SeriesTask(), MetadataTask()),
+            dataset,
+            streams,
+        )
         return calculate_artifact_hashes(
             definition.project,
             dataset,
             streams,
-            (ScalerTask(), SeriesTask(), MetadataTask()),
+            graph,
         )
 
     baseline_hashes = artifact_hashes(baseline)
@@ -705,19 +750,19 @@ def test_target_horizon_changes_folded_scaler_and_metadata_but_not_series(
         definition.project,
         baseline,
         streams,
-        tasks,
+        build_artifact_graph(tasks, baseline, streams),
     )
     changed_hashes = calculate_artifact_hashes(
         definition.project,
         changed,
         streams,
-        tasks,
+        build_artifact_graph(tasks, changed, streams),
     )
     equivalent_hashes = calculate_artifact_hashes(
         definition.project,
         equivalent,
         streams,
-        tasks,
+        build_artifact_graph(tasks, equivalent, streams),
     )
 
     assert changed_hashes.for_artifact(SCALER_STATISTICS) != (
@@ -759,13 +804,13 @@ def test_target_horizon_does_not_change_standard_scaler_fingerprint(
         definition.project,
         baseline,
         streams,
-        (ScalerTask(),),
+        build_artifact_graph((ScalerTask(),), baseline, streams),
     ).for_artifact(SCALER_STATISTICS)
     changed_hash = calculate_artifact_hashes(
         definition.project,
         changed,
         streams,
-        (ScalerTask(),),
+        build_artifact_graph((ScalerTask(),), changed, streams),
     ).for_artifact(SCALER_STATISTICS)
 
     assert changed_hash == baseline_hash
@@ -858,19 +903,24 @@ def test_core_artifact_hashes_track_only_referenced_source_closure(
             },
         }
     )
+    graph = build_artifact_graph(
+        definition.artifact_graph.tasks_by_id.values(),
+        dataset,
+        streams,
+    )
 
     baseline = calculate_artifact_hashes(
         definition.project,
         dataset,
         streams,
-        definition.artifact_operations,
+        graph,
     )
     unused.write_text("unused changed\n", encoding="utf-8")
     after_unused_change = calculate_artifact_hashes(
         definition.project,
         dataset,
         streams,
-        definition.artifact_operations,
+        graph,
     )
     assert after_unused_change.for_artifact(SERIES) == baseline.for_artifact(SERIES)
 
@@ -879,7 +929,7 @@ def test_core_artifact_hashes_track_only_referenced_source_closure(
         definition.project,
         dataset,
         streams,
-        definition.artifact_operations,
+        graph,
     )
     for key in (SERIES, VECTOR_METADATA):
         assert after_used_change.for_artifact(key) != baseline.for_artifact(key)
@@ -973,7 +1023,7 @@ def test_artifact_cache_version_changes_artifact_hash(
         definition.project,
         definition.dataset,
         definition.streams,
-        definition.artifact_operations,
+        definition.artifact_graph,
     )
 
     assert changed_artifact_hashes != definition.artifact_hashes
@@ -985,11 +1035,12 @@ def test_metadata_format_version_invalidates_only_metadata_and_dependents(
 ) -> None:
     definition = load_project_definition(_write_project(tmp_path))
     tasks = (SeriesTask(), MetadataTask())
+    graph = build_artifact_graph(tasks, definition.dataset, definition.streams)
     current = calculate_artifact_hashes(
         definition.project,
         definition.dataset,
         definition.streams,
-        tasks,
+        graph,
     )
 
     monkeypatch.setattr(
@@ -1001,7 +1052,7 @@ def test_metadata_format_version_invalidates_only_metadata_and_dependents(
         definition.project,
         definition.dataset,
         definition.streams,
-        tasks,
+        graph,
     )
 
     assert changed.for_artifact(SERIES) == current.for_artifact(SERIES)
@@ -1027,11 +1078,13 @@ def test_scaler_format_version_invalidates_only_scaler(
         ],
     )
     tasks = (ScalerTask(), SeriesTask())
+    streams = _single_stream_catalog()
+    graph = build_artifact_graph(tasks, dataset, streams)
     current = calculate_artifact_hashes(
         definition.project,
         dataset,
-        _single_stream_catalog(),
-        tasks,
+        streams,
+        graph,
     )
 
     monkeypatch.setattr(
@@ -1042,8 +1095,8 @@ def test_scaler_format_version_invalidates_only_scaler(
     changed = calculate_artifact_hashes(
         definition.project,
         dataset,
-        _single_stream_catalog(),
-        tasks,
+        streams,
+        graph,
     )
 
     assert changed.for_artifact(SCALER_STATISTICS) != current.for_artifact(

@@ -185,7 +185,7 @@ def test_project_hydration_excludes_inactive_scaler(
     )
     definition = SimpleNamespace(
         project=SimpleNamespace(artifacts_root=runtime.artifacts_root),
-        artifact_operations=(scaler,),
+        artifact_graph=graph,
         artifact_hashes=_current_hashes(SCALER_STATISTICS),
         dataset=dataset,
         streams=streams,
@@ -195,7 +195,6 @@ def test_project_hydration_excludes_inactive_scaler(
         hydrate_runtime_artifacts_for_pipeline(
             runtime,
             definition,
-            graph=graph,
         )
         == ()
     )
@@ -271,7 +270,7 @@ def test_project_hydration_excludes_nested_schedule_and_dependents(
 
     definition = SimpleNamespace(
         project=SimpleNamespace(artifacts_root=runtime.artifacts_root),
-        artifact_operations=(),
+        artifact_graph=graph,
         artifact_hashes=_current_hashes("derived_schedule", SERIES),
         dataset=runtime.dataset,
         streams=streams,
@@ -279,7 +278,6 @@ def test_project_hydration_excludes_nested_schedule_and_dependents(
     hydrated = hydrate_runtime_artifacts_for_pipeline(
         runtime,
         definition,
-        graph=graph,
     )
 
     assert hydrated == ()

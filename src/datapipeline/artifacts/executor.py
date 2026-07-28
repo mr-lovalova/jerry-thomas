@@ -299,7 +299,7 @@ def _require_stable_artifact_inputs(
         definition.project,
         definition.dataset,
         definition.streams,
-        definition.artifact_operations,
+        definition.artifact_graph,
     )
     if current_hashes.for_artifact(artifact_id) != expected_hash:
         raise RuntimeError(
@@ -311,7 +311,6 @@ def _require_stable_artifact_inputs(
 def run_build_if_needed(
     definition: ProjectDefinition,
     *,
-    graph: ArtifactGraph,
     required_artifacts: set[str],
     settings: BuildSettings,
     runtime: Runtime,
@@ -319,6 +318,7 @@ def run_build_if_needed(
 ) -> bool:
     """Execute artifact-producing operations when selected artifacts are missing or stale."""
     mode = settings.mode
+    graph = definition.artifact_graph
 
     plan = _plan_build(
         definition=definition,

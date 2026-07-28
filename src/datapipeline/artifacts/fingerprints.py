@@ -7,7 +7,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from datapipeline.artifacts.models import VECTOR_METADATA_VERSION
-from datapipeline.artifacts.planning import build_artifact_graph
+from datapipeline.artifacts.planning import ArtifactGraph
 from datapipeline.artifacts.scaler import SCALER_ARTIFACT_VERSION
 from datapipeline.artifacts.series import SERIES_MANIFEST_VERSION
 from datapipeline.artifacts.specs import dataset_requires_scaler
@@ -271,15 +271,14 @@ def calculate_artifact_hashes(
     project: ProjectManifest,
     dataset: DatasetConfig,
     streams: StreamsConfig,
-    artifact_operations: tuple[ArtifactTask, ...],
+    graph: ArtifactGraph,
 ) -> ArtifactHashes:
     if dataset_requires_scaler(dataset) and not any(
-        isinstance(task, ScalerTask) for task in artifact_operations
+        isinstance(task, ScalerTask) for task in graph.tasks_by_id.values()
     ):
         raise ValueError("Required artifact operation 'scaler' is not declared.")
 
     base_dir = project.path.parent
-    graph = build_artifact_graph(artifact_operations, dataset, streams)
     active_keys = graph.dependency_closure(
         graph.declared_artifact_keys(),
         dataset,

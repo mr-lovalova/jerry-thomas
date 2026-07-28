@@ -100,7 +100,6 @@ def run_runtime_operation(job: RuntimeJob) -> object:
 def execute_runtime_job(
     command: Literal["serve", "inspect"],
     definition: ProjectDefinition,
-    graph: ArtifactGraph,
     plan: RuntimeJobPlan,
 ) -> None:
     job = plan.job
@@ -108,7 +107,6 @@ def execute_runtime_job(
         hydrate_runtime_artifacts_for_pipeline(
             job.runtime,
             definition,
-            graph=graph,
         )
     )
     unavailable = [

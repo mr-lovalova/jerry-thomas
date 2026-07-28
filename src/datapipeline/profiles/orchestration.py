@@ -4,7 +4,6 @@ from datapipeline.artifacts.errors import ArtifactResolutionError
 from datapipeline.artifacts.executor import run_build_if_needed
 from datapipeline.artifacts.planning import (
     ArtifactGraph,
-    build_artifact_graph,
     required_schedule_artifacts,
 )
 from datapipeline.artifacts.series import prune_series_cache
@@ -76,7 +75,7 @@ def run_profiles(request: ProfileRunRequest) -> None:
 
 def _prune_series_caches(request: ProfileRunRequest) -> None:
     root = request.definition.project.artifacts_root
-    for task in request.definition.artifact_operations:
+    for task in request.definition.artifact_graph.tasks_by_id.values():
         if isinstance(task, SeriesTask):
             prune_series_cache(root / task.output, root)
 
@@ -85,12 +84,8 @@ def _run_build_profiles(request: BuildRunRequest) -> None:
     jobs = list(request.jobs)
     if not jobs:
         return
+    graph = request.definition.artifact_graph
     try:
-        graph = build_artifact_graph(
-            request.definition.artifact_operations,
-            request.definition.dataset,
-            request.definition.streams,
-        )
         _validate_build_order(jobs, graph)
         for job in jobs:
             validate_build_job(job.task, graph, request.definition)
@@ -104,7 +99,6 @@ def _run_build_profiles(request: BuildRunRequest) -> None:
         with execution_scope(runtime, job.settings.observability):
             run_build_if_needed(
                 request.definition,
-                graph=graph,
                 required_artifacts={job.task.id},
                 settings=job.settings,
                 runtime=runtime,
@@ -116,19 +110,15 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> None:
     jobs = list(request.jobs)
     if not jobs:
         return
+    graph = request.definition.artifact_graph
     try:
-        graph = build_artifact_graph(
-            request.definition.artifact_operations,
-            request.definition.dataset,
-            request.definition.streams,
-        )
         plans = [plan_runtime_job(job, graph, request.definition) for job in jobs]
     except ValueError as exc:
         raise ProfileCommandError(str(exc)) from exc
 
     started_runs: list[ServeRunPlan] = []
     try:
-        _prepare_runtime_artifacts(request, graph, plans)
+        _prepare_runtime_artifacts(request, plans)
         for run_plan in request.serve_run_plans:
             start_run(run_plan.paths, preview=run_plan.preview)
             started_runs.append(run_plan)
@@ -143,7 +133,6 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> None:
                 execute_runtime_job(
                     request.command,
                     request.definition,
-                    graph,
                     plan,
                 )
     except BaseException as exc:
@@ -158,13 +147,9 @@ def _run_materialize_profiles(request: MaterializeRunRequest) -> None:
     if not jobs:
         return
     request.runtime.execution = request.execution
+    graph = request.definition.artifact_graph
     try:
         preflight_materialize_jobs(request.runtime, jobs)
-        graph = build_artifact_graph(
-            request.definition.artifact_operations,
-            request.definition.dataset,
-            request.definition.streams,
-        )
         required_artifacts = set(
             required_schedule_artifacts(
                 (job.stream for job in jobs),
@@ -175,7 +160,7 @@ def _run_materialize_profiles(request: MaterializeRunRequest) -> None:
     except (OSError, ValueError) as exc:
         raise ProfileCommandError(str(exc)) from exc
 
-    _build_prerequisites(request, graph, required_artifacts, request.runtime)
+    _build_prerequisites(request, required_artifacts, request.runtime)
     for job in jobs:
         request.runtime.heartbeat_interval_seconds = (
             job.observability.heartbeat_interval_seconds
@@ -233,7 +218,6 @@ def _publish_serve_runs(plans: list[ServeRunPlan]) -> None:
 
 def _prepare_runtime_artifacts(
     request: RuntimeRunRequest,
-    graph: ArtifactGraph,
     plans: list[RuntimeJobPlan],
 ) -> None:
     required_artifacts = {
@@ -244,12 +228,11 @@ def _prepare_runtime_artifacts(
 
     runtime = compile_runtime(request.definition)
     runtime.execution = request.execution
-    _build_prerequisites(request, graph, required_artifacts, runtime)
+    _build_prerequisites(request, required_artifacts, runtime)
 
 
 def _build_prerequisites(
     request: RuntimeRunRequest | MaterializeRunRequest,
-    graph: ArtifactGraph,
     required_artifacts: set[str],
     runtime: Runtime,
 ) -> None:
@@ -259,7 +242,6 @@ def _build_prerequisites(
     with execution_scope(runtime, settings.observability):
         run_build_if_needed(
             request.definition,
-            graph=graph,
             required_artifacts=required_artifacts,
             settings=settings,
             runtime=runtime,

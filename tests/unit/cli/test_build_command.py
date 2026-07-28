@@ -461,7 +461,9 @@ def test_runtime_operation_change_keeps_artifact_plan_current(
     )
     first = load_project_definition(project)
     task = next(
-        task for task in first.artifact_operations if task.id == "custom_snapshot"
+        task
+        for task in first.artifact_graph.tasks_by_id.values()
+        if task.id == "custom_snapshot"
     )
     state = BuildState()
     _register_artifact(
@@ -479,7 +481,7 @@ def test_runtime_operation_change_keeps_artifact_plan_current(
     second = load_project_definition(project)
     plan = build_exec._plan_build(
         definition=second,
-        graph=build_artifact_graph(second.artifact_operations),
+        graph=second.artifact_graph,
         required_artifacts={task.id},
         mode="AUTO",
     )
@@ -997,11 +999,6 @@ def test_build_rejects_source_drift_before_starting_runner(
     mutate_source,
 ) -> None:
     definition, source_path = _definition_with_local_source(tmp_path)
-    graph = build_artifact_graph(
-        definition.artifact_operations,
-        definition.dataset,
-        definition.streams,
-    )
     runner_calls: list[str] = []
 
     def build(runtime, task):
@@ -1014,7 +1011,6 @@ def test_build_rejects_source_drift_before_starting_runner(
     with pytest.raises(RuntimeError, match="Source files changed while building"):
         build_exec.run_build_if_needed(
             definition,
-            graph=graph,
             required_artifacts={SERIES},
             settings=_build_settings("FORCE"),
             runtime=_runtime(definition.project.artifacts_root),
@@ -1029,12 +1025,7 @@ def test_build_rejects_source_drift_before_registering_result(
     tmp_path: Path,
 ) -> None:
     definition, source_path = _definition_with_local_source(tmp_path)
-    graph = build_artifact_graph(
-        definition.artifact_operations,
-        definition.dataset,
-        definition.streams,
-    )
-    task = graph.tasks_by_id[SERIES]
+    task = definition.artifact_graph.tasks_by_id[SERIES]
     previous_state = BuildState()
     _register_artifact(
         previous_state,
@@ -1056,7 +1047,6 @@ def test_build_rejects_source_drift_before_registering_result(
     with pytest.raises(RuntimeError, match="Source files changed while building"):
         build_exec.run_build_if_needed(
             definition,
-            graph=graph,
             required_artifacts={SERIES},
             settings=_build_settings("FORCE"),
             runtime=runtime,
@@ -1068,17 +1058,11 @@ def test_build_rejects_source_drift_before_registering_result(
 
 def test_build_accepts_unchanged_local_sources(monkeypatch, tmp_path: Path) -> None:
     definition, _ = _definition_with_local_source(tmp_path)
-    graph = build_artifact_graph(
-        definition.artifact_operations,
-        definition.dataset,
-        definition.streams,
-    )
     _patch_artifact_build(monkeypatch, _build_artifact)
     runtime = _runtime(definition.project.artifacts_root)
 
     assert build_exec.run_build_if_needed(
         definition,
-        graph=graph,
         required_artifacts={SERIES},
         settings=_build_settings("FORCE"),
         runtime=runtime,
@@ -1102,6 +1086,7 @@ def test_run_build_hydrates_current_dependencies_before_job(
     metadata = MetadataTask(id="metadata")
     coverage_stats = CoverageStatsTask(id="coverage_stats", stage="assembled")
     graph = build_artifact_graph([series, metadata, coverage_stats])
+    definition = replace(definition, artifact_graph=graph)
     state = BuildState()
     for task in (series, metadata):
         _register_artifact(
@@ -1123,7 +1108,6 @@ def test_run_build_hydrates_current_dependencies_before_job(
 
     did_build = build_exec.run_build_if_needed(
         definition,
-        graph=graph,
         required_artifacts={COVERAGE_STATS},
         settings=_build_settings(),
         runtime=runtime,
@@ -1142,6 +1126,7 @@ def test_force_build_preserves_artifacts_resolved_by_previous_profile(
     metadata = MetadataTask(id="metadata")
     coverage_stats = CoverageStatsTask(id="coverage_stats", stage="postprocessed")
     graph = build_artifact_graph([series, metadata, coverage_stats])
+    definition = replace(definition, artifact_graph=graph)
     state = BuildState()
     for task in (series, metadata):
         _register_artifact(
@@ -1163,7 +1148,6 @@ def test_force_build_preserves_artifacts_resolved_by_previous_profile(
 
     assert not build_exec.run_build_if_needed(
         definition,
-        graph=graph,
         required_artifacts={VECTOR_METADATA},
         settings=_build_settings(),
         runtime=runtime,
@@ -1171,7 +1155,6 @@ def test_force_build_preserves_artifacts_resolved_by_previous_profile(
     )
     assert build_exec.run_build_if_needed(
         definition,
-        graph=graph,
         required_artifacts={COVERAGE_STATS},
         settings=_build_settings("FORCE"),
         runtime=runtime,
@@ -1193,6 +1176,7 @@ def test_run_build_keeps_loaded_definition_when_config_changes(
         output="build/snapshot.json",
     )
     graph = build_artifact_graph([task])
+    definition = replace(definition, artifact_graph=graph)
     plan = build_exec.BuildPlan(
         reason="missing",
         artifacts=(task.id,),
@@ -1217,7 +1201,6 @@ def test_run_build_keeps_loaded_definition_when_config_changes(
 
     did_build = build_exec.run_build_if_needed(
         definition,
-        graph=graph,
         required_artifacts={task.id},
         settings=_build_settings(),
         runtime=_runtime(tmp_path / "artifacts"),
@@ -1229,11 +1212,13 @@ def test_run_build_keeps_loaded_definition_when_config_changes(
 
 
 def test_run_build_rejects_unknown_mode(tmp_path: Path) -> None:
-    definition = _definition(tmp_path)
+    definition = replace(
+        _definition(tmp_path),
+        artifact_graph=build_artifact_graph([]),
+    )
     with pytest.raises(ValueError, match="Unknown artifact mode 'SOMETIMES'"):
         build_exec.run_build_if_needed(
             definition,
-            graph=build_artifact_graph([]),
             required_artifacts=set(),
             settings=_build_settings("sometimes"),
             runtime=_runtime(definition.project.artifacts_root),

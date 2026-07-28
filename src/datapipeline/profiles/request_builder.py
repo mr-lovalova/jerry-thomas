@@ -156,7 +156,7 @@ def build_build_run_request(
     if not isinstance(defaults, BuildProfileDefaults):
         raise TypeError("Build profile loading returned the wrong defaults type")
 
-    artifact_tasks_by_id = {task.id: task for task in definition.artifact_operations}
+    artifact_tasks_by_id = definition.artifact_graph.tasks_by_id
     runtime_task_ids = {task.id for task in definition.runtime_operations}
     build_profiles: list[BuildProfile] = []
     for profile in loaded_profiles:
@@ -255,7 +255,7 @@ def build_runtime_run_request(
         runtime_profiles = inspect_profiles
 
     runtime_tasks_by_id = {task.id: task for task in definition.runtime_operations}
-    artifact_task_ids = {task.id for task in definition.artifact_operations}
+    artifact_task_ids = set(definition.artifact_graph.tasks_by_id)
     for profile in runtime_profiles:
         task = runtime_tasks_by_id.get(profile.operation)
         if task is None:
