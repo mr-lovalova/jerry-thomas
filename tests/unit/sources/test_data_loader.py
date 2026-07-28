@@ -47,6 +47,17 @@ def test_fs_path_selects_file_or_glob_transport(tmp_path) -> None:
     assert isinstance(glob_loader.transport, FsGlobTransport)
 
 
+def test_fs_glob_transport_exposes_sorted_immutable_files(tmp_path) -> None:
+    second = tmp_path / "02.jsonl"
+    first = tmp_path / "01.jsonl"
+    second.write_text("", encoding="utf-8")
+    first.write_text("", encoding="utf-8")
+
+    transport = FsGlobTransport(str(tmp_path / "*.jsonl"))
+
+    assert transport.files == (str(first), str(second))
+
+
 def test_fs_file_loader_decompresses_gzip_explicitly(tmp_path) -> None:
     path = tmp_path / "rows.data"
     _write_gzip(path, '{"value":1}\n{"value":2}\n')

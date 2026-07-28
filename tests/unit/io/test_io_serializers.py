@@ -73,6 +73,22 @@ def test_json_serializer_flat_view_emits_flattened_payload() -> None:
     assert payload == {"features.x": 1.0}
 
 
+def test_json_serializer_flat_view_flattens_sample_key() -> None:
+    serializer = json_line_serializer(view="flat")
+    sample = Sample(
+        key=("2024-01-01", "AAPL"),
+        features=Vector(values={"x": 1.0}),
+    )
+
+    payload = json.loads(serializer(sample))
+
+    assert payload == {
+        "key.0": "2024-01-01",
+        "key.1": "AAPL",
+        "features.x": 1.0,
+    }
+
+
 def test_flat_json_serializer_rejects_colliding_sample_feature_ids() -> None:
     serializer = json_line_serializer(view="flat")
     sample = Sample(

@@ -26,7 +26,7 @@ def raw_payload(item: Any) -> Any:
 def flat_payload(item: Any) -> dict[str, Any]:
     if isinstance(item, Sample):
         payload: dict[str, Any] = {}
-        flatten_fields("key", _normalize_key_struct(item.key), payload)
+        flatten_fields("key", item.key, payload)
         flatten_fields("features", item.features.values, payload)
         if item.targets is not None:
             flatten_fields("targets", item.targets.values, payload)
@@ -65,12 +65,6 @@ def _set_flat_field(out: dict[str, Any], field: str, value: Any) -> None:
     if field in out:
         raise ValueError(f"Flat output field {field!r} is produced more than once.")
     out[field] = normalize_data_value(value)
-
-
-def _normalize_key_struct(key: Any) -> Any:
-    if isinstance(key, tuple):
-        return list(key)
-    return key
 
 
 def _jsonable(value: Any) -> Any:
