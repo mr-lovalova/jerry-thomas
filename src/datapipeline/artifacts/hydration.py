@@ -2,7 +2,7 @@ from collections.abc import Iterable
 
 from datapipeline.artifacts.planning import ArtifactGraph
 from datapipeline.artifacts.validation import nested_schedule_dependencies
-from datapipeline.build.state import BuildState, load_build_state
+from datapipeline.artifacts.state import BuildState, load_build_state
 from datapipeline.runtime import Runtime
 from datapipeline.services.definitions import ArtifactHashes, ProjectDefinition
 

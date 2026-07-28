@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.build.state import (
+from datapipeline.artifacts.state import (
     ArtifactFileFingerprint,
     ArtifactInfo,
     BuildState,

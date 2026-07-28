@@ -22,7 +22,7 @@ from datapipeline.artifacts.validation import (
     stream_schedule_artifacts,
     validate_artifact_plan,
 )
-from datapipeline.build.state import ArtifactFileFingerprint, BuildState
+from datapipeline.artifacts.state import ArtifactFileFingerprint, BuildState
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.preview import PreviewStage

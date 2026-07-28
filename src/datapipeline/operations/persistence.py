@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence, TypeAlias
 
-from datapipeline.build.state import ArtifactFileFingerprint
+from datapipeline.artifacts.state import ArtifactFileFingerprint
 from datapipeline.config.tasks.base import ArtifactTask
 from datapipeline.domain.sample import Sample
 from datapipeline.execution.observability import (

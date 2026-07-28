@@ -13,7 +13,7 @@ from datapipeline.artifacts.specs import (
     ArtifactDefinition,
     dataset_requires_scaler,
 )
-from datapipeline.build.state import BuildState
+from datapipeline.artifacts.state import BuildState
 from datapipeline.config.dataset.dataset import DatasetConfig
 from datapipeline.config.preview import PREVIEW_STAGES, PreviewStage
 from datapipeline.config.streams import StreamsConfig

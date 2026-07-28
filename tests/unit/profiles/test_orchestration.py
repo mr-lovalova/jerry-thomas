@@ -15,7 +15,7 @@ from datapipeline.artifacts.specs import (
     VECTOR_METADATA,
     COVERAGE_STATS,
 )
-from datapipeline.build.state import (
+from datapipeline.artifacts.state import (
     ArtifactFileFingerprint,
     BuildState,
     save_build_state,

@@ -11,7 +11,7 @@ from datapipeline.artifacts.specs import (
     VECTOR_METADATA,
 )
 from datapipeline.artifacts.validation import NestedScheduleDependency
-from datapipeline.build.state import (
+from datapipeline.artifacts.state import (
     ArtifactFileFingerprint,
     BuildState,
     save_build_state,

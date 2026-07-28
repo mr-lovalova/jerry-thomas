@@ -9,7 +9,7 @@ from datapipeline.artifacts.hydration import hydrate_runtime_artifacts
 from datapipeline.artifacts.planning import ArtifactGraph
 from datapipeline.artifacts.settings import BuildSettings
 from datapipeline.artifacts.validation import validate_artifact_plan
-from datapipeline.build.state import (
+from datapipeline.artifacts.state import (
     BuildState,
     load_build_state,
     save_build_state,
