@@ -247,32 +247,13 @@ class ArtifactGraph:
                     f"Runtime operation '{task.id}' explicitly requires artifact(s) "
                     f"that are inactive for this dataset: {artifacts}."
                 )
-            keys = set(self.active_dependency_closure(roots, dataset))
+            keys = set(self.dependency_closure(roots, dataset))
         return self.topological_order(keys)
 
-    def dependency_closure(self, roots: Iterable[str]) -> tuple[str, ...]:
-        root_keys = set(roots)
-        for key in root_keys:
-            self.definition(key)
-
-        selected: set[str] = set()
-
-        def include(key: str) -> None:
-            if key in selected:
-                return
-            selected.add(key)
-            for dependency in self.definition(key).dependencies:
-                include(dependency)
-
-        for definition in self.definitions:
-            if definition.key in root_keys:
-                include(definition.key)
-        return self.topological_order(selected)
-
-    def active_dependency_closure(
+    def dependency_closure(
         self,
         roots: Iterable[str],
-        dataset: DatasetConfig,
+        dataset: DatasetConfig | None = None,
     ) -> tuple[str, ...]:
         root_keys = set(roots)
         for key in root_keys:
@@ -284,7 +265,7 @@ class ArtifactGraph:
             if key in selected:
                 return
             definition = self.definition(key)
-            if not definition.is_required_for(dataset):
+            if dataset is not None and not definition.is_required_for(dataset):
                 return
             selected.add(key)
             for dependency in definition.dependencies:

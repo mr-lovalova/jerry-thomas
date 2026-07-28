@@ -62,14 +62,10 @@ def hydrate_runtime_artifacts_for_pipeline(
         )
 
     artifact_roots = graph.declared_artifact_keys()
-    artifact_keys = set(graph.dependency_closure(artifact_roots))
+    artifact_keys = set(graph.dependency_closure(artifact_roots, definition.dataset))
     if not artifact_keys:
         runtime.artifacts.clear()
         return ()
-    if graph.requires_dataset(artifact_keys):
-        artifact_keys = set(
-            graph.active_dependency_closure(artifact_roots, definition.dataset)
-        )
     nested_schedules = {
         dependency.task.id
         for dependency in nested_schedule_dependencies(

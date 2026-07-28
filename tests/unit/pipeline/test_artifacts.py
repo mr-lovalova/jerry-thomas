@@ -270,27 +270,38 @@ def test_schedule_artifact_allows_duration_cadence() -> None:
     validate_artifact_plan(streams, graph, {"hourly_schedule"})
 
 
-def test_inactive_scaler_prunes_its_schedule_dependency() -> None:
-    schedule_task = ScheduleTask(
-        id="schedule",
-        stream="reference.stream",
-        partition_by=[],
-        output="build/schedule.jsonl",
+def test_inactive_artifact_prunes_its_dependency_subtree() -> None:
+    graph = ArtifactGraph(
+        (
+            ArtifactDefinition(key="input"),
+            ArtifactDefinition(
+                key=SCALER_STATISTICS,
+                dependencies=("input",),
+                required_if=dataset_requires_scaler,
+            ),
+            ArtifactDefinition(
+                key="result",
+                dependencies=(SCALER_STATISTICS,),
+            ),
+        ),
+        {},
     )
-    graph = build_artifact_graph([schedule_task, ScalerTask(id="scaler")])
     dataset = DatasetConfig(sample=SampleConfig(cadence="1h"), features=[], targets=[])
 
-    assert (
-        graph.active_dependency_closure(
-            {SCALER_STATISTICS},
-            dataset,
-        )
-        == ()
+    assert graph.dependency_closure({"result"}) == (
+        "input",
+        SCALER_STATISTICS,
+        "result",
     )
-    assert graph.active_dependency_closure(
-        {SCALER_STATISTICS, "schedule"},
+    assert graph.dependency_closure(
+        {"result"},
         dataset,
-    ) == ("schedule",)
+    ) == ("result",)
+    assert graph.dependency_closure({SCALER_STATISTICS}, dataset) == ()
+    assert graph.dependency_closure(
+        {SCALER_STATISTICS, "input"},
+        dataset,
+    ) == ("input",)
 
 
 def test_generic_artifact_task_is_a_dependency_free_leaf():
@@ -385,11 +396,18 @@ def test_artifact_graph_rejects_cycles_with_path():
         )
 
 
-def test_artifact_graph_rejects_unknown_requested_artifact():
+@pytest.mark.parametrize(
+    "dataset",
+    [
+        None,
+        DatasetConfig(sample=SampleConfig(cadence="1h")),
+    ],
+)
+def test_artifact_graph_rejects_unknown_requested_artifact(dataset):
     graph = build_artifact_graph([])
 
     with pytest.raises(ValueError, match="Unknown artifact 'missing'"):
-        graph.dependency_closure({"missing"})
+        graph.dependency_closure({"missing"}, dataset)
 
 
 def test_stale_dependency_makes_current_dependent_outdated(tmp_path):
@@ -876,6 +894,22 @@ def test_runtime_task_rejects_unknown_declared_artifact_dependency():
     )
 
     with pytest.raises(ValueError, match="Unknown artifact 'missing'"):
+        graph.runtime_dependency_closure(
+            task,
+            preview=None,
+            dataset=None,
+        )
+
+
+def test_runtime_task_requires_dataset_to_resolve_conditional_dependency():
+    graph = build_artifact_graph([ScalerTask(id="scaler")])
+    task = PluginRuntimeTask(
+        id="report",
+        entrypoint="plugin.runtime.report",
+        requires=("scaler",),
+    )
+
+    with pytest.raises(ValueError, match="requires dataset configuration"):
         graph.runtime_dependency_closure(
             task,
             preview=None,

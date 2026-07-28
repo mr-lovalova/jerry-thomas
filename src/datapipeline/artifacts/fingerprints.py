@@ -280,7 +280,7 @@ def calculate_artifact_hashes(
 
     base_dir = project.path.parent
     graph = build_artifact_graph(artifact_operations, dataset, streams)
-    active_keys = graph.active_dependency_closure(
+    active_keys = graph.dependency_closure(
         graph.declared_artifact_keys(),
         dataset,
     )

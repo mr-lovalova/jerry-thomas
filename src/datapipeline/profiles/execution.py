@@ -39,9 +39,7 @@ def validate_build_job(
     definition: ProjectDefinition,
 ) -> None:
     roots = {task.id}
-    artifact_keys = set(graph.dependency_closure(roots))
-    if graph.requires_dataset(artifact_keys):
-        artifact_keys = set(graph.active_dependency_closure(roots, definition.dataset))
+    artifact_keys = set(graph.dependency_closure(roots, definition.dataset))
     validate_artifact_plan(definition.streams, graph, artifact_keys)
 
 

@@ -6,6 +6,7 @@ from datapipeline.artifacts.hydration import (
 )
 from datapipeline.artifacts.planning import build_artifact_graph
 from datapipeline.artifacts.specs import (
+    SCALER_STATISTICS,
     SERIES,
     VECTOR_METADATA,
 )
@@ -20,6 +21,7 @@ from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.streams import StreamsConfig
 from datapipeline.config.tasks.base import ArtifactTask
 from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.config.tasks.scaler import ScalerTask
 from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.runtime import Runtime
@@ -152,6 +154,52 @@ def test_hydration_skips_incomplete_unrelated_artifact_chain(tmp_path) -> None:
     assert runtime.artifacts.has("custom_snapshot")
     assert not runtime.artifacts.has(SERIES)
     assert not runtime.artifacts.has(VECTOR_METADATA)
+
+
+def test_project_hydration_excludes_inactive_scaler(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    scaler = ScalerTask()
+    dataset = DatasetConfig(sample=SampleConfig(cadence="1h"))
+    streams = StreamsConfig()
+    graph = build_artifact_graph([scaler])
+    runtime = Runtime(
+        project_yaml=tmp_path / "project.yaml",
+        artifacts_root=tmp_path / "artifacts",
+        dataset=dataset,
+    )
+    output = runtime.artifacts_root / scaler.output
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text("{}", encoding="utf-8")
+    state = BuildState()
+    state.register(
+        SCALER_STATISTICS,
+        artifact_hash="current",
+        files=(ArtifactFileFingerprint.from_path(scaler.output, output),),
+    )
+    runtime.artifacts.register(SCALER_STATISTICS, scaler.output)
+    monkeypatch.setattr(
+        "datapipeline.artifacts.hydration.load_build_state",
+        lambda _state_path: state,
+    )
+    definition = SimpleNamespace(
+        project=SimpleNamespace(artifacts_root=runtime.artifacts_root),
+        artifact_operations=(scaler,),
+        artifact_hashes=_current_hashes(SCALER_STATISTICS),
+        dataset=dataset,
+        streams=streams,
+    )
+
+    assert (
+        hydrate_runtime_artifacts_for_pipeline(
+            runtime,
+            definition,
+            graph=graph,
+        )
+        == ()
+    )
+    assert not runtime.artifacts.has(SCALER_STATISTICS)
 
 
 def test_project_hydration_excludes_nested_schedule_and_dependents(

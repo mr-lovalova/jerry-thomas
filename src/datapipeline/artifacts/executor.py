@@ -117,7 +117,7 @@ def _plan_build(
     dataset = None
     if graph.requires_dataset(selected_keys):
         dataset = definition.dataset
-        selected_keys = set(graph.active_dependency_closure(selected_roots, dataset))
+        selected_keys = set(graph.dependency_closure(selected_roots, dataset))
     if not selected_keys:
         return SkippedBuild(reason="not_required", artifacts=())
 
@@ -170,7 +170,7 @@ def _plan_build(
         )
     all_active_keys = (
         set(
-            graph.active_dependency_closure(
+            graph.dependency_closure(
                 (definition.key for definition in graph.definitions),
                 dataset,
             )
