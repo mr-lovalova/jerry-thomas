@@ -90,7 +90,6 @@ identity = "datapipeline.mappers.noop:identity"
 [project.entry-points."datapipeline.parsers"]
 identity = "datapipeline.parsers.identity:IdentityParser"
 "core.temporal_record" = "datapipeline.parsers.temporal_record:TemporalRecordParser"
-"core.synthetic.ticks" = "datapipeline.sources.synthetic.time.parser:TimeRowParser"
 
 [project.entry-points."datapipeline.operations.build"]
 "core.artifact.series" = "datapipeline.operations.artifacts.series:build_series_artifact"
