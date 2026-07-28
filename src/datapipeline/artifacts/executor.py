@@ -6,6 +6,10 @@ from typing import Literal
 from datapipeline.artifacts.errors import ArtifactResolutionError
 from datapipeline.artifacts.fingerprints import calculate_artifact_hashes
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts
+from datapipeline.artifacts.output import (
+    ArtifactOutput,
+    fingerprint_artifact_output,
+)
 from datapipeline.artifacts.settings import BuildSettings
 from datapipeline.artifacts.validation import validate_artifact_plan
 from datapipeline.artifacts.state import (
@@ -19,10 +23,6 @@ from datapipeline.execution.observability import (
     emit_execution_message,
     emit_file_result,
     operation_scope,
-)
-from datapipeline.operations.persistence import (
-    ArtifactOutput,
-    fingerprint_artifact_output,
 )
 from datapipeline.plugins import BUILD_OPERATIONS_EP, load_entrypoint
 from datapipeline.runtime import Runtime

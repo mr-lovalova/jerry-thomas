@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from datapipeline.artifacts.output import ArtifactOutput
 from datapipeline.artifacts.series import (
     SERIES_MANIFEST_VERSION,
     SeriesEntry,
@@ -25,7 +26,6 @@ from datapipeline.domain.series_id import base_id
 from datapipeline.execution.pipeline import Input, Pipeline, Stage
 from datapipeline.execution.runner import run_pipeline
 from datapipeline.io.json_file import write_json_object
-from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.series.projector import SeriesProjector
 from datapipeline.pipelines.series.stages import SeriesSequencer
 from datapipeline.pipelines.sort import SortProgress, batch_sort

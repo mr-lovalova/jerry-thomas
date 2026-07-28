@@ -1,12 +1,10 @@
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence, TypeAlias
 
-from datapipeline.artifacts.state import ArtifactFileFingerprint
-from datapipeline.config.tasks.base import ArtifactTask
 from datapipeline.domain.sample import Sample
 from datapipeline.execution.observability import (
     OperationProgressTracker,
@@ -22,12 +20,6 @@ from datapipeline.io.output import OutputTarget, output_destination_key
 from datapipeline.io.protocols import Writer
 from datapipeline.io.sinks.files import AtomicTextFileSink
 from datapipeline.io.writers.parquet import DEFAULT_ROW_GROUP_ROWS
-
-
-@dataclass(frozen=True, kw_only=True)
-class ArtifactOutput:
-    companion_paths: tuple[str, ...] = ()
-    meta: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -89,42 +81,6 @@ RuntimeOutputItem = RuntimeOutput | RoutedOutput | DatasetTableOutput
 @dataclass(frozen=True)
 class RuntimeOutputBatch:
     outputs: Sequence[RuntimeOutputItem]
-
-
-def fingerprint_artifact_output(
-    output: ArtifactOutput,
-    *,
-    task: ArtifactTask,
-    artifacts_root: Path,
-) -> tuple[ArtifactFileFingerprint, ...]:
-    relative_paths = (task.output, *output.companion_paths)
-    normalized_paths = tuple(Path(relative_path) for relative_path in relative_paths)
-    path_keys = {output_destination_key(path) for path in normalized_paths}
-    if len(normalized_paths) != len(path_keys):
-        raise ValueError(f"Artifact '{task.id}' output paths must be unique.")
-
-    artifacts_root = artifacts_root.resolve()
-    files: list[ArtifactFileFingerprint] = []
-    for relative_path, normalized_path in zip(relative_paths, normalized_paths):
-        if normalized_path.is_absolute() or ".." in normalized_path.parts:
-            raise ValueError(
-                f"Artifact '{task.id}' output path '{relative_path}' must be "
-                "relative to the artifacts root."
-            )
-        full_path = (artifacts_root / normalized_path).resolve()
-        try:
-            full_path.relative_to(artifacts_root)
-        except ValueError as exc:
-            raise ValueError(
-                f"Artifact '{task.id}' output must stay under {artifacts_root}."
-            ) from exc
-        if not full_path.is_file():
-            raise RuntimeError(
-                f"Artifact '{task.id}' did not create its declared output: {full_path}."
-            )
-        files.append(ArtifactFileFingerprint.from_path(str(normalized_path), full_path))
-
-    return tuple(files)
 
 
 def _close_runtime_rows(rows: Iterable[Any]) -> None:

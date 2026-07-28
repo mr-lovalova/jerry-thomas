@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
+from datapipeline.artifacts.output import ArtifactOutput
 from datapipeline.artifacts.scaler import (
     FoldedScalerArtifact,
     StandardScalerArtifact,
@@ -14,7 +15,6 @@ from datapipeline.config.dataset.split import DatasetFold, TimeSplitConfig
 from datapipeline.config.tasks.scaler import ScalerTask
 from datapipeline.domain.series import SeriesRecord
 from datapipeline.domain.sample_key import SampleKeyContract
-from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.dataset.split import TargetHorizonPolicy, build_labeler
 from datapipeline.pipelines.series.projector import SeriesProjector
 from datapipeline.pipelines.stream.pipeline import run_stream_pipeline

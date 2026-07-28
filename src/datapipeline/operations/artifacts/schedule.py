@@ -2,13 +2,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
+from datapipeline.artifacts.output import ArtifactOutput
 from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.domain.value import normalize_data_value
 from datapipeline.execution.observability import OperationProgressTracker
 from datapipeline.execution.settings import resolve_heartbeat_interval_seconds
 from datapipeline.io.normalization import json_text
 from datapipeline.io.sinks.files import AtomicTextFileSink
-from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.stream.pipeline import run_stream_pipeline
 from datapipeline.pipelines.sort import batch_sort
 from datapipeline.runtime import Runtime, require_runtime_stream

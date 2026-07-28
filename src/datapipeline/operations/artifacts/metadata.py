@@ -19,6 +19,7 @@ from datapipeline.artifacts.models import (
     Window,
     WindowMode,
 )
+from datapipeline.artifacts.output import ArtifactOutput
 from datapipeline.artifacts.series import SeriesRow, load_series_manifest, open_series
 from datapipeline.artifacts.specs import SERIES
 from datapipeline.config.dataset.dataset import DatasetConfig
@@ -34,7 +35,6 @@ from datapipeline.domain.series_id import base_id
 from datapipeline.execution.observability import OperationProgressTracker
 from datapipeline.execution.settings import resolve_heartbeat_interval_seconds
 from datapipeline.io.json_file import write_json_object
-from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.dataset.split import TargetHorizonPolicy, build_labeler
 from datapipeline.runtime import Runtime
 from datapipeline.utils.time import (

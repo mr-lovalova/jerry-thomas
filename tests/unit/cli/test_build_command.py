@@ -9,6 +9,7 @@ import pytest
 from datapipeline.artifacts import executor as build_exec
 from datapipeline.artifacts.errors import ArtifactResolutionError
 from datapipeline.artifacts.planning import build_artifact_graph
+from datapipeline.artifacts.output import ArtifactOutput
 from datapipeline.artifacts.registry import ArtifactRegistry
 from datapipeline.artifacts.settings import BuildSettings
 from datapipeline.artifacts.specs import (
@@ -38,7 +39,6 @@ from datapipeline.execution.settings import (
     LogOutputTarget,
     ObservabilitySettings,
 )
-from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.services.definitions import ArtifactHashes, ProjectDefinition
 from datapipeline.services.project_definition import load_project_definition
 

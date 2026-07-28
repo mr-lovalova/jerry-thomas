@@ -2,10 +2,10 @@ from pathlib import Path
 
 from datapipeline.analysis.vector.coverage_stats import CoverageStatsAccumulator
 from datapipeline.artifacts.models import CoverageStatsArtifact
+from datapipeline.artifacts.output import ArtifactOutput
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
 from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
 from datapipeline.io.json_file import write_json_object
-from datapipeline.operations.persistence import ArtifactOutput
 from datapipeline.pipelines.dataset.pipeline import (
     run_dataset_pipeline,
     run_sample_pipeline,
