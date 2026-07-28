@@ -1,6 +1,9 @@
-from typing import Any
-
-from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask, Task
+from datapipeline.config.tasks.base import (
+    ArtifactTask,
+    PluginRuntimeTask,
+    RuntimeTask,
+    Task,
+)
 from datapipeline.config.tasks.coverage import CoverageTask
 from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
 from datapipeline.config.tasks.dataset import DatasetTask
@@ -22,7 +25,7 @@ CORE_OPERATION_MODELS: dict[str, type[Task]] = {
     "coverage": CoverageTask,
     "matrix": MatrixTask,
 }
-CORE_RUNTIME_MODELS: dict[str, type[RuntimeTask[Any]]] = {
+CORE_RUNTIME_MODELS: dict[str, type[RuntimeTask]] = {
     "core.runtime.dataset": DatasetTask,
     "core.runtime.coverage": CoverageTask,
     "core.runtime.matrix": MatrixTask,
@@ -51,7 +54,7 @@ def _custom_operation(operation_id: str, entry: dict[str, object]) -> Task:
             "outer whitespace."
         )
     if kind == "runtime":
-        model: type[RuntimeTask[Any]] = RuntimeTask
+        model: type[RuntimeTask] = PluginRuntimeTask
         if isinstance(entrypoint, str):
             core_model = CORE_RUNTIME_MODELS.get(entrypoint)
             if core_model is not None:

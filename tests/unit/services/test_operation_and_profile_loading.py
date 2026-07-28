@@ -3,7 +3,11 @@ from pathlib import Path
 import pytest
 
 from datapipeline.config.profiles.materialize import MaterializeProfile
-from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask
+from datapipeline.config.tasks.base import (
+    ArtifactTask,
+    PluginRuntimeTask,
+    RuntimeTask,
+)
 from datapipeline.config.tasks.coverage import CoverageTask
 from datapipeline.config.tasks.dataset import DatasetTask
 from datapipeline.config.tasks.matrix import MatrixOptions, MatrixTask
@@ -90,9 +94,9 @@ def _profile_kind_dir(project_yaml: Path) -> Path:
     return path
 
 
-def test_runtime_task_rejects_non_serializable_options() -> None:
+def test_plugin_runtime_task_rejects_non_serializable_options() -> None:
     with pytest.raises(ValueError, match="JSON-serializable"):
-        RuntimeTask(
+        PluginRuntimeTask(
             id="plugin",
             entrypoint="plugin.runtime",
             options={"value": object()},
@@ -996,32 +1000,30 @@ def test_coverage_operation_options_are_typed(tmp_path):
     assert operation.options.threshold == 0.8
 
 
-@pytest.mark.parametrize(
-    ("entrypoint", "model_cls"),
-    [
-        ("core.runtime.dataset", DatasetTask),
-        ("core.runtime.matrix", MatrixTask),
-    ],
-)
-def test_runtime_tasks_without_options_accept_empty_options(
-    tmp_path: Path,
-    entrypoint: str,
-    model_cls: type[RuntimeTask],
-) -> None:
+def test_typed_runtime_options_accept_an_empty_mapping(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "runtime.yaml").write_text(
-        (f"kind: runtime\nentrypoint: {entrypoint}\noptions: {{}}\n"),
+        "kind: runtime\nentrypoint: core.runtime.matrix\noptions: {}\n",
         encoding="utf-8",
     )
 
     operation = next(task for task in _all_tasks(project_yaml) if task.id == "runtime")
 
-    assert isinstance(operation, model_cls)
-    if isinstance(operation, MatrixTask):
-        assert operation.options == MatrixOptions()
-    else:
-        assert operation.options == {}
+    assert isinstance(operation, MatrixTask)
+    assert operation.options == MatrixOptions()
+
+
+def test_dataset_runtime_rejects_options(tmp_path: Path) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    config_dir = _operations_dir(project_yaml)
+    (config_dir / "runtime.yaml").write_text(
+        "kind: runtime\nentrypoint: core.runtime.dataset\noptions: {}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        _all_tasks(project_yaml)
 
 
 @pytest.mark.parametrize(
@@ -1049,7 +1051,7 @@ def test_unknown_core_runtime_entrypoint_is_rejected_during_loading(
         (
             "core.runtime.dataset",
             "  sort: missing\n",
-            "dataset operation does not accept options",
+            "Extra inputs are not permitted",
         ),
         (
             "core.runtime.matrix",
@@ -1131,9 +1133,23 @@ def test_plugin_runtime_options_remain_plugin_owned(tmp_path: Path) -> None:
 
     task = next(task for task in _all_tasks(project_yaml) if task.id == "custom")
 
-    assert type(task) is RuntimeTask
+    assert type(task) is PluginRuntimeTask
     assert task.requires == ("custom_snapshot",)
     assert task.options == {"nested": {"value": 3}}
+
+
+def test_plugin_runtime_options_default_to_an_empty_mapping(tmp_path: Path) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    config_dir = _operations_dir(project_yaml)
+    (config_dir / "custom.yaml").write_text(
+        "kind: runtime\nentrypoint: plugin.runtime.custom\n",
+        encoding="utf-8",
+    )
+
+    task = next(task for task in _all_tasks(project_yaml) if task.id == "custom")
+
+    assert type(task) is PluginRuntimeTask
+    assert task.options == {}
 
 
 @pytest.mark.parametrize(

@@ -431,6 +431,9 @@ and `run_pipeline_operation` with `run_dataset_operation`. Normal
 `operation: dataset` profiles require no change, and this rename does not
 invalidate artifacts.
 
+Jerry 8 gives custom runtime plugins their own task type. Plugin implementations
+replace `RuntimeTask` with `PluginRuntimeTask`; operation YAML is unchanged.
+
 ### Workspace Routing (`jerry.yaml`)
 
 Create an optional `jerry.yaml` in the directory where you run the CLI to share settings across commands. The CLI walks up from the current working directory to find the first `jerry.yaml`.

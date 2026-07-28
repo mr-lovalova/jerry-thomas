@@ -7,7 +7,7 @@ from datapipeline.artifacts.errors import ArtifactResolutionError
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
 from datapipeline.artifacts.planning import ArtifactGraph
 from datapipeline.artifacts.validation import validate_artifact_plan
-from datapipeline.config.tasks.base import ArtifactTask
+from datapipeline.config.tasks.base import ArtifactTask, PluginRuntimeTask
 from datapipeline.config.tasks.coverage import CoverageTask
 from datapipeline.config.tasks.dataset import DatasetTask
 from datapipeline.config.tasks.matrix import MatrixTask
@@ -92,6 +92,8 @@ def run_runtime_operation(job: RuntimeJob) -> object:
         return run_matrix_operation(job.runtime, task, job.limit)
     if isinstance(task, CoverageTask):
         return run_coverage_operation(job.runtime, task)
+    if not isinstance(task, PluginRuntimeTask):
+        raise TypeError(f"Unsupported runtime task: {type(task).__name__}")
 
     plugin = load_entrypoint(RUNTIME_OPERATIONS_EP, task.entrypoint)
     return plugin(job.runtime, task, job.limit)

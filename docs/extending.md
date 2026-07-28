@@ -37,7 +37,7 @@ processing.
 A custom runtime operation receives exactly three positional arguments:
 
 ```python
-from datapipeline.config.tasks.base import RuntimeTask
+from datapipeline.config.tasks.base import PluginRuntimeTask
 from datapipeline.operations.persistence import (
     RoutedRuntimeOutput,
     RuntimeOutput,
@@ -48,12 +48,13 @@ from datapipeline.runtime import Runtime
 
 def run_report(
     runtime: Runtime,
-    task: RuntimeTask,
+    task: PluginRuntimeTask,
     limit: int | None,
 ) -> RuntimeOutput | RoutedRuntimeOutput | RuntimeOutputBatch | None: ...
 ```
 
-`runtime` is the compiled `Runtime`, `task` is the configured `RuntimeTask`,
+`runtime` is the compiled `Runtime`, `task` is the configured
+`PluginRuntimeTask`,
 and `limit` is the CLI cap or `None`. Return `RuntimeOutput`,
 `RoutedRuntimeOutput`, `RuntimeOutputBatch`, or `None`. Jerry persists the result
 using the profile output. A routed output yields `(output_id, row)` pairs, where

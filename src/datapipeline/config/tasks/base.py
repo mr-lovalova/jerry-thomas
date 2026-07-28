@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Generic, Literal, TypeVar
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core import PydanticSerializationError
@@ -60,15 +60,9 @@ class ArtifactTask(Task):
         return output
 
 
-RuntimeOptionsT = TypeVar("RuntimeOptionsT")
-
-
-class RuntimeTask(Task, Generic[RuntimeOptionsT]):
+class RuntimeTask(Task):
     kind: Literal["runtime"] = Field(default="runtime")
     requires: tuple[str, ...] = ()
-    # Bare RuntimeTask is the plugin fallback; concrete tasks replace this
-    # default with their own option type.
-    options: RuntimeOptionsT = Field(default_factory=dict)  # type: ignore[assignment]
 
     @field_validator("requires", mode="before")
     @classmethod
@@ -89,9 +83,13 @@ class RuntimeTask(Task, Generic[RuntimeOptionsT]):
             )
         return tuple(requires)
 
+
+class PluginRuntimeTask(RuntimeTask):
+    options: dict[str, object] = Field(default_factory=dict)
+
     @field_validator("options", mode="before")
     @classmethod
     def _require_options_mapping(cls, value):
-        if isinstance(value, (Mapping, BaseModel)):
+        if isinstance(value, Mapping):
             return value
         raise ValueError("options must be a mapping")

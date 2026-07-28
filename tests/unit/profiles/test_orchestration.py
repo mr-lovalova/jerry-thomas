@@ -25,7 +25,11 @@ from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.preview import PreviewStage
 from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask
+from datapipeline.config.tasks.base import (
+    ArtifactTask,
+    PluginRuntimeTask,
+    RuntimeTask,
+)
 from datapipeline.config.tasks.coverage import CoverageTask
 from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
 from datapipeline.config.tasks.dataset import DatasetTask
@@ -524,7 +528,7 @@ def test_custom_runtime_artifact_requirement_is_prepared(
         entrypoint="plugin.snapshot",
         output="build/snapshot.json",
     )
-    report = RuntimeTask(
+    report = PluginRuntimeTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("snapshot",),
@@ -563,7 +567,7 @@ def test_custom_runtime_artifact_requirement_is_prepared(
 def test_custom_runtime_missing_required_producer_is_rejected_before_execution(
     tmp_path: Path,
 ) -> None:
-    report = RuntimeTask(
+    report = PluginRuntimeTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("custom_snapshot",),
@@ -694,7 +698,7 @@ def test_runtime_job_emits_resolved_config_at_debug(
 ) -> None:
     runtime = _runtime(tmp_path)
     runtime.execution = ExecutionConfig(sort_buffer_mb=24)
-    task = RuntimeTask(id="report", entrypoint="plugin.runtime.report")
+    task = PluginRuntimeTask(id="report", entrypoint="plugin.runtime.report")
     job = _runtime_job("coverage", task, runtime)
     messages: list[tuple[str, int]] = []
 
@@ -733,7 +737,7 @@ def test_runtime_job_emits_resolved_config_at_debug(
 def test_runtime_job_does_not_hide_plugin_value_errors(
     monkeypatch, tmp_path: Path
 ) -> None:
-    task = RuntimeTask(id="report", entrypoint="plugin.runtime.report")
+    task = PluginRuntimeTask(id="report", entrypoint="plugin.runtime.report")
     job = _runtime_job("coverage", task, _runtime(tmp_path))
     monkeypatch.setattr(
         "datapipeline.profiles.execution.hydrate_runtime_artifacts_for_pipeline",
@@ -758,7 +762,7 @@ def test_runtime_job_does_not_hide_plugin_value_errors(
 
 
 def test_runtime_job_reports_unavailable_artifacts(monkeypatch, tmp_path: Path) -> None:
-    task = RuntimeTask(id="report", entrypoint="plugin.runtime.report")
+    task = PluginRuntimeTask(id="report", entrypoint="plugin.runtime.report")
     job = _runtime_job("report", task, _runtime(tmp_path))
     monkeypatch.setattr(
         "datapipeline.profiles.execution.hydrate_runtime_artifacts_for_pipeline",
@@ -782,7 +786,7 @@ def test_runtime_job_reports_unavailable_artifacts(monkeypatch, tmp_path: Path) 
 def test_runtime_plugin_receives_the_documented_contract(
     monkeypatch, tmp_path: Path
 ) -> None:
-    task = RuntimeTask(id="report", entrypoint="plugin.runtime.report")
+    task = PluginRuntimeTask(id="report", entrypoint="plugin.runtime.report")
     job = _runtime_job("report", task, _runtime(tmp_path), limit=7)
     received = None
 
@@ -804,6 +808,21 @@ def test_runtime_plugin_receives_the_documented_contract(
 
     assert run_runtime_operation(job) == "result"
     assert received == (job.runtime, task, 7)
+
+
+def test_base_runtime_task_is_not_dispatched_as_a_plugin(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    task = RuntimeTask(id="runtime", entrypoint="plugin.runtime")
+    job = _runtime_job("runtime", task, _runtime(tmp_path))
+    monkeypatch.setattr(
+        "datapipeline.profiles.execution.load_entrypoint",
+        lambda *_args: pytest.fail("Base runtime task must not load a plugin"),
+    )
+
+    with pytest.raises(TypeError, match="Unsupported runtime task: RuntimeTask"):
+        run_runtime_operation(job)
 
 
 def test_dataset_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> None:
@@ -919,7 +938,7 @@ def test_parquet_output_rejects_record_preview_before_planning(
 
 
 def test_shared_serve_run_is_finalized_once(monkeypatch, tmp_path: Path) -> None:
-    task = RuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
     run_paths = _run_paths(tmp_path)
     request = _runtime_request(
         tmp_path,
@@ -962,7 +981,7 @@ def test_series_cache_filesystem_failure_does_not_fail_published_run(
     caplog,
 ) -> None:
     series = SeriesTask(id="series")
-    task = RuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
     run_paths = _run_paths(tmp_path)
     request = _runtime_request(
         tmp_path,
@@ -1029,7 +1048,7 @@ def test_series_cache_programming_error_remains_strict(
 
 
 def test_job_failure_marks_shared_run_failed(monkeypatch, tmp_path: Path) -> None:
-    task = RuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
     run_paths = _run_paths(tmp_path)
     request = _runtime_request(
         tmp_path,
@@ -1077,7 +1096,7 @@ def test_cleanup_failure_does_not_replace_job_failure(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    task = RuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
     run_paths = _run_paths(tmp_path)
     request = _runtime_request(
         tmp_path,
@@ -1120,7 +1139,7 @@ def test_latest_failure_still_finalizes_all_runs(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    task = RuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
     first = _run_paths(tmp_path / "first", "first")
     second = _run_paths(tmp_path / "second", "second")
     request = _runtime_request(
@@ -1207,7 +1226,7 @@ def test_later_output_commit_failure_marks_run_failed_and_preserves_latest(
             ),
         )
     )
-    task = RuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
     request = _runtime_request(
         tmp_path,
         command="serve",
@@ -1331,7 +1350,7 @@ def test_later_run_start_failure_fails_only_started_run(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    task = RuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
     first = _run_paths(tmp_path / "first")
     second = _run_paths(tmp_path / "second")
     request = _runtime_request(

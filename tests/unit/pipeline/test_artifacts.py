@@ -27,7 +27,10 @@ from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.series import SeriesConfig
 from datapipeline.config.preview import PreviewStage
 from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask
+from datapipeline.config.tasks.base import (
+    ArtifactTask,
+    PluginRuntimeTask,
+)
 from datapipeline.config.tasks.coverage import CoverageTask
 from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
 from datapipeline.config.tasks.dataset import DatasetTask
@@ -624,7 +627,11 @@ def test_plugin_task_cannot_claim_core_requirements_by_entrypoint(
     entrypoint: str,
 ) -> None:
     graph = build_artifact_graph([])
-    task = RuntimeTask(id="plugin", entrypoint=entrypoint, requires=("declared",))
+    task = PluginRuntimeTask(
+        id="plugin",
+        entrypoint=entrypoint,
+        requires=("declared",),
+    )
 
     assert graph.runtime_requirements(task, preview=None) == {"declared"}
 
@@ -819,7 +826,7 @@ def test_empty_dataset_has_no_runtime_artifact_requirements():
 
 def test_custom_runtime_task_has_no_inferred_artifact_dependencies():
     graph = build_artifact_graph([])
-    task = RuntimeTask(id="pipeline", entrypoint="plugin.runtime.pipeline")
+    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime.pipeline")
 
     assert graph.runtime_requirements(task, preview=None) == set()
 
@@ -831,7 +838,7 @@ def test_custom_runtime_task_uses_declared_artifact_dependencies():
         output="build/custom.json",
     )
     graph = build_artifact_graph([snapshot])
-    task = RuntimeTask(
+    task = PluginRuntimeTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("custom_snapshot",),
@@ -862,7 +869,7 @@ def test_empty_dataset_keeps_explicit_artifact_dependencies():
 
 def test_runtime_task_rejects_unknown_declared_artifact_dependency():
     graph = build_artifact_graph([])
-    task = RuntimeTask(
+    task = PluginRuntimeTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("missing",),
@@ -878,7 +885,7 @@ def test_runtime_task_rejects_unknown_declared_artifact_dependency():
 
 def test_runtime_task_rejects_inactive_declared_artifact_dependency():
     graph = build_artifact_graph([ScalerTask(id="scaler")])
-    task = RuntimeTask(
+    task = PluginRuntimeTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("scaler",),

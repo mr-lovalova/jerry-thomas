@@ -16,7 +16,7 @@ from datapipeline.config.profiles.build import BuildProfile
 from datapipeline.config.profiles.inspect import InspectProfile
 from datapipeline.config.profiles.output import ServeOutputConfig
 from datapipeline.config.profiles.serve import ServeProfile
-from datapipeline.config.tasks.base import RuntimeTask
+from datapipeline.config.tasks.base import PluginRuntimeTask, RuntimeTask
 from datapipeline.config.tasks.dataset import DatasetTask
 from datapipeline.execution.settings import CommandObservability, LogOutputTarget
 from datapipeline.profiles.runtime_profiles import (
@@ -337,7 +337,7 @@ def test_non_dataset_serve_profile_does_not_inherit_routed_outputs(tmp_path):
             folds=[DatasetFold(id="default", train=["train"])],
         ),
         runtime_operations=(
-            RuntimeTask(id="custom", entrypoint="plugin.runtime.custom"),
+            PluginRuntimeTask(id="custom", entrypoint="plugin.runtime.custom"),
         ),
     )
 
