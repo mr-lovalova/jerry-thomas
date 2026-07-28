@@ -301,14 +301,7 @@ def test_report_artifact_plan_keeps_run_details_at_debug(monkeypatch) -> None:
             reason="force",
             artifacts=(SERIES, VECTOR_METADATA),
             jobs=(build_exec.ArtifactBuildJob(task, (VECTOR_METADATA,)),),
-            artifact_hashes=ArtifactHashes(
-                {
-                    SERIES: "artifact-hash-1",
-                    VECTOR_METADATA: "artifact-hash-1",
-                }
-            ),
             previous_state=None,
-            graph=build_artifact_graph([task]),
         ),
         mode="FORCE",
         requested_artifacts={VECTOR_METADATA},
@@ -334,10 +327,10 @@ def test_plan_skips_scaler_when_dataset_has_no_scaled_features(
 ) -> None:
     definition = _definition(tmp_path, _dataset_with_feature(scale=False))
     graph = build_artifact_graph([ScalerTask(id="scaler")])
+    definition = replace(definition, artifact_graph=graph)
 
     plan = build_exec._plan_build(
         definition=definition,
-        graph=graph,
         required_artifacts={SCALER_STATISTICS},
         mode="AUTO",
     )
@@ -355,10 +348,19 @@ def test_plan_builds_only_requested_generic_artifact(
         output="build/custom.json",
     )
     graph = build_artifact_graph([task, ScalerTask(id="scaler")])
+    definition = replace(
+        definition,
+        artifact_graph=graph,
+        artifact_hashes=ArtifactHashes(
+            {
+                task.id: "artifact-hash",
+                SCALER_STATISTICS: "scaler-hash",
+            }
+        ),
+    )
 
     plan = build_exec._plan_build(
         definition=definition,
-        graph=graph,
         required_artifacts={task.id},
         mode="FORCE",
     )
@@ -373,9 +375,9 @@ def test_plan_expands_metadata_dependencies(tmp_path: Path) -> None:
     series = SeriesTask(id="series")
     metadata = MetadataTask(id="metadata")
     graph = build_artifact_graph([ScalerTask(id="scaler"), series, metadata])
+    definition = replace(definition, artifact_graph=graph)
     plan = build_exec._plan_build(
         definition=definition,
-        graph=graph,
         required_artifacts={VECTOR_METADATA},
         mode="FORCE",
     )
@@ -393,6 +395,7 @@ def test_v5_vector_inputs_state_is_not_reused(tmp_path: Path) -> None:
     series = SeriesTask()
     metadata = MetadataTask()
     graph = build_artifact_graph([series, metadata])
+    definition = replace(definition, artifact_graph=graph)
     previous_state = BuildState()
     _register_artifact(
         previous_state,
@@ -408,7 +411,6 @@ def test_v5_vector_inputs_state_is_not_reused(tmp_path: Path) -> None:
 
     plan = build_exec._plan_build(
         definition=definition,
-        graph=graph,
         required_artifacts={VECTOR_METADATA},
         mode="AUTO",
     )
@@ -426,6 +428,7 @@ def test_plan_skips_current_dependency(tmp_path: Path) -> None:
     series = SeriesTask(id="series")
     metadata = MetadataTask(id="metadata")
     graph = build_artifact_graph([series, metadata])
+    definition = replace(definition, artifact_graph=graph)
     state = BuildState()
     _register_artifact(
         state,
@@ -437,7 +440,6 @@ def test_plan_skips_current_dependency(tmp_path: Path) -> None:
 
     plan = build_exec._plan_build(
         definition=definition,
-        graph=graph,
         required_artifacts={VECTOR_METADATA},
         mode="AUTO",
     )
@@ -481,7 +483,6 @@ def test_runtime_operation_change_keeps_artifact_plan_current(
     second = load_project_definition(project)
     plan = build_exec._plan_build(
         definition=second,
-        graph=second.artifact_graph,
         required_artifacts={task.id},
         mode="AUTO",
     )
@@ -511,6 +512,7 @@ def test_plan_rejects_resolved_artifact_that_became_stale(
     graph = build_artifact_graph([first, second])
     definition = replace(
         definition,
+        artifact_graph=graph,
         artifact_hashes=ArtifactHashes({first.id: "current", second.id: "current"}),
     )
     state = BuildState()
@@ -525,7 +527,6 @@ def test_plan_rejects_resolved_artifact_that_became_stale(
     with pytest.raises(RuntimeError, match="earlier build profile became stale"):
         build_exec._plan_build(
             definition=definition,
-            graph=graph,
             required_artifacts={second.id},
             mode="FORCE",
             resolved_artifacts={first.id},
@@ -537,6 +538,7 @@ def test_plan_rejects_missing_dependency_producer(
 ) -> None:
     definition = _definition(tmp_path, _dataset_with_feature(scale=False))
     graph = build_artifact_graph([MetadataTask(id="metadata")])
+    definition = replace(definition, artifact_graph=graph)
 
     with pytest.raises(
         ArtifactResolutionError,
@@ -544,7 +546,6 @@ def test_plan_rejects_missing_dependency_producer(
     ):
         build_exec._plan_build(
             definition=definition,
-            graph=graph,
             required_artifacts={VECTOR_METADATA},
             mode="AUTO",
         )
@@ -552,6 +553,11 @@ def test_plan_rejects_missing_dependency_producer(
 
 def test_plan_rejects_unknown_artifact(tmp_path: Path) -> None:
     definition = _definition(tmp_path)
+    definition = replace(
+        definition,
+        artifact_graph=build_artifact_graph([]),
+        artifact_hashes=ArtifactHashes({}),
+    )
 
     with pytest.raises(
         ArtifactResolutionError,
@@ -559,7 +565,6 @@ def test_plan_rejects_unknown_artifact(tmp_path: Path) -> None:
     ):
         build_exec._plan_build(
             definition=definition,
-            graph=build_artifact_graph([]),
             required_artifacts={"unknown"},
             mode="AUTO",
         )
@@ -572,6 +577,7 @@ def test_stale_dependency_rebuilds_current_dependent(
     series = SeriesTask(id="series")
     metadata = MetadataTask(id="metadata")
     graph = build_artifact_graph([series, metadata])
+    definition = replace(definition, artifact_graph=graph)
     state = BuildState()
     _register_artifact(
         state,
@@ -589,7 +595,6 @@ def test_stale_dependency_rebuilds_current_dependent(
 
     plan = build_exec._plan_build(
         definition=definition,
-        graph=graph,
         required_artifacts={VECTOR_METADATA},
         mode="AUTO",
     )
@@ -614,6 +619,11 @@ def test_mode_off_rejects_missing_artifact(tmp_path: Path) -> None:
         output="build/snapshot.json",
     )
     graph = build_artifact_graph([task])
+    definition = replace(
+        definition,
+        artifact_graph=graph,
+        artifact_hashes=ArtifactHashes({task.id: "artifact-hash"}),
+    )
 
     with pytest.raises(
         ArtifactResolutionError,
@@ -624,7 +634,6 @@ def test_mode_off_rejects_missing_artifact(tmp_path: Path) -> None:
     ):
         build_exec._plan_build(
             definition=definition,
-            graph=graph,
             required_artifacts={task.id},
             mode="OFF",
         )
@@ -642,13 +651,16 @@ def test_execute_build_rejects_invalid_operation_result(
         output="build/snapshot.json",
     )
     graph = build_artifact_graph([task])
+    definition = replace(
+        definition,
+        artifact_graph=graph,
+        artifact_hashes=ArtifactHashes({task.id: "artifact-hash"}),
+    )
     plan = build_exec.BuildPlan(
         reason="missing",
         artifacts=(task.id,),
         jobs=(build_exec.ArtifactBuildJob(task, (task.id,)),),
-        artifact_hashes=ArtifactHashes({task.id: "artifact-hash"}),
         previous_state=None,
-        graph=graph,
     )
     _patch_artifact_build(monkeypatch, lambda _runtime, _task: None)
 
@@ -670,6 +682,16 @@ def test_execute_build_jobs_persists_completed_job_before_failure(
     series = SeriesTask(id="series")
     metadata = MetadataTask(id="metadata")
     graph = build_artifact_graph([series, metadata])
+    definition = replace(
+        definition,
+        artifact_graph=graph,
+        artifact_hashes=ArtifactHashes(
+            {
+                SERIES: "artifact-hash-1",
+                VECTOR_METADATA: "artifact-hash-1",
+            }
+        ),
+    )
     previous_state = BuildState()
     previous_state.register(
         VECTOR_METADATA,
@@ -707,14 +729,7 @@ def test_execute_build_jobs_persists_completed_job_before_failure(
             ),
             build_exec.ArtifactBuildJob(metadata, (VECTOR_METADATA,)),
         ),
-        artifact_hashes=ArtifactHashes(
-            {
-                SERIES: "artifact-hash-1",
-                VECTOR_METADATA: "artifact-hash-1",
-            }
-        ),
         previous_state=previous_state,
-        graph=graph,
     )
 
     runtime = _runtime(tmp_path / "artifacts")
@@ -746,6 +761,16 @@ def test_execute_build_failure_preserves_previous_persisted_state(
     series = SeriesTask(id="series")
     metadata = MetadataTask(id="metadata")
     graph = build_artifact_graph([series, metadata])
+    definition = replace(
+        definition,
+        artifact_graph=graph,
+        artifact_hashes=ArtifactHashes(
+            {
+                SERIES: "artifact-hash-1",
+                VECTOR_METADATA: "artifact-hash-1",
+            }
+        ),
+    )
     previous_state = BuildState()
     previous_state.register(
         VECTOR_METADATA,
@@ -774,14 +799,7 @@ def test_execute_build_failure_preserves_previous_persisted_state(
                 (SERIES, VECTOR_METADATA),
             ),
         ),
-        artifact_hashes=ArtifactHashes(
-            {
-                SERIES: "artifact-hash-1",
-                VECTOR_METADATA: "artifact-hash-1",
-            }
-        ),
         previous_state=previous_state,
-        graph=graph,
     )
 
     with pytest.raises(RuntimeError, match="series failed"):
@@ -832,13 +850,16 @@ def test_execute_build_rejects_symlink_escape_before_calling_runner(
 
     _patch_artifact_build(monkeypatch, mutate_outside)
     graph = build_artifact_graph([task])
+    definition = replace(
+        definition,
+        artifact_graph=graph,
+        artifact_hashes=ArtifactHashes({task.id: "artifact-hash-1"}),
+    )
     plan = build_exec.BuildPlan(
         reason="force",
         artifacts=(task.id,),
         jobs=(build_exec.ArtifactBuildJob(task, (task.id,)),),
-        artifact_hashes=ArtifactHashes({task.id: "artifact-hash-1"}),
         previous_state=None,
-        graph=graph,
     )
 
     with pytest.raises(ValueError, match="must stay under artifacts root"):
@@ -883,6 +904,13 @@ def test_execute_build_preflights_every_output_before_running_any_job(
 
     _patch_artifact_build(monkeypatch, build)
     graph = build_artifact_graph([first, second])
+    definition = replace(
+        definition,
+        artifact_graph=graph,
+        artifact_hashes=ArtifactHashes(
+            {first.id: "artifact-hash-1", second.id: "artifact-hash-2"}
+        ),
+    )
     plan = build_exec.BuildPlan(
         reason="force",
         artifacts=(first.id, second.id),
@@ -890,11 +918,7 @@ def test_execute_build_preflights_every_output_before_running_any_job(
             build_exec.ArtifactBuildJob(first, (first.id,)),
             build_exec.ArtifactBuildJob(second, (second.id,)),
         ),
-        artifact_hashes=ArtifactHashes(
-            {first.id: "artifact-hash-1", second.id: "artifact-hash-2"}
-        ),
         previous_state=None,
-        graph=graph,
     )
 
     with pytest.raises(ValueError, match="must stay under artifacts root"):
@@ -931,6 +955,13 @@ def test_execute_build_job_invalidates_only_graph_descendants(
             custom,
         ]
     )
+    definition = replace(
+        definition,
+        artifact_graph=graph,
+        artifact_hashes=ArtifactHashes(
+            {key: "artifact-hash-1" for key in graph.tasks_by_id}
+        ),
+    )
     runtime = _runtime(tmp_path / "artifacts")
     messages: list[tuple[str, int]] = []
     monkeypatch.setattr(
@@ -960,11 +991,7 @@ def test_execute_build_job_invalidates_only_graph_descendants(
                 ),
             ),
         ),
-        artifact_hashes=ArtifactHashes(
-            {key: "artifact-hash-1" for key in graph.tasks_by_id}
-        ),
         previous_state=previous_state,
-        graph=graph,
     )
 
     state = build_exec._execute_build_jobs(
@@ -1176,14 +1203,16 @@ def test_run_build_keeps_loaded_definition_when_config_changes(
         output="build/snapshot.json",
     )
     graph = build_artifact_graph([task])
-    definition = replace(definition, artifact_graph=graph)
+    definition = replace(
+        definition,
+        artifact_graph=graph,
+        artifact_hashes=ArtifactHashes({task.id: "current"}),
+    )
     plan = build_exec.BuildPlan(
         reason="missing",
         artifacts=(task.id,),
         jobs=(),
-        artifact_hashes=ArtifactHashes({task.id: "current"}),
         previous_state=None,
-        graph=graph,
     )
     monkeypatch.setattr(build_exec, "_plan_build", lambda **_kwargs: plan)
     monkeypatch.setattr(

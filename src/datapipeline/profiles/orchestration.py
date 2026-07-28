@@ -88,7 +88,7 @@ def _run_build_profiles(request: BuildRunRequest) -> None:
     try:
         _validate_build_order(jobs, graph)
         for job in jobs:
-            validate_build_job(job.task, graph, request.definition)
+            validate_build_job(job.task, request.definition)
     except ValueError as exc:
         raise ProfileCommandError(str(exc)) from exc
 
@@ -110,9 +110,8 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> None:
     jobs = list(request.jobs)
     if not jobs:
         return
-    graph = request.definition.artifact_graph
     try:
-        plans = [plan_runtime_job(job, graph, request.definition) for job in jobs]
+        plans = [plan_runtime_job(job, request.definition) for job in jobs]
     except ValueError as exc:
         raise ProfileCommandError(str(exc)) from exc
 

@@ -5,7 +5,6 @@ from typing import Literal
 
 from datapipeline.artifacts.errors import ArtifactResolutionError
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
-from datapipeline.artifacts.planning import ArtifactGraph
 from datapipeline.artifacts.validation import validate_artifact_plan
 from datapipeline.config.tasks.base import ArtifactTask, PluginRuntimeTask
 from datapipeline.config.tasks.coverage import CoverageTask
@@ -35,9 +34,9 @@ class RuntimeJobPlan:
 
 def validate_build_job(
     task: ArtifactTask,
-    graph: ArtifactGraph,
     definition: ProjectDefinition,
 ) -> None:
+    graph = definition.artifact_graph
     roots = {task.id}
     artifact_keys = set(graph.dependency_closure(roots, definition.dataset))
     validate_artifact_plan(definition.streams, graph, artifact_keys)
@@ -45,9 +44,9 @@ def validate_build_job(
 
 def plan_runtime_job(
     job: RuntimeJob,
-    graph: ArtifactGraph,
     definition: ProjectDefinition,
 ) -> RuntimeJobPlan:
+    graph = definition.artifact_graph
     if job.output.format == "parquet" and not isinstance(job.task, DatasetTask):
         raise ValueError("Parquet output is supported only by the dataset operation.")
     if job.output.format == "parquet" and job.preview not in {

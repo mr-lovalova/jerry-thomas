@@ -892,7 +892,7 @@ def test_coverage_operation_rejects_limit_before_planning(tmp_path: Path) -> Non
     )
 
     with pytest.raises(ValueError, match="coverage operation does not support"):
-        plan_runtime_job(job, SimpleNamespace(), SimpleNamespace())
+        plan_runtime_job(job, project_definition(tmp_path / "project.yaml"))
 
 
 def test_parquet_output_rejects_non_dataset_operation_before_planning(
@@ -912,7 +912,7 @@ def test_parquet_output_rejects_non_dataset_operation_before_planning(
     )
 
     with pytest.raises(ValueError, match="only by the dataset operation"):
-        plan_runtime_job(job, SimpleNamespace(), SimpleNamespace())
+        plan_runtime_job(job, project_definition(tmp_path / "project.yaml"))
 
 
 def test_parquet_output_rejects_record_preview_before_planning(
@@ -933,7 +933,7 @@ def test_parquet_output_rejects_record_preview_before_planning(
     )
 
     with pytest.raises(ValueError, match="only 'samples' and 'postprocess'"):
-        plan_runtime_job(job, SimpleNamespace(), SimpleNamespace())
+        plan_runtime_job(job, project_definition(tmp_path / "project.yaml"))
 
 
 def test_shared_serve_run_is_finalized_once(monkeypatch, tmp_path: Path) -> None:

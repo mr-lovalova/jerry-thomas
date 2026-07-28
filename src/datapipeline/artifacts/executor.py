@@ -6,7 +6,6 @@ from typing import Literal
 from datapipeline.artifacts.errors import ArtifactResolutionError
 from datapipeline.artifacts.fingerprints import calculate_artifact_hashes
 from datapipeline.artifacts.hydration import hydrate_runtime_artifacts
-from datapipeline.artifacts.planning import ArtifactGraph
 from datapipeline.artifacts.settings import BuildSettings
 from datapipeline.artifacts.validation import validate_artifact_plan
 from datapipeline.artifacts.state import (
@@ -27,7 +26,7 @@ from datapipeline.operations.persistence import (
 )
 from datapipeline.plugins import BUILD_OPERATIONS_EP, load_entrypoint
 from datapipeline.runtime import Runtime
-from datapipeline.services.definitions import ArtifactHashes, ProjectDefinition
+from datapipeline.services.definitions import ProjectDefinition
 from datapipeline.services.path_policy import resolve_artifact_output_path
 
 logger = logging.getLogger(__name__)
@@ -56,9 +55,7 @@ class BuildPlan:
     reason: Literal["force", "missing", "stale"]
     artifacts: tuple[str, ...]
     jobs: tuple[ArtifactBuildJob, ...]
-    artifact_hashes: ArtifactHashes
     previous_state: BuildState | None
-    graph: ArtifactGraph
 
 
 ArtifactPlan = BuildPlan | SkippedBuild
@@ -98,11 +95,11 @@ def _report_artifact_plan(
 def _plan_build(
     *,
     definition: ProjectDefinition,
-    graph: ArtifactGraph,
     required_artifacts: set[str],
     mode: ArtifactMode,
     resolved_artifacts: set[str] | None = None,
 ) -> ArtifactPlan:
+    graph = definition.artifact_graph
     try:
         selected_roots = set(required_artifacts)
         selected_keys = set(graph.dependency_closure(selected_roots))
@@ -199,9 +196,7 @@ def _plan_build(
         ),
         artifacts=expanded_artifacts,
         jobs=jobs,
-        artifact_hashes=artifact_hashes,
         previous_state=previous_state,
-        graph=graph,
     )
 
 
@@ -220,7 +215,7 @@ def _execute_build_jobs(
         else BuildState()
     )
     for job in plan.jobs:
-        artifact_hash = plan.artifact_hashes.for_artifact(job.task.id)
+        artifact_hash = definition.artifact_hashes.for_artifact(job.task.id)
         with operation_scope(f"build:{job.task.id}"):
             _require_stable_artifact_inputs(
                 definition,
@@ -248,9 +243,9 @@ def _execute_build_jobs(
                 current_state.artifacts.pop(key, None)
             hydrate_runtime_artifacts(
                 runtime=runtime,
-                graph=plan.graph,
+                graph=definition.artifact_graph,
                 state=current_state,
-                artifact_hashes=plan.artifact_hashes,
+                artifact_hashes=definition.artifact_hashes,
                 artifact_keys=plan.artifacts,
             )
 
@@ -322,7 +317,6 @@ def run_build_if_needed(
 
     plan = _plan_build(
         definition=definition,
-        graph=graph,
         required_artifacts=required_artifacts,
         mode=mode,
         resolved_artifacts=resolved_artifacts,

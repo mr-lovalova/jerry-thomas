@@ -80,77 +80,6 @@ class ArtifactGraph:
         )
         self._validate_acyclic()
 
-    @classmethod
-    def from_tasks(
-        cls,
-        task_configs: Iterable[ArtifactTask],
-        dataset: DatasetConfig | None = None,
-        streams: StreamsConfig | None = None,
-    ) -> "ArtifactGraph":
-        if (dataset is None) != (streams is None):
-            raise ValueError("dataset and streams must be provided together")
-
-        tasks = tuple(task.model_copy(deep=True) for task in task_configs)
-        tasks_by_id: dict[str, ArtifactTask] = {}
-        for task in tasks:
-            if task.id in tasks_by_id:
-                raise ValueError(f"Duplicate artifact operation id '{task.id}'.")
-            tasks_by_id[task.id] = task
-
-        tasks_by_output: dict[str, str] = {}
-        for task in tasks:
-            output = Path(task.output)
-            destination_key = output_destination_key(output)
-            previous_task_id = tasks_by_output.get(destination_key)
-            if previous_task_id is not None:
-                raise ValueError(
-                    f"Artifact operations '{previous_task_id}' and '{task.id}' write "
-                    f"the same output '{task.output}'."
-                )
-            tasks_by_output[destination_key] = task.id
-
-        definitions = list(ARTIFACT_DEFINITIONS)
-        built_in_keys = {definition.key for definition in definitions}
-        if dataset is not None and streams is not None:
-            scaler_streams = {
-                config.stream for config in dataset.series if config.scale
-            }
-            input_streams = {config.stream for config in dataset.series}
-            scaler_schedules = required_schedule_artifacts(
-                scaler_streams,
-                streams,
-                tasks_by_id,
-            )
-            input_schedules = required_schedule_artifacts(
-                input_streams,
-                streams,
-                tasks_by_id,
-            )
-            definitions = [
-                replace(
-                    definition,
-                    dependencies=(
-                        *definition.dependencies,
-                        *(
-                            scaler_schedules
-                            if definition.key == SCALER_STATISTICS
-                            else ()
-                        ),
-                        *(input_schedules if definition.key == SERIES else ()),
-                    ),
-                )
-                if definition.key in {SCALER_STATISTICS, SERIES}
-                else definition
-                for definition in definitions
-            ]
-
-        for task in tasks:
-            if task.id in built_in_keys:
-                continue
-            definitions.append(ArtifactDefinition(key=task.id))
-
-        return cls(tuple(definitions), tasks_by_id)
-
     def _validate_acyclic(self) -> None:
         visited: set[str] = set()
         path: list[str] = []
@@ -462,4 +391,60 @@ def build_artifact_graph(
     dataset: DatasetConfig | None = None,
     streams: StreamsConfig | None = None,
 ) -> ArtifactGraph:
-    return ArtifactGraph.from_tasks(task_configs, dataset, streams)
+    if (dataset is None) != (streams is None):
+        raise ValueError("dataset and streams must be provided together")
+
+    tasks = tuple(task.model_copy(deep=True) for task in task_configs)
+    tasks_by_id: dict[str, ArtifactTask] = {}
+    for task in tasks:
+        if task.id in tasks_by_id:
+            raise ValueError(f"Duplicate artifact operation id '{task.id}'.")
+        tasks_by_id[task.id] = task
+
+    tasks_by_output: dict[str, str] = {}
+    for task in tasks:
+        output = Path(task.output)
+        destination_key = output_destination_key(output)
+        previous_task_id = tasks_by_output.get(destination_key)
+        if previous_task_id is not None:
+            raise ValueError(
+                f"Artifact operations '{previous_task_id}' and '{task.id}' write "
+                f"the same output '{task.output}'."
+            )
+        tasks_by_output[destination_key] = task.id
+
+    definitions = list(ARTIFACT_DEFINITIONS)
+    built_in_keys = {definition.key for definition in definitions}
+    if dataset is not None and streams is not None:
+        scaler_streams = {config.stream for config in dataset.series if config.scale}
+        input_streams = {config.stream for config in dataset.series}
+        scaler_schedules = required_schedule_artifacts(
+            scaler_streams,
+            streams,
+            tasks_by_id,
+        )
+        input_schedules = required_schedule_artifacts(
+            input_streams,
+            streams,
+            tasks_by_id,
+        )
+        definitions = [
+            replace(
+                definition,
+                dependencies=(
+                    *definition.dependencies,
+                    *(scaler_schedules if definition.key == SCALER_STATISTICS else ()),
+                    *(input_schedules if definition.key == SERIES else ()),
+                ),
+            )
+            if definition.key in {SCALER_STATISTICS, SERIES}
+            else definition
+            for definition in definitions
+        ]
+
+    for task in tasks:
+        if task.id in built_in_keys:
+            continue
+        definitions.append(ArtifactDefinition(key=task.id))
+
+    return ArtifactGraph(tuple(definitions), tasks_by_id)
