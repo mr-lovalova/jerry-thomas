@@ -55,5 +55,5 @@ def load_project(project_yaml: Path) -> ProjectManifest:
         dataset_path=resolve_project_path(path, config.paths.dataset),
         artifacts_root=resolve_project_path(path, config.paths.artifacts),
         operations_dir=operations_dir,
-        profiles_dir=resolve_project_path(path, config.paths.profiles or "./profiles"),
+        profiles_dir=resolve_project_path(path, config.paths.profiles),
     )

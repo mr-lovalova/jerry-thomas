@@ -20,7 +20,7 @@ class ProjectPaths(BaseModel):
     dataset: ProjectPath
     artifacts: ProjectPath
     operations: ProjectPath | None = None
-    profiles: ProjectPath | None = None
+    profiles: ProjectPath = "./profiles"
 
     @field_validator("streams", "sources")
     @classmethod

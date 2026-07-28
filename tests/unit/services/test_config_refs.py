@@ -96,6 +96,15 @@ def test_project_requires_schema_version(tmp_path: Path) -> None:
         load_project(project_yaml)
 
 
+def test_project_resolves_default_profiles_directory(tmp_path: Path) -> None:
+    project_yaml = _write_project_yaml(tmp_path)
+
+    project = load_project(project_yaml)
+
+    assert project.config.paths.profiles == "./profiles"
+    assert project.profiles_dir == (tmp_path / "profiles").resolve()
+
+
 @pytest.mark.parametrize("value", ["1", "2", "3"])
 def test_project_rejects_unsupported_schema_version(
     tmp_path: Path,
