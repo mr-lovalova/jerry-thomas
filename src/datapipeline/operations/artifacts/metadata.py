@@ -219,15 +219,16 @@ class _FoldCollector:
         split = dataset.split
         assert split is not None
         self.fold = fold
+        role_labels = fold.role_labels
         self.role_by_label = {
-            label: role for role in FOLD_ROLES for label in getattr(fold, role)
+            label: role for role, labels in role_labels for label in labels
         }
         self.features = _VectorStats(dataset.features)
         self.targets = _VectorStats(dataset.targets)
         self.output_domains = {
             role: _OutputDomains(dataset.features, dataset.targets)
-            for role in FOLD_ROLES
-            if getattr(fold, role)
+            for role, labels in role_labels
+            if labels
         }
         self._feature_domains: dict[FoldRole, set[tuple]] = {
             role: set() for role in self.output_domains
@@ -553,8 +554,8 @@ def _fold_output_metadata(
     collector: _FoldCollector,
     schema: VectorSchema,
     role: FoldRole,
+    labels: tuple[str, ...],
 ) -> FoldOutputMetadata:
-    labels = tuple(getattr(collector.fold, role))
     output_domain = collector.output_domains[role]
     domain = output_domain.merged(task_cfg.window_mode)
     observed_start, observed_end = output_domain.window_bounds(
@@ -605,9 +606,16 @@ def _folded_layout(
     for collector in collectors.collectors:
         schema = collector.schema()
         outputs = tuple(
-            _fold_output_metadata(dataset, task_cfg, collector, schema, role)
-            for role in FOLD_ROLES
-            if getattr(collector.fold, role)
+            _fold_output_metadata(
+                dataset,
+                task_cfg,
+                collector,
+                schema,
+                role,
+                labels,
+            )
+            for role, labels in collector.fold.role_labels
+            if labels
         )
         folds.append(
             VectorMetadataFold(
