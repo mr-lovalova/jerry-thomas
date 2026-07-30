@@ -794,8 +794,8 @@ postprocess:
   type. Floating-point keys must be finite; booleans, integers, and floats are
   distinct key types and cannot be mixed within one field.
 - Stateful ordered transforms such as `lag`, `lead`, `rolling`,
-  `rolling_slope`, `forward_sum`, `fill`, and `ensure_cadence` use stream
-  `partition_by` as their entity partition. Define
+  `rolling_slope`, `rolling_ols`, `forward_sum`, `fill`, and `ensure_cadence`
+  use stream `partition_by` as their entity partition. Define
   `partition_by: [security_id]` on the source-backed stream when transform state
   must stay per security; downstream streams inherit it.
 - `partition_by` is the complete series identity. `sample.keys` select which

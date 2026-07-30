@@ -182,6 +182,36 @@ class RollingSlopeConfig(_TransformConfig):
     to: NonEmptyString
 
 
+class RollingOlsConfig(_TransformConfig):
+    operation: Literal["rolling_ols"] = "rolling_ols"
+
+    y: NonEmptyString
+    x: tuple[NonEmptyString, ...] = Field(min_length=2)
+    window: PositiveInt
+    coefficient: NonEmptyString
+    to: NonEmptyString
+
+    @field_validator("x", mode="before")
+    @classmethod
+    def normalize_predictors(cls, fields: object) -> object:
+        return tuple(fields) if isinstance(fields, list) else fields
+
+    @model_validator(mode="after")
+    def validate_model(self) -> "RollingOlsConfig":
+        if len(self.x) != len(set(self.x)):
+            raise ValueError("rolling_ols x must not contain duplicate fields")
+        if self.y in self.x:
+            raise ValueError("rolling_ols x must not contain the dependent field y")
+        if self.coefficient not in self.x:
+            raise ValueError("rolling_ols coefficient must name a field from x")
+        if self.window < len(self.x) + 1:
+            raise ValueError(
+                "rolling_ols window must contain at least one more record "
+                "than the number of predictors"
+            )
+        return self
+
+
 class LogConfig(_TransformConfig):
     operation: Literal["log"] = "log"
 
@@ -235,6 +265,7 @@ TransformConfig = Annotated[
     | CollapseConfig
     | RollingConfig
     | RollingSlopeConfig
+    | RollingOlsConfig
     | LogConfig
     | Log1pConfig
     | DeriveConfig,

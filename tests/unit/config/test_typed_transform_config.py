@@ -14,6 +14,7 @@ from datapipeline.config.transforms import (
     Log1pConfig,
     LogConfig,
     RollingConfig,
+    RollingOlsConfig,
     RollingSlopeConfig,
     ShiftTimeConfig,
 )
@@ -120,6 +121,22 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
             "min_samples": 10,
         },
         {
+            "operation": "rolling_ols",
+            "y": "stock_return",
+            "x": ["market_return", "credit_return"],
+            "window": 252,
+            "coefficient": "credit_return",
+        },
+        {
+            "operation": "rolling_ols",
+            "y": "stock_return",
+            "x": ["market_return", "credit_return"],
+            "window": 252,
+            "coefficient": "credit_return",
+            "to": "credit_beta",
+            "gap": 21,
+        },
+        {
             "operation": "forward_sum",
             "field": "return",
             "window": 21,
@@ -183,6 +200,94 @@ def test_stream_parses_strict_rolling_slope_config() -> None:
             to="beta",
         )
     ]
+
+
+def test_stream_parses_strict_rolling_ols_config() -> None:
+    stream = _stream(
+        transforms=[
+            {
+                "operation": "rolling_ols",
+                "y": "stock_return",
+                "x": ["market_return", "credit_return", "bond_return"],
+                "window": 252,
+                "coefficient": "credit_return",
+                "to": "credit_beta",
+            }
+        ]
+    )
+
+    assert stream.transforms == [
+        RollingOlsConfig(
+            y="stock_return",
+            x=("market_return", "credit_return", "bond_return"),
+            window=252,
+            coefficient="credit_return",
+            to="credit_beta",
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        (
+            {
+                "y": "stock_return",
+                "x": ["market_return"],
+                "window": 252,
+                "coefficient": "market_return",
+                "to": "beta",
+            },
+            "at least 2",
+        ),
+        (
+            {
+                "y": "stock_return",
+                "x": ["market_return", "market_return"],
+                "window": 252,
+                "coefficient": "market_return",
+                "to": "beta",
+            },
+            "duplicate",
+        ),
+        (
+            {
+                "y": "stock_return",
+                "x": ["market_return", "credit_return"],
+                "window": 252,
+                "coefficient": "bond_return",
+                "to": "beta",
+            },
+            "coefficient",
+        ),
+        (
+            {
+                "y": "stock_return",
+                "x": ["market_return", "stock_return"],
+                "window": 252,
+                "coefficient": "market_return",
+                "to": "beta",
+            },
+            "dependent field",
+        ),
+        (
+            {
+                "y": "stock_return",
+                "x": ["market_return", "credit_return"],
+                "window": 2,
+                "coefficient": "credit_return",
+                "to": "beta",
+            },
+            "window",
+        ),
+    ],
+)
+def test_rolling_ols_rejects_invalid_contracts(
+    values: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        RollingOlsConfig.model_validate(values)
 
 
 def test_stream_parses_strict_forward_sum_config() -> None:

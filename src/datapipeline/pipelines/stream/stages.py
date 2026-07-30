@@ -25,6 +25,7 @@ from datapipeline.config.transforms import (
     LogConfig,
     PreprocessConfig,
     RollingConfig,
+    RollingOlsConfig,
     RollingSlopeConfig,
     ShiftTimeConfig,
     TransformConfig,
@@ -44,6 +45,7 @@ from datapipeline.transforms.stream.lag import LagTransform
 from datapipeline.transforms.stream.lead import LeadTransform
 from datapipeline.transforms.stream.logarithm import Log1pTransform, LogTransform
 from datapipeline.transforms.stream.rolling import RollingTransform
+from datapipeline.transforms.stream.rolling_ols import RollingOlsTransform
 from datapipeline.transforms.stream.rolling_slope import RollingSlopeTransform
 from datapipeline.transforms.stream.time_completion import (
     EnsureCadenceTransform,
@@ -181,6 +183,15 @@ def build_transform_stages(
                 operation.x,
                 operation.y,
                 operation.window,
+                partition_by,
+                operation.to,
+            ).apply
+        elif isinstance(operation, RollingOlsConfig):
+            stage_op = RollingOlsTransform(
+                operation.y,
+                operation.x,
+                operation.window,
+                operation.coefficient,
                 partition_by,
                 operation.to,
             ).apply

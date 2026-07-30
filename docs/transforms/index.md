@@ -32,6 +32,12 @@ transforms:
     y: stock_return
     to: beta_252
     window: 252
+  - operation: rolling_ols
+    y: stock_return
+    x: [spy_return, hyg_return, lqd_return]
+    window: 252
+    coefficient: hyg_return
+    to: hyg_beta
   - operation: forward_sum
     field: excess_return
     to: future_excess_return_21

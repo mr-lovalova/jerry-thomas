@@ -14,10 +14,10 @@ series IDs in their declared order.
 
 Most single-field transforms accept `field` and optional `to`. If `to` is
 omitted, the transform writes back to `field`. `log`, `log1p`, `forward_sum`,
-and multi-input transforms such as `derive` and `rolling_slope` require `to`.
-Transforms cannot write `time` or a resolved `partition_by` field because those
-fields define canonical record order. Identity changes belong in a map or
-combine function, before the ordering stage.
+and multi-input transforms such as `derive`, `rolling_slope`, and `rolling_ols`
+require `to`. Transforms cannot write `time` or a resolved `partition_by` field
+because those fields define canonical record order. Identity changes belong in
+a map or combine function, before the ordering stage.
 
 ```yaml
 transforms:
@@ -61,6 +61,12 @@ nonnumeric or infinite values.
   be at least two. The current record is included. A missing pair clears the
   window (`None` and `NaN` are missing); nonnumeric or infinite inputs and zero
   `x` variance fail explicitly.
+- `rolling_ols`: fit `y` on two or more ordered predictors in `x`, with an
+  intercept, over a strict rolling window and write one selected `coefficient`
+  to `to`. The window must contain at least one more record than the number of
+  predictors. Missing values clear the window; nonnumeric, infinite, or
+  rank-deficient windows fail explicitly. Install `jerry-thomas[numerical]`
+  to use this NumPy-backed transform.
 
 `rolling_slope` needs consecutive records, not merely consecutive values. Put
 `ensure_schedule` or `ensure_cadence` first when absent timestamps must reset the
@@ -72,6 +78,29 @@ transforms:
   - { operation: lag, field: market_return, periods: 1, to: market_return_lag_1 }
   - { operation: rolling_slope, x: market_return_lag_1, y: stock_return_lag_1, window: 252, to: beta }
 ```
+
+Use exact broadcast to attach global context fields before multivariate OLS.
+An availability gap remains an explicit `lag` after the regression:
+
+```yaml
+# The stream already combines stock_return with exact-date global factors.
+transforms:
+  - operation: rolling_ols
+    y: stock_return
+    x: [spy_return, hyg_return, lqd_return]
+    window: 252
+    coefficient: hyg_return
+    to: hyg_beta_raw
+  - operation: lag
+    field: hyg_beta_raw
+    periods: 21
+    to: hyg_beta
+```
+
+Both rolling regression operations count records. Use `ensure_schedule` first
+when their windows and subsequent lags must count scheduled sessions. In the
+example, the coefficient at time `t` comes from the regression window that
+ended 21 scheduled records earlier.
 
 `forward_sum` also counts records rather than inferred sessions. Use
 `ensure_schedule` first for an explicit session schedule, or `ensure_cadence`
