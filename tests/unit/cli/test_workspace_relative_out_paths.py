@@ -43,7 +43,7 @@ def test_demo_init_out_path_is_workspace_relative(tmp_path: Path, monkeypatch) -
 
     monkeypatch.setattr(demo, "scaffold_demo", fake_scaffold_demo)
 
-    demo.handle("init", out="plugins", workspace=workspace)
+    demo.handle("create", out="plugins", workspace=workspace)
 
     expected_out = (tmp_path / "plugins").resolve()
     assert calls["demo_outdir"] == expected_out

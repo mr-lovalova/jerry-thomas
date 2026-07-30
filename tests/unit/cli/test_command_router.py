@@ -29,7 +29,7 @@ def test_plugin_name_dispatches_from_positional_argument(monkeypatch) -> None:
         lambda **kwargs: captured.update(kwargs),
     )
 
-    _execute(build_parser().parse_args(["plugin", "init", "weather-plugin"]))
+    _execute(build_parser().parse_args(["plugin", "create", "weather-plugin"]))
 
     assert captured["name"] == "weather-plugin"
 
@@ -164,7 +164,7 @@ def test_heartbeat_is_an_execution_command_option() -> None:
     "argv",
     [
         ["clean"],
-        ["demo", "init"],
+        ["demo", "create"],
         ["list", "domains"],
         ["list", "sources"],
     ],

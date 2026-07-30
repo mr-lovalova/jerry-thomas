@@ -13,7 +13,7 @@ def handle(
     out: str | None = None,
     workspace: WorkspaceContext | None = None,
 ) -> None:
-    if subcmd != "init":
+    if subcmd != "create":
         raise SystemExit(f"Unknown demo subcommand: {subcmd}")
     outdir = resolve_workspace_path(
         out or ".",

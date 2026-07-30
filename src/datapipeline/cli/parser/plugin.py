@@ -8,9 +8,9 @@ def add_plugin_command(sub, common: argparse.ArgumentParser) -> None:
         parents=[common],
     )
     plugin_sub = parser.add_subparsers(required=True)
-    init = plugin_sub.add_parser("init", help="create a plugin skeleton")
-    init.add_argument(
+    create = plugin_sub.add_parser("create", help="create a plugin skeleton")
+    create.add_argument(
         "plugin_name",
         help="plugin distribution name",
     )
-    init.add_argument("--out", "-o", default=".")
+    create.add_argument("--out", "-o", default=".")
