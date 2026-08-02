@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Anders Skott Lind" }]
-urls = { "Homepage" = "https://github.com/mr-lovalova/datapipeline", "Repository" = "https://github.com/mr-lovalova/datapipeline", "Issues" = "https://github.com/mr-lovalova/datapipeline/issues" }
+urls = { "Homepage" = "https://github.com/mr-lovalova/jerry-thomas", "Repository" = "https://github.com/mr-lovalova/jerry-thomas", "Issues" = "https://github.com/mr-lovalova/jerry-thomas/issues" }
 dependencies = [
   "pydantic>=2.0",
   "PyYAML>=5.4",
