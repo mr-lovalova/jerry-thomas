@@ -124,7 +124,7 @@ jobs:
           jerry --help
           smoke_root="$(mktemp -d)"
           cd "$smoke_root"
-          jerry plugin init smoke-plugin --out .
+          jerry plugin create smoke-plugin --out .
           test -f smoke-plugin/jerry.yaml
           test -f smoke-plugin/your-dataset/.env.example
           test -f smoke-plugin/your-dataset/project.yaml
@@ -135,7 +135,7 @@ jobs:
           test ! -e smoke-plugin/your-interim-data-builder
           test ! -e smoke-plugin/your-dataset/tasks
           test ! -e smoke-plugin/_dataset_base
-          jerry demo init --out .
+          jerry demo create --out .
           test -f demo/jerry.yaml
           test -f demo/demo/.env.example
           test -f demo/demo/scripts/run_model_batches.py

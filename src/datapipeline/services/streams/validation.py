@@ -18,6 +18,7 @@ from datapipeline.config.transforms import (
     Log1pConfig,
     LogConfig,
     RollingConfig,
+    RollingOlsConfig,
     RollingSlopeConfig,
 )
 from datapipeline.domain.stream import canonical_record_order
@@ -78,6 +79,7 @@ def validate_stream_configs(
                     ForwardSumConfig,
                     LogConfig,
                     Log1pConfig,
+                    RollingOlsConfig,
                     RollingSlopeConfig,
                 ),
             ):

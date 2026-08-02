@@ -25,6 +25,8 @@ dependencies = [
 ml = [
   "numpy>=1.26",
 ]
+# NumPy-backed ordered statistical transforms
+numerical = ["numpy>=1.26"]
 parquet = ["pyarrow>=14"]
 test = ["numpy>=1.26", "pytest>=8.0", "pyarrow>=14"]
 mutation = ["mutmut>=3.5,<4"]
@@ -115,6 +117,7 @@ only_mutate = [
   "src/datapipeline/pipelines/series/projector.py",
   "src/datapipeline/pipelines/sort.py",
   "src/datapipeline/pipelines/sample/keys.py",
+  "src/datapipeline/transforms/rolling_ols.py",
   "src/datapipeline/transforms/rolling_slope.py",
   "src/datapipeline/transforms/stream/forward_sum.py",
   "src/datapipeline/transforms/stream/logarithm.py",

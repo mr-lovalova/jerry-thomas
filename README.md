@@ -42,7 +42,7 @@ From zero to a served dataset:
 
 ```bash
 python -m pip install -U jerry-thomas
-jerry demo init
+jerry demo create
 cd demo
 python -m pip install -e .
 jerry serve --dataset demo --limit 3
@@ -55,7 +55,7 @@ integrate a generated project into another workspace.
 ### Create Your Own Plugin + First Stream
 
 ```bash
-jerry plugin init my-datapipeline --out lib/
+jerry plugin create my-datapipeline --out lib/
 cd lib/my-datapipeline
 
 # Scaffold source YAML, DTO/parser, domain, mapper, and stream.
@@ -89,8 +89,8 @@ and scaler behavior.
 Profile commands run enabled profiles by default. `--profile <name>` selects
 that profile explicitly, including one configured with `enabled: false`.
 
-- `jerry demo init`: create the standalone demo plugin.
-- `jerry plugin init <name> --out lib/`: create a plugin workspace.
+- `jerry demo create`: create the standalone demo plugin.
+- `jerry plugin create <name> --out lib/`: create a plugin workspace.
 - `jerry inflow create`: scaffold one source-backed stream end to end.
 - `jerry serve`: stream enabled serve profiles.
 - `jerry build`: build the series artifact, scaler statistics, and

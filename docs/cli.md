@@ -123,10 +123,10 @@ phase has visuals enabled.
 
 ### Scaffolding & Reference
 
-- `jerry plugin init <package> --out <dir>`
+- `jerry plugin create <package> --out <dir>`
   - Generates a self-contained plugin workspace (pyproject, package skeleton,
     local `jerry.yaml`, and config templates).
-- `jerry demo init`
+- `jerry demo create`
   - Generates a standalone demo workspace at `./demo/`. Run it from that
     directory; the command does not modify a parent `jerry.yaml`.
 - `jerry inflow create`

@@ -1,6 +1,8 @@
 from datetime import timedelta
 from math import log, log1p
 
+import pytest
+
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.execution.events import PipelineEvent, PipelineStarted
 from datapipeline.execution.observability import execution_observer
@@ -155,6 +157,140 @@ transforms:
     assert [(record.time.day, record.ticker, record.value) for record in records] == [
         (2, "A", 2)
     ]
+
+
+def test_exact_global_factors_feed_partitioned_rolling_ols_with_gap(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    project_yaml, sources_dir, streams_dir, data_dir = _write_test_project(tmp_path)
+    positions = tuple(range(1, 26))
+    factor_values = {
+        "spy": list(positions),
+        "hyg": [position**2 for position in positions],
+        "lqd": [position**3 for position in positions],
+    }
+    rows_by_input = {
+        factor: [
+            f'{{"time":"2025-01-{position:02d}T00:00:00Z","value":{value}}}'
+            for position, value in zip(positions, values, strict=True)
+        ]
+        for factor, values in factor_values.items()
+    }
+    rows_by_input["stocks"] = [
+        (
+            f'{{"time":"2025-01-{position:02d}T00:00:00Z",'
+            f'"ticker":"{ticker}","stock_return":'
+            f"{intercept + 2 * position - 3 * position**2 + 0.5 * position**3}"
+            "}"
+        )
+        for ticker, intercept in (("A", 10), ("B", -5))
+        for position in reversed(positions)
+    ]
+
+    for input_name, rows in rows_by_input.items():
+        (data_dir / f"{input_name}.jsonl").write_text(
+            "\n".join(rows) + "\n",
+            encoding="utf-8",
+        )
+        (sources_dir / f"{input_name}.yaml").write_text(
+            f"""\
+id: {input_name}.source
+parser:
+  entrypoint: core.temporal_record
+loader:
+  transport: fs
+  path: data/{input_name}.jsonl
+  reader:
+    format: jsonl
+""",
+            encoding="utf-8",
+        )
+
+    (streams_dir / "stocks.yaml").write_text(
+        """\
+id: stocks
+from: {source: stocks.source}
+partition_by: [ticker]
+map: {entrypoint: identity}
+""",
+        encoding="utf-8",
+    )
+    for factor in factor_values:
+        (streams_dir / f"{factor}.yaml").write_text(
+            f"""\
+id: {factor}
+from: {{source: {factor}.source}}
+map: {{entrypoint: identity}}
+""",
+            encoding="utf-8",
+        )
+    (streams_dir / "factors.yaml").write_text(
+        """\
+id: factors
+from:
+  align: [spy, hyg, lqd]
+combine:
+  entrypoint: combine_factors
+""",
+        encoding="utf-8",
+    )
+    (streams_dir / "enriched.yaml").write_text(
+        """\
+id: enriched
+from:
+  stream: stocks
+  broadcast: factors
+combine:
+  entrypoint: attach_factors
+transforms:
+  - operation: rolling_ols
+    y: stock_return
+    x: [spy_return, hyg_return, lqd_return]
+    window: 4
+    coefficient: hyg_return
+    to: hyg_beta_raw
+  - operation: lag
+    field: hyg_beta_raw
+    periods: 21
+    to: hyg_beta
+""",
+        encoding="utf-8",
+    )
+
+    def combine_factors(spy, hyg, lqd):
+        record = TemporalRecord(time=spy.time)
+        record.spy_return = spy.value
+        record.hyg_return = hyg.value
+        record.lqd_return = lqd.value
+        return record
+
+    def attach_factors(stock, factors):
+        record = TemporalRecord(time=stock.time)
+        record.ticker = stock.ticker
+        record.stock_return = stock.stock_return
+        record.spy_return = factors.spy_return
+        record.hyg_return = factors.hyg_return
+        record.lqd_return = factors.lqd_return
+        return record
+
+    combiners = {
+        "combine_factors": combine_factors,
+        "attach_factors": attach_factors,
+    }
+    monkeypatch.setattr(
+        "datapipeline.services.streams.combine.load_entrypoint",
+        lambda group, entrypoint: combiners[entrypoint],
+    )
+
+    runtime = compile_runtime(load_project_definition(project_yaml))
+    records = list(run_stream_pipeline(runtime, "enriched"))
+
+    assert [record.ticker for record in records] == ["A"] * 25 + ["B"] * 25
+    for offset in (0, 25):
+        partition = records[offset : offset + 25]
+        assert [record.hyg_beta for record in partition[:24]] == [None] * 24
+        assert partition[24].hyg_beta == pytest.approx(-3.0)
 
 
 def test_yaml_broadcast_stream_reuses_exact_input_across_partitions(

@@ -393,6 +393,14 @@ def test_validation_rejects_noncanonical_declared_order() -> None:
             "to": "ticker",
         },
         {
+            "operation": "rolling_ols",
+            "y": "stock_return",
+            "x": ["market_return", "credit_return"],
+            "window": 3,
+            "coefficient": "credit_return",
+            "to": "ticker",
+        },
+        {
             "operation": "forward_sum",
             "field": "return",
             "window": 2,
