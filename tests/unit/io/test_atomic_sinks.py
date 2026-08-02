@@ -3,7 +3,7 @@ import stat
 
 import pytest
 
-from datapipeline.io.sinks.files import (
+from jerrythomas.io.sinks.files import (
     AtomicBinaryFileSink,
     AtomicTextFileSink,
     GzipBinarySink,

@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.execution import runner as pipeline_runner
-from datapipeline.execution.pipeline import Input, Pipeline, Stage
-from datapipeline.execution.events import (
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.execution import runner as pipeline_runner
+from jerrythomas.execution.pipeline import Input, Pipeline, Stage
+from jerrythomas.execution.events import (
     NodeFinished,
     NodeProgress,
     NodeStarted,
@@ -19,9 +19,9 @@ from datapipeline.execution.events import (
     PipelineSummary,
     ProgressSnapshot,
 )
-from datapipeline.execution.observability import execution_observer
-from datapipeline.execution.runner import run_pipeline
-from datapipeline.runtime import Runtime
+from jerrythomas.execution.observability import execution_observer
+from jerrythomas.execution.runner import run_pipeline
+from jerrythomas.runtime import Runtime
 
 
 class _CollectingObserver:
@@ -98,7 +98,7 @@ class _ProcessingAndCleanupFailure(Iterator[int]):
 def _runtime(tmp_path: Path) -> Runtime:
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 4\nartifact_revision: 1\n", encoding="utf-8"
+        "schema_version: 5\nartifact_revision: 1\n", encoding="utf-8"
     )
     artifacts_root = tmp_path / "artifacts"
     artifacts_root.mkdir(parents=True, exist_ok=True)

@@ -1,4 +1,4 @@
-from datapipeline.services.scaffold.layout import (
+from jerrythomas.services.scaffold.layout import (
     default_stream_id_for_source,
     source_id_parts,
 )

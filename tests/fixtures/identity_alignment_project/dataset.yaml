@@ -1,6 +1,7 @@
 sample:
   cadence: 1d
   keys: [ticker]
+  window_mode: union
 
 features:
   - id: price_scaled

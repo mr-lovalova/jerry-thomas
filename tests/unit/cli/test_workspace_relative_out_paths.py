@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from datapipeline.cli.commands import demo, plugin
-from datapipeline.cli.workspace import WorkspaceContext
-from datapipeline.config.workspace import WorkspaceConfig
+from jerrythomas.cli.commands import demo, plugin
+from jerrythomas.cli.workspace import WorkspaceContext
+from jerrythomas.config.workspace import WorkspaceConfig
 
 
 def _workspace_at(root: Path) -> WorkspaceContext:

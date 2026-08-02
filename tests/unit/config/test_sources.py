@@ -1,6 +1,6 @@
 import pytest
 
-from datapipeline.config.sources import (
+from jerrythomas.config.sources import (
     FsLoaderConfig,
     HttpLoaderConfig,
     JsonReaderConfig,

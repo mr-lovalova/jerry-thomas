@@ -5,7 +5,7 @@ import pyarrow as arrow
 import pyarrow.compute as compute
 import pyarrow.parquet as parquet
 
-from datapipeline.config.profiles.output import ServeOutputConfig
+from jerrythomas.config.profiles.output import ServeOutputConfig
 from tests.helpers.regression import read_jsonl, serve_dataset
 
 

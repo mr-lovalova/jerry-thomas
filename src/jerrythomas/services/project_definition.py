@@ -1,0 +1,52 @@
+from pathlib import Path
+
+from jerrythomas.artifacts.fingerprints import calculate_artifact_hashes
+from jerrythomas.artifacts.planning import build_artifact_graph
+from jerrythomas.config.tasks.base import ArtifactTask, RuntimeTask
+from jerrythomas.services.dataset import (
+    dataset_from_document,
+    validate_dataset_streams,
+)
+from jerrythomas.services.definitions import ProjectDefinition
+from jerrythomas.services.operations import (
+    operation_documents,
+    operations_from_documents,
+)
+from jerrythomas.services.project import load_project
+from jerrythomas.services.streams.loader import load_streams
+from jerrythomas.io.yaml import read_yaml_document
+
+
+def load_project_definition(project_yaml: Path) -> ProjectDefinition:
+    project = load_project(project_yaml)
+    dataset_document = read_yaml_document(project.dataset_path)
+    operation_config_documents = operation_documents(project)
+    dataset = dataset_from_document(project, dataset_document)
+    streams = load_streams(project)
+    validate_dataset_streams(dataset, streams)
+    operations = operations_from_documents(project, operation_config_documents)
+    artifact_operations = tuple(
+        operation for operation in operations if isinstance(operation, ArtifactTask)
+    )
+    runtime_operations = tuple(
+        operation for operation in operations if isinstance(operation, RuntimeTask)
+    )
+    artifact_graph = build_artifact_graph(
+        artifact_operations,
+        dataset,
+        streams,
+    )
+    artifact_hashes = calculate_artifact_hashes(
+        project,
+        dataset,
+        streams,
+        artifact_graph,
+    )
+    return ProjectDefinition(
+        project=project,
+        dataset=dataset,
+        streams=streams,
+        artifact_graph=artifact_graph,
+        runtime_operations=runtime_operations,
+        artifact_hashes=artifact_hashes,
+    )

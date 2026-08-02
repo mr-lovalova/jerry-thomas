@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from datapipeline.cli.command_router import execute_command
-from datapipeline.cli.parser_builder import build_parser
-from datapipeline.execution.settings import CommandObservability
-from datapipeline.profiles.errors import ProfileCommandError
+from jerrythomas.cli.command_router import execute_command
+from jerrythomas.cli.parser_builder import build_parser
+from jerrythomas.execution.settings import CommandObservability
+from jerrythomas.profiles.errors import ProfileCommandError
 
 
 def _execute(args, workspace=None) -> None:
@@ -50,7 +50,7 @@ def test_materialize_parser_accepts_profile_overrides() -> None:
 def test_materialize_dispatches_one_profile_execution_path(monkeypatch) -> None:
     captured = {}
     monkeypatch.setattr(
-        "datapipeline.cli.command_router.handle_materialize",
+        "jerrythomas.cli.command_router.handle_materialize",
         lambda **kwargs: captured.update(kwargs),
     )
     args = build_parser().parse_args(
@@ -85,7 +85,7 @@ def test_materialize_dispatches_one_profile_execution_path(monkeypatch) -> None:
 
 def test_materialize_output_override_requires_profile(monkeypatch) -> None:
     monkeypatch.setattr(
-        "datapipeline.cli.commands.materialize.build_materialize_run_request",
+        "jerrythomas.cli.commands.materialize.build_materialize_run_request",
         lambda **kwargs: pytest.fail("profiles should not run"),
     )
     args = build_parser().parse_args(
@@ -104,12 +104,12 @@ def test_materialize_resolves_profile_output_from_workspace(
     captured = {}
     request = object()
     monkeypatch.setattr(
-        "datapipeline.cli.commands.materialize.build_materialize_run_request",
+        "jerrythomas.cli.commands.materialize.build_materialize_run_request",
         lambda **kwargs: captured.update(kwargs) or request,
     )
     executed = []
     monkeypatch.setattr(
-        "datapipeline.cli.commands.materialize.execute_profile_request",
+        "jerrythomas.cli.commands.materialize.execute_profile_request",
         executed.append,
     )
     workspace = SimpleNamespace(root=tmp_path)
@@ -138,11 +138,11 @@ def test_materialize_passes_gzip_output_to_profile_resolution(monkeypatch) -> No
     captured = {}
     request = object()
     monkeypatch.setattr(
-        "datapipeline.cli.commands.materialize.build_materialize_run_request",
+        "jerrythomas.cli.commands.materialize.build_materialize_run_request",
         lambda **kwargs: captured.update(kwargs) or request,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.materialize.execute_profile_request",
+        "jerrythomas.cli.commands.materialize.execute_profile_request",
         lambda selected: None,
     )
     args = build_parser().parse_args(
@@ -166,11 +166,11 @@ def test_materialize_allows_global_overrides_without_profile(monkeypatch) -> Non
     captured = {}
     request = object()
     monkeypatch.setattr(
-        "datapipeline.cli.commands.materialize.build_materialize_run_request",
+        "jerrythomas.cli.commands.materialize.build_materialize_run_request",
         lambda **kwargs: captured.update(kwargs) or request,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.materialize.execute_profile_request",
+        "jerrythomas.cli.commands.materialize.execute_profile_request",
         lambda selected: None,
     )
     args = build_parser().parse_args(
@@ -199,7 +199,7 @@ def test_materialize_profile_validation_error_reaches_cli_boundary(monkeypatch) 
         raise ProfileCommandError("Unknown materialize profile 'missing'")
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.materialize.build_materialize_run_request",
+        "jerrythomas.cli.commands.materialize.build_materialize_run_request",
         fail,
     )
     args = build_parser().parse_args(

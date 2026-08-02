@@ -4,15 +4,15 @@ import textwrap
 import pytest
 import yaml
 
-from datapipeline.cli.commands.stream import handle as handle_stream_create
-from datapipeline.config.streams import (
+from jerrythomas.cli.commands.stream import handle as handle_stream_create
+from jerrythomas.config.streams import (
     AlignedStreamConfig,
     BroadcastStreamConfig,
     SourceStreamConfig,
 )
-from datapipeline.plugins import MAPPERS_EP
-from datapipeline.services.project import load_project
-from datapipeline.services.streams.loader import load_streams
+from jerrythomas.plugins import MAPPERS_EP
+from jerrythomas.services.project import load_project
+from jerrythomas.services.streams.loader import load_streams
 
 
 def _create_plugin(tmp_path: Path) -> Path:
@@ -40,7 +40,7 @@ def _write_project_yaml(
     streams_dir.mkdir(parents=True, exist_ok=True)
     content = textwrap.dedent(
         f"""
-        schema_version: 4
+        schema_version: 5
         artifact_revision: 1
         paths:
           streams: {streams_dir}
@@ -164,15 +164,15 @@ def test_source_stream_name_abort_does_not_write_config(
     original_pyproject = pyproject.read_bytes()
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.stream.pick_from_menu",
+        "jerrythomas.cli.commands.stream.pick_from_menu",
         lambda *args, **kwargs: "source",
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.stream.pick_from_list",
+        "jerrythomas.cli.commands.stream.pick_from_list",
         lambda *args, **kwargs: "demo.weather",
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.stream._select_source_mapper",
+        "jerrythomas.cli.commands.stream._select_source_mapper",
         lambda root: "custom.mapper",
     )
 
@@ -180,7 +180,7 @@ def test_source_stream_name_abort_does_not_write_config(
         raise RuntimeError("prompt aborted")
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.stream.choose_name",
+        "jerrythomas.cli.commands.stream.choose_name",
         abort_stream_name,
     )
 
@@ -329,7 +329,7 @@ def test_aligned_stream_scaffold_selects_registered_combiner(
     pyproject = plugin_root / "pyproject.toml"
     pyproject.write_text(
         pyproject.read_text(encoding="utf-8")
-        + '\n[project.entry-points."datapipeline.combiners"]\n'
+        + '\n[project.entry-points."jerrythomas.combiners"]\n'
         + 'air_density = "sample_plugin.combiners:air_density"\n',
         encoding="utf-8",
     )

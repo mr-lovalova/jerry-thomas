@@ -1,16 +1,17 @@
 import pytest
 
-from datapipeline.config.sources import SourceConfig
-from datapipeline.config.streams import (
+from jerrythomas.config.sources import SourceConfig
+from jerrythomas.config.streams import (
     AlignedStreamConfig,
     AsOfStreamConfig,
     BroadcastAsOfStreamConfig,
     BroadcastStreamConfig,
+    CrossSectionStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
     StreamConfig,
 )
-from datapipeline.services.streams.validation import (
+from jerrythomas.services.streams.validation import (
     stream_partition_by,
     validate_stream_configs,
 )
@@ -56,6 +57,33 @@ def _derived(
             "transforms": (
                 [{"operation": "dedupe"}] if transforms is None else transforms
             ),
+        }
+    )
+
+
+def _cross_section(
+    stream_id: str,
+    upstream: str,
+    operations: list[dict[str, object]] | None = None,
+    transforms: list[dict[str, object]] | None = None,
+) -> CrossSectionStreamConfig:
+    return CrossSectionStreamConfig.model_validate(
+        {
+            "id": stream_id,
+            "from": {"stream": upstream},
+            "cross_section": (
+                [
+                    {
+                        "operation": "rank_score",
+                        "field": "value",
+                        "to": "rank",
+                        "min_samples": 2,
+                    }
+                ]
+                if operations is None
+                else operations
+            ),
+            "transforms": [] if transforms is None else transforms,
         }
     )
 
@@ -172,6 +200,34 @@ def test_derived_partition_inheritance_is_transitive() -> None:
     validate_stream_configs({"source.alias": _source()}, streams)
 
     assert stream_partition_by(streams, "returns") == ("ticker",)
+
+
+def test_cross_section_inherits_transitive_partition() -> None:
+    streams: dict[str, StreamConfig] = {
+        "prices": _source_stream("prices", partition_by=["ticker"]),
+        "daily": _derived("daily", "prices"),
+        "ranked": _cross_section("ranked", "daily"),
+    }
+
+    validate_stream_configs({"source.alias": _source()}, streams)
+
+    assert stream_partition_by(streams, "ranked") == ("ticker",)
+
+
+def test_validation_rejects_unpartitioned_cross_section_input() -> None:
+    streams: dict[str, StreamConfig] = {
+        "global": _source_stream("global"),
+        "ranked": _cross_section("ranked", "global"),
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Cross-section stream 'ranked' input 'global' must have a non-empty "
+            "partition_by"
+        ),
+    ):
+        validate_stream_configs({"source.alias": _source()}, streams)
 
 
 def test_broadcast_inherits_transitive_primary_partition() -> None:
@@ -452,6 +508,75 @@ def test_source_stream_transforms_use_the_same_order_invariant() -> None:
     with pytest.raises(
         ValueError,
         match="cannot write canonical order field 'time'",
+    ):
+        validate_stream_configs({"source.alias": _source()}, streams)
+
+
+@pytest.mark.parametrize(
+    ("operation", "field"),
+    [
+        (
+            {
+                "operation": "rank_score",
+                "field": "signal",
+                "to": "ticker",
+                "min_samples": 2,
+            },
+            "ticker",
+        ),
+        (
+            {
+                "operation": "ols_residual",
+                "y": "signal",
+                "x": ["control"],
+                "to": "time",
+                "min_samples": 2,
+            },
+            "time",
+        ),
+    ],
+)
+def test_cross_section_operations_cannot_write_canonical_fields(
+    operation: dict[str, object],
+    field: str,
+) -> None:
+    streams: dict[str, StreamConfig] = {
+        "prices": _source_stream("prices", partition_by=["ticker"]),
+        "cross-sectional": _cross_section(
+            "cross-sectional",
+            "prices",
+            operations=[operation],
+        ),
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=f"cannot write canonical order field '{field}'",
+    ):
+        validate_stream_configs({"source.alias": _source()}, streams)
+
+
+def test_cross_section_ordinary_transforms_use_inherited_partition() -> None:
+    streams: dict[str, StreamConfig] = {
+        "prices": _source_stream("prices", partition_by=["ticker"]),
+        "cross-sectional": _cross_section(
+            "cross-sectional",
+            "prices",
+            transforms=[
+                {
+                    "operation": "derive",
+                    "left": "rank",
+                    "operator": "mul",
+                    "right_value": 2,
+                    "to": "ticker",
+                }
+            ],
+        ),
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="cannot write canonical order field 'ticker'",
     ):
         validate_stream_configs({"source.alias": _source()}, streams)
 

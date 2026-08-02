@@ -6,9 +6,12 @@ Ordered transforms run after canonical ordering. Configure them under
 Transforms that depend on history operate within a partition. A source-backed
 stream declares `partition_by` as the complete identity of an independent
 series, such as `[security_id]` or `[security_id, metric]`. Derived, broadcast,
-and aligned streams inherit that identity. Dataset `sample.keys` select which
-partition fields identify output rows. Remaining partition fields suffix
-series IDs in their declared order.
+as-of, aligned, and cross-sectional streams inherit that identity. Dataset
+`sample.keys` select which partition fields identify output rows. Remaining
+partition fields suffix series IDs in their declared order.
+
+Operations that compare different partitions at one timestamp use a dedicated
+cross-sectional stream. See [Cross-sectional operations](cross_section.md).
 
 ## Field-Writing Transforms
 

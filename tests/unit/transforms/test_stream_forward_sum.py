@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.execution.pipeline import Input, Pipeline, Stage
-from datapipeline.execution.runner import run_pipeline
-from datapipeline.runtime import Runtime
-from datapipeline.transforms.stream.forward_sum import ForwardSumTransform
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.execution.pipeline import Input, Pipeline, Stage
+from jerrythomas.execution.runner import run_pipeline
+from jerrythomas.runtime import Runtime
+from jerrythomas.transforms.stream.forward_sum import ForwardSumTransform
 from tests.unit.transforms.helpers import make_time_record
 
 
@@ -178,7 +178,7 @@ def test_pipeline_closes_source_when_forward_sum_output_is_closed(
 
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 4\nartifact_revision: 1\n",
+        "schema_version: 5\nartifact_revision: 1\n",
         encoding="utf-8",
     )
     runtime = Runtime(

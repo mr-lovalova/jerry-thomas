@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.interpolation import MissingInterpolation
-from datapipeline.config.transforms import WhereConfig
-from datapipeline.transforms.where import WhereTransform
+from jerrythomas.config.interpolation import MissingInterpolation
+from jerrythomas.config.transforms import WhereConfig
+from jerrythomas.transforms.where import WhereTransform
 from tests.unit.transforms.helpers import make_time_record
 
 

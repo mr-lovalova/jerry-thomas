@@ -2,12 +2,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import pytest
-from datapipeline.pipelines.stream.order import (
+from jerrythomas.pipelines.stream.order import (
     build_record_order_stage,
     sort_records,
     validate_record_order,
 )
-from datapipeline.pipelines.sort import SortProgress
+from jerrythomas.pipelines.sort import SortProgress
 
 
 @dataclass

@@ -3,25 +3,28 @@ from math import log, log1p
 
 import pytest
 
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.execution.events import PipelineEvent, PipelineStarted
-from datapipeline.execution.observability import execution_observer
-from datapipeline.pipelines.stream.pipeline import (
+from jerrythomas.config.cross_section import OlsResidualConfig, RankScoreConfig
+from jerrythomas.config.transforms import DedupeConfig
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.execution.events import PipelineEvent, PipelineStarted
+from jerrythomas.execution.observability import execution_observer
+from jerrythomas.pipelines.stream.pipeline import (
     build_stream_pipeline,
     run_stream_preview_pipeline,
     run_stream_pipeline,
 )
-from datapipeline.plugins import COMBINERS_EP
-from datapipeline.runtime import (
+from jerrythomas.plugins import COMBINERS_EP
+from jerrythomas.runtime import (
     AsOfRuntimeStream,
     BroadcastAsOfRuntimeStream,
     BroadcastRuntimeStream,
+    CrossSectionRuntimeStream,
     DerivedRuntimeStream,
     SourceRuntimeStream,
 )
-from datapipeline.services.project_definition import load_project_definition
-from datapipeline.services.runtime_compiler import compile_runtime
-from datapipeline.sources.source import Source
+from jerrythomas.services.project_definition import load_project_definition
+from jerrythomas.services.runtime_compiler import compile_runtime
+from jerrythomas.sources.source import Source
 
 
 class _PipelineObserver:
@@ -43,7 +46,7 @@ def _write_test_project(tmp_path):
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
         """\
-schema_version: 4
+schema_version: 5
 artifact_revision: 1
 name: runtime-compiler-test
 paths:
@@ -157,6 +160,75 @@ transforms:
     assert [(record.time.day, record.ticker, record.value) for record in records] == [
         (2, "A", 2)
     ]
+
+
+def test_yaml_cross_section_stream_compiles_typed_contract(tmp_path) -> None:
+    project_yaml, sources_dir, streams_dir, _ = _write_test_project(tmp_path)
+    (sources_dir / "signals.yaml").write_text(
+        """\
+id: signals.source
+parser:
+  entrypoint: core.temporal_record
+loader:
+  transport: fs
+  path: data/signals.jsonl
+  reader:
+    format: jsonl
+""",
+        encoding="utf-8",
+    )
+    (streams_dir / "signals.yaml").write_text(
+        """\
+id: signals
+from:
+  source: signals.source
+partition_by: [ticker]
+map:
+  entrypoint: identity
+""",
+        encoding="utf-8",
+    )
+    (streams_dir / "neutralized.yaml").write_text(
+        """\
+id: neutralized
+from:
+  stream: signals
+cross_section:
+  - operation: rank_score
+    field: signal
+    to: signal_rank
+    min_samples: 30
+  - operation: ols_residual
+    y: signal_rank
+    x: [liquidity_rank, volatility_rank]
+    to: signal_residual
+    min_samples: 30
+transforms:
+  - operation: dedupe
+""",
+        encoding="utf-8",
+    )
+
+    runtime = compile_runtime(load_project_definition(project_yaml))
+    stream = runtime.streams["neutralized"]
+
+    assert isinstance(stream, CrossSectionRuntimeStream)
+    assert stream.input_stream == "signals"
+    assert stream.partition_by == ("ticker",)
+    assert stream.cross_section == (
+        RankScoreConfig(
+            field="signal",
+            to="signal_rank",
+            min_samples=30,
+        ),
+        OlsResidualConfig(
+            y="signal_rank",
+            x=("liquidity_rank", "volatility_rank"),
+            to="signal_residual",
+            min_samples=30,
+        ),
+    )
+    assert stream.transforms == (DedupeConfig(),)
 
 
 def test_exact_global_factors_feed_partitioned_rolling_ols_with_gap(
@@ -279,7 +351,7 @@ transforms:
         "attach_factors": attach_factors,
     }
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_entrypoint",
+        "jerrythomas.services.streams.combine.load_entrypoint",
         lambda group, entrypoint: combiners[entrypoint],
     )
 
@@ -373,7 +445,7 @@ transforms:
         return record
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_entrypoint",
+        "jerrythomas.services.streams.combine.load_entrypoint",
         lambda group, entrypoint: attach_reference,
     )
 
@@ -504,7 +576,7 @@ combine:
         "attach_factor": attach_factor,
     }
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_entrypoint",
+        "jerrythomas.services.streams.combine.load_entrypoint",
         lambda group, entrypoint: combiners[entrypoint],
     )
 
@@ -624,7 +696,7 @@ combine:
         return combine
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_entrypoint",
+        "jerrythomas.services.streams.combine.load_entrypoint",
         load_mapper,
     )
 

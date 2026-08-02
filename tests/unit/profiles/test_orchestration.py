@@ -6,61 +6,61 @@ from types import SimpleNamespace
 
 import pytest
 
-from datapipeline.artifacts.errors import ArtifactResolutionError
-from datapipeline.artifacts.planning import build_artifact_graph
-from datapipeline.artifacts.registry import ArtifactRegistry
-from datapipeline.artifacts.settings import BuildSettings
-from datapipeline.artifacts.specs import (
+from jerrythomas.artifacts.errors import ArtifactResolutionError
+from jerrythomas.artifacts.planning import build_artifact_graph
+from jerrythomas.artifacts.registry import ArtifactRegistry
+from jerrythomas.artifacts.settings import BuildSettings
+from jerrythomas.artifacts.specs import (
     SERIES,
     VECTOR_METADATA,
     COVERAGE_STATS,
 )
-from datapipeline.artifacts.state import (
+from jerrythomas.artifacts.state import (
     ArtifactFileFingerprint,
     BuildState,
     save_build_state,
 )
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.preview import PreviewStage
-from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks.base import (
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig
+from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.config.preview import PreviewStage
+from jerrythomas.config.streams import StreamsConfig
+from jerrythomas.config.tasks.base import (
     ArtifactTask,
     PluginRuntimeTask,
     RuntimeTask,
 )
-from datapipeline.config.tasks.coverage import CoverageTask
-from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
-from datapipeline.config.tasks.dataset import DatasetTask
-from datapipeline.config.tasks.matrix import MatrixTask
-from datapipeline.config.tasks.metadata import MetadataTask
-from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.config.tasks.schedule import ScheduleTask
-from datapipeline.execution.settings import (
+from jerrythomas.config.tasks.coverage import CoverageTask
+from jerrythomas.config.tasks.coverage_stats import CoverageStatsTask
+from jerrythomas.config.tasks.dataset import DatasetTask
+from jerrythomas.config.tasks.matrix import MatrixTask
+from jerrythomas.config.tasks.metadata import MetadataTask
+from jerrythomas.config.tasks.series import SeriesTask
+from jerrythomas.config.tasks.schedule import ScheduleTask
+from jerrythomas.execution.settings import (
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,
     LogOutputSettings,
     ObservabilitySettings,
 )
-from datapipeline.io.output import OutputTarget
-from datapipeline.io.runs import (
+from jerrythomas.io.output import OutputTarget
+from jerrythomas.io.runs import (
     RunPaths,
     finish_run_success,
     set_latest_run,
     start_run,
 )
-from datapipeline.operations.persistence import (
+from jerrythomas.operations.persistence import (
     RoutedRuntimeOutput,
     RuntimeOutputBatch,
 )
-from datapipeline.profiles.execution import (
+from jerrythomas.profiles.execution import (
     RuntimeJobPlan,
     execute_runtime_job,
     plan_runtime_job,
     run_runtime_operation,
 )
-from datapipeline.profiles.models import (
+from jerrythomas.profiles.models import (
     BuildJob,
     BuildRunRequest,
     MaterializeJob,
@@ -69,13 +69,13 @@ from datapipeline.profiles.models import (
     RuntimeRunRequest,
     ServeRunPlan,
 )
-from datapipeline.profiles.errors import ProfileCommandError
-from datapipeline.profiles.orchestration import (
+from jerrythomas.profiles.errors import ProfileCommandError
+from jerrythomas.profiles.orchestration import (
     _prune_series_caches,
     _validate_build_order,
     run_profiles,
 )
-from datapipeline.services.materialize import resolve_materialize_output
+from jerrythomas.services.materialize import resolve_materialize_output
 from tests.unit.profiles.helpers import project_definition
 
 _LOG_DECISION = LogLevelDecision(name="INFO", value=logging.INFO)
@@ -291,7 +291,7 @@ def test_unexpected_planning_runtime_error_propagates(
         raise error
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.validate_build_job",
+        "jerrythomas.profiles.orchestration.validate_build_job",
         fail,
     )
 
@@ -380,15 +380,15 @@ def test_build_jobs_keep_order_and_share_resolved_artifacts(
         yield
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.compile_runtime",
+        "jerrythomas.profiles.orchestration.compile_runtime",
         lambda _definition: next(runtimes),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         execute,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_build_if_needed",
+        "jerrythomas.profiles.orchestration.run_build_if_needed",
         build,
     )
 
@@ -472,19 +472,19 @@ def test_runtime_artifact_union_is_prepared_once_before_jobs(
             events.append(("execution finished", runtime))
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.compile_runtime",
+        "jerrythomas.profiles.orchestration.compile_runtime",
         lambda _definition: canonical_runtime,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_build_if_needed",
+        "jerrythomas.profiles.orchestration.run_build_if_needed",
         build,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         execute,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execute_runtime_job",
+        "jerrythomas.profiles.orchestration.execute_runtime_job",
         lambda _command, _project, plan: events.append(("job", plan.job.runtime)),
     )
 
@@ -540,19 +540,19 @@ def test_custom_runtime_artifact_requirement_is_prepared(
     build_calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.compile_runtime",
+        "jerrythomas.profiles.orchestration.compile_runtime",
         lambda _definition: _runtime(tmp_path, "artifact-build"),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_build_if_needed",
+        "jerrythomas.profiles.orchestration.run_build_if_needed",
         lambda _project, **kwargs: build_calls.append(dict(kwargs)),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execute_runtime_job",
+        "jerrythomas.profiles.orchestration.execute_runtime_job",
         lambda *_args: None,
     )
 
@@ -669,15 +669,15 @@ def test_runtime_jobs_keep_order_and_apply_execution_settings(
         )
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         execute,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execute_runtime_job",
+        "jerrythomas.profiles.orchestration.execute_runtime_job",
         execute_job,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration._prepare_runtime_artifacts",
+        "jerrythomas.profiles.orchestration._prepare_runtime_artifacts",
         lambda *_args: None,
     )
 
@@ -701,15 +701,15 @@ def test_runtime_job_emits_resolved_config_at_debug(
     messages: list[tuple[str, int]] = []
 
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.hydrate_runtime_artifacts_for_pipeline",
+        "jerrythomas.profiles.execution.hydrate_runtime_artifacts_for_pipeline",
         lambda *_args, **_kwargs: (),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.emit_execution_message",
+        "jerrythomas.profiles.execution.emit_execution_message",
         lambda message, level: messages.append((message, level)),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.load_entrypoint",
+        "jerrythomas.profiles.execution.load_entrypoint",
         lambda *_args: lambda *_runner_args: None,
     )
 
@@ -741,7 +741,7 @@ def test_runtime_job_does_not_hide_plugin_value_errors(
     task = PluginRuntimeTask(id="report", entrypoint="plugin.runtime.report")
     job = _runtime_job("coverage", task, _runtime(tmp_path))
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.hydrate_runtime_artifacts_for_pipeline",
+        "jerrythomas.profiles.execution.hydrate_runtime_artifacts_for_pipeline",
         lambda *_args, **_kwargs: (),
     )
 
@@ -751,7 +751,7 @@ def test_runtime_job_does_not_hide_plugin_value_errors(
 
         return run
 
-    monkeypatch.setattr("datapipeline.profiles.execution.load_entrypoint", fail)
+    monkeypatch.setattr("jerrythomas.profiles.execution.load_entrypoint", fail)
 
     with pytest.raises(ValueError, match="plugin bug"):
         execute_runtime_job(
@@ -765,7 +765,7 @@ def test_runtime_job_reports_unavailable_artifacts(monkeypatch, tmp_path: Path) 
     task = PluginRuntimeTask(id="report", entrypoint="plugin.runtime.report")
     job = _runtime_job("report", task, _runtime(tmp_path))
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.hydrate_runtime_artifacts_for_pipeline",
+        "jerrythomas.profiles.execution.hydrate_runtime_artifacts_for_pipeline",
         lambda *_args, **_kwargs: (),
     )
 
@@ -790,7 +790,7 @@ def test_runtime_plugin_receives_the_documented_contract(
     received = None
 
     def load_runner(group, entrypoint):
-        assert group == "datapipeline.operations.runtime"
+        assert group == "jerrythomas.operations.runtime"
         assert entrypoint == task.entrypoint
 
         def run(runtime, operation_task, limit):
@@ -801,7 +801,7 @@ def test_runtime_plugin_receives_the_documented_contract(
         return run
 
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.load_entrypoint",
+        "jerrythomas.profiles.execution.load_entrypoint",
         load_runner,
     )
 
@@ -816,7 +816,7 @@ def test_base_runtime_task_is_not_dispatched_as_a_plugin(
     task = RuntimeTask(id="runtime", entrypoint="plugin.runtime")
     job = _runtime_job("runtime", task, _runtime(tmp_path))
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.load_entrypoint",
+        "jerrythomas.profiles.execution.load_entrypoint",
         lambda *_args: pytest.fail("Base runtime task must not load a plugin"),
     )
 
@@ -848,11 +848,11 @@ def test_dataset_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> 
         return "dataset"
 
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.run_dataset_operation",
+        "jerrythomas.profiles.execution.run_dataset_operation",
         run_dataset,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.load_entrypoint",
+        "jerrythomas.profiles.execution.load_entrypoint",
         lambda *_args: pytest.fail("core operations must not load plugin entry points"),
     )
 
@@ -871,11 +871,11 @@ def test_matrix_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> N
         return "matrix"
 
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.run_matrix_operation",
+        "jerrythomas.profiles.execution.run_matrix_operation",
         run_matrix,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.load_entrypoint",
+        "jerrythomas.profiles.execution.load_entrypoint",
         lambda *_args: pytest.fail("core operations must not load plugin entry points"),
     )
 
@@ -951,11 +951,11 @@ def test_shared_serve_run_is_finalized_once(monkeypatch, tmp_path: Path) -> None
     )
     calls = {"start": 0, "success": 0, "failed": 0, "latest": 0}
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execute_runtime_job",
+        "jerrythomas.profiles.orchestration.execute_runtime_job",
         lambda *_args: None,
     )
     for name in calls:
@@ -965,7 +965,7 @@ def test_shared_serve_run_is_finalized_once(monkeypatch, tmp_path: Path) -> None
         elif name == "failed":
             function = "finish_run_failed"
         monkeypatch.setattr(
-            f"datapipeline.profiles.orchestration.{function}",
+            f"jerrythomas.profiles.orchestration.{function}",
             lambda *_args, key=name, **_kwargs: calls.__setitem__(key, calls[key] + 1),
         )
 
@@ -991,11 +991,11 @@ def test_series_cache_filesystem_failure_does_not_fail_published_run(
     )
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execute_runtime_job",
+        "jerrythomas.profiles.orchestration.execute_runtime_job",
         lambda *_args: None,
     )
 
@@ -1003,13 +1003,13 @@ def test_series_cache_filesystem_failure_does_not_fail_published_run(
         raise PermissionError("cache is read-only")
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.prune_series_cache",
+        "jerrythomas.profiles.orchestration.prune_series_cache",
         fail_pruning,
     )
 
     with caplog.at_level(
         logging.WARNING,
-        logger="datapipeline.profiles.orchestration",
+        logger="jerrythomas.profiles.orchestration",
     ):
         run_profiles(request)
 
@@ -1036,7 +1036,7 @@ def test_series_cache_programming_error_remains_strict(
         raise error
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.prune_series_cache",
+        "jerrythomas.profiles.orchestration.prune_series_cache",
         fail_pruning,
     )
 
@@ -1069,19 +1069,19 @@ def test_job_failure_marks_shared_run_failed(monkeypatch, tmp_path: Path) -> Non
             raise RuntimeError("boom")
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execute_runtime_job",
+        "jerrythomas.profiles.orchestration.execute_runtime_job",
         execute,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.start_run",
+        "jerrythomas.profiles.orchestration.start_run",
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.finish_run_failed",
+        "jerrythomas.profiles.orchestration.finish_run_failed",
         failed.append,
     )
 
@@ -1113,15 +1113,15 @@ def test_cleanup_failure_does_not_replace_job_failure(
         raise OSError("cleanup failed")
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execute_runtime_job",
+        "jerrythomas.profiles.orchestration.execute_runtime_job",
         fail_job,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.finish_run_failed",
+        "jerrythomas.profiles.orchestration.finish_run_failed",
         fail_cleanup,
     )
 
@@ -1151,11 +1151,11 @@ def test_latest_failure_still_finalizes_all_runs(
     latest: list[RunPaths] = []
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execute_runtime_job",
+        "jerrythomas.profiles.orchestration.execute_runtime_job",
         lambda *_args: None,
     )
 
@@ -1166,7 +1166,7 @@ def test_latest_failure_still_finalizes_all_runs(
         raise OSError("second latest failed")
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.set_latest_run",
+        "jerrythomas.profiles.orchestration.set_latest_run",
         set_latest,
     )
 
@@ -1234,11 +1234,11 @@ def test_later_output_commit_failure_marks_run_failed_and_preserves_latest(
         serve_run_plans=(ServeRunPlan(current_paths, None),),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.execution.load_entrypoint",
+        "jerrythomas.profiles.execution.load_entrypoint",
         lambda *_args: lambda *_plugin_args: result,
     )
 
@@ -1271,7 +1271,7 @@ def test_artifact_resolution_failure_becomes_profile_error(
         raise error
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration._run_runtime_profiles",
+        "jerrythomas.profiles.orchestration._run_runtime_profiles",
         fail,
     )
 
@@ -1320,16 +1320,16 @@ def test_preview_run_exists_at_job_boundary_and_is_not_latest(
         yield
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         execute,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execute_runtime_job",
+        "jerrythomas.profiles.orchestration.execute_runtime_job",
         lambda *_args: None,
     )
     latest: list[RunPaths] = []
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.set_latest_run",
+        "jerrythomas.profiles.orchestration.set_latest_run",
         latest.append,
     )
 
@@ -1367,9 +1367,9 @@ def test_later_run_start_failure_fails_only_started_run(
         if paths == second:
             raise RuntimeError("cannot start second run")
 
-    monkeypatch.setattr("datapipeline.profiles.orchestration.start_run", start)
+    monkeypatch.setattr("jerrythomas.profiles.orchestration.start_run", start)
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.finish_run_failed",
+        "jerrythomas.profiles.orchestration.finish_run_failed",
         failed.append,
     )
 
@@ -1421,7 +1421,7 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
         execution,
     )
     monkeypatch.setattr(
-        "datapipeline.artifacts.planning.stream_schedule_artifacts",
+        "jerrythomas.artifacts.planning.stream_schedule_artifacts",
         lambda stream, streams: {"market_schedule"},
     )
     build_calls: list[dict] = []
@@ -1432,15 +1432,15 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
         build_calls.append(kwargs)
 
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.run_build_if_needed",
+        "jerrythomas.profiles.orchestration.run_build_if_needed",
         build,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execute_materialize_job",
+        "jerrythomas.profiles.orchestration.execute_materialize_job",
         lambda job, active_runtime: materialized.append(
             (job.name, active_runtime.heartbeat_interval_seconds)
         ),
@@ -1507,15 +1507,15 @@ def test_materialize_hydrates_current_schedule_when_build_skips(
         runtime=runtime,
     )
     monkeypatch.setattr(
-        "datapipeline.artifacts.planning.stream_schedule_artifacts",
+        "jerrythomas.artifacts.planning.stream_schedule_artifacts",
         lambda stream, streams: {"market_schedule"},
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execution_scope",
+        "jerrythomas.profiles.orchestration.execution_scope",
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.orchestration.execute_materialize_job",
+        "jerrythomas.profiles.orchestration.execute_materialize_job",
         lambda job, active_runtime: active_runtime.artifacts.require("market_schedule"),
     )
 
@@ -1561,7 +1561,7 @@ def test_materialize_rejects_invalid_schedule_artifact_producer(
     )
     request = _materialize_request(tmp_path, artifact_tasks, [job], runtime)
     monkeypatch.setattr(
-        "datapipeline.artifacts.planning.stream_schedule_artifacts",
+        "jerrythomas.artifacts.planning.stream_schedule_artifacts",
         lambda stream, streams: {"market_schedule"},
     )
 

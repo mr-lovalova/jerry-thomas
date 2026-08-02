@@ -2,24 +2,24 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.profiles.materialize import MaterializeProfile
-from datapipeline.config.tasks.base import (
+from jerrythomas.config.profiles.materialize import MaterializeProfile
+from jerrythomas.config.tasks.base import (
     ArtifactTask,
     PluginRuntimeTask,
     RuntimeTask,
 )
-from datapipeline.config.tasks.coverage import CoverageTask
-from datapipeline.config.tasks.dataset import DatasetTask
-from datapipeline.config.tasks.matrix import MatrixOptions, MatrixTask
-from datapipeline.profiles.loader import (
+from jerrythomas.config.tasks.coverage import CoverageTask
+from jerrythomas.config.tasks.dataset import DatasetTask
+from jerrythomas.config.tasks.matrix import MatrixOptions, MatrixTask
+from jerrythomas.profiles.loader import (
     apply_profile_defaults,
     profile_specs_with_defaults,
 )
-from datapipeline.services.operations import (
+from jerrythomas.services.operations import (
     operation_documents,
     operations_from_documents,
 )
-from datapipeline.services.project import load_project
+from jerrythomas.services.project import load_project
 
 
 def _tasks(project_yaml: Path):
@@ -62,7 +62,7 @@ def _materialize_defaults(project_yaml: Path):
 def _write_project(tmp_path: Path, operations_ref: str | None = None) -> Path:
     project_yaml = tmp_path / "project.yaml"
     lines = [
-        "schema_version: 4",
+        "schema_version: 5",
         "artifact_revision: 1",
         "paths:",
         "  streams: streams",
@@ -500,7 +500,7 @@ def test_serve_profiles_interpolate_project_globals(tmp_path):
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 4",
+                "schema_version: 5",
                 "artifact_revision: 1",
                 "name: momentum",
                 "variant: price",
@@ -550,7 +550,7 @@ def test_profile_defaults_interpolate_project_globals(tmp_path):
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 4",
+                "schema_version: 5",
                 "artifact_revision: 1",
                 "name: momentum",
                 "variant: price",

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.cli.workspace import load_workspace_context
+from jerrythomas.cli.workspace import load_workspace_context
 
 
 def _write_jerry(tmp_path: Path, content: str) -> Path:
@@ -81,7 +81,7 @@ def test_workspace_resolve_dataset_alias(tmp_path: Path):
     )
     (tmp_path / "example").mkdir(parents=True, exist_ok=True)
     (tmp_path / "example" / "project.yaml").write_text(
-        "schema_version: 4\nartifact_revision: 1\nname: x\npaths:\n  streams: ./streams\n  sources: ./sources\n  dataset: dataset.yaml\n  artifacts: ./artifacts\n  operations: ./operations\n",
+        "schema_version: 5\nartifact_revision: 1\nname: x\npaths:\n  streams: ./streams\n  sources: ./sources\n  dataset: dataset.yaml\n  artifacts: ./artifacts\n  operations: ./operations\n",
         encoding="utf-8",
     )
 

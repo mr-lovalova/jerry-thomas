@@ -20,6 +20,5 @@ targets:
     horizon: 0s
 
 postprocess:
-  samples:
-    features:
-      threshold: 0.3
+  features:
+    threshold: 0.3

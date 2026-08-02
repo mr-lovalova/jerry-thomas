@@ -3,8 +3,8 @@ from datetime import timedelta
 
 import pytest
 
-from datapipeline.pipelines.sort import batch_sort
-from datapipeline.services.temp_cleanup import (
+from jerrythomas.pipelines.sort import batch_sort
+from jerrythomas.services.temp_cleanup import (
     clean_temp_dirs,
     find_temp_dirs,
     format_bytes,

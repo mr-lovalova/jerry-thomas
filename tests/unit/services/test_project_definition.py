@@ -2,28 +2,28 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.artifacts import fingerprints
-from datapipeline.artifacts.fingerprints import calculate_artifact_hashes
-from datapipeline.artifacts.planning import build_artifact_graph
-from datapipeline.artifacts.specs import (
+from jerrythomas.artifacts import fingerprints
+from jerrythomas.artifacts.fingerprints import calculate_artifact_hashes
+from jerrythomas.artifacts.planning import build_artifact_graph
+from jerrythomas.artifacts.specs import (
     SCALER_STATISTICS,
     SERIES,
     VECTOR_METADATA,
     COVERAGE_STATS,
 )
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
-from datapipeline.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
-from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks.base import ArtifactTask
-from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
-from datapipeline.config.tasks.metadata import MetadataTask
-from datapipeline.config.tasks.scaler import ScalerTask
-from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.services import config_inventory
-from datapipeline.services.project_definition import load_project_definition
-from datapipeline.services.runtime_compiler import compile_runtime
-from datapipeline.io import yaml as yaml_loader
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
+from jerrythomas.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
+from jerrythomas.config.streams import StreamsConfig
+from jerrythomas.config.tasks.base import ArtifactTask
+from jerrythomas.config.tasks.coverage_stats import CoverageStatsTask
+from jerrythomas.config.tasks.metadata import MetadataTask
+from jerrythomas.config.tasks.scaler import ScalerTask
+from jerrythomas.config.tasks.series import SeriesTask
+from jerrythomas.services import config_inventory
+from jerrythomas.services.project_definition import load_project_definition
+from jerrythomas.services.runtime_compiler import compile_runtime
+from jerrythomas.io import yaml as yaml_loader
 
 
 def _write_project(root: Path) -> Path:
@@ -31,7 +31,7 @@ def _write_project(root: Path) -> Path:
         (root / name).mkdir(parents=True)
     project_yaml = root / "project.yaml"
     project_yaml.write_text(
-        """schema_version: 4
+        """schema_version: 5
 artifact_revision: 1
 name: snapshot
 paths:
@@ -174,7 +174,7 @@ loader:
     )
     current_environment = {"SOURCE_PATH": "data/first.jsonl"}
     monkeypatch.setattr(
-        "datapipeline.services.project.merged_project_env",
+        "jerrythomas.services.project.merged_project_env",
         lambda _project_yaml: dict(current_environment),
     )
     first = load_project_definition(project_yaml)
@@ -775,6 +775,52 @@ def test_target_horizon_changes_folded_scaler_and_metadata_but_not_series(
     assert equivalent_hashes == baseline_hashes
 
 
+def test_window_mode_rebuilds_metadata_dependents_but_not_series_or_scaler(
+    tmp_path: Path,
+) -> None:
+    definition = load_project_definition(_write_project(tmp_path))
+    streams = _single_stream_catalog()
+    baseline = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                id="price",
+                stream="prices",
+                field="close",
+                scale=True,
+            )
+        ],
+    )
+    changed = baseline.model_copy(
+        update={"sample": baseline.sample.model_copy(update={"window_mode": "union"})}
+    )
+    tasks = (ScalerTask(), SeriesTask(), MetadataTask(), CoverageStatsTask())
+
+    baseline_hashes = calculate_artifact_hashes(
+        definition.project,
+        baseline,
+        streams,
+        build_artifact_graph(tasks, baseline, streams),
+    )
+    changed_hashes = calculate_artifact_hashes(
+        definition.project,
+        changed,
+        streams,
+        build_artifact_graph(tasks, changed, streams),
+    )
+
+    assert changed_hashes.for_artifact(SCALER_STATISTICS) == (
+        baseline_hashes.for_artifact(SCALER_STATISTICS)
+    )
+    assert changed_hashes.for_artifact(SERIES) == baseline_hashes.for_artifact(SERIES)
+    assert changed_hashes.for_artifact(VECTOR_METADATA) != (
+        baseline_hashes.for_artifact(VECTOR_METADATA)
+    )
+    assert changed_hashes.for_artifact(COVERAGE_STATS) != (
+        baseline_hashes.for_artifact(COVERAGE_STATS)
+    )
+
+
 def test_target_horizon_does_not_change_standard_scaler_fingerprint(
     tmp_path: Path,
 ) -> None:
@@ -933,6 +979,51 @@ def test_core_artifact_hashes_track_only_referenced_source_closure(
     )
     for key in (SERIES, VECTOR_METADATA):
         assert after_used_change.for_artifact(key) != baseline.for_artifact(key)
+
+
+def test_cross_section_config_changes_series_artifact_hash(tmp_path: Path) -> None:
+    project_yaml = _write_project(tmp_path)
+    (tmp_path / "sources" / "signals.yaml").write_text(
+        "id: signals\n"
+        "parser: {entrypoint: identity}\n"
+        "loader: {entrypoint: custom.loader}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "streams" / "signals.yaml").write_text(
+        "id: signals\n"
+        "from: {source: signals}\n"
+        "map: {entrypoint: identity}\n"
+        "partition_by: [ticker]\n",
+        encoding="utf-8",
+    )
+    ranked_stream = tmp_path / "streams" / "ranked.yaml"
+    ranked_stream.write_text(
+        "id: ranked\n"
+        "from: {stream: signals}\n"
+        "cross_section:\n"
+        "  - {operation: rank_score, field: value, to: rank, min_samples: 2}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "dataset.yaml").write_text(
+        "sample: {cadence: 1h, keys: [ticker]}\n"
+        "features:\n"
+        "  - {id: rank, stream: ranked, field: rank}\n",
+        encoding="utf-8",
+    )
+    first = load_project_definition(project_yaml)
+
+    ranked_stream.write_text(
+        ranked_stream.read_text(encoding="utf-8").replace(
+            "min_samples: 2",
+            "min_samples: 3",
+        ),
+        encoding="utf-8",
+    )
+    second = load_project_definition(project_yaml)
+
+    assert first.artifact_hashes.for_artifact(SERIES) != (
+        second.artifact_hashes.for_artifact(SERIES)
+    )
 
 
 def test_artifact_operation_comment_does_not_change_artifact_hashes(

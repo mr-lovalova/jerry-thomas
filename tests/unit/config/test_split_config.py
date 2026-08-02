@@ -1,7 +1,7 @@
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from datapipeline.config.dataset.split import (
+from jerrythomas.config.dataset.split import (
     DatasetFold,
     HashSplitConfig,
     SplitConfig,

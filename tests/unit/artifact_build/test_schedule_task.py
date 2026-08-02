@@ -3,14 +3,14 @@ from datetime import datetime, timezone
 
 import pytest
 
-import datapipeline.operations.artifacts.schedule as schedule_module
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.tasks.schedule import ScheduleTask
-from datapipeline.config.transforms import WhereConfig
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.operations.artifacts.schedule import build_schedule_artifact
-from datapipeline.runtime import (
+import jerrythomas.operations.artifacts.schedule as schedule_module
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.config.tasks.schedule import ScheduleTask
+from jerrythomas.config.transforms import WhereConfig
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.operations.artifacts.schedule import build_schedule_artifact
+from jerrythomas.runtime import (
     AlignedRuntimeStream,
     DerivedRuntimeStream,
     Runtime,
@@ -54,7 +54,7 @@ def _left_records(pairs):
 def _runtime(tmp_path, rows=None, partition_by=()) -> Runtime:
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 4\nartifact_revision: 1\n", encoding="utf-8"
+        "schema_version: 5\nartifact_revision: 1\n", encoding="utf-8"
     )
     artifacts_root = tmp_path / "artifacts"
     artifacts_root.mkdir()

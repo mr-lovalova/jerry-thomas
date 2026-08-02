@@ -3,16 +3,16 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.sources import SourceConfig
-from datapipeline.services.config_refs import (
+from jerrythomas.config.sources import SourceConfig
+from jerrythomas.services.config_refs import (
     interpolate_config_vars,
     resolve_config_refs,
 )
-from datapipeline.services.project_definition import load_project_definition
-from datapipeline.services.project import load_project
-from datapipeline.services.streams.loader import load_streams
-from datapipeline.services.streams.source import build_source
-from datapipeline.config.interpolation import is_missing_interpolation
+from jerrythomas.services.project_definition import load_project_definition
+from jerrythomas.services.project import load_project
+from jerrythomas.services.streams.loader import load_streams
+from jerrythomas.services.streams.source import build_source
+from jerrythomas.config.interpolation import is_missing_interpolation
 
 
 def _project_variables(project_yaml: Path):
@@ -36,7 +36,7 @@ def _write_project_yaml(
 ) -> Path:
     project_yaml = project_root / "project.yaml"
     lines = [
-        "schema_version: 4",
+        "schema_version: 5",
         "artifact_revision: 1",
         "name: sample",
     ]
@@ -91,7 +91,7 @@ def test_project_requires_schema_version(tmp_path: Path) -> None:
 
     with pytest.raises(
         ValueError,
-        match="Project config requires schema_version: 4",
+        match="Project config requires schema_version: 5",
     ):
         load_project(project_yaml)
 
@@ -105,7 +105,7 @@ def test_project_resolves_default_profiles_directory(tmp_path: Path) -> None:
     assert project.profiles_dir == (tmp_path / "profiles").resolve()
 
 
-@pytest.mark.parametrize("value", ["1", "2", "3"])
+@pytest.mark.parametrize("value", ["1", "2", "3", "4"])
 def test_project_rejects_unsupported_schema_version(
     tmp_path: Path,
     value: str,
@@ -115,7 +115,7 @@ def test_project_rejects_unsupported_schema_version(
 
     with pytest.raises(
         ValueError,
-        match=rf"Unsupported project schema version {value}; expected 4",
+        match=rf"Unsupported project schema version {value}; expected 5",
     ):
         load_project(project_yaml)
 
@@ -128,7 +128,7 @@ def test_project_schema_version_must_be_integer(
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(f"schema_version: {value}\n", encoding="utf-8")
 
-    with pytest.raises(TypeError, match="schema_version must be the integer 4"):
+    with pytest.raises(TypeError, match="schema_version must be the integer 5"):
         load_project(project_yaml)
 
 
@@ -341,7 +341,7 @@ def test_project_paths_validate_interpolation_without_declared_variables(
     _write_project_files(tmp_path)
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        """schema_version: 4
+        """schema_version: 5
 artifact_revision: 1
 paths:
   streams: streams

@@ -1,4 +1,4 @@
-from datapipeline.config.interpolation import (
+from jerrythomas.config.interpolation import (
     MissingInterpolation,
     is_missing_interpolation,
     normalize_interpolated_args,

@@ -6,14 +6,14 @@ from dataclasses import dataclass
 
 import pytest
 
-from datapipeline.artifacts.models import ScalarVectorMetadataEntry
-from datapipeline.io.dataset_table import DatasetTable
-from datapipeline.io.factory import dataset_writer_factory, writer_factory
-from datapipeline.io.output import OutputTarget
-from datapipeline.io.sinks.files import AtomicTextFileSink
-from datapipeline.io.sinks.stdout import StdoutTextSink
-from datapipeline.io.writers.base import LineWriter
-from datapipeline.io.writers.parquet import ParquetFileWriter
+from jerrythomas.artifacts.models import ScalarVectorMetadataEntry
+from jerrythomas.io.dataset_table import DatasetTable
+from jerrythomas.io.factory import dataset_writer_factory, writer_factory
+from jerrythomas.io.output import OutputTarget
+from jerrythomas.io.sinks.files import AtomicTextFileSink
+from jerrythomas.io.sinks.stdout import StdoutTextSink
+from jerrythomas.io.writers.base import LineWriter
+from jerrythomas.io.writers.parquet import ParquetFileWriter
 
 
 def _stdout_target(format_: str = "jsonl") -> OutputTarget:

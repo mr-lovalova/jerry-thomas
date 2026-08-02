@@ -36,7 +36,7 @@ All dataset configuration is rooted at a single `project.yaml` file. Other YAML 
 ### `project.yaml`
 
 ```yaml
-schema_version: 4
+schema_version: 5
 artifact_revision: 1
 name: default
 paths:
@@ -126,6 +126,9 @@ do not change `artifact_revision` solely for this migration.
 
 Custom source plugins must also update their Python imports:
 
+The following historical paths use the `datapipeline` namespace shipped by
+Jerry 6 and 7. Jerry 9 plugins use the equivalent `jerrythomas` paths.
+
 ```python
 # schema 2 / Jerry 6
 from datapipeline.sources.models.loader import BaseDataLoader
@@ -137,7 +140,7 @@ from datapipeline.sources.parser import DataParser
 ```
 
 Generative loaders can implement the structural `RowGenerator` contract and
-adapt it with `GeneratorLoader`, both from `datapipeline.sources.loader`.
+adapt it with `GeneratorLoader`, both from `jerrythomas.sources.loader`.
 Less commonly imported runtime types moved from `sources.models.source.Source`
 to `sources.source.Source` and from `sources.models.parsing_error.ParsingError`
 to `sources.parser.ParsingError`.
@@ -175,6 +178,37 @@ Upgrade Jerry and project plugins together, then run the normal command in
 artifacts. Existing served runs remain immutable, so rerun `serve` to publish a
 dataset with the corrected fold contracts. Do not increment `artifact_revision`
 or delete build state solely for this migration.
+
+#### Migrating project schema 4 to 5
+
+Schema 5 makes the sample-window policy part of the dataset contract and
+removes the redundant `postprocess.samples` wrapper:
+
+```yaml
+# project.yaml
+schema_version: 5
+
+# dataset.yaml
+sample:
+  cadence: 1d
+  keys: [security_id]
+  window_mode: intersection # union | intersection | strict
+
+postprocess:
+  features:
+    threshold: 0.95
+```
+
+Move any `window_mode` setting from `operations/metadata.yaml` to
+`dataset.yaml:sample.window_mode`. If that was the only metadata override,
+delete the file; if the operations directory then has no declarations, remove
+`paths.operations` too. Use `union` for a former pre-schema-4 `relaxed` value.
+Move `postprocess.samples.features` and `postprocess.samples.targets` directly
+under `postprocess.features` and `postprocess.targets`.
+
+`AUTO` preserves compatible series and scaler artifacts while rebuilding
+metadata and its dependents. The serialized metadata format is unchanged, so
+do not increment `artifact_revision` solely for this migration.
 
 ### Serve Profiles (`profiles/serve.<name>.yaml`)
 
@@ -399,7 +433,7 @@ options: {}
   `operation`.
 - Core operations use reserved `core.runtime.*` identifiers and call their typed
   implementations directly. A custom runtime operation's `entrypoint` must
-  resolve in the `datapipeline.operations.runtime` entry-point group.
+  resolve in the `jerrythomas.operations.runtime` entry-point group.
 - `requires` declares additional prerequisite artifact operation IDs for custom or
   built-in operations. Each referenced artifact and its dependency chain must
   have available producer operations.
@@ -569,7 +603,8 @@ transforms:
 - `partition_by`: complete identity of an independent record series, used by
   ordering and history-based transforms. The runtime appends the reserved
   `time` field to the canonical sort key, so it must not appear here. Derived
-  and fan-in streams inherit it from their partitioned input.
+  and cross-sectional streams inherit it from their input; fan-in streams
+  inherit it from their partitioned input.
 - `ordered_by`: optional assertion that records entering the ordering stage use
   `[*partition_by, time]` order. When present, it must equal that canonical
   order and is validated while streaming. When absent, mapped records are
@@ -587,6 +622,42 @@ transforms:
   Dataset feature and target IDs cannot contain the reserved `__` separator.
   Generated suffixes escape strings and tag non-string scalar values so
   different component tuples cannot produce the same series ID.
+
+### Cross-Sectional Streams
+
+A cross-sectional stream compares partitioned records at each exact timestamp.
+It inherits the upstream partition identity, temporarily orders records by
+`[time, *partition_by]`, applies its operations in YAML order, and restores
+canonical `[*partition_by, time]` order before ordinary transforms run.
+
+```yaml
+id: equity.signal.neutralized
+from:
+  stream: equity.signal.inputs
+cross_section:
+  - operation: rank_score
+    field: signal
+    to: signal_rank
+    min_samples: 30
+  - operation: ols_residual
+    y: signal_rank
+    x: [liquidity_rank, volatility_rank]
+    to: signal_residual
+    min_samples: 30
+transforms:
+  - { operation: lag, field: signal_residual, to: signal_residual_lag_1, periods: 1 }
+```
+
+The input must have a non-empty `partition_by`, and each timestamp may contain
+at most one record per partition. Matching is exact: Jerry does not floor,
+fill, or infer sessions. `rank_score` uses normalized average-tie ranks;
+`ols_residual` uses complete-case OLS with an intercept and requires
+`jerry-thomas[numerical]`. Both require an explicit `min_samples`. Use an
+upstream `where` transform to define the eligible population. Hash-split
+datasets cannot select cross-sectional streams because peer records could land
+in different output roles. See
+[Cross-sectional operations](transforms/cross_section.md) for the complete
+missing-value and numerical contracts.
 
 ### Broadcast Streams
 
@@ -723,7 +794,7 @@ Notes:
 - `from.align` contains at least two canonical stream ids. List order defines
   positional combine arguments.
 - `combine` is required and cannot be replaced by the iterator-level `map`.
-- `combine.entrypoint` resolves from the `datapipeline.combiners` plugin group.
+- `combine.entrypoint` resolves from the `jerrythomas.combiners` plugin group.
 - Jerry normalizes timezone-aware combiner output timestamps to UTC.
 - Inputs must use the same `partition_by`; the aligned stream inherits it.
 - Alignment validates and merges the already ordered inputs in one pass. Each
@@ -745,6 +816,7 @@ Defines which canonical streams become features and targets and how samples are 
 sample:
   cadence: 1d
   keys: [security_id]
+  window_mode: intersection
 
 features:
   - id: close
@@ -778,9 +850,8 @@ split:
       test: [test]
 
 postprocess:
-  samples:
-    features:
-      threshold: 0.95
+  features:
+    threshold: 0.95
 ```
 
 - `sample.cadence` controls the time bucket for samples (must match
@@ -788,6 +859,10 @@ postprocess:
 - `sample.keys` optionally adds record fields to the sample key. For example,
   `keys: [security_id]` emits one sample per `(time, security_id)`. Every sample
   key must belong to the resolved `partition_by` of every referenced stream.
+- `sample.window_mode` selects the rectangular sample domain. `union` spans
+  every base series, `intersection` (the default) intersects base-series
+  ranges, and `strict` intersects every expanded partition series. It controls
+  domain bounds, not internal missing values.
 - `stream` references the canonical stream that supplies the
   feature or target records.
 - Each sample-key field must contain non-null JSON scalar values of one stable
@@ -908,7 +983,7 @@ postprocess:
   target uses `sequence`, or when any target has a positive horizon, because
   temporal support could cross hash partitions. Use a time split for temporal
   datasets.
-- `postprocess.samples.features` and `postprocess.samples.targets` filter
+- `postprocess.features` and `postprocess.targets` filter
   complete rows after typed conformance.
 - `ids` is optional. Sample filters default to every declared ID.
   Empty, duplicate, or unknown IDs are errors.
@@ -946,7 +1021,7 @@ epsilon: 1.0e-12
   partitions), scalar/list kinds and lengths, present/null counts, inferred
   value types, per-partition timestamps, and the dataset window. Mixed
   scalar/list values, empty lists, and varying list lengths fail metadata
-  generation. Configure `metadata.window_mode` with
+  generation. Configure `sample.window_mode` with
   `union|intersection|strict` (default `intersection`) to control how
   start/end bounds are derived. `union` spans every series, `intersection`
   intersects base-series ranges, and `strict` intersects every partition.

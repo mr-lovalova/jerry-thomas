@@ -1,26 +1,26 @@
 from datetime import datetime, timezone
 
-import datapipeline.pipelines.dataset.pipeline as dataset_pipeline
-from datapipeline.artifacts.models import (
+import jerrythomas.pipelines.dataset.pipeline as dataset_pipeline
+from jerrythomas.artifacts.models import (
     FoldOutputMetadata,
     ScalarVectorMetadataEntry,
     VectorMetadataCounts,
     VectorSchema,
     Window,
 )
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
-from datapipeline.execution.pipeline import Input
-from datapipeline.pipelines.dataset.pipeline import (
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig
+from jerrythomas.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
+from jerrythomas.execution.pipeline import Input
+from jerrythomas.pipelines.dataset.pipeline import (
     FoldOutputPlan,
     run_fold_outputs_pipeline,
 )
-from datapipeline.pipelines.dataset.postprocess import PostprocessPlan
-from datapipeline.pipelines.sample.keys import window_key_plan
-from datapipeline.runtime import Runtime
+from jerrythomas.pipelines.dataset.postprocess import PostprocessPlan
+from jerrythomas.pipelines.sample.keys import window_key_plan
+from jerrythomas.runtime import Runtime
 
 
 _TIME = datetime(2024, 1, 1, tzinfo=timezone.utc)

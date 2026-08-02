@@ -2,7 +2,7 @@ import csv
 
 import pytest
 
-from datapipeline.sources.decoders import CsvDecoder, JsonDecoder, JsonLinesDecoder
+from jerrythomas.sources.decoders import CsvDecoder, JsonDecoder, JsonLinesDecoder
 
 
 def test_json_lines_preserve_records_across_byte_and_character_boundaries() -> None:

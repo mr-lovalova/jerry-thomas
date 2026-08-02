@@ -1,12 +1,12 @@
 import shutil
 from collections.abc import Sequence
 
-from datapipeline.artifacts.specs import SERIES
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
-from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.operations.artifacts.series import build_series_artifact
-from datapipeline.runtime import Runtime
+from jerrythomas.artifacts.specs import SERIES
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
+from jerrythomas.config.tasks.series import SeriesTask
+from jerrythomas.operations.artifacts.series import build_series_artifact
+from jerrythomas.runtime import Runtime
 
 
 def register_series(

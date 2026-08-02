@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from datapipeline.cli.commands.list_ import handle
+from jerrythomas.cli.commands.list_ import handle
 
 
 def test_list_sources_uses_standard_dataset_project(
@@ -16,7 +16,7 @@ def test_list_sources_uses_standard_dataset_project(
     project_path.parent.mkdir(parents=True)
     project_path.touch()
     monkeypatch.setattr(
-        "datapipeline.cli.commands.list_.pkg_root",
+        "jerrythomas.cli.commands.list_.pkg_root",
         lambda _: (plugin_root, "sample_plugin", plugin_root / "pyproject.toml"),
     )
 
@@ -25,11 +25,11 @@ def test_list_sources_uses_standard_dataset_project(
         return path
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.list_.load_project",
+        "jerrythomas.cli.commands.list_.load_project",
         load_project,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.list_.load_streams",
+        "jerrythomas.cli.commands.list_.load_streams",
         lambda path: SimpleNamespace(sources={"weather": object()}),
     )
 
@@ -44,7 +44,7 @@ def test_list_sources_reports_standard_project_path(
 ) -> None:
     plugin_root = tmp_path / "plugin"
     monkeypatch.setattr(
-        "datapipeline.cli.commands.list_.pkg_root",
+        "jerrythomas.cli.commands.list_.pkg_root",
         lambda _: (plugin_root, "sample_plugin", plugin_root / "pyproject.toml"),
     )
 

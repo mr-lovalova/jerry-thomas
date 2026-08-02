@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.execution import ExecutionConfig
+from jerrythomas.config.execution import ExecutionConfig
 
 
 @pytest.mark.parametrize("value", [0, True, 1.5, "100"])

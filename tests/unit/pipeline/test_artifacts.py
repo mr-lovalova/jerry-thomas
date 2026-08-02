@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.artifacts.planning import (
+from jerrythomas.artifacts.planning import (
     ArtifactGraph,
     build_artifact_graph,
 )
-from datapipeline.artifacts.specs import (
+from jerrythomas.artifacts.specs import (
     ARTIFACT_DEFINITIONS,
     SCALER_STATISTICS,
     SERIES,
@@ -17,30 +17,30 @@ from datapipeline.artifacts.specs import (
     ArtifactDefinition,
     dataset_requires_scaler,
 )
-from datapipeline.artifacts.validation import (
+from jerrythomas.artifacts.validation import (
     nested_schedule_dependencies,
     stream_schedule_artifacts,
     validate_artifact_plan,
 )
-from datapipeline.artifacts.state import ArtifactFileFingerprint, BuildState
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.config.preview import PreviewStage
-from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks.base import (
+from jerrythomas.artifacts.state import ArtifactFileFingerprint, BuildState
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig
+from jerrythomas.config.preview import PreviewStage
+from jerrythomas.config.streams import StreamsConfig
+from jerrythomas.config.tasks.base import (
     ArtifactTask,
     PluginRuntimeTask,
 )
-from datapipeline.config.tasks.coverage import CoverageTask
-from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
-from datapipeline.config.tasks.dataset import DatasetTask
-from datapipeline.config.tasks.matrix import MatrixTask
-from datapipeline.config.tasks.metadata import MetadataTask
-from datapipeline.config.tasks.scaler import ScalerTask
-from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.config.tasks.schedule import ScheduleTask
-from datapipeline.plugins import BUILD_OPERATIONS_EP
-from datapipeline.services.definitions import ArtifactHashes
+from jerrythomas.config.tasks.coverage import CoverageTask
+from jerrythomas.config.tasks.coverage_stats import CoverageStatsTask
+from jerrythomas.config.tasks.dataset import DatasetTask
+from jerrythomas.config.tasks.matrix import MatrixTask
+from jerrythomas.config.tasks.metadata import MetadataTask
+from jerrythomas.config.tasks.scaler import ScalerTask
+from jerrythomas.config.tasks.series import SeriesTask
+from jerrythomas.config.tasks.schedule import ScheduleTask
+from jerrythomas.plugins import BUILD_OPERATIONS_EP
+from jerrythomas.services.definitions import ArtifactHashes
 
 
 def _current_hashes(graph: ArtifactGraph) -> ArtifactHashes:

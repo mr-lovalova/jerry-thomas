@@ -4,14 +4,14 @@ from datetime import datetime, timezone
 import pyarrow.parquet as parquet
 import pytest
 
-from datapipeline.artifacts.models import (
+from jerrythomas.artifacts.models import (
     ListVectorMetadataEntry,
     ScalarVectorMetadataEntry,
 )
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
-from datapipeline.io.dataset_table import DatasetTable
-from datapipeline.io.writers.parquet import ParquetFileWriter
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
+from jerrythomas.io.dataset_table import DatasetTable
+from jerrythomas.io.writers.parquet import ParquetFileWriter
 
 
 def _table() -> DatasetTable:

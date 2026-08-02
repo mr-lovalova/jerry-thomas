@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jerry-thomas"
-version = "8.0.0"
-description = "Jerry-Thomas: a stream-first, plugin-friendly data pipeline (mixology-themed CLI)"
+version = "9.0.0"
+description = "A stream-first temporal data pipeline runtime"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Anders Skott Lind" }]
-urls = { "Homepage" = "https://github.com/mr-lovalova/datapipeline", "Repository" = "https://github.com/mr-lovalova/datapipeline", "Issues" = "https://github.com/mr-lovalova/datapipeline/issues" }
+urls = { "Homepage" = "https://github.com/mr-lovalova/jerry-thomas", "Repository" = "https://github.com/mr-lovalova/jerry-thomas", "Issues" = "https://github.com/mr-lovalova/jerry-thomas/issues" }
 dependencies = [
   "pydantic>=2.0",
   "PyYAML>=5.4",
@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Bounded numerical batches from datapipeline.integrations.ml
+# Bounded numerical batches from jerrythomas.integrations.ml
 ml = [
   "numpy>=1.26",
 ]
@@ -41,17 +41,17 @@ dev = [
 ]
 
 [project.scripts]
-jerry = "datapipeline.cli.app:main"
+jerry = "jerrythomas.cli.app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-exclude = ["datapipeline.templates*"]
+exclude = ["jerrythomas.templates*"]
 
 [tool.setuptools.package-data]
-datapipeline = [
+jerrythomas = [
   "templates/plugin_skeleton/**",
   "templates/plugin_skeleton/.gitignore",
   "templates/dataset_skeleton/**",
@@ -62,7 +62,7 @@ datapipeline = [
 ]
 
 [tool.setuptools.exclude-package-data]
-datapipeline = [
+jerrythomas = [
   "templates/**/.DS_Store",
   "templates/**/*.pyc",
   "templates/**/*.pyo",
@@ -71,58 +71,58 @@ datapipeline = [
 
 [tool.ruff]
 target-version = "py311"
-extend-exclude = ["src/datapipeline/templates"]
+extend-exclude = ["src/jerrythomas/templates"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["src/datapipeline"]
-exclude = ["^src/datapipeline/templates/"]
+files = ["src/jerrythomas"]
+exclude = ["^src/jerrythomas/templates/"]
 check_untyped_defs = true
 
-[project.entry-points."datapipeline.mappers"]
-encode_time = "datapipeline.mappers.synthetic.time:encode"
-identity = "datapipeline.mappers.noop:identity"
+[project.entry-points."jerrythomas.mappers"]
+encode_time = "jerrythomas.mappers.synthetic.time:encode"
+identity = "jerrythomas.mappers.noop:identity"
 
-[project.entry-points."datapipeline.loaders"]
-"core.synthetic.ticks" = "datapipeline.sources.synthetic.time.loader:make_time_loader"
+[project.entry-points."jerrythomas.loaders"]
+"core.synthetic.ticks" = "jerrythomas.sources.synthetic.time.loader:make_time_loader"
 
-[project.entry-points."datapipeline.parsers"]
-identity = "datapipeline.parsers.identity:IdentityParser"
-"core.temporal_record" = "datapipeline.parsers.temporal_record:TemporalRecordParser"
+[project.entry-points."jerrythomas.parsers"]
+identity = "jerrythomas.parsers.identity:IdentityParser"
+"core.temporal_record" = "jerrythomas.parsers.temporal_record:TemporalRecordParser"
 
-[project.entry-points."datapipeline.operations.build"]
-"core.artifact.series" = "datapipeline.operations.artifacts.series:build_series_artifact"
-"core.artifact.metadata" = "datapipeline.operations.artifacts.metadata:build_metadata_artifact"
-"core.artifact.scaler" = "datapipeline.operations.artifacts.scaler:build_scaler_artifact"
-"core.artifact.coverage_stats" = "datapipeline.operations.artifacts.coverage_stats:build_coverage_stats_artifact"
-"core.artifact.schedule" = "datapipeline.operations.artifacts.schedule:build_schedule_artifact"
+[project.entry-points."jerrythomas.operations.build"]
+"core.artifact.series" = "jerrythomas.operations.artifacts.series:build_series_artifact"
+"core.artifact.metadata" = "jerrythomas.operations.artifacts.metadata:build_metadata_artifact"
+"core.artifact.scaler" = "jerrythomas.operations.artifacts.scaler:build_scaler_artifact"
+"core.artifact.coverage_stats" = "jerrythomas.operations.artifacts.coverage_stats:build_coverage_stats_artifact"
+"core.artifact.schedule" = "jerrythomas.operations.artifacts.schedule:build_schedule_artifact"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
 
 [tool.mutmut]
-source_paths = ["src/datapipeline/"]
+source_paths = ["src/jerrythomas/"]
 only_mutate = [
-  "src/datapipeline/alignment/as_of.py",
-  "src/datapipeline/alignment/broadcast.py",
-  "src/datapipeline/alignment/broadcast_as_of.py",
-  "src/datapipeline/alignment/engine.py",
-  "src/datapipeline/domain/value.py",
-  "src/datapipeline/operations/artifacts/utils.py",
-  "src/datapipeline/pipelines/dataset/split.py",
-  "src/datapipeline/pipelines/series/projector.py",
-  "src/datapipeline/pipelines/sort.py",
-  "src/datapipeline/pipelines/sample/keys.py",
-  "src/datapipeline/transforms/rolling_ols.py",
-  "src/datapipeline/transforms/rolling_slope.py",
-  "src/datapipeline/transforms/stream/forward_sum.py",
-  "src/datapipeline/transforms/stream/logarithm.py",
-  "src/datapipeline/transforms/vector/conform.py",
-  "src/datapipeline/transforms/vector/scaler.py",
+  "src/jerrythomas/alignment/as_of.py",
+  "src/jerrythomas/alignment/broadcast.py",
+  "src/jerrythomas/alignment/broadcast_as_of.py",
+  "src/jerrythomas/alignment/engine.py",
+  "src/jerrythomas/domain/value.py",
+  "src/jerrythomas/operations/artifacts/utils.py",
+  "src/jerrythomas/pipelines/dataset/split.py",
+  "src/jerrythomas/pipelines/series/projector.py",
+  "src/jerrythomas/pipelines/sort.py",
+  "src/jerrythomas/pipelines/sample/keys.py",
+  "src/jerrythomas/transforms/stream/rolling_ols.py",
+  "src/jerrythomas/transforms/rolling_slope.py",
+  "src/jerrythomas/transforms/stream/forward_sum.py",
+  "src/jerrythomas/transforms/stream/logarithm.py",
+  "src/jerrythomas/transforms/vector/conform.py",
+  "src/jerrythomas/transforms/vector/scaler.py",
 ]
 pytest_add_cli_args = ["-q", "-W", "error"]
 pytest_add_cli_args_test_selection = [

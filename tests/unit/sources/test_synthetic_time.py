@@ -1,6 +1,6 @@
 import pytest
 
-from datapipeline.sources.synthetic.time.loader import TimeTicksGenerator
+from jerrythomas.sources.synthetic.time.loader import TimeTicksGenerator
 
 
 @pytest.mark.parametrize("frequency", ["0m", "-1h"])

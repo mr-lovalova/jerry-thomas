@@ -1,8 +1,8 @@
 import pytest
 
-from datapipeline.cli.command_router import execute_command
-from datapipeline.cli.parser_builder import build_parser
-from datapipeline.cli.version import short_version, version_report
+from jerrythomas.cli.command_router import execute_command
+from jerrythomas.cli.parser_builder import build_parser
+from jerrythomas.cli.version import short_version, version_report
 
 
 def test_root_version_flag_prints_short_version(capsys) -> None:

@@ -1,7 +1,7 @@
 import pytest
 
-from datapipeline.cli.command_router import execute_command
-from datapipeline.cli.parser_builder import build_parser
+from jerrythomas.cli.command_router import execute_command
+from jerrythomas.cli.parser_builder import build_parser
 
 
 def test_clean_parser_defaults_to_dry_run() -> None:
@@ -20,7 +20,7 @@ def test_clean_command_dispatches(monkeypatch) -> None:
         calls["older_than"] = older_than
 
     monkeypatch.setattr(
-        "datapipeline.cli.command_router.handle_clean",
+        "jerrythomas.cli.command_router.handle_clean",
         handle_clean,
     )
     args = build_parser().parse_args(["clean", "--yes", "--older-than", "24h"])

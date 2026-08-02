@@ -1,9 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.dataset.series import SeriesConfig, SequenceConfig
-from datapipeline.config.streams import DerivedStreamConfig, SourceStreamConfig
-from datapipeline.config.transforms import (
+from jerrythomas.config.dataset.series import SeriesConfig, SequenceConfig
+from jerrythomas.config.streams import DerivedStreamConfig, SourceStreamConfig
+from jerrythomas.config.transforms import (
     CollapseConfig,
     DedupeConfig,
     EnsureCadenceConfig,

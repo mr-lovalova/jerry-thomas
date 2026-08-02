@@ -1,12 +1,12 @@
 from collections.abc import Sequence
 from pathlib import Path
 
-from datapipeline.artifacts.planning import build_artifact_graph
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.project import ProjectConfig
-from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks.base import ArtifactTask, RuntimeTask
-from datapipeline.services.definitions import (
+from jerrythomas.artifacts.planning import build_artifact_graph
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.project import ProjectConfig
+from jerrythomas.config.streams import StreamsConfig
+from jerrythomas.config.tasks.base import ArtifactTask, RuntimeTask
+from jerrythomas.services.definitions import (
     ArtifactHashes,
     ProjectDefinition,
     ProjectManifest,
@@ -39,7 +39,7 @@ def project_definition(
         path=project_path,
         config=ProjectConfig.model_validate(
             {
-                "schema_version": 4,
+                "schema_version": 5,
                 "artifact_revision": 1,
                 "paths": {
                     "streams": "streams",

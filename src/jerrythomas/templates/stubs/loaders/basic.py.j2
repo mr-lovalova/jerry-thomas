@@ -1,0 +1,12 @@
+from collections.abc import Iterator
+from typing import Any
+
+from jerrythomas.sources.loader import BaseDataLoader
+
+
+class {{CLASS_NAME}}(BaseDataLoader):
+    """Custom loader stub. Yield raw items to be parsed by a parser."""
+
+    def load(self) -> Iterator[Any]:
+        # TODO: implement data loading
+        yield from ()

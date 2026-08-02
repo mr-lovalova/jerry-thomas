@@ -3,21 +3,21 @@ from urllib.parse import parse_qsl, urlparse
 
 import pytest
 
-import datapipeline.sources.adapters.fs as fs_adapter
-import datapipeline.sources.adapters.http as http_adapter
-from datapipeline.config.sources import (
+import jerrythomas.sources.adapters.fs as fs_adapter
+import jerrythomas.sources.adapters.http as http_adapter
+from jerrythomas.config.sources import (
     CsvReaderConfig,
     FsLoaderConfig,
     HttpLoaderConfig,
     JsonReaderConfig,
     JsonLinesReaderConfig,
 )
-from datapipeline.sources.adapters.fs import FsFileTransport, FsGlobTransport
-from datapipeline.sources.adapters.http import HttpTransport
-from datapipeline.sources.loader import DataLoader
-from datapipeline.sources.decoders import JsonDecoder, JsonLinesDecoder
-from datapipeline.sources.factory import build_builtin_loader
-from datapipeline.sources.ports import SourceResource, SourceTransport
+from jerrythomas.sources.adapters.fs import FsFileTransport, FsGlobTransport
+from jerrythomas.sources.adapters.http import HttpTransport
+from jerrythomas.sources.loader import DataLoader
+from jerrythomas.sources.decoders import JsonDecoder, JsonLinesDecoder
+from jerrythomas.sources.factory import build_builtin_loader
+from jerrythomas.sources.ports import SourceResource, SourceTransport
 
 
 def _write_gzip(path, text: str) -> None:

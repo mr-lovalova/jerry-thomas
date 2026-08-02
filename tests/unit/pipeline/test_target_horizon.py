@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta, timezone
 
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
-from datapipeline.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
-from datapipeline.pipelines.dataset.split import TargetHorizonPolicy
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
+from jerrythomas.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
+from jerrythomas.pipelines.dataset.split import TargetHorizonPolicy
 
 
 def _time(day: int) -> datetime:

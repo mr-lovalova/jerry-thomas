@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from datapipeline.transforms.utils import (
+from jerrythomas.transforms.utils import (
     adjacent_partitions,
     finite_number,
     finite_number_or_none,

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.artifacts.models import (
+from jerrythomas.artifacts.models import (
     FoldedMetadataLayout,
     ListVectorMetadataEntry,
     SampleMetadata,

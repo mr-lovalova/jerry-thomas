@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from datapipeline.utils.time import (
+from jerrythomas.utils.time import (
     count_cadence_buckets,
     parse_cadence,
     parse_timecode,

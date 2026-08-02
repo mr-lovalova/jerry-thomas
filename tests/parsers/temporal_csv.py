@@ -2,9 +2,9 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.sources.parser import DataParser
-from datapipeline.utils.time import parse_datetime
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.sources.parser import DataParser
+from jerrythomas.utils.time import parse_datetime
 
 
 def _as_timezone(name: str | None) -> timezone:

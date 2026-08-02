@@ -3,8 +3,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from datapipeline.alignment.engine import align_streams
-from datapipeline.domain.record import TemporalRecord
+from jerrythomas.alignment.engine import align_streams
+from jerrythomas.domain.record import TemporalRecord
 
 
 @dataclass

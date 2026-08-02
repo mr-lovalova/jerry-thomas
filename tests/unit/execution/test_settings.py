@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.observability import ObservabilityConfig
-from datapipeline.execution.settings import (
+from jerrythomas.config.observability import ObservabilityConfig
+from jerrythomas.execution.settings import (
     CommandObservability,
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogOutputSettings,

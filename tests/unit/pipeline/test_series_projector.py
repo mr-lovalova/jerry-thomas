@@ -4,11 +4,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.domain.series_id import base_id
-from datapipeline.domain.sample_key import SampleKeyContract
-from datapipeline.pipelines.series import projector as projector_module
-from datapipeline.pipelines.series.projector import SeriesProjector
+from jerrythomas.config.dataset.series import SeriesConfig
+from jerrythomas.domain.series_id import base_id
+from jerrythomas.domain.sample_key import SampleKeyContract
+from jerrythomas.pipelines.series import projector as projector_module
+from jerrythomas.pipelines.series.projector import SeriesProjector
 
 
 @dataclass

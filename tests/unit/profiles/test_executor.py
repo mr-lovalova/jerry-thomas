@@ -4,21 +4,21 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.execution.settings import (
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.execution.settings import (
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,
     LogOutputSettings,
     LogOutputTarget,
     ObservabilitySettings,
 )
-from datapipeline.execution.observability import (
+from jerrythomas.execution.observability import (
     current_execution_observer,
     emit_execution_message,
     execution_observer,
 )
-from datapipeline.profiles.executor import execution_scope
-from datapipeline.runtime import Runtime
+from jerrythomas.profiles.executor import execution_scope
+from jerrythomas.runtime import Runtime
 
 
 def _log_output() -> LogOutputSettings:
@@ -45,12 +45,12 @@ def test_execution_scope_configures_logging_and_runs_inside_visuals(monkeypatch)
         yield
 
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.root_logging_scope",
+        "jerrythomas.profiles.executor.root_logging_scope",
         root_logging_scope,
     )
 
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.rich_visuals_supported",
+        "jerrythomas.profiles.executor.rich_visuals_supported",
         lambda: True,
     )
 
@@ -65,7 +65,7 @@ def test_execution_scope_configures_logging_and_runs_inside_visuals(monkeypatch)
             inside_visual_context = False
 
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.visual_execution",
+        "jerrythomas.profiles.executor.visual_execution",
         visual_execution,
     )
 
@@ -122,15 +122,15 @@ def test_execution_scope_uses_plain_context_when_visuals_are_unavailable(
 ) -> None:
     runtime = _runtime()
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.root_logging_scope",
+        "jerrythomas.profiles.executor.root_logging_scope",
         lambda *_args, **_kwargs: nullcontext(),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.rich_visuals_supported",
+        "jerrythomas.profiles.executor.rich_visuals_supported",
         lambda: rich_supported,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.visual_execution",
+        "jerrythomas.profiles.executor.visual_execution",
         lambda _level: pytest.fail("Rich visuals must not start"),
     )
 
@@ -154,11 +154,11 @@ def test_execution_scope_observes_nodes_for_debug_logging(monkeypatch) -> None:
     runtime = _runtime()
     runtime.observe_node_events = False
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.root_logging_scope",
+        "jerrythomas.profiles.executor.root_logging_scope",
         lambda *_args, **_kwargs: nullcontext(),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.rich_visuals_supported",
+        "jerrythomas.profiles.executor.rich_visuals_supported",
         lambda: pytest.fail("visual support is irrelevant when visuals are off"),
     )
 
@@ -181,7 +181,7 @@ def test_execution_scope_observes_nodes_for_debug_logging(monkeypatch) -> None:
 def test_execution_scope_restores_observation_after_failure(monkeypatch) -> None:
     runtime = _runtime()
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.root_logging_scope",
+        "jerrythomas.profiles.executor.root_logging_scope",
         lambda *_args, **_kwargs: nullcontext(),
     )
 
@@ -239,19 +239,19 @@ def test_execution_scope_restores_outer_state_after_visual_cleanup_failure(
             raise RuntimeError("visual cleanup failed")
 
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.root_logging_scope",
+        "jerrythomas.profiles.executor.root_logging_scope",
         logging_scope,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.execution_observer",
+        "jerrythomas.profiles.executor.execution_observer",
         observe_operation,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.rich_visuals_supported",
+        "jerrythomas.profiles.executor.rich_visuals_supported",
         lambda: True,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.visual_execution",
+        "jerrythomas.profiles.executor.visual_execution",
         visuals,
     )
 
@@ -290,15 +290,15 @@ def test_execution_scope_restores_outer_execution_observer(monkeypatch) -> None:
         pass
 
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.root_logging_scope",
+        "jerrythomas.profiles.executor.root_logging_scope",
         lambda *_args, **_kwargs: nullcontext(),
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.rich_visuals_supported",
+        "jerrythomas.profiles.executor.rich_visuals_supported",
         lambda: False,
     )
     monkeypatch.setattr(
-        "datapipeline.profiles.executor.make_execution_observer",
+        "jerrythomas.profiles.executor.make_execution_observer",
         lambda _logger: inner_observer,
     )
 

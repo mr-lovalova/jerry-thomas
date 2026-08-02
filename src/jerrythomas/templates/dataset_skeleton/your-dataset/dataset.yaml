@@ -1,0 +1,34 @@
+sample:
+  cadence: ${cadence}
+  keys: []
+  window_mode: intersection
+
+features:
+  - id: first_feature
+    stream: your.stream.one
+    field: some_field
+    scale: true
+
+  - id: second_feature
+    stream: your.stream.two
+    field: some_field
+
+# targets:
+#   - id: target_feature
+#     stream: your.target.stream
+#     field: some_field
+#     horizon: 0s
+
+split:
+  mode: hash
+  seed: 42
+  ratios: { train: 0.8, val: 0.1, test: 0.1 }
+  folds:
+    - id: holdout
+      train: [train]
+      validation: [val]
+      test: [test]
+
+postprocess:
+  features:
+    threshold: 1.0

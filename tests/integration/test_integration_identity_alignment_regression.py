@@ -3,16 +3,16 @@ import shutil
 
 import pytest
 
-from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
-from datapipeline.artifacts.models import FoldedMetadataLayout
-from datapipeline.artifacts.registry import (
+from jerrythomas.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
+from jerrythomas.artifacts.models import FoldedMetadataLayout
+from jerrythomas.artifacts.registry import (
     SCALER_SPEC,
     VECTOR_METADATA_SPEC,
 )
-from datapipeline.artifacts.scaler import FoldedScalerArtifact
-from datapipeline.artifacts.specs import SERIES
-from datapipeline.services.runtime_compiler import compile_runtime
-from datapipeline.artifacts.series import load_series_manifest
+from jerrythomas.artifacts.scaler import FoldedScalerArtifact
+from jerrythomas.artifacts.specs import SERIES
+from jerrythomas.services.runtime_compiler import compile_runtime
+from jerrythomas.artifacts.series import load_series_manifest
 from tests.helpers.regression import read_jsonl, serve_dataset
 
 
@@ -166,6 +166,7 @@ def test_validation_availability_does_not_change_hybrid_wide_training_contract(
     dataset = """sample:
   cadence: 1d
   keys: [ticker]
+  window_mode: intersection
 features:
   - id: price
     stream: market.price
@@ -187,10 +188,6 @@ split:
 """
     for root in (project_root, changed_root):
         (root / "dataset.yaml").write_text(dataset, encoding="utf-8")
-        (root / "operations/metadata.yaml").write_text(
-            "window_mode: intersection\n",
-            encoding="utf-8",
-        )
 
     fundamentals_path = project_root / "data" / "fundamentals.jsonl"
     training_gap = (

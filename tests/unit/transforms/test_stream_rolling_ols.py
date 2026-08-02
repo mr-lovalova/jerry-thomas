@@ -5,10 +5,9 @@ from random import Random
 import numpy as np
 import pytest
 
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.transforms.rolling_ols import RollingOls
-from datapipeline.transforms.stream.lag import LagTransform
-from datapipeline.transforms.stream.rolling_ols import RollingOlsTransform
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.transforms.stream.lag import LagTransform
+from jerrythomas.transforms.stream.rolling_ols import RollingOlsTransform
 
 
 def _record(
@@ -282,4 +281,13 @@ def test_rolling_ols_reports_its_optional_dependency(
         RuntimeError,
         match=r"install jerry-thomas\[numerical\]",
     ):
-        RollingOls(window=3, predictor_count=2, coefficient_index=1)
+        list(
+            RollingOlsTransform(
+                y="stock",
+                x=("market", "credit"),
+                window=3,
+                coefficient="credit",
+                partition_fields=("partition",),
+                to="credit_beta",
+            ).apply(iter(()))
+        )

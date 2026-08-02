@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.execution.settings import CommandObservability
-from datapipeline.profiles.errors import ProfileCommandError
-from datapipeline.profiles.request_builder import (
+from jerrythomas.execution.settings import CommandObservability
+from jerrythomas.profiles.errors import ProfileCommandError
+from jerrythomas.profiles.request_builder import (
     build_build_run_request,
     build_runtime_run_request,
 )
@@ -15,7 +15,7 @@ def _write_project(tmp_path: Path) -> Path:
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 4",
+                "schema_version: 5",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: streams",

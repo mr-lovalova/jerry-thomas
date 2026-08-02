@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.execution import ExecutionConfig
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.io.output import OutputTarget
-from datapipeline.runtime import Runtime, SourceRuntimeStream
-from datapipeline.services.materialize import (
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.io.output import OutputTarget
+from jerrythomas.runtime import Runtime, SourceRuntimeStream
+from jerrythomas.services.materialize import (
     materialize_stream,
     resolve_materialize_output,
 )
@@ -206,7 +206,7 @@ def test_materialize_stream_does_not_clobber_output_created_during_stream(
         return rows()
 
     monkeypatch.setattr(
-        "datapipeline.services.materialize.run_stream_pipeline",
+        "jerrythomas.services.materialize.run_stream_pipeline",
         racing_rows,
     )
 
@@ -235,7 +235,7 @@ def test_materialize_stream_closes_rows_after_writer_failure(
             rows_closed = True
 
     monkeypatch.setattr(
-        "datapipeline.services.materialize.run_stream_pipeline",
+        "jerrythomas.services.materialize.run_stream_pipeline",
         lambda _context, _stream_id: rows(),
     )
 

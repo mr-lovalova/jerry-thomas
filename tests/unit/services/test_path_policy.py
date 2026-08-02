@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from datapipeline.artifacts.registry import ArtifactRecord
-from datapipeline.services.path_policy import (
+from jerrythomas.artifacts.registry import ArtifactRecord
+from jerrythomas.services.path_policy import (
     resolve_project_path,
     resolve_workspace_path,
 )
@@ -21,7 +21,7 @@ def test_resolve_project_path_uses_project_directory(tmp_path: Path) -> None:
     project_dir = tmp_path / "plugin" / "dataset"
     project_dir.mkdir(parents=True)
     project_yaml = project_dir / "project.yaml"
-    project_yaml.write_text("schema_version: 4\nname: x\npaths: {}\n", encoding="utf-8")
+    project_yaml.write_text("schema_version: 5\nname: x\npaths: {}\n", encoding="utf-8")
 
     assert (
         resolve_project_path(project_yaml, "sources").resolve()

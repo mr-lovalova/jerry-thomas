@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.io import yaml
+from jerrythomas.io import yaml
 
 
 @pytest.mark.parametrize(

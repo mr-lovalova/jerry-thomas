@@ -1,0 +1,14 @@
+schema_version: 5
+artifact_revision: 1
+name: <your-dataset>
+paths:
+  streams: ./streams
+  sources: ./sources
+  dataset: dataset.yaml
+  artifacts: ../artifacts/${project_name}
+  profiles: ./profiles
+globals:
+  # TODO: Set your sample cadence (must match ^\d+(m|min|h|d)$).
+  cadence: 1h
+  start_time: null
+  end_time: null

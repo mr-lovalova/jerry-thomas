@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from datapipeline.utils.time import floor_time_to_cadence, parse_cadence
+from jerrythomas.utils.time import floor_time_to_cadence, parse_cadence
 
 
 def test_floor_time_uses_continuous_grid_for_multi_hour_minutes() -> None:

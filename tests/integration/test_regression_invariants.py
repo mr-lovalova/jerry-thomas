@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal
 
-import datapipeline.pipelines.sort as sort_module
+import jerrythomas.pipelines.sort as sort_module
 from tests.helpers.regression import serve_dataset
 
 

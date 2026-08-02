@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.dataset.series import SeriesConfig, SequenceConfig
+from jerrythomas.config.dataset.series import SeriesConfig, SequenceConfig
 
 
 def test_feature_config_simple_fields():

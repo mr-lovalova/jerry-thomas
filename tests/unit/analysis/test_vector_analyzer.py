@@ -2,16 +2,16 @@ import json
 
 import pytest
 
-from datapipeline.analysis.vector.matrix import MatrixBuilder, render_matrix_html
-from datapipeline.analysis.vector.coverage_stats import CoverageStatsAccumulator
-from datapipeline.artifacts.models import (
+from jerrythomas.analysis.vector.matrix import MatrixBuilder, render_matrix_html
+from jerrythomas.analysis.vector.coverage_stats import CoverageStatsAccumulator
+from jerrythomas.artifacts.models import (
     ListCoverageColumnStats,
     ListVectorMetadataEntry,
     ScalarVectorMetadataEntry,
     CoverageStatsArtifact,
 )
-from datapipeline.artifacts.registry import COVERAGE_STATS_SPEC
-from datapipeline.operations.runtime.coverage import _section_report
+from jerrythomas.artifacts.registry import COVERAGE_STATS_SPEC
+from jerrythomas.operations.runtime.coverage import _section_report
 
 
 def _scalar(identifier: str, base_id: str):

@@ -5,18 +5,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.profiles.materialize import MaterializeProfile
-from datapipeline.execution.settings import (
+from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.config.profiles.materialize import MaterializeProfile
+from jerrythomas.execution.settings import (
     CommandObservability,
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,
     LogOutputSettings,
     ObservabilitySettings,
 )
-from datapipeline.profiles import materialize
-from datapipeline.profiles.models import MaterializeJob
-from datapipeline.services.materialize import resolve_materialize_output
+from jerrythomas.profiles import materialize
+from jerrythomas.profiles.models import MaterializeJob
+from jerrythomas.services.materialize import resolve_materialize_output
 
 
 def _observability() -> ObservabilitySettings:

@@ -4,13 +4,13 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from datapipeline.config.streams import (
+from jerrythomas.config.streams import (
     AlignedStreamConfig,
     BroadcastStreamConfig,
     SourceStreamConfig,
 )
-from datapipeline.services.scaffold.paths import ensure_project_scaffold
-from datapipeline.services.scaffold.stream_yaml import (
+from jerrythomas.services.scaffold.paths import ensure_project_scaffold
+from jerrythomas.services.scaffold.stream_yaml import (
     write_aligned_stream,
     write_broadcast_stream,
     write_source_stream,

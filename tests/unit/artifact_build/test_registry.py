@@ -1,4 +1,4 @@
-from datapipeline.artifacts.registry import ArtifactRegistry, ArtifactSpec
+from jerrythomas.artifacts.registry import ArtifactRegistry, ArtifactSpec
 
 
 def test_registered_metadata_is_a_stable_read_only_mapping(tmp_path) -> None:

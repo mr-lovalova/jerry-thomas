@@ -1,8 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.transforms import DeriveConfig
-from datapipeline.transforms.stream.derive import DeriveTransform
+from jerrythomas.config.transforms import DeriveConfig
+from jerrythomas.transforms.stream.derive import DeriveTransform
 from tests.unit.transforms.helpers import make_time_record
 
 

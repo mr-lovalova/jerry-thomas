@@ -1,4 +1,4 @@
-# Datapipeline Runtime
+# Jerry Thomas
 
 Jerry Thomas is a time-series data pipeline runtime. It reads source data,
 maps it into ordered record streams, applies declarative transforms, and serves
@@ -149,10 +149,13 @@ These live under `lib/<plugin>/src/<package>/`:
 - Custom loaders are for behavior such as pagination, authentication, or
   proprietary protocols. See [Extending the runtime](docs/extending.md).
 
-### Transforms (Preprocess -> Ordered Stream -> Series -> Sample)
+### Transforms (Preprocess -> Ordered Stream -> Cross Section -> Series -> Sample)
 
 - **Preprocess transforms** run on mapped domain records before ordering. Each transform operates on one record at a time. Configure source-backed streams under `preprocess:`.
 - **Ordered transforms** run after ordering (dedupe, cadence enforcement, lag/lead, rolling, derive, fills). These operate across a sequence of records for a partition because they depend on sorted partition/time order and cadence. Configure streams under `transforms:`.
+- **Cross-sectional operations** compare partitioned records at one exact
+  timestamp. Configure a dedicated stream under `cross_section:`; Jerry
+  restores canonical partition/time order before its ordinary transforms run.
 - **Series shaping** runs after stream regularization. `sequence` creates
   rolling windows; `collect` requires a fixed number of values inside each
   sample-cadence bucket. Without either policy, a series must emit at most one

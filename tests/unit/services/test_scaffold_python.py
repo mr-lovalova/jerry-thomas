@@ -3,11 +3,11 @@ from pathlib import Path
 import pytest
 from tomlkit.exceptions import ParseError
 
-from datapipeline.plugins import LOADERS_EP
-from datapipeline.services.scaffold.entrypoints import read_entry_points
-from datapipeline.services.scaffold.loader import create_loader
-from datapipeline.services.scaffold.mapper import create_mapper
-from datapipeline.services.scaffold.parser import create_parser
+from jerrythomas.plugins import LOADERS_EP
+from jerrythomas.services.scaffold.entrypoints import read_entry_points
+from jerrythomas.services.scaffold.loader import create_loader
+from jerrythomas.services.scaffold.mapper import create_mapper
+from jerrythomas.services.scaffold.parser import create_parser
 
 
 def _plugin_with_invalid_pyproject(tmp_path: Path) -> Path:
@@ -125,7 +125,7 @@ def test_loader_removes_created_files_when_registration_fails(
         raise OSError("write failed")
 
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.entrypoints._write_document",
+        "jerrythomas.services.scaffold.entrypoints._write_document",
         fail_write,
     )
 

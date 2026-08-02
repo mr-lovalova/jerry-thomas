@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from datapipeline.pipelines.sample.keys import (
+from jerrythomas.pipelines.sample.keys import (
     RectangularKeyPlan,
     merge_rectangular_key_plans,
 )

@@ -2,13 +2,13 @@ from datetime import datetime, timezone, tzinfo
 
 import pytest
 
-from datapipeline.artifacts.models import (
+from jerrythomas.artifacts.models import (
     ListVectorMetadataEntry,
     ScalarVectorMetadataEntry,
 )
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
-from datapipeline.io.dataset_table import DatasetTable
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
+from jerrythomas.io.dataset_table import DatasetTable
 
 
 TIME = datetime(2024, 1, 2, tzinfo=timezone.utc)

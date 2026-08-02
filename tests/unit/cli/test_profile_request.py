@@ -3,10 +3,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from datapipeline.config.execution import ExecutionConfig
-from datapipeline.execution.settings import CommandObservability, LogOutputTarget
-from datapipeline.profiles.errors import ProfileCommandError
-from datapipeline.profiles.request_builder import (
+from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.execution.settings import CommandObservability, LogOutputTarget
+from jerrythomas.profiles.errors import ProfileCommandError
+from jerrythomas.profiles.request_builder import (
     build_build_run_request,
     build_materialize_run_request,
     build_runtime_run_request,
@@ -18,7 +18,7 @@ def _write_project(tmp_path: Path) -> Path:
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 4",
+                "schema_version: 5",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: streams",
@@ -72,7 +72,7 @@ def test_project_definition_unexpected_runtime_error_propagates(monkeypatch) -> 
         raise error
 
     monkeypatch.setattr(
-        "datapipeline.profiles.request_builder.load_project_definition",
+        "jerrythomas.profiles.request_builder.load_project_definition",
         fail,
     )
 
@@ -178,7 +178,7 @@ def test_inspect_request_materializes_execution_scoped_log_output(
 ):
     execution_dir = tmp_path / "execution"
     monkeypatch.setattr(
-        "datapipeline.profiles.request_builder._execution_root",
+        "jerrythomas.profiles.request_builder._execution_root",
         lambda _project: execution_dir,
     )
     project_yaml = _write_project(tmp_path)
@@ -295,7 +295,7 @@ def test_materialize_request_uses_shared_resolution_snapshot(
         return runtime
 
     monkeypatch.setattr(
-        "datapipeline.profiles.request_builder.compile_runtime",
+        "jerrythomas.profiles.request_builder.compile_runtime",
         compile_runtime,
     )
     execution_dir = tmp_path / "execution"
@@ -306,7 +306,7 @@ def test_materialize_request_uses_shared_resolution_snapshot(
         return execution_dir
 
     monkeypatch.setattr(
-        "datapipeline.profiles.request_builder._execution_root",
+        "jerrythomas.profiles.request_builder._execution_root",
         shared_execution_root,
     )
     request = build_materialize_run_request(

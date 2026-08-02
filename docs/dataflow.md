@@ -38,13 +38,15 @@ Expected behavior:
 `project.yaml` is the root map for all dataset config.
 
 ```yaml
-schema_version: 4
+schema_version: 5
 artifact_revision: 1
 paths:
   sources: ./sources
   streams: ./streams
   dataset: dataset.yaml
   artifacts: ../artifacts/${project_name}
+globals:
+  cadence: 1d
 ```
 
 Expected behavior:
@@ -116,6 +118,21 @@ transforms:
 The derived stream inherits `partition_by` and canonical ordering from
 `equity.ohlcv`.
 
+Cross-sectional streams compare partitions at one exact timestamp, then
+restore canonical stream order:
+
+```yaml
+id: equity.signal.ranked
+from:
+  stream: equity.signal.raw
+cross_section:
+  - { operation: rank_score, field: signal, to: signal_rank, min_samples: 30 }
+```
+
+Their input must be partitioned. The temporary time-major and restored
+partition-major sorts both use the configured bounded sort buffer. Hash-split
+datasets cannot select cross-sectional streams; use a time split or no split.
+
 Broadcast streams attach one unpartitioned temporal stream to every partition
 of a primary stream at an exact timestamp:
 
@@ -179,7 +196,8 @@ Dataset config chooses which streams become features/targets and which record fi
 
 ```yaml
 sample:
-  cadence: ${group_by}
+  cadence: ${cadence}
+  window_mode: intersection
 features:
   - id: closing_price
     stream: equity.ohlcv

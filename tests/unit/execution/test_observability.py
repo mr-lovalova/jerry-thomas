@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-import datapipeline.execution.observability as observability
-from datapipeline.execution.observability import (
+import jerrythomas.execution.observability as observability
+from jerrythomas.execution.observability import (
     ExecutionEvent,
     ExecutionMessage,
     FileResult,

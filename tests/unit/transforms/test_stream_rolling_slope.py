@@ -4,9 +4,9 @@ from statistics import linear_regression
 
 import pytest
 
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.transforms.stream.lag import LagTransform
-from datapipeline.transforms.stream.rolling_slope import RollingSlopeTransform
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.transforms.stream.lag import LagTransform
+from jerrythomas.transforms.stream.rolling_slope import RollingSlopeTransform
 
 
 def _record(

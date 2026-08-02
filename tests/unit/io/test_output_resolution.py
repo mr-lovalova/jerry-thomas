@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.profiles.output import ServeOutputConfig
-from datapipeline.io.output import resolve_output_target
-from datapipeline.io.runs import get_run_paths
+from jerrythomas.config.profiles.output import ServeOutputConfig
+from jerrythomas.io.output import resolve_output_target
+from jerrythomas.io.runs import get_run_paths
 
 
 def test_resolve_output_target_uses_directory_and_profile_name(tmp_path):

@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from datapipeline.domain.value import normalize_data_value
+from jerrythomas.domain.value import normalize_data_value
 
 
 @pytest.mark.parametrize(

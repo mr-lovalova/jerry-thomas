@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from datapipeline.operations.runtime.dataset import _preview_plan
+from jerrythomas.operations.runtime.dataset import _preview_plan
 
 
 def _cfg(id_: str, stream: str):

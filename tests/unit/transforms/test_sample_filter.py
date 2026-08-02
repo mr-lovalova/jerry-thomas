@@ -1,6 +1,6 @@
 import pytest
 
-from datapipeline.transforms.vector.sample_filter import (
+from jerrythomas.transforms.vector.sample_filter import (
     FilterFeatureSamplesTransform,
     FilterTargetSamplesTransform,
 )

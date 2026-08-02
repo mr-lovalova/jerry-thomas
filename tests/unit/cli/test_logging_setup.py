@@ -5,24 +5,24 @@ from pathlib import Path
 
 import pytest
 
-import datapipeline.execution.observability as observability
-from datapipeline.cli.logging_setup import (
+import jerrythomas.execution.observability as observability
+from jerrythomas.cli.logging_setup import (
     configure_root_logging,
     parse_log_output_specs,
     root_logging_scope,
 )
-from datapipeline.cli.visuals.execution import (
+from jerrythomas.cli.visuals.execution import (
     make_execution_observer,
     route_execution_event,
 )
-from datapipeline.cli.visuals.execution_context import (
+from jerrythomas.cli.visuals.execution_context import (
     reset_current_execution_event_handler,
     reset_current_terminal_log_handler,
     set_current_execution_event_handler,
     set_current_terminal_log_handler,
 )
-from datapipeline.cli.visuals.rich.progress import visual_summary
-from datapipeline.execution.observability import (
+from jerrythomas.cli.visuals.rich.progress import visual_summary
+from jerrythomas.execution.observability import (
     CommandFinished,
     ExecutionMessage,
     emit_file_result,
@@ -30,7 +30,7 @@ from datapipeline.execution.observability import (
     execution_observer,
     operation_scope,
 )
-from datapipeline.execution.settings import LogOutputSettings, LogOutputTarget
+from jerrythomas.execution.settings import LogOutputSettings, LogOutputTarget
 
 
 def _flush_root_handlers() -> None:
@@ -56,7 +56,7 @@ def test_operation_and_output_events_render_as_flat_plain_logs_without_visuals(
         output=LogOutputSettings(outputs=(LogOutputTarget(transport="stderr"),)),
     )
 
-    logger = logging.getLogger("datapipeline.tests.logging_setup.plain_result")
+    logger = logging.getLogger("jerrythomas.tests.logging_setup.plain_result")
     _emit_materialize_outputs(logger)
     _flush_root_handlers()
 
@@ -79,7 +79,7 @@ def test_operation_and_output_logs_do_not_depend_on_visual_handler(
             outputs=(LogOutputTarget(transport="fs", destination=without_visuals),)
         ),
     )
-    logger = logging.getLogger("datapipeline.tests.logging_setup.file_result")
+    logger = logging.getLogger("jerrythomas.tests.logging_setup.file_result")
     _emit_materialize_outputs(logger)
     _flush_root_handlers()
 
@@ -140,7 +140,7 @@ def test_operation_heartbeat_stays_in_file_during_visuals(
             self.events.append(event)
 
     handler = _CaptureHandler()
-    logger = logging.getLogger("datapipeline.tests.logging_setup.heartbeat")
+    logger = logging.getLogger("jerrythomas.tests.logging_setup.heartbeat")
     token = set_current_execution_event_handler(handler)
     try:
         with execution_observer(make_execution_observer(logger)):
@@ -169,7 +169,7 @@ def test_operation_and_output_logs_obey_warning_threshold(monkeypatch, tmp_path)
         ),
     )
 
-    logger = logging.getLogger("datapipeline.tests.logging_setup.warning_result")
+    logger = logging.getLogger("jerrythomas.tests.logging_setup.warning_result")
     _emit_materialize_outputs(logger)
     _flush_root_handlers()
 
@@ -187,7 +187,7 @@ def test_configure_root_logging_creates_file_on_first_record(tmp_path) -> None:
 
     assert not log_path.exists()
 
-    logging.getLogger("datapipeline.tests.logging_setup.lazy_file").info("first record")
+    logging.getLogger("jerrythomas.tests.logging_setup.lazy_file").info("first record")
     _flush_root_handlers()
 
     assert log_path.read_text(encoding="utf-8") == "first record\n"
@@ -202,7 +202,7 @@ def test_root_logging_scope_restores_command_outputs(tmp_path) -> None:
             outputs=(LogOutputTarget(transport="fs", destination=command_log),)
         ),
     )
-    logger = logging.getLogger("datapipeline.tests.logging_setup.scope")
+    logger = logging.getLogger("jerrythomas.tests.logging_setup.scope")
     root = logging.getLogger()
     command_handlers = tuple(root.handlers)
     command_level = root.level
@@ -239,7 +239,7 @@ def test_root_logging_scope_restores_command_outputs_after_failure(tmp_path) -> 
             outputs=(LogOutputTarget(transport="fs", destination=command_log),)
         ),
     )
-    logger = logging.getLogger("datapipeline.tests.logging_setup.failed-scope")
+    logger = logging.getLogger("jerrythomas.tests.logging_setup.failed-scope")
     root = logging.getLogger()
     command_handlers = tuple(root.handlers)
 
@@ -273,7 +273,7 @@ def test_configure_root_logging_suppresses_terminal_execution_events_during_visu
         output=LogOutputSettings(outputs=(LogOutputTarget(transport="stderr"),)),
     )
 
-    logger = logging.getLogger("datapipeline.tests.logging_setup.stderr")
+    logger = logging.getLogger("jerrythomas.tests.logging_setup.stderr")
     token = set_current_execution_event_handler(lambda _event: None)
     try:
         logger.info(
@@ -298,7 +298,7 @@ def test_visual_command_summary_is_rendered_and_logged_once(
     log_path = tmp_path / "command.log"
     monkeypatch.setattr(sys, "stderr", stream)
     monkeypatch.setattr(
-        "datapipeline.cli.visuals.rich.progress.rich_visuals_supported",
+        "jerrythomas.cli.visuals.rich.progress.rich_visuals_supported",
         lambda: True,
     )
     configure_root_logging(
@@ -311,7 +311,7 @@ def test_visual_command_summary_is_rendered_and_logged_once(
         ),
     )
     event = CommandFinished("serve", "success", 1.5)
-    logger = logging.getLogger("datapipeline.tests.logging_setup.command_visual")
+    logger = logging.getLogger("jerrythomas.tests.logging_setup.command_visual")
 
     with visual_summary(logging.INFO, enabled=True):
         route_execution_event(event, logger)
@@ -333,7 +333,7 @@ def test_configure_root_logging_keeps_execution_events_in_file_during_visuals(
         ),
     )
 
-    logger = logging.getLogger("datapipeline.tests.logging_setup.file")
+    logger = logging.getLogger("jerrythomas.tests.logging_setup.file")
     token = set_current_execution_event_handler(lambda _event: None)
     try:
         logger.info(
@@ -366,7 +366,7 @@ def test_configure_root_logging_routes_plain_terminal_logs_through_rich_visuals(
             self.events.append(event)
 
     handler = _RichHandler()
-    logger = logging.getLogger("datapipeline.tests.logging_setup.rich_proxy")
+    logger = logging.getLogger("jerrythomas.tests.logging_setup.rich_proxy")
     event_token = set_current_execution_event_handler(handler)
     log_token = set_current_terminal_log_handler(handler)
     try:
@@ -395,7 +395,7 @@ def test_configure_root_logging_does_not_proxy_plain_logs_without_log_handler(
         output=LogOutputSettings(outputs=(LogOutputTarget(transport="stderr"),)),
     )
 
-    logger = logging.getLogger("datapipeline.tests.logging_setup.no_proxy")
+    logger = logging.getLogger("jerrythomas.tests.logging_setup.no_proxy")
     token = set_current_execution_event_handler(lambda _event: None)
     try:
         logger.warning("plain log line")

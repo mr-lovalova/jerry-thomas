@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.dataset.dataset import DatasetConfig
+from jerrythomas.config.dataset.dataset import DatasetConfig
 
 
 def test_dataset_requires_sample_config() -> None:
@@ -20,6 +20,31 @@ def test_dataset_loads_sample_cadence_and_keys() -> None:
 
     assert dataset.sample.cadence == "1d"
     assert dataset.sample.keys == ["security_id"]
+    assert dataset.sample.window_mode == "intersection"
+
+
+@pytest.mark.parametrize("window_mode", ["union", "intersection", "strict"])
+def test_dataset_accepts_sample_window_mode(window_mode: str) -> None:
+    dataset = DatasetConfig.model_validate(
+        {
+            "sample": {"cadence": "1d", "window_mode": window_mode},
+            "features": [],
+            "targets": [],
+        }
+    )
+
+    assert dataset.sample.window_mode == window_mode
+
+
+def test_dataset_rejects_removed_relaxed_window_mode() -> None:
+    with pytest.raises(ValidationError, match="window_mode"):
+        DatasetConfig.model_validate(
+            {
+                "sample": {"cadence": "1d", "window_mode": "relaxed"},
+                "features": [],
+                "targets": [],
+            }
+        )
 
 
 def test_dataset_rejects_targets_without_features() -> None:
@@ -42,7 +67,7 @@ def test_dataset_rejects_targets_without_features() -> None:
 def test_dataset_rejects_target_coverage_without_targets() -> None:
     with pytest.raises(
         ValidationError,
-        match="postprocess.samples.targets requires at least one dataset target",
+        match="postprocess.targets requires at least one dataset target",
     ):
         DatasetConfig.model_validate(
             {
@@ -55,7 +80,7 @@ def test_dataset_rejects_target_coverage_without_targets() -> None:
                     }
                 ],
                 "postprocess": {
-                    "samples": {"targets": {"threshold": 1.0}},
+                    "targets": {"threshold": 1.0},
                 },
             }
         )
@@ -287,14 +312,14 @@ def test_dataset_owns_split_and_postprocess_policy() -> None:
                 ],
             },
             "postprocess": {
-                "samples": {"features": {"threshold": 0.9}},
+                "features": {"threshold": 0.9},
             },
         }
     )
 
     assert dataset.split is not None
-    assert dataset.postprocess.samples.features is not None
-    assert dataset.postprocess.samples.features.threshold == 0.9
+    assert dataset.postprocess.features is not None
+    assert dataset.postprocess.features.threshold == 0.9
 
 
 def test_dataset_rejects_unknown_fields() -> None:

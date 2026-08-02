@@ -3,10 +3,10 @@ from datetime import timedelta
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.transforms import LagConfig, LeadConfig
-from datapipeline.transforms.stream.lag import LagTransform
-from datapipeline.transforms.stream.lead import LeadTransform
-from datapipeline.transforms.time import FloorTimeTransform, ShiftTimeTransform
+from jerrythomas.config.transforms import LagConfig, LeadConfig
+from jerrythomas.transforms.stream.lag import LagTransform
+from jerrythomas.transforms.stream.lead import LeadTransform
+from jerrythomas.transforms.time import FloorTimeTransform, ShiftTimeTransform
 from tests.unit.transforms.helpers import make_time_record
 
 

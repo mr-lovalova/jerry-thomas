@@ -4,20 +4,20 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SequenceConfig, SeriesConfig
-from datapipeline.domain.series import SeriesRecord
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.domain.sample_key import SampleKeyContract
-from datapipeline.pipelines.series.stages import (
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SequenceConfig, SeriesConfig
+from jerrythomas.domain.series import SeriesRecord
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.domain.sample_key import SampleKeyContract
+from jerrythomas.pipelines.series.stages import (
     SeriesSequencer,
     project_series,
     sequence_series,
 )
-from datapipeline.pipelines.series.pipeline import build_series_stages
-from datapipeline.pipelines.series.projector import SeriesProjector
-from datapipeline.runtime import Runtime, SourceRuntimeStream
-from datapipeline.transforms.utils import (
+from jerrythomas.pipelines.series.pipeline import build_series_stages
+from jerrythomas.pipelines.series.projector import SeriesProjector
+from jerrythomas.runtime import Runtime, SourceRuntimeStream
+from jerrythomas.transforms.utils import (
     record_establishes_domain,
     set_record_domain_anchor,
 )

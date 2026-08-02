@@ -1,18 +1,18 @@
 import pyarrow as arrow
 import pyarrow.parquet as parquet
 
-from datapipeline.sources.adapters.fs import FsFileTransport, FsGlobTransport
-from datapipeline.sources.adapters.http import HttpTransport
-from datapipeline.sources.loader import DataLoader
-from datapipeline.sources.decoders import CsvDecoder, JsonLinesDecoder
-from datapipeline.sources.source import Source
-from datapipeline.sources.observability import (
+from jerrythomas.sources.adapters.fs import FsFileTransport, FsGlobTransport
+from jerrythomas.sources.adapters.http import HttpTransport
+from jerrythomas.sources.loader import DataLoader
+from jerrythomas.sources.decoders import CsvDecoder, JsonLinesDecoder
+from jerrythomas.sources.source import Source
+from jerrythomas.sources.observability import (
     source_progress,
     source_summary,
 )
-from datapipeline.sources.synthetic.time.loader import make_time_loader
-from datapipeline.sources.parquet_loader import ParquetLoader
-from datapipeline.parsers.identity import IdentityParser
+from jerrythomas.sources.synthetic.time.loader import make_time_loader
+from jerrythomas.sources.parquet_loader import ParquetLoader
+from jerrythomas.parsers.identity import IdentityParser
 
 
 class _SourceLookalike:
