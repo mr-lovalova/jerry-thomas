@@ -25,6 +25,7 @@ from datapipeline.config.tasks.scaler import ScalerTask
 from datapipeline.config.tasks.series import SeriesTask
 from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.services.definitions import ArtifactHashes, ProjectManifest
+from datapipeline.services.streams.validation import stream_dependency_closure
 
 # Increment when Jerry's core artifact semantics change without a config change.
 ARTIFACT_CACHE_VERSION = 9
@@ -116,23 +117,12 @@ def _stream_config_closure(
     root_stream_ids: Iterable[str],
     streams: StreamsConfig,
 ) -> tuple[dict[str, object], set[str]]:
+    stream_ids = stream_dependency_closure(streams.streams, root_stream_ids)
     source_ids: set[str] = set()
-    stream_ids: set[str] = set()
-
-    def visit(stream_id: str) -> None:
-        if stream_id in stream_ids:
-            return
-        stream = streams.streams.get(stream_id)
-        if stream is None:
-            raise ValueError(f"Unknown stream '{stream_id}' in artifact input closure.")
-        stream_ids.add(stream_id)
+    for stream_id in stream_ids:
+        stream = streams.streams[stream_id]
         if isinstance(stream, SourceStreamConfig):
             source_ids.add(stream.from_.source)
-        for input_stream_id in stream.input_streams():
-            visit(input_stream_id)
-
-    for root_stream_id in root_stream_ids:
-        visit(root_stream_id)
 
     config: dict[str, object] = {
         "sources": {

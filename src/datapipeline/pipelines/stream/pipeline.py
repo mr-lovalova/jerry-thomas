@@ -11,6 +11,7 @@ from datapipeline.config.preview import RecordPreviewStage
 from datapipeline.execution.observability import ignore_execution_event
 from datapipeline.execution.pipeline import Input, Pipeline, Stage
 from datapipeline.execution.runner import run_pipeline
+from datapipeline.pipelines.stream.cross_section import build_cross_section_stages
 from datapipeline.pipelines.stream.order import build_record_order_stage
 from datapipeline.pipelines.stream.stages import (
     build_preprocess_stages,
@@ -22,6 +23,7 @@ from datapipeline.runtime import (
     BroadcastAsOfRuntimeStream,
     BroadcastRuntimeStream,
     CombinedRuntimeStream,
+    CrossSectionRuntimeStream,
     DerivedRuntimeStream,
     RecordStage,
     Runtime,
@@ -47,6 +49,16 @@ def run_stream_preview_pipeline(
     pipeline = build_stream_pipeline(runtime, stream_id)
     stream = require_runtime_stream(runtime, stream_id)
     if preview in {"input", "canonical"} and isinstance(
+        stream,
+        CrossSectionRuntimeStream,
+    ):
+        upstream = build_stream_pipeline(runtime, stream.input_stream)
+        pipeline = (
+            pipeline.through_stage_count(len(upstream.stages))
+            if preview == "input"
+            else pipeline.through_stage_named("ensure_record_order")
+        )
+    elif preview in {"input", "canonical"} and isinstance(
         stream,
         DerivedRuntimeStream,
     ):
@@ -88,6 +100,23 @@ def build_stream_pipeline(
                 runtime,
                 stream.transforms,
                 stream.partition_by,
+            ),
+        )
+    if isinstance(stream, CrossSectionRuntimeStream):
+        upstream = build_stream_pipeline(runtime, stream.input_stream)
+        return upstream.continue_as(
+            f"stream:{stream_id}",
+            (
+                *build_cross_section_stages(
+                    stream.cross_section,
+                    stream.partition_by,
+                    runtime.execution.sort_buffer_bytes,
+                ),
+                *build_transform_stages(
+                    runtime,
+                    stream.transforms,
+                    stream.partition_by,
+                ),
             ),
         )
     if isinstance(stream, BroadcastRuntimeStream):

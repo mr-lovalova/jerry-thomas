@@ -5,6 +5,8 @@ Transforms are split by the stage where they run:
 - [Preprocess transforms](preprocess.md): one record at a time, before ordering.
 - [Ordered transforms](stream.md): ordered record streams, usually with
   per-partition history.
+- [Cross-sectional operations](cross_section.md): compare partitions at one
+  exact timestamp, then restore canonical stream order.
 - [Series shaping](series.md): feature/target payload shaping before vector
   assembly.
 - [Postprocess policies](postprocess.md): sample filtering before split and

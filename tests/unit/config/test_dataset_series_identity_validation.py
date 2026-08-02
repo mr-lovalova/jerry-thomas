@@ -3,7 +3,12 @@ import pytest
 from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
 from datapipeline.config.dataset.series import SeriesConfig, SequenceConfig
 from datapipeline.config.dataset.split import DatasetFold, HashSplitConfig
-from datapipeline.config.streams import SourceStreamConfig, StreamsConfig
+from datapipeline.config.streams import (
+    CrossSectionStreamConfig,
+    DerivedStreamConfig,
+    SourceStreamConfig,
+    StreamsConfig,
+)
 from datapipeline.services.dataset import validate_dataset_streams
 
 
@@ -23,6 +28,7 @@ def _dataset(
     sample_keys: list[str] | None = None,
     stream: str = "prices",
     sequence: SequenceConfig | None = None,
+    split: HashSplitConfig | None = None,
 ) -> DatasetConfig:
     feature = SeriesConfig(
         stream=stream,
@@ -33,6 +39,14 @@ def _dataset(
     return DatasetConfig(
         sample=SampleConfig(cadence="1d", keys=sample_keys or []),
         features=[feature],
+        split=split,
+    )
+
+
+def _hash_split() -> HashSplitConfig:
+    return HashSplitConfig(
+        ratios={"train": 1.0},
+        folds=[DatasetFold(id="default", train=["train"])],
     )
 
 
@@ -103,3 +117,64 @@ def test_dataset_rejects_sequences_with_hash_split() -> None:
                 folds=[DatasetFold(id="default", train=["train"])],
             ),
         )
+
+
+def test_hash_split_rejects_selected_cross_section_dependency() -> None:
+    prices = _streams(["ticker"]).streams["prices"]
+    ranked = CrossSectionStreamConfig.model_validate(
+        {
+            "id": "ranked",
+            "from": {"stream": "prices"},
+            "cross_section": [
+                {
+                    "operation": "rank_score",
+                    "field": "close",
+                    "to": "close_rank",
+                    "min_samples": 2,
+                }
+            ],
+        }
+    )
+    selected = DerivedStreamConfig.model_validate(
+        {
+            "id": "selected",
+            "from": {"stream": "ranked"},
+            "transforms": [{"operation": "dedupe"}],
+        }
+    )
+    streams = StreamsConfig(
+        streams={"prices": prices, "ranked": ranked, "selected": selected}
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="hash splits cannot be used with cross-sectional streams: ranked",
+    ):
+        validate_dataset_streams(
+            _dataset(stream="selected", split=_hash_split()),
+            streams,
+        )
+
+
+def test_hash_split_allows_unselected_cross_section_stream() -> None:
+    prices = _streams(["ticker"]).streams["prices"]
+    ranked = CrossSectionStreamConfig.model_validate(
+        {
+            "id": "ranked",
+            "from": {"stream": "prices"},
+            "cross_section": [
+                {
+                    "operation": "rank_score",
+                    "field": "close",
+                    "to": "close_rank",
+                    "min_samples": 2,
+                }
+            ],
+        }
+    )
+    streams = StreamsConfig(streams={"prices": prices, "ranked": ranked})
+
+    validate_dataset_streams(
+        _dataset(stream="prices", split=_hash_split()),
+        streams,
+    )

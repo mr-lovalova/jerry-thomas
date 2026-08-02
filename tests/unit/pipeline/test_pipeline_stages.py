@@ -12,6 +12,8 @@ from rich.console import Console
 from rich.progress import Progress
 
 import datapipeline.operations.artifacts.series as series_operation
+import datapipeline.pipelines.stream.cross_section as cross_section_pipeline
+import datapipeline.pipelines.stream.order as stream_order
 import datapipeline.pipelines.stream.stages as stream_stages
 from datapipeline.artifacts.models import SampleDomainEntry, VectorMetadataCatalog
 from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
@@ -31,6 +33,7 @@ from datapipeline.config.dataset.split import (
     TimeInterval,
     TimeSplitConfig,
 )
+from datapipeline.config.cross_section import OlsResidualConfig, RankScoreConfig
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.tasks.metadata import MetadataTask
 from datapipeline.config.tasks.series import SeriesTask
@@ -38,6 +41,7 @@ from datapipeline.config.transforms import (
     EnsureCadenceConfig,
     EnsureScheduleConfig,
     FloorTimeConfig,
+    LagConfig,
     PreprocessConfig,
     TransformConfig,
 )
@@ -86,6 +90,7 @@ from datapipeline.runtime import (
     AlignedRuntimeStream,
     AsOfRuntimeStream,
     BroadcastRuntimeStream,
+    CrossSectionRuntimeStream,
     DerivedRuntimeStream,
     RecordStage,
     Runtime,
@@ -496,6 +501,181 @@ def test_derived_stream_reuses_upstream_order_without_a_mapper(
         ("A", 2),
         ("B", 1),
     ]
+
+
+def test_cross_section_groups_by_time_and_restores_canonical_order(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "symbol": "A", "value": 1.0},
+            {"time": _ts(1), "symbol": "A", "value": 3.0},
+            {"time": _ts(0), "symbol": "B", "value": 2.0},
+            {"time": _ts(1), "symbol": "B", "value": 4.0},
+        ],
+        partition_by=("symbol",),
+    )
+    runtime.streams["ranked"] = CrossSectionRuntimeStream(
+        input_stream="stream",
+        partition_by=("symbol",),
+        cross_section=(
+            RankScoreConfig(field="value", to="rank", min_samples=2),
+        ),
+        transforms=(),
+    )
+
+    records = list(run_stream_pipeline(runtime, "ranked"))
+
+    assert [
+        (record.symbol, record.time.hour, record.rank) for record in records
+    ] == [
+        ("A", 0, -0.5),
+        ("A", 1, -0.5),
+        ("B", 0, 0.5),
+        ("B", 1, 0.5),
+    ]
+
+
+def test_cross_section_operations_run_in_configured_order(tmp_path: Path) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {
+                "time": _ts(0),
+                "symbol": symbol,
+                "signal": signal,
+                "control": control,
+            }
+            for symbol, signal, control in (
+                ("A", 10.0, 1.0),
+                ("B", 30.0, 2.0),
+                ("C", 20.0, 4.0),
+                ("D", 40.0, 8.0),
+            )
+        ],
+        partition_by=("symbol",),
+    )
+    runtime.streams["neutralized"] = CrossSectionRuntimeStream(
+        input_stream="stream",
+        partition_by=("symbol",),
+        cross_section=(
+            RankScoreConfig(field="signal", to="signal_rank", min_samples=4),
+            OlsResidualConfig(
+                y="signal_rank",
+                x=("control",),
+                to="residual",
+                min_samples=4,
+            ),
+        ),
+        transforms=(),
+    )
+
+    records = list(run_stream_pipeline(runtime, "neutralized"))
+
+    assert all(record.residual is not None for record in records)
+    assert sum(record.residual for record in records) == pytest.approx(0.0)
+
+
+def test_cross_section_spill_matches_in_memory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(hour), "symbol": symbol, "value": value}
+            for symbol, values in (("A", (1.0, 4.0)), ("B", (2.0, 5.0)))
+            for hour, value in enumerate(values)
+        ],
+        partition_by=("symbol",),
+    )
+    runtime.streams["ranked"] = CrossSectionRuntimeStream(
+        input_stream="stream",
+        partition_by=("symbol",),
+        cross_section=(
+            RankScoreConfig(field="value", to="rank", min_samples=2),
+        ),
+        transforms=(),
+    )
+    expected = list(run_stream_pipeline(runtime, "ranked"))
+    normal_batch_sort = cross_section_pipeline.batch_sort
+
+    def spilling_batch_sort(items, buffer_bytes, key, spill_dir=None, progress=None):
+        return normal_batch_sort(
+            items,
+            buffer_bytes=1,
+            key=key,
+            spill_dir=spill_dir,
+            progress=progress,
+        )
+
+    monkeypatch.setattr(cross_section_pipeline, "batch_sort", spilling_batch_sort)
+    monkeypatch.setattr(stream_order, "batch_sort", spilling_batch_sort)
+
+    actual = list(run_stream_pipeline(runtime, "ranked"))
+
+    assert actual == expected
+
+
+def test_cross_section_previews_and_partition_local_lag(tmp_path: Path) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "symbol": "A", "value": 1.0},
+            {"time": _ts(1), "symbol": "A", "value": 3.0},
+            {"time": _ts(0), "symbol": "B", "value": 2.0},
+            {"time": _ts(1), "symbol": "B", "value": 4.0},
+        ],
+        partition_by=("symbol",),
+    )
+    runtime.streams["ranked"] = CrossSectionRuntimeStream(
+        input_stream="stream",
+        partition_by=("symbol",),
+        cross_section=(
+            RankScoreConfig(field="value", to="rank", min_samples=2),
+        ),
+        transforms=(LagConfig(field="rank", periods=1, to="previous_rank"),),
+    )
+
+    input_records = list(run_stream_preview_pipeline(runtime, "ranked", "input"))
+    canonical = list(run_stream_preview_pipeline(runtime, "ranked", "canonical"))
+    records = list(run_stream_preview_pipeline(runtime, "ranked", "records"))
+
+    assert [(record.symbol, record.time.hour) for record in input_records] == [
+        ("A", 0),
+        ("A", 1),
+        ("B", 0),
+        ("B", 1),
+    ]
+    assert all(not hasattr(record, "rank") for record in input_records)
+    assert [record.rank for record in canonical] == [-0.5, -0.5, 0.5, 0.5]
+    assert all(not hasattr(record, "previous_rank") for record in canonical)
+    assert [record.previous_rank for record in records] == [None, -0.5, None, 0.5]
+
+
+def test_cross_section_rejects_duplicate_partition_at_one_time(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "symbol": "A", "value": 1.0},
+            {"time": _ts(0), "symbol": "A", "value": 2.0},
+        ],
+        partition_by=("symbol",),
+    )
+    runtime.streams["ranked"] = CrossSectionRuntimeStream(
+        input_stream="stream",
+        partition_by=("symbol",),
+        cross_section=(
+            RankScoreConfig(field="value", to="rank", min_samples=2),
+        ),
+        transforms=(),
+    )
+
+    with pytest.raises(ValueError, match="duplicate partition.*A"):
+        list(run_stream_pipeline(runtime, "ranked"))
 
 
 @pytest.mark.parametrize("preview", ["input", "canonical"])

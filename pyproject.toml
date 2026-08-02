@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jerry-thomas"
-version = "8.0.0"
+version = "9.0.0"
 description = "Jerry-Thomas: a stream-first, plugin-friendly data pipeline (mixology-themed CLI)"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
@@ -117,7 +117,7 @@ only_mutate = [
   "src/datapipeline/pipelines/series/projector.py",
   "src/datapipeline/pipelines/sort.py",
   "src/datapipeline/pipelines/sample/keys.py",
-  "src/datapipeline/transforms/rolling_ols.py",
+  "src/datapipeline/transforms/stream/rolling_ols.py",
   "src/datapipeline/transforms/rolling_slope.py",
   "src/datapipeline/transforms/stream/forward_sum.py",
   "src/datapipeline/transforms/stream/logarithm.py",

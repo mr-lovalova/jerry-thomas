@@ -9,6 +9,7 @@ from pydantic import (
 )
 
 from datapipeline.config.constraints import DottedIdentifier, NonEmptyString
+from datapipeline.config.cross_section import CrossSectionOperation
 from datapipeline.config.sources import EntryPointConfig, SourceConfig
 from datapipeline.config.transforms import PreprocessConfig, TransformConfig
 from datapipeline.utils.time import parse_timecode
@@ -120,6 +121,14 @@ class DerivedStreamConfig(_StreamConfig):
         return (self.from_.stream,)
 
 
+class CrossSectionStreamConfig(_StreamConfig):
+    from_: StreamRefConfig = Field(alias="from")
+    cross_section: list[CrossSectionOperation] = Field(min_length=1)
+
+    def input_streams(self) -> tuple[str, ...]:
+        return (self.from_.stream,)
+
+
 class BroadcastStreamConfig(_StreamConfig):
     from_: BroadcastFromConfig = Field(alias="from")
     combine: EntryPointConfig
@@ -166,6 +175,7 @@ class AlignedStreamConfig(_StreamConfig):
 StreamConfig: TypeAlias = (
     SourceStreamConfig
     | DerivedStreamConfig
+    | CrossSectionStreamConfig
     | BroadcastStreamConfig
     | AsOfStreamConfig
     | BroadcastAsOfStreamConfig

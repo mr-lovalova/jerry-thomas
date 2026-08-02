@@ -1,9 +1,12 @@
+from collections.abc import Iterable
+
 from datapipeline.config.sources import SourceConfig
 from datapipeline.config.streams import (
     AlignedStreamConfig,
     AsOfStreamConfig,
     BroadcastAsOfStreamConfig,
     BroadcastStreamConfig,
+    CrossSectionStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
     StreamConfig,
@@ -92,6 +95,15 @@ def validate_stream_configs(
                     f"write canonical order field '{output_field}'"
                 )
 
+        if isinstance(stream, CrossSectionStreamConfig):
+            for cross_section_operation in stream.cross_section:
+                if cross_section_operation.to in canonical_fields:
+                    raise ValueError(
+                        f"Stream '{stream_id}' cross-section operation "
+                        f"'{cross_section_operation.operation}' cannot write canonical "
+                        f"order field '{cross_section_operation.to}'"
+                    )
+
 
 def stream_partition_by(
     streams: dict[str, StreamConfig],
@@ -102,6 +114,14 @@ def stream_partition_by(
         return stream.partition_by
     if isinstance(stream, DerivedStreamConfig):
         return stream_partition_by(streams, stream.from_.stream)
+    if isinstance(stream, CrossSectionStreamConfig):
+        partition_by = stream_partition_by(streams, stream.from_.stream)
+        if not partition_by:
+            raise ValueError(
+                f"Cross-section stream '{stream_id}' input "
+                f"'{stream.from_.stream}' must have a non-empty partition_by"
+            )
+        return partition_by
     if isinstance(stream, AsOfStreamConfig):
         primary_partition = stream_partition_by(streams, stream.from_.stream)
         lookup_partition = stream_partition_by(streams, stream.from_.as_of)
@@ -170,6 +190,30 @@ def stream_partition_by(
         return expected
 
     raise TypeError(f"Unsupported stream config: {type(stream).__name__}")
+
+
+def stream_dependency_closure(
+    streams: dict[str, StreamConfig],
+    root_stream_ids: Iterable[str],
+) -> frozenset[str]:
+    visited: set[str] = set()
+
+    def visit(stream_id: str) -> None:
+        if stream_id in visited:
+            return
+        try:
+            stream = streams[stream_id]
+        except KeyError as exc:
+            raise ValueError(
+                f"Unknown stream '{stream_id}' in stream dependency graph."
+            ) from exc
+        visited.add(stream_id)
+        for input_stream_id in stream.input_streams():
+            visit(input_stream_id)
+
+    for root_stream_id in root_stream_ids:
+        visit(root_stream_id)
+    return frozenset(visited)
 
 
 def _validate_stream_cycles(streams: dict[str, StreamConfig]) -> None:

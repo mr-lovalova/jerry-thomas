@@ -935,6 +935,51 @@ def test_core_artifact_hashes_track_only_referenced_source_closure(
         assert after_used_change.for_artifact(key) != baseline.for_artifact(key)
 
 
+def test_cross_section_config_changes_series_artifact_hash(tmp_path: Path) -> None:
+    project_yaml = _write_project(tmp_path)
+    (tmp_path / "sources" / "signals.yaml").write_text(
+        "id: signals\n"
+        "parser: {entrypoint: identity}\n"
+        "loader: {entrypoint: custom.loader}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "streams" / "signals.yaml").write_text(
+        "id: signals\n"
+        "from: {source: signals}\n"
+        "map: {entrypoint: identity}\n"
+        "partition_by: [ticker]\n",
+        encoding="utf-8",
+    )
+    ranked_stream = tmp_path / "streams" / "ranked.yaml"
+    ranked_stream.write_text(
+        "id: ranked\n"
+        "from: {stream: signals}\n"
+        "cross_section:\n"
+        "  - {operation: rank_score, field: value, to: rank, min_samples: 2}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "dataset.yaml").write_text(
+        "sample: {cadence: 1h, keys: [ticker]}\n"
+        "features:\n"
+        "  - {id: rank, stream: ranked, field: rank}\n",
+        encoding="utf-8",
+    )
+    first = load_project_definition(project_yaml)
+
+    ranked_stream.write_text(
+        ranked_stream.read_text(encoding="utf-8").replace(
+            "min_samples: 2",
+            "min_samples: 3",
+        ),
+        encoding="utf-8",
+    )
+    second = load_project_definition(project_yaml)
+
+    assert first.artifact_hashes.for_artifact(SERIES) != (
+        second.artifact_hashes.for_artifact(SERIES)
+    )
+
+
 def test_artifact_operation_comment_does_not_change_artifact_hashes(
     tmp_path: Path,
 ) -> None:

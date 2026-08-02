@@ -12,8 +12,9 @@ instances are compiled from the definition without reading configuration files.
 ## Runtime streams
 
 Every canonical stream ID has exactly one entry in `Runtime.streams`:
-`SourceRuntimeStream`, `DerivedRuntimeStream`, `BroadcastRuntimeStream`,
-`AsOfRuntimeStream`, `BroadcastAsOfRuntimeStream`, or `AlignedRuntimeStream`.
+`SourceRuntimeStream`, `DerivedRuntimeStream`, `CrossSectionRuntimeStream`,
+`BroadcastRuntimeStream`, `AsOfRuntimeStream`, `BroadcastAsOfRuntimeStream`, or
+`AlignedRuntimeStream`.
 
 A source-backed stream owns an external source, mapper, preprocess operations,
 partition identity, and ordering policy. A derived stream names one upstream
@@ -76,6 +77,22 @@ stream:<id>
 
 The derived stream reuses upstream canonical order directly. It does not add
 identity mapping or sorting stages.
+
+A cross-sectional stream is a single-input boundary with an explicit order
+change:
+
+```text
+stream:<id>
+  <qualified upstream input and stages>
+  stage: order_cross_sections       # [time, *partition_by]
+  stage: apply_cross_section        # one exact timestamp at a time
+  stage: ensure_record_order        # [*partition_by, time]
+  <one stage per configured ordinary transform>
+```
+
+Both sorts use the bounded external sorter. The timestamp group is the only
+in-memory population. Restoring canonical order keeps every existing series,
+artifact, preview, and history-based transform contract unchanged.
 
 Aligned streams are a symmetric fan-in boundary. Their pipeline input is
 `align_inputs`; it owns opening, validating, merging, and closing the configured

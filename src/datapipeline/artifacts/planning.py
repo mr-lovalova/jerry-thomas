@@ -25,6 +25,7 @@ from datapipeline.config.tasks.schedule import ScheduleTask
 from datapipeline.config.transforms import EnsureScheduleConfig
 from datapipeline.io.output import output_destination_key
 from datapipeline.services.definitions import ArtifactHashes
+from datapipeline.services.streams.validation import stream_dependency_closure
 
 
 @dataclass(frozen=True)
@@ -338,25 +339,14 @@ def stream_schedule_artifacts(
     streams: StreamsConfig,
 ) -> set[str]:
     artifacts: set[str] = set()
-    visited: set[str] = set()
-
-    def visit(current_stream_id: str) -> None:
-        if current_stream_id in visited:
-            return
-        visited.add(current_stream_id)
-        try:
-            stream = streams.streams[current_stream_id]
-        except KeyError as exc:
-            raise ValueError(
-                f"Unknown stream '{current_stream_id}' in artifact dependency graph."
-            ) from exc
+    for current_stream_id in stream_dependency_closure(
+        streams.streams,
+        (stream_id,),
+    ):
+        stream = streams.streams[current_stream_id]
         for operation in stream.transforms:
             if isinstance(operation, EnsureScheduleConfig):
                 artifacts.add(operation.schedule)
-        for input_stream_id in stream.input_streams():
-            visit(input_stream_id)
-
-    visit(stream_id)
     return artifacts
 
 

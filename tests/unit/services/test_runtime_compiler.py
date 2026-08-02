@@ -3,6 +3,8 @@ from math import log, log1p
 
 import pytest
 
+from datapipeline.config.cross_section import OlsResidualConfig, RankScoreConfig
+from datapipeline.config.transforms import DedupeConfig
 from datapipeline.domain.record import TemporalRecord
 from datapipeline.execution.events import PipelineEvent, PipelineStarted
 from datapipeline.execution.observability import execution_observer
@@ -16,6 +18,7 @@ from datapipeline.runtime import (
     AsOfRuntimeStream,
     BroadcastAsOfRuntimeStream,
     BroadcastRuntimeStream,
+    CrossSectionRuntimeStream,
     DerivedRuntimeStream,
     SourceRuntimeStream,
 )
@@ -157,6 +160,75 @@ transforms:
     assert [(record.time.day, record.ticker, record.value) for record in records] == [
         (2, "A", 2)
     ]
+
+
+def test_yaml_cross_section_stream_compiles_typed_contract(tmp_path) -> None:
+    project_yaml, sources_dir, streams_dir, _ = _write_test_project(tmp_path)
+    (sources_dir / "signals.yaml").write_text(
+        """\
+id: signals.source
+parser:
+  entrypoint: core.temporal_record
+loader:
+  transport: fs
+  path: data/signals.jsonl
+  reader:
+    format: jsonl
+""",
+        encoding="utf-8",
+    )
+    (streams_dir / "signals.yaml").write_text(
+        """\
+id: signals
+from:
+  source: signals.source
+partition_by: [ticker]
+map:
+  entrypoint: identity
+""",
+        encoding="utf-8",
+    )
+    (streams_dir / "neutralized.yaml").write_text(
+        """\
+id: neutralized
+from:
+  stream: signals
+cross_section:
+  - operation: rank_score
+    field: signal
+    to: signal_rank
+    min_samples: 30
+  - operation: ols_residual
+    y: signal_rank
+    x: [liquidity_rank, volatility_rank]
+    to: signal_residual
+    min_samples: 30
+transforms:
+  - operation: dedupe
+""",
+        encoding="utf-8",
+    )
+
+    runtime = compile_runtime(load_project_definition(project_yaml))
+    stream = runtime.streams["neutralized"]
+
+    assert isinstance(stream, CrossSectionRuntimeStream)
+    assert stream.input_stream == "signals"
+    assert stream.partition_by == ("ticker",)
+    assert stream.cross_section == (
+        RankScoreConfig(
+            field="signal",
+            to="signal_rank",
+            min_samples=30,
+        ),
+        OlsResidualConfig(
+            y="signal_rank",
+            x=("liquidity_rank", "volatility_rank"),
+            to="signal_residual",
+            min_samples=30,
+        ),
+    )
+    assert stream.transforms == (DedupeConfig(),)
 
 
 def test_exact_global_factors_feed_partitioned_rolling_ols_with_gap(

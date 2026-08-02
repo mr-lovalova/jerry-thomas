@@ -569,7 +569,8 @@ transforms:
 - `partition_by`: complete identity of an independent record series, used by
   ordering and history-based transforms. The runtime appends the reserved
   `time` field to the canonical sort key, so it must not appear here. Derived
-  and fan-in streams inherit it from their partitioned input.
+  and cross-sectional streams inherit it from their input; fan-in streams
+  inherit it from their partitioned input.
 - `ordered_by`: optional assertion that records entering the ordering stage use
   `[*partition_by, time]` order. When present, it must equal that canonical
   order and is validated while streaming. When absent, mapped records are
@@ -587,6 +588,42 @@ transforms:
   Dataset feature and target IDs cannot contain the reserved `__` separator.
   Generated suffixes escape strings and tag non-string scalar values so
   different component tuples cannot produce the same series ID.
+
+### Cross-Sectional Streams
+
+A cross-sectional stream compares partitioned records at each exact timestamp.
+It inherits the upstream partition identity, temporarily orders records by
+`[time, *partition_by]`, applies its operations in YAML order, and restores
+canonical `[*partition_by, time]` order before ordinary transforms run.
+
+```yaml
+id: equity.signal.neutralized
+from:
+  stream: equity.signal.inputs
+cross_section:
+  - operation: rank_score
+    field: signal
+    to: signal_rank
+    min_samples: 30
+  - operation: ols_residual
+    y: signal_rank
+    x: [liquidity_rank, volatility_rank]
+    to: signal_residual
+    min_samples: 30
+transforms:
+  - { operation: lag, field: signal_residual, to: signal_residual_lag_1, periods: 1 }
+```
+
+The input must have a non-empty `partition_by`, and each timestamp may contain
+at most one record per partition. Matching is exact: Jerry does not floor,
+fill, or infer sessions. `rank_score` uses normalized average-tie ranks;
+`ols_residual` uses complete-case OLS with an intercept and requires
+`jerry-thomas[numerical]`. Both require an explicit `min_samples`. Use an
+upstream `where` transform to define the eligible population. Hash-split
+datasets cannot select cross-sectional streams because peer records could land
+in different output roles. See
+[Cross-sectional operations](transforms/cross_section.md) for the complete
+missing-value and numerical contracts.
 
 ### Broadcast Streams
 

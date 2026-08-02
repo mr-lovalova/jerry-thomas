@@ -116,6 +116,21 @@ transforms:
 The derived stream inherits `partition_by` and canonical ordering from
 `equity.ohlcv`.
 
+Cross-sectional streams compare partitions at one exact timestamp, then
+restore canonical stream order:
+
+```yaml
+id: equity.signal.ranked
+from:
+  stream: equity.signal.raw
+cross_section:
+  - { operation: rank_score, field: signal, to: signal_rank, min_samples: 30 }
+```
+
+Their input must be partitioned. The temporary time-major and restored
+partition-major sorts both use the configured bounded sort buffer. Hash-split
+datasets cannot select cross-sectional streams; use a time split or no split.
+
 Broadcast streams attach one unpartitioned temporal stream to every partition
 of a primary stream at an exact timestamp:
 

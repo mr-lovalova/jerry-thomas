@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from datapipeline.artifacts.registry import ArtifactRegistry
+from datapipeline.config.cross_section import CrossSectionOperation
 from datapipeline.config.dataset.dataset import DatasetConfig
 from datapipeline.config.execution import ExecutionConfig
 from datapipeline.config.transforms import PreprocessConfig, TransformConfig
@@ -29,6 +30,14 @@ class SourceRuntimeStream:
 class DerivedRuntimeStream:
     input_stream: str
     partition_by: tuple[str, ...]
+    transforms: tuple[TransformConfig, ...]
+
+
+@dataclass(frozen=True)
+class CrossSectionRuntimeStream:
+    input_stream: str
+    partition_by: tuple[str, ...]
+    cross_section: tuple[CrossSectionOperation, ...]
     transforms: tuple[TransformConfig, ...]
 
 
@@ -78,7 +87,12 @@ CombinedRuntimeStream = (
     | AlignedRuntimeStream
 )
 
-RuntimeStream = SourceRuntimeStream | DerivedRuntimeStream | CombinedRuntimeStream
+RuntimeStream = (
+    SourceRuntimeStream
+    | DerivedRuntimeStream
+    | CrossSectionRuntimeStream
+    | CombinedRuntimeStream
+)
 
 
 @dataclass

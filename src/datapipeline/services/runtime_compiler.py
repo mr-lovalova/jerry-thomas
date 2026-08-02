@@ -6,6 +6,7 @@ from datapipeline.config.streams import (
     AsOfStreamConfig,
     BroadcastAsOfStreamConfig,
     BroadcastStreamConfig,
+    CrossSectionStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
     StreamConfig,
@@ -15,6 +16,7 @@ from datapipeline.runtime import (
     AsOfRuntimeStream,
     BroadcastAsOfRuntimeStream,
     BroadcastRuntimeStream,
+    CrossSectionRuntimeStream,
     DerivedRuntimeStream,
     Runtime,
     RuntimeStream,
@@ -49,6 +51,18 @@ def _compile_derived_stream(
     return DerivedRuntimeStream(
         input_stream=config.from_.stream,
         partition_by=stream_partition_by(stream_configs, config.id),
+        transforms=tuple(config.transforms),
+    )
+
+
+def _compile_cross_section_stream(
+    config: CrossSectionStreamConfig,
+    stream_configs: dict[str, StreamConfig],
+) -> CrossSectionRuntimeStream:
+    return CrossSectionRuntimeStream(
+        input_stream=config.from_.stream,
+        partition_by=stream_partition_by(stream_configs, config.id),
+        cross_section=tuple(config.cross_section),
         transforms=tuple(config.transforms),
     )
 
@@ -124,6 +138,11 @@ def compile_runtime(definition: ProjectDefinition) -> Runtime:
             )
         elif isinstance(config, DerivedStreamConfig):
             runtime_streams[stream_id] = _compile_derived_stream(
+                config,
+                stream_configs,
+            )
+        elif isinstance(config, CrossSectionStreamConfig):
+            runtime_streams[stream_id] = _compile_cross_section_stream(
                 config,
                 stream_configs,
             )
