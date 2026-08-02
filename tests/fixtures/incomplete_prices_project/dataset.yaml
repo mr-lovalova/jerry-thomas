@@ -16,6 +16,5 @@ features:
 targets: []
 
 postprocess:
-  samples:
-    features:
-      threshold: 0.4
+  features:
+    threshold: 0.4

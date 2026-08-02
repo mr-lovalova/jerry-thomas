@@ -107,7 +107,7 @@ def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
         dataset=DatasetConfig(
             sample=SampleConfig(cadence="1h"),
             postprocess=PostprocessConfig.model_validate(
-                {"samples": {"features": {"threshold": 1.0, "ids": ["value"]}}}
+                {"features": {"threshold": 1.0, "ids": ["value"]}}
             ),
         ),
     )
@@ -182,9 +182,7 @@ def test_postprocess_applies_explicit_target_policies(tmp_path) -> None:
                         "horizon": "0s",
                     },
                 ],
-                "postprocess": {
-                    "samples": {"targets": {"threshold": 1.0, "ids": ["target"]}}
-                },
+                "postprocess": {"targets": {"threshold": 1.0, "ids": ["target"]}},
             }
         ),
     )

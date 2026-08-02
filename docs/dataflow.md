@@ -45,6 +45,8 @@ paths:
   streams: ./streams
   dataset: dataset.yaml
   artifacts: ../artifacts/${project_name}
+globals:
+  cadence: 1d
 ```
 
 Expected behavior:
@@ -194,7 +196,7 @@ Dataset config chooses which streams become features/targets and which record fi
 
 ```yaml
 sample:
-  cadence: ${group_by}
+  cadence: ${cadence}
   window_mode: intersection
 features:
   - id: closing_price

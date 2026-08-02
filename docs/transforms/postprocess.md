@@ -5,13 +5,12 @@ under `postprocess:` in `dataset.yaml`:
 
 ```yaml
 postprocess:
-  samples:
-    features:
-      threshold: 0.5
-      ids: [price, volume]       # optional; defaults to every feature
-    targets:
-      threshold: 1.0
-      ids: [return]
+  features:
+    threshold: 0.5
+    ids: [price, volume]       # optional; defaults to every feature
+  targets:
+    threshold: 1.0
+    ids: [return]
 ```
 
 The pipeline has one fixed order:

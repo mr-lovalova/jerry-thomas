@@ -178,7 +178,8 @@ or delete build state solely for this migration.
 
 #### Migrating project schema 4 to 5
 
-Schema 5 makes the sample-window policy part of the dataset contract:
+Schema 5 makes the sample-window policy part of the dataset contract and
+removes the redundant `postprocess.samples` wrapper:
 
 ```yaml
 # project.yaml
@@ -189,12 +190,18 @@ sample:
   cadence: 1d
   keys: [security_id]
   window_mode: intersection # union | intersection | strict
+
+postprocess:
+  features:
+    threshold: 0.95
 ```
 
 Move any `window_mode` setting from `operations/metadata.yaml` to
 `dataset.yaml:sample.window_mode`. If that was the only metadata override,
 delete the file; if the operations directory then has no declarations, remove
 `paths.operations` too. Use `union` for a former pre-schema-4 `relaxed` value.
+Move `postprocess.samples.features` and `postprocess.samples.targets` directly
+under `postprocess.features` and `postprocess.targets`.
 
 `AUTO` preserves compatible series and scaler artifacts while rebuilding
 metadata and its dependents. The serialized metadata format is unchanged, so
@@ -840,9 +847,8 @@ split:
       test: [test]
 
 postprocess:
-  samples:
-    features:
-      threshold: 0.95
+  features:
+    threshold: 0.95
 ```
 
 - `sample.cadence` controls the time bucket for samples (must match
@@ -974,7 +980,7 @@ postprocess:
   target uses `sequence`, or when any target has a positive horizon, because
   temporal support could cross hash partitions. Use a time split for temporal
   datasets.
-- `postprocess.samples.features` and `postprocess.samples.targets` filter
+- `postprocess.features` and `postprocess.targets` filter
   complete rows after typed conformance.
 - `ids` is optional. Sample filters default to every declared ID.
   Empty, duplicate, or unknown IDs are errors.

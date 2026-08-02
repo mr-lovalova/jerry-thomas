@@ -28,12 +28,8 @@ class CoverageConfig(_PostprocessConfig):
         return ids
 
 
-class SampleCoveragePolicies(_PostprocessConfig):
-    features: CoverageConfig | None = None
-    targets: CoverageConfig | None = None
-
-
 class PostprocessConfig(_PostprocessConfig):
     """Row filters applied after feature and target vectors are assembled."""
 
-    samples: SampleCoveragePolicies = Field(default_factory=SampleCoveragePolicies)
+    features: CoverageConfig | None = None
+    targets: CoverageConfig | None = None

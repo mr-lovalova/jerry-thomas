@@ -8,9 +8,9 @@ map:
 preprocess:
   - { operation: where, field: time, operator: ge, comparand: "${start_time}" }
   - { operation: where, field: time, operator: le, comparand: "${end_time}" }
-  - { operation: floor_time, cadence: "${group_by}" }
+  - { operation: floor_time, cadence: "${cadence}" }
 
 transforms:
   - operation: dedupe
   - { operation: collapse, keep: first }
-  - { operation: ensure_cadence, cadence: "${group_by}" }
+  - { operation: ensure_cadence, cadence: "${cadence}" }

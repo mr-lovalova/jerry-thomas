@@ -8,4 +8,4 @@ loader:
   args:
     start: "${start_time}"
     end: "${end_time}"
-    frequency: "${group_by}"
+    frequency: "${cadence}"

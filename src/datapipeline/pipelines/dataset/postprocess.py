@@ -61,11 +61,11 @@ def build_postprocess_plan(
             )
         )
 
-    if config.samples.features is not None:
+    if config.features is not None:
         feature_filter = FilterFeatureSamplesTransform(
             [entry.id for entry in feature_entries],
-            config.samples.features.threshold,
-            config.samples.features.ids,
+            config.features.threshold,
+            config.features.ids,
         )
         stages.append(
             Stage(
@@ -74,11 +74,11 @@ def build_postprocess_plan(
             )
         )
 
-    if config.samples.targets is not None:
+    if config.targets is not None:
         target_filter = FilterTargetSamplesTransform(
             [entry.id for entry in target_entries],
-            config.samples.targets.threshold,
-            config.samples.targets.ids,
+            config.targets.threshold,
+            config.targets.ids,
         )
         stages.append(
             Stage(

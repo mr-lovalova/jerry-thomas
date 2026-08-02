@@ -58,10 +58,8 @@ class DatasetConfig(BaseModel):
     def validate_series(self) -> Self:
         if self.targets and not self.features:
             raise ValueError("datasets with targets must define at least one feature")
-        if not self.targets and self.postprocess.samples.targets is not None:
-            raise ValueError(
-                "postprocess.samples.targets requires at least one dataset target"
-            )
+        if not self.targets and self.postprocess.targets is not None:
+            raise ValueError("postprocess.targets requires at least one dataset target")
         seen: set[str] = set()
         for config in self.series:
             if config.id in seen:

@@ -1537,7 +1537,7 @@ def test_dataset_pipeline_matches_sample_and_postprocess_chain(tmp_path: Path) -
     runtime.dataset = runtime.dataset.model_copy(
         update={
             "postprocess": PostprocessConfig.model_validate(
-                {"samples": {"features": {"threshold": 1.0}}}
+                {"features": {"threshold": 1.0}}
             )
         }
     )

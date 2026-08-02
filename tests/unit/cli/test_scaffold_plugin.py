@@ -3,7 +3,9 @@ from pathlib import Path
 import pytest
 import yaml
 
+from datapipeline.io.yaml import read_yaml_document
 from datapipeline.profiles.loader import profile_specs_with_defaults
+from datapipeline.services.dataset import dataset_from_document
 from datapipeline.services.project import load_project
 from datapipeline.services.scaffold.plugin import scaffold_plugin
 from datapipeline.services.scaffold.templates import render
@@ -79,6 +81,26 @@ def test_demo_stream_catalog_matches_config_models() -> None:
 
     assert len(config.sources) == 2
     assert len(config.streams) == 5
+
+
+@pytest.mark.parametrize(
+    ("project", "cadence"),
+    [
+        (_DATASET_SKELETON_ROOT / "your-dataset" / "project.yaml", "1h"),
+        (_TEMPLATES_ROOT / "demo_skeleton" / "demo" / "project.yaml", "1d"),
+    ],
+)
+def test_template_dataset_cadence_resolves_from_project_global(
+    project: Path,
+    cadence: str,
+) -> None:
+    manifest = load_project(project)
+    dataset = dataset_from_document(
+        manifest,
+        read_yaml_document(manifest.dataset_path),
+    )
+
+    assert dataset.sample.cadence == cadence
 
 
 def test_demo_liquidity_filter_has_a_value_from_the_first_record() -> None:

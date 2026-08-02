@@ -67,7 +67,7 @@ def test_dataset_rejects_targets_without_features() -> None:
 def test_dataset_rejects_target_coverage_without_targets() -> None:
     with pytest.raises(
         ValidationError,
-        match="postprocess.samples.targets requires at least one dataset target",
+        match="postprocess.targets requires at least one dataset target",
     ):
         DatasetConfig.model_validate(
             {
@@ -80,7 +80,7 @@ def test_dataset_rejects_target_coverage_without_targets() -> None:
                     }
                 ],
                 "postprocess": {
-                    "samples": {"targets": {"threshold": 1.0}},
+                    "targets": {"threshold": 1.0},
                 },
             }
         )
@@ -312,14 +312,14 @@ def test_dataset_owns_split_and_postprocess_policy() -> None:
                 ],
             },
             "postprocess": {
-                "samples": {"features": {"threshold": 0.9}},
+                "features": {"threshold": 0.9},
             },
         }
     )
 
     assert dataset.split is not None
-    assert dataset.postprocess.samples.features is not None
-    assert dataset.postprocess.samples.features.threshold == 0.9
+    assert dataset.postprocess.features is not None
+    assert dataset.postprocess.features.threshold == 0.9
 
 
 def test_dataset_rejects_unknown_fields() -> None:

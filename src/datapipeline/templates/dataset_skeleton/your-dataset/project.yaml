@@ -8,7 +8,7 @@ paths:
   artifacts: ../artifacts/${project_name}
   profiles: ./profiles
 globals:
-  # TODO: Set your grouping cadence (must match ^\d+(m|min|h|d)$).
-  group_by: 1h
+  # TODO: Set your sample cadence (must match ^\d+(m|min|h|d)$).
+  cadence: 1h
   start_time: null
   end_time: null
