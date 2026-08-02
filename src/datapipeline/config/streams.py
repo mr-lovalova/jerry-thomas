@@ -1,9 +1,11 @@
-from typing import TypeAlias
+from typing import Annotated, TypeAlias
 
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Discriminator,
     Field,
+    Tag,
     field_validator,
     model_validator,
 )
@@ -172,15 +174,56 @@ class AlignedStreamConfig(_StreamConfig):
         return self.from_.align
 
 
-StreamConfig: TypeAlias = (
-    SourceStreamConfig
-    | DerivedStreamConfig
-    | CrossSectionStreamConfig
-    | BroadcastStreamConfig
-    | AsOfStreamConfig
-    | BroadcastAsOfStreamConfig
-    | AlignedStreamConfig
-)
+def _stream_config_tag(value: object) -> str | None:
+    if isinstance(value, _StreamConfig):
+        value = value.model_dump(by_alias=True)
+    if not isinstance(value, dict):
+        return None
+
+    from_ = value.get("from")
+    if isinstance(from_, BaseModel):
+        from_ = from_.model_dump(by_alias=True)
+    if not isinstance(from_, dict):
+        return None
+
+    selectors = (
+        ("source", "source"),
+        ("align", "aligned"),
+        ("broadcast", "broadcast"),
+        ("as_of", "as_of"),
+        ("broadcast_as_of", "broadcast_as_of"),
+    )
+    selected = [tag for field, tag in selectors if field in from_]
+    if len(selected) > 1:
+        return None
+    if selected:
+        return selected[0]
+    if "stream" not in from_:
+        return None
+    if "cross_section" in value:
+        return "cross_section"
+    if "combine" in value:
+        return None
+    return "derived"
+
+
+StreamConfig: TypeAlias = Annotated[
+    Annotated[SourceStreamConfig, Tag("source")]
+    | Annotated[DerivedStreamConfig, Tag("derived")]
+    | Annotated[CrossSectionStreamConfig, Tag("cross_section")]
+    | Annotated[BroadcastStreamConfig, Tag("broadcast")]
+    | Annotated[AsOfStreamConfig, Tag("as_of")]
+    | Annotated[BroadcastAsOfStreamConfig, Tag("broadcast_as_of")]
+    | Annotated[AlignedStreamConfig, Tag("aligned")],
+    Discriminator(
+        _stream_config_tag,
+        custom_error_type="stream_config_type",
+        custom_error_message=(
+            "Stream 'from' must use source, stream, align, stream+broadcast, "
+            "stream+as_of, or stream+broadcast_as_of"
+        ),
+    ),
+]
 
 
 class StreamsConfig(BaseModel):

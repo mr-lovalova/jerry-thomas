@@ -1,12 +1,15 @@
 import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from datapipeline.config.streams import (
     AlignedStreamConfig,
     AsOfStreamConfig,
     BroadcastAsOfStreamConfig,
     BroadcastStreamConfig,
+    CrossSectionStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
+    StreamConfig,
     StreamsConfig,
 )
 
@@ -318,7 +321,7 @@ def test_source_stream_rejects_invalid_partition_fields(partition_by: object) ->
         )
 
 
-def test_stream_catalog_selects_all_concrete_stream_types() -> None:
+def test_stream_catalog_selects_and_round_trips_all_concrete_stream_types() -> None:
     catalog = StreamsConfig.model_validate(
         {
             "streams": {
@@ -331,6 +334,18 @@ def test_stream_catalog_selects_all_concrete_stream_types() -> None:
                     "id": "returns",
                     "from": {"stream": "prices"},
                     "transforms": [{"operation": "dedupe"}],
+                },
+                "ranked": {
+                    "id": "ranked",
+                    "from": {"stream": "returns"},
+                    "cross_section": [
+                        {
+                            "operation": "rank_score",
+                            "field": "value",
+                            "to": "rank",
+                            "min_samples": 2,
+                        }
+                    ],
                 },
                 "market_cap": {
                     "id": "market_cap",
@@ -361,10 +376,63 @@ def test_stream_catalog_selects_all_concrete_stream_types() -> None:
 
     assert isinstance(catalog.streams["prices"], SourceStreamConfig)
     assert isinstance(catalog.streams["returns"], DerivedStreamConfig)
+    assert isinstance(catalog.streams["ranked"], CrossSectionStreamConfig)
     assert isinstance(catalog.streams["market_cap"], AlignedStreamConfig)
     assert isinstance(catalog.streams["enriched"], BroadcastStreamConfig)
     assert isinstance(catalog.streams["reported"], AsOfStreamConfig)
     assert isinstance(catalog.streams["factor_adjusted"], BroadcastAsOfStreamConfig)
+    assert StreamsConfig.model_validate(catalog.model_dump(by_alias=True)) == catalog
+
+
+@pytest.mark.parametrize(
+    ("config", "error_location"),
+    [
+        (
+            {"id": "prices", "from": {"source": "vendor.prices"}},
+            ("source", "map"),
+        ),
+        (
+            {"id": "returns", "from": {"stream": "prices"}},
+            ("derived", "transforms"),
+        ),
+        (
+            {"id": "aligned", "from": {"align": ["prices", "returns"]}},
+            ("aligned", "combine"),
+        ),
+    ],
+)
+def test_stream_union_reports_only_the_selected_contract(
+    config: dict[str, object],
+    error_location: tuple[str, str],
+) -> None:
+    with pytest.raises(ValidationError) as error:
+        TypeAdapter(StreamConfig).validate_python(config)
+
+    assert error.value.error_count() == 1
+    assert error.value.errors()[0]["loc"] == error_location
+
+
+@pytest.mark.parametrize(
+    "from_",
+    [
+        {"stream": "prices", "brodcast": "market"},
+        {"stream": "prices", "broadcast": "market", "as_of": "factors"},
+    ],
+)
+def test_stream_union_rejects_ambiguous_shapes_without_guessing(
+    from_: dict[str, str],
+) -> None:
+    with pytest.raises(ValidationError, match="must use source") as error:
+        TypeAdapter(StreamConfig).validate_python(
+            {
+                "id": "enriched",
+                "from": from_,
+                "combine": {"entrypoint": "combine"},
+            }
+        )
+
+    assert error.value.error_count() == 1
+    assert error.value.errors()[0]["type"] == "stream_config_type"
 
 
 def test_stream_catalog_rejects_unknown_fields() -> None:

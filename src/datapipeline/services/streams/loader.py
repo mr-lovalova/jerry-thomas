@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import TypeAdapter
+from pydantic import ConfigDict, TypeAdapter
 
 from datapipeline.config.sources import SourceConfig
 from datapipeline.config.streams import StreamConfig, StreamsConfig
@@ -10,7 +10,10 @@ from datapipeline.services.streams.validation import validate_stream_configs
 from datapipeline.io.yaml import YamlDocument, read_yaml_document
 
 
-_STREAM_CONFIG_ADAPTER: TypeAdapter[StreamConfig] = TypeAdapter(StreamConfig)
+_STREAM_CONFIG_ADAPTER: TypeAdapter[StreamConfig] = TypeAdapter(
+    StreamConfig,
+    config=ConfigDict(title="StreamConfig"),
+)
 
 
 def _source_documents(project: ProjectManifest) -> tuple[YamlDocument, ...]:
