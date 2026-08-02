@@ -25,8 +25,8 @@ policy); prefer using the CLI unless you are working on the runtime itself.
 Key entrypoints:
 
 - Plugin/demo
-  - `datapipeline.services.scaffold.plugin.scaffold_plugin` (used by `jerry plugin init`)
-  - `datapipeline.services.scaffold.demo.scaffold_demo` (used by `jerry demo init`)
+  - `datapipeline.services.scaffold.plugin.scaffold_plugin` (used by `jerry plugin create`)
+  - `datapipeline.services.scaffold.demo.scaffold_demo` (used by `jerry demo create`)
 
 - YAML config
   - `datapipeline.services.scaffold.source_yaml.create_source_yaml` (used by `jerry source create` and `jerry inflow create`)
