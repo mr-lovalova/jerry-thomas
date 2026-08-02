@@ -38,7 +38,7 @@ Expected behavior:
 `project.yaml` is the root map for all dataset config.
 
 ```yaml
-schema_version: 4
+schema_version: 5
 artifact_revision: 1
 paths:
   sources: ./sources
@@ -195,6 +195,7 @@ Dataset config chooses which streams become features/targets and which record fi
 ```yaml
 sample:
   cadence: ${group_by}
+  window_mode: intersection
 features:
   - id: closing_price
     stream: equity.ohlcv

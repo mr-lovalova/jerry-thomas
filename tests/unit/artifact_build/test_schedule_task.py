@@ -54,7 +54,7 @@ def _left_records(pairs):
 def _runtime(tmp_path, rows=None, partition_by=()) -> Runtime:
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 4\nartifact_revision: 1\n", encoding="utf-8"
+        "schema_version: 5\nartifact_revision: 1\n", encoding="utf-8"
     )
     artifacts_root = tmp_path / "artifacts"
     artifacts_root.mkdir()

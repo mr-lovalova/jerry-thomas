@@ -7,7 +7,7 @@ from datapipeline.services.config_refs import project_vars_from_data
 
 def _project_data(**overrides):
     data = {
-        "schema_version": 4,
+        "schema_version": 5,
         "artifact_revision": 1,
         "name": "momentum",
         "paths": {
@@ -174,6 +174,6 @@ def test_project_config_rejects_unknown_path_fields() -> None:
         ProjectConfig.model_validate(data)
 
 
-def test_project_schema_version_is_three() -> None:
-    with pytest.raises(ValidationError, match="Input should be 4"):
+def test_project_rejects_older_schema_version() -> None:
+    with pytest.raises(ValidationError, match="Input should be 5"):
         ProjectConfig.model_validate(_project_data(schema_version=1))

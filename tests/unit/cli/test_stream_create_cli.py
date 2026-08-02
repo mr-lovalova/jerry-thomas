@@ -40,7 +40,7 @@ def _write_project_yaml(
     streams_dir.mkdir(parents=True, exist_ok=True)
     content = textwrap.dedent(
         f"""
-        schema_version: 4
+        schema_version: 5
         artifact_revision: 1
         paths:
           streams: {streams_dir}

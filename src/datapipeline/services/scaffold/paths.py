@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+from datapipeline.config.project import PROJECT_SCHEMA_VERSION
 from datapipeline.services.definitions import ProjectManifest
 from datapipeline.services.path_policy import workspace_cwd
 from datapipeline.services.project import load_project
@@ -72,7 +73,7 @@ def ensure_project_scaffold(
             project_yaml.parent.mkdir(parents=True, exist_ok=True)
             write_new_file(
                 project_yaml,
-                "schema_version: 4\n"
+                f"schema_version: {PROJECT_SCHEMA_VERSION}\n"
                 "artifact_revision: 1\n"
                 "name: default\n"
                 "paths:\n"

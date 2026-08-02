@@ -17,7 +17,6 @@ from datapipeline.artifacts.models import (
     VectorSchema,
     VECTOR_METADATA_VERSION,
     Window,
-    WindowMode,
 )
 from datapipeline.artifacts.output import ArtifactOutput
 from datapipeline.artifacts.series import SeriesRow, load_series_manifest, open_series
@@ -31,6 +30,7 @@ from datapipeline.config.dataset.split import (
     TimeSplitConfig,
 )
 from datapipeline.config.tasks.metadata import MetadataTask
+from datapipeline.domain.sample import WindowMode
 from datapipeline.domain.series_id import base_id
 from datapipeline.execution.observability import OperationProgressTracker
 from datapipeline.execution.settings import resolve_heartbeat_interval_seconds
@@ -550,18 +550,18 @@ def _time_role_bounds(
 
 def _fold_output_metadata(
     dataset: DatasetConfig,
-    task_cfg: MetadataTask,
     collector: _FoldCollector,
     schema: VectorSchema,
     role: FoldRole,
     labels: tuple[str, ...],
 ) -> FoldOutputMetadata:
+    window_mode = dataset.sample.window_mode
     output_domain = collector.output_domains[role]
-    domain = output_domain.merged(task_cfg.window_mode)
+    domain = output_domain.merged(window_mode)
     observed_start, observed_end = output_domain.window_bounds(
         schema.features,
         schema.targets,
-        task_cfg.window_mode,
+        window_mode,
     )
     window = None
     if observed_start is not None and observed_end is not None:
@@ -579,7 +579,7 @@ def _fold_output_metadata(
             start,
             end,
             dataset.sample.cadence,
-            task_cfg.window_mode,
+            window_mode,
         )
 
     sample = None
@@ -599,7 +599,6 @@ def _fold_output_metadata(
 
 def _folded_layout(
     dataset: DatasetConfig,
-    task_cfg: MetadataTask,
     collectors: _FoldMetadataCollectors,
 ) -> FoldedMetadataLayout:
     folds: list[VectorMetadataFold] = []
@@ -608,7 +607,6 @@ def _folded_layout(
         outputs = tuple(
             _fold_output_metadata(
                 dataset,
-                task_cfg,
                 collector,
                 schema,
                 role,
@@ -721,18 +719,19 @@ def build_metadata_artifact(
         feature_vectors=catalog_domains.features.vectors,
         target_vectors=catalog_domains.targets.vectors,
     )
+    window_mode = dataset.sample.window_mode
     computed_start, computed_end = catalog_domains.window_bounds(
         feature_meta,
         target_meta,
-        task_cfg.window_mode,
+        window_mode,
     )
     window_obj = _window(
         computed_start,
         computed_end,
         dataset.sample.cadence,
-        task_cfg.window_mode,
+        window_mode,
     )
-    sample_domain = catalog_domains.merged(task_cfg.window_mode)
+    sample_domain = catalog_domains.merged(window_mode)
     sample_meta = None
     if dataset.sample.keys:
         sample_meta = _sample_metadata(
@@ -751,7 +750,7 @@ def build_metadata_artifact(
     layout = (
         UnsplitMetadataLayout(kind="unsplit")
         if fold_collectors is None
-        else _folded_layout(dataset, task_cfg, fold_collectors)
+        else _folded_layout(dataset, fold_collectors)
     )
     doc = VectorMetadata(
         schema_version=VECTOR_METADATA_VERSION,

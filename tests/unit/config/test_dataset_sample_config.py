@@ -20,6 +20,31 @@ def test_dataset_loads_sample_cadence_and_keys() -> None:
 
     assert dataset.sample.cadence == "1d"
     assert dataset.sample.keys == ["security_id"]
+    assert dataset.sample.window_mode == "intersection"
+
+
+@pytest.mark.parametrize("window_mode", ["union", "intersection", "strict"])
+def test_dataset_accepts_sample_window_mode(window_mode: str) -> None:
+    dataset = DatasetConfig.model_validate(
+        {
+            "sample": {"cadence": "1d", "window_mode": window_mode},
+            "features": [],
+            "targets": [],
+        }
+    )
+
+    assert dataset.sample.window_mode == window_mode
+
+
+def test_dataset_rejects_removed_relaxed_window_mode() -> None:
+    with pytest.raises(ValidationError, match="window_mode"):
+        DatasetConfig.model_validate(
+            {
+                "sample": {"cadence": "1d", "window_mode": "relaxed"},
+                "features": [],
+                "targets": [],
+            }
+        )
 
 
 def test_dataset_rejects_targets_without_features() -> None:

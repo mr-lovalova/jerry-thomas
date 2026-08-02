@@ -36,7 +36,7 @@ All dataset configuration is rooted at a single `project.yaml` file. Other YAML 
 ### `project.yaml`
 
 ```yaml
-schema_version: 4
+schema_version: 5
 artifact_revision: 1
 name: default
 paths:
@@ -175,6 +175,30 @@ Upgrade Jerry and project plugins together, then run the normal command in
 artifacts. Existing served runs remain immutable, so rerun `serve` to publish a
 dataset with the corrected fold contracts. Do not increment `artifact_revision`
 or delete build state solely for this migration.
+
+#### Migrating project schema 4 to 5
+
+Schema 5 makes the sample-window policy part of the dataset contract:
+
+```yaml
+# project.yaml
+schema_version: 5
+
+# dataset.yaml
+sample:
+  cadence: 1d
+  keys: [security_id]
+  window_mode: intersection # union | intersection | strict
+```
+
+Move any `window_mode` setting from `operations/metadata.yaml` to
+`dataset.yaml:sample.window_mode`. If that was the only metadata override,
+delete the file; if the operations directory then has no declarations, remove
+`paths.operations` too. Use `union` for a former pre-schema-4 `relaxed` value.
+
+`AUTO` preserves compatible series and scaler artifacts while rebuilding
+metadata and its dependents. The serialized metadata format is unchanged, so
+do not increment `artifact_revision` solely for this migration.
 
 ### Serve Profiles (`profiles/serve.<name>.yaml`)
 
@@ -782,6 +806,7 @@ Defines which canonical streams become features and targets and how samples are 
 sample:
   cadence: 1d
   keys: [security_id]
+  window_mode: intersection
 
 features:
   - id: close
@@ -825,6 +850,10 @@ postprocess:
 - `sample.keys` optionally adds record fields to the sample key. For example,
   `keys: [security_id]` emits one sample per `(time, security_id)`. Every sample
   key must belong to the resolved `partition_by` of every referenced stream.
+- `sample.window_mode` selects the rectangular sample domain. `union` spans
+  every base series, `intersection` (the default) intersects base-series
+  ranges, and `strict` intersects every expanded partition series. It controls
+  domain bounds, not internal missing values.
 - `stream` references the canonical stream that supplies the
   feature or target records.
 - Each sample-key field must contain non-null JSON scalar values of one stable
@@ -983,7 +1012,7 @@ epsilon: 1.0e-12
   partitions), scalar/list kinds and lengths, present/null counts, inferred
   value types, per-partition timestamps, and the dataset window. Mixed
   scalar/list values, empty lists, and varying list lengths fail metadata
-  generation. Configure `metadata.window_mode` with
+  generation. Configure `sample.window_mode` with
   `union|intersection|strict` (default `intersection`) to control how
   start/end bounds are derived. `union` spans every series, `intersection`
   intersects base-series ranges, and `strict` intersects every partition.

@@ -1,6 +1,7 @@
 sample:
   cadence: ${group_by}
   keys: []
+  window_mode: intersection
 
 features:
   - id: linear_time

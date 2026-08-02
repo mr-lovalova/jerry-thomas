@@ -13,6 +13,7 @@ from datapipeline.config.constraints import NonEmptyString
 from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from datapipeline.config.dataset.postprocess import PostprocessConfig
 from datapipeline.config.dataset.split import HashSplitConfig, SplitConfig
+from datapipeline.domain.sample import WindowMode
 from datapipeline.utils.time import CADENCE_PATTERN
 
 
@@ -21,6 +22,7 @@ class SampleConfig(BaseModel):
 
     cadence: str = Field(..., pattern=CADENCE_PATTERN)
     keys: list[NonEmptyString] = Field(default_factory=list)
+    window_mode: WindowMode = "intersection"
 
     @field_validator("keys")
     @classmethod

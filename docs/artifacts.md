@@ -158,9 +158,10 @@ coverage artifacts. YAML configuration and final dataset output are unchanged.
 
 Jerry 7 metadata supports the three distinct window modes `union`,
 `intersection`, and `strict`. The former `relaxed` mode was identical to
-`union`; replace it with `union` in metadata operation overrides. Metadata
-format version 3 records the narrower contract, so `AUTO` rebuilds older
-metadata and dependent coverage artifacts.
+`union`. Project schema 5 moves this policy from metadata operation overrides
+to `dataset.yaml:sample.window_mode`; use `union` when migrating a former
+`relaxed` value. Metadata format version 3 records the narrower contract, so
+`AUTO` rebuilds older metadata and dependent coverage artifacts.
 
 Jerry 7 also renames the raw availability-counter artifact from `stats` to
 `coverage_stats`:

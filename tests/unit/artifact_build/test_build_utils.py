@@ -30,13 +30,13 @@ from datapipeline.runtime import DerivedRuntimeStream, Runtime
 from datapipeline.io.yaml import load_yaml
 
 
+def test_metadata_task_rejects_dataset_window_mode() -> None:
+    with pytest.raises(ValidationError, match="window_mode"):
+        MetadataTask.model_validate({"window_mode": "union"})
+
+
 def _hour(hour: int) -> datetime:
     return datetime(2024, 1, 1, hour=hour, tzinfo=timezone.utc)
-
-
-def test_metadata_task_rejects_removed_relaxed_window_mode() -> None:
-    with pytest.raises(ValidationError, match="window_mode"):
-        MetadataTask.model_validate({"window_mode": "relaxed"})
 
 
 def _runtime_with_config(tmp_path, dataset: DatasetConfig) -> Runtime:
@@ -44,7 +44,7 @@ def _runtime_with_config(tmp_path, dataset: DatasetConfig) -> Runtime:
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 4",
+                "schema_version: 5",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: streams",
@@ -982,7 +982,7 @@ def test_fold_window_uses_feature_base_ranges(
     runtime = _runtime_with_config(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(cadence="1h", window_mode=window_mode),
             features=[
                 SeriesConfig(id="price", stream="market", field="price"),
                 SeriesConfig(id="volume", stream="market", field="volume"),
@@ -1011,10 +1011,7 @@ def test_fold_window_uses_feature_base_ranges(
         ],
     )
 
-    build_metadata_artifact(
-        runtime,
-        MetadataTask(output="metadata.json", window_mode=window_mode),
-    )
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")
@@ -1035,7 +1032,7 @@ def test_fold_strict_window_uses_each_wide_series_id(
     runtime = _runtime_with_config(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(cadence="1h", window_mode="strict"),
             features=[
                 SeriesConfig(id="metric", stream="market.metrics", field="value")
             ],
@@ -1069,10 +1066,7 @@ def test_fold_strict_window_uses_each_wide_series_id(
         ],
     )
 
-    build_metadata_artifact(
-        runtime,
-        MetadataTask(output="metadata.json", window_mode="strict"),
-    )
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
 
     payload = json.loads(
         (runtime.artifacts_root / "metadata.json").read_text(encoding="utf-8")

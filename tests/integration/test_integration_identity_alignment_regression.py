@@ -166,6 +166,7 @@ def test_validation_availability_does_not_change_hybrid_wide_training_contract(
     dataset = """sample:
   cadence: 1d
   keys: [ticker]
+  window_mode: intersection
 features:
   - id: price
     stream: market.price
@@ -187,10 +188,6 @@ split:
 """
     for root in (project_root, changed_root):
         (root / "dataset.yaml").write_text(dataset, encoding="utf-8")
-        (root / "operations/metadata.yaml").write_text(
-            "window_mode: intersection\n",
-            encoding="utf-8",
-        )
 
     fundamentals_path = project_root / "data" / "fundamentals.jsonl"
     training_gap = (

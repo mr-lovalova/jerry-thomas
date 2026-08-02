@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Self
+from typing import Final, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -10,6 +10,9 @@ from pydantic import (
 )
 
 from datapipeline.config.constraints import NonEmptyString as ProjectPath
+
+
+PROJECT_SCHEMA_VERSION: Final = 5
 
 
 class ProjectPaths(BaseModel):
@@ -57,7 +60,7 @@ class ProjectGlobals(BaseModel):
 class ProjectConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[4]
+    schema_version: Literal[5]
     artifact_revision: int = Field(strict=True, gt=0)
     name: str | None = None
     variant: str | None = None

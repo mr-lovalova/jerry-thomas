@@ -349,7 +349,7 @@ def _runtime_with_rows(
     artifacts_root.mkdir(parents=True, exist_ok=True)
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 4\nartifact_revision: 1\n", encoding="utf-8"
+        "schema_version: 5\nartifact_revision: 1\n", encoding="utf-8"
     )
     runtime = Runtime(
         project_yaml=project_yaml,

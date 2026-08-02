@@ -30,6 +30,7 @@ jerry serve --dataset your-dataset --limit 3
   - Ensure `stream:` points at the stream id you created.
   - Select a `field:` for each feature/target (record attribute to use as value).
   - Ensure `sample.cadence` matches `^\d+(m|min|h|d)$` (e.g. `10m`, `1h`, `1d`). The scaffold fills it from the `${group_by}` project global.
+  - Choose `sample.window_mode`: `union`, `intersection` (default), or `strict`.
   - Adjust the split ratios and `folds`. Fold output IDs use
     `<fold-id>.<role>`, such as `holdout.train`.
 

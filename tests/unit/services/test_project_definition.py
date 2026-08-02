@@ -31,7 +31,7 @@ def _write_project(root: Path) -> Path:
         (root / name).mkdir(parents=True)
     project_yaml = root / "project.yaml"
     project_yaml.write_text(
-        """schema_version: 4
+        """schema_version: 5
 artifact_revision: 1
 name: snapshot
 paths:
@@ -773,6 +773,54 @@ def test_target_horizon_changes_folded_scaler_and_metadata_but_not_series(
         baseline_hashes.for_artifact(VECTOR_METADATA)
     )
     assert equivalent_hashes == baseline_hashes
+
+
+def test_window_mode_rebuilds_metadata_dependents_but_not_series_or_scaler(
+    tmp_path: Path,
+) -> None:
+    definition = load_project_definition(_write_project(tmp_path))
+    streams = _single_stream_catalog()
+    baseline = DatasetConfig(
+        sample=SampleConfig(cadence="1h"),
+        features=[
+            SeriesConfig(
+                id="price",
+                stream="prices",
+                field="close",
+                scale=True,
+            )
+        ],
+    )
+    changed = baseline.model_copy(
+        update={
+            "sample": baseline.sample.model_copy(update={"window_mode": "union"})
+        }
+    )
+    tasks = (ScalerTask(), SeriesTask(), MetadataTask(), CoverageStatsTask())
+
+    baseline_hashes = calculate_artifact_hashes(
+        definition.project,
+        baseline,
+        streams,
+        build_artifact_graph(tasks, baseline, streams),
+    )
+    changed_hashes = calculate_artifact_hashes(
+        definition.project,
+        changed,
+        streams,
+        build_artifact_graph(tasks, changed, streams),
+    )
+
+    assert changed_hashes.for_artifact(SCALER_STATISTICS) == (
+        baseline_hashes.for_artifact(SCALER_STATISTICS)
+    )
+    assert changed_hashes.for_artifact(SERIES) == baseline_hashes.for_artifact(SERIES)
+    assert changed_hashes.for_artifact(VECTOR_METADATA) != (
+        baseline_hashes.for_artifact(VECTOR_METADATA)
+    )
+    assert changed_hashes.for_artifact(COVERAGE_STATS) != (
+        baseline_hashes.for_artifact(COVERAGE_STATS)
+    )
 
 
 def test_target_horizon_does_not_change_standard_scaler_fingerprint(

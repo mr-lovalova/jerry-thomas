@@ -153,7 +153,10 @@ def _artifact_inputs(
             streams,
         )
         dataset_inputs: dict[str, object] = {
-            "sample": dataset.sample.model_dump(mode="json"),
+            "sample": dataset.sample.model_dump(
+                mode="json",
+                exclude={"window_mode"},
+            ),
             "split": (
                 dataset.split.model_dump(mode="json")
                 if dataset.split is not None
@@ -191,7 +194,10 @@ def _artifact_inputs(
             {
                 "series_format_version": SERIES_MANIFEST_VERSION,
                 "dataset": {
-                    "sample": dataset.sample.model_dump(mode="json"),
+                    "sample": dataset.sample.model_dump(
+                        mode="json",
+                        exclude={"window_mode"},
+                    ),
                     "features": [
                         config.model_dump(mode="json", exclude={"scale"})
                         for config in dataset.features
@@ -213,7 +219,10 @@ def _artifact_inputs(
         return {"postprocess": dataset.postprocess.model_dump(mode="json")}, set()
 
     if isinstance(task, MetadataTask):
-        inputs: dict[str, object] = {"metadata_format_version": VECTOR_METADATA_VERSION}
+        inputs: dict[str, object] = {
+            "metadata_format_version": VECTOR_METADATA_VERSION,
+            "window_mode": dataset.sample.window_mode,
+        }
         if dataset.split is not None:
             inputs["split"] = dataset.split.model_dump(mode="json")
             inputs["target_horizon_seconds"] = int(

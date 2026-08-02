@@ -9,6 +9,3 @@ class MetadataTask(ArtifactTask):
     id: Literal["metadata"] = Field(default="metadata")
     entrypoint: str = Field(default="core.artifact.metadata")
     output: str = Field(default="build/metadata.json")
-    window_mode: Literal["union", "intersection", "strict"] = Field(
-        default="intersection"
-    )

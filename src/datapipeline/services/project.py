@@ -1,7 +1,7 @@
 from pathlib import Path
 from types import MappingProxyType
 
-from datapipeline.config.project import ProjectConfig
+from datapipeline.config.project import PROJECT_SCHEMA_VERSION, ProjectConfig
 from datapipeline.services.config_refs import (
     interpolate_config_vars,
     merged_project_env,
@@ -22,15 +22,19 @@ def load_project(project_yaml: Path) -> ProjectManifest:
     path = project_yaml.resolve()
     document = read_yaml_document(path)
     if "schema_version" not in document.data:
-        raise ValueError("Project config requires schema_version: 4.")
+        raise ValueError(
+            f"Project config requires schema_version: {PROJECT_SCHEMA_VERSION}."
+        )
     schema_version = document.data["schema_version"]
     if type(schema_version) is not int:
         raise TypeError(
-            f"Project schema_version must be the integer 4, got {schema_version!r}."
+            "Project schema_version must be the integer "
+            f"{PROJECT_SCHEMA_VERSION}, got {schema_version!r}."
         )
-    if schema_version != 4:
+    if schema_version != PROJECT_SCHEMA_VERSION:
         raise ValueError(
-            f"Unsupported project schema version {schema_version!r}; expected 4."
+            f"Unsupported project schema version {schema_version!r}; "
+            f"expected {PROJECT_SCHEMA_VERSION}."
         )
     environment = merged_project_env(path)
     data = resolve_config_refs(document.data, project_yaml=path, env=environment)

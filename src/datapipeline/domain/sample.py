@@ -1,7 +1,10 @@
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from .vector import Vector
+
+
+WindowMode = Literal["union", "intersection", "strict"]
 
 
 @dataclass

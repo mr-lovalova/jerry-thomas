@@ -4,11 +4,11 @@ from typing import Annotated, Any, Final, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from datapipeline.config.dataset.split import FoldRole
+from datapipeline.domain.sample import WindowMode
 from datapipeline.domain.sample_key import SampleKeyContract
 from datapipeline.utils.time import CADENCE_PATTERN
 
 
-WindowMode = Literal["union", "intersection", "strict"]
 VECTOR_METADATA_VERSION: Final = 4
 
 
