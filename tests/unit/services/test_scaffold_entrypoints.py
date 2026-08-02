@@ -8,12 +8,12 @@ from textwrap import dedent
 import pytest
 from tomlkit.exceptions import ParseError
 
-from datapipeline.plugins import MAPPERS_EP, PARSERS_EP
-from datapipeline.services.scaffold.entrypoints import (
+from jerrythomas.plugins import MAPPERS_EP, PARSERS_EP
+from jerrythomas.services.scaffold.entrypoints import (
     read_entry_points,
     register_entry_point,
 )
-from datapipeline.services.scaffold.locking import acquire_scaffold_lock
+from jerrythomas.services.scaffold.locking import acquire_scaffold_lock
 
 
 def test_register_entry_point_serializes_concurrent_writers(tmp_path: Path) -> None:
@@ -32,8 +32,8 @@ def test_register_entry_point_serializes_concurrent_writers(tmp_path: Path) -> N
 
         sys.path.insert(0, sys.argv[1])
 
-        import datapipeline.services.scaffold.entrypoints as entrypoints
-        import datapipeline.services.execution_lock as execution_lock
+        import jerrythomas.services.scaffold.entrypoints as entrypoints
+        import jerrythomas.services.execution_lock as execution_lock
 
         original_update = entrypoints._register_entry_point
         original_try_lock = execution_lock.try_acquire_file_lock
@@ -55,7 +55,7 @@ def test_register_entry_point_serializes_concurrent_writers(tmp_path: Path) -> N
             time.sleep(0.01)
         entrypoints.register_entry_point(
             Path(sys.argv[2]),
-            "datapipeline.parsers",
+            "jerrythomas.parsers",
             "second",
             "package:second",
         )
@@ -117,7 +117,7 @@ def test_register_entry_point_preserves_unrelated_toml(tmp_path: Path) -> None:
 [project]
 name = 'example'
 
-[project.entry-points."datapipeline.parsers"]
+[project.entry-points."jerrythomas.parsers"]
 # parser comment
 existing = 'package:old' # keep this inline comment
 untouched = 'package:untouched'
@@ -150,7 +150,7 @@ def test_register_entry_point_noop_leaves_file_byte_identical(tmp_path: Path) ->
     pyproject = tmp_path / "pyproject.toml"
     original = (
         b"[project]\nname='example'\n\n"
-        b"[project.entry-points.'datapipeline.parsers']\nparser='package:parser'\n"
+        b"[project.entry-points.'jerrythomas.parsers']\nparser='package:parser'\n"
     )
     pyproject.write_bytes(original)
 
@@ -190,7 +190,7 @@ def test_register_entry_point_adds_missing_tables(tmp_path: Path) -> None:
     assert "# keep" in text
     assert text.index("# keep") < text.index("[tool.example]")
     assert text.index("[tool.example]") < text.index(
-        '[project.entry-points."datapipeline.mappers"]'
+        '[project.entry-points."jerrythomas.mappers"]'
     )
     assert tomllib.loads(text)["project"]["entry-points"][MAPPERS_EP] == {
         "map": "package:map"
@@ -201,7 +201,7 @@ def test_register_entry_point_preserves_crlf_newlines(tmp_path: Path) -> None:
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_bytes(
         b"[project]\r\nname = 'example'\r\n\r\n"
-        b"[project.entry-points.'datapipeline.parsers']\r\n"
+        b"[project.entry-points.'jerrythomas.parsers']\r\n"
         b"parser = 'package:old'\r\n"
     )
 
@@ -218,12 +218,12 @@ def test_register_entry_point_preserves_crlf_newlines(tmp_path: Path) -> None:
         b"[project]\r\nname = 'example'\r\n",
         (
             b"[project]\r\nname = 'example'\r\n\r\n"
-            b"[project.entry-points.'datapipeline.mappers']\r\n"
+            b"[project.entry-points.'jerrythomas.mappers']\r\n"
             b"mapper = 'package:mapper'\r\n"
         ),
         (
             b"[project]\r\nname = 'example'\r\n\r\n"
-            b"[project.entry-points.'datapipeline.parsers']\r\n"
+            b"[project.entry-points.'jerrythomas.parsers']\r\n"
             b"existing = 'package:existing'\r\n"
         ),
     ],
@@ -253,7 +253,7 @@ def test_read_entry_points_supports_inline_tables(tmp_path: Path) -> None:
     pyproject.write_text(
         """[project]
 name = "example"
-entry-points = { "datapipeline.parsers" = { first = 'package:first', second = "package:second" } }
+entry-points = { "jerrythomas.parsers" = { first = 'package:first', second = "package:second" } }
 """,
         encoding="utf-8",
     )
@@ -282,12 +282,12 @@ entry-points = { "datapipeline.parsers" = { first = 'package:first', second = "p
         ),
         (
             "[project]\nname = 'example'\n"
-            "[project.entry-points]\n'datapipeline.parsers' = []\n",
-            "project.entry-points.datapipeline.parsers must be a TOML table",
+            "[project.entry-points]\n'jerrythomas.parsers' = []\n",
+            "project.entry-points.jerrythomas.parsers must be a TOML table",
         ),
         (
             "[project]\nname = 'example'\n"
-            "[project.entry-points.'datapipeline.parsers']\nparser = 3\n",
+            "[project.entry-points.'jerrythomas.parsers']\nparser = 3\n",
             "Entry point 'parser'.*must be a string",
         ),
     ],

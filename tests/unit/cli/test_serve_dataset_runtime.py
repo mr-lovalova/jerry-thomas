@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pyarrow.parquet as parquet
 import pytest
 
-from datapipeline.artifacts.models import (
+from jerrythomas.artifacts.models import (
     FoldedMetadataLayout,
     FoldOutputMetadata,
     ScalarVectorMetadataEntry,
@@ -19,22 +19,22 @@ from datapipeline.artifacts.models import (
     VectorSchema,
     Window,
 )
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
-from datapipeline.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
-from datapipeline.config.preview import PreviewStage
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
-from datapipeline.io.dataset_table import DatasetTable
-from datapipeline.io.output import OutputTarget
-from datapipeline.operations.persistence import (
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
+from jerrythomas.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
+from jerrythomas.config.preview import PreviewStage
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
+from jerrythomas.io.dataset_table import DatasetTable
+from jerrythomas.io.output import OutputTarget
+from jerrythomas.operations.persistence import (
     DatasetTableOutput,
     RoutedDatasetTableOutput,
     RoutedRuntimeOutput,
     RuntimeOutput,
     persist_runtime_result,
 )
-from datapipeline.operations.runtime.dataset import run_dataset_operation
+from jerrythomas.operations.runtime.dataset import run_dataset_operation
 
 START = datetime(2020, 1, 1, tzinfo=timezone.utc)
 BOUNDARY = datetime(2021, 1, 1, tzinfo=timezone.utc)
@@ -230,7 +230,7 @@ def test_dataset_operation_reraises_keyboard_interrupt_and_marks_run_failed(
     target = _target()
 
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_dataset_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_dataset_pipeline",
         lambda *args, **kwargs: _samples(),
     )
 
@@ -259,11 +259,11 @@ def test_dataset_operation_returns_parquet_dataset_output(monkeypatch, tmp_path)
     runtime = _runtime()
     dataset = _dataset()
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_dataset_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_dataset_pipeline",
         lambda *args, **kwargs: iter(()),
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset._served_dataset_table",
+        "jerrythomas.operations.runtime.dataset._served_dataset_table",
         lambda *args: _parquet_table(),
     )
 
@@ -302,7 +302,7 @@ def test_dataset_operation_returns_split_fanout_output(monkeypatch, tmp_path):
     ]
 
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_fold_outputs_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_fold_outputs_pipeline",
         lambda *args, **kwargs: iter(
             (
                 ("holdout.train", samples[0]),
@@ -353,11 +353,11 @@ def test_dataset_operation_returns_parquet_split_outputs(monkeypatch, tmp_path):
     )
     runtime.dataset = dataset
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_fold_outputs_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_fold_outputs_pipeline",
         lambda *args, **kwargs: iter(()),
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset._served_dataset_table",
+        "jerrythomas.operations.runtime.dataset._served_dataset_table",
         lambda *args: _parquet_table(),
     )
 
@@ -398,7 +398,7 @@ def test_samples_preview_stops_before_postprocess(monkeypatch):
     )
     target = _target()
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_sample_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_sample_pipeline",
         lambda *args, **kwargs: iter(["sample"]),
     )
 
@@ -413,7 +413,7 @@ def test_samples_preview_stops_before_postprocess(monkeypatch):
 def test_limited_preview_closes_sample_pipeline_once(monkeypatch, throttle_ms):
     stream = _CloseTrackingIterator("first", "second")
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_sample_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_sample_pipeline",
         lambda *args, **kwargs: stream,
     )
 
@@ -437,11 +437,11 @@ def test_samples_preview_writes_schema_aware_parquet(monkeypatch, tmp_path):
         features=Vector(values={"price": 10.0}),
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_sample_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_sample_pipeline",
         lambda *args, **kwargs: iter((sample,)),
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset._dataset_table",
+        "jerrythomas.operations.runtime.dataset._dataset_table",
         lambda *args: _parquet_table(),
     )
     target = _parquet_target(tmp_path / "samples.parquet")
@@ -464,7 +464,7 @@ def test_parquet_preview_rejects_non_dataset_stage_before_opening_stream(
     tmp_path,
 ) -> None:
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_stream_preview_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_stream_preview_pipeline",
         lambda *args, **kwargs: pytest.fail("record preview must not be opened"),
     )
 
@@ -494,7 +494,7 @@ def test_record_previews_use_stream_preview_pipeline(monkeypatch, preview, expec
         return iter((expected,))
 
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_stream_preview_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_stream_preview_pipeline",
         run_preview,
     )
     result = _serve(
@@ -510,7 +510,7 @@ def test_record_previews_use_stream_preview_pipeline(monkeypatch, preview, expec
 
 def test_series_preview_returns_processed_series(monkeypatch):
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_series_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_series_pipeline",
         lambda *args, **kwargs: iter(["series"]),
     )
 
@@ -536,7 +536,7 @@ def test_series_preview_rejects_duplicate_resolved_destinations(
         sample=SampleConfig(cadence="1d"),
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_series_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_series_pipeline",
         lambda *args, **kwargs: pytest.fail(
             "preview streams must not be opened before destinations are validated"
         ),
@@ -562,7 +562,7 @@ def test_postprocess_preview_runs_postprocess(monkeypatch):
     target = _target()
 
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_dataset_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_dataset_pipeline",
         lambda *args, **kwargs: iter(["post:sample"]),
     )
 
@@ -591,7 +591,7 @@ def test_all_preview_stages_write_gzip_through_the_shared_output_path(
     output_id,
 ) -> None:
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_stream_preview_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_stream_preview_pipeline",
         lambda _context, _stream_id, selected_preview: iter(
             (
                 {
@@ -603,15 +603,15 @@ def test_all_preview_stages_write_gzip_through_the_shared_output_path(
         ),
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_series_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_series_pipeline",
         lambda *args, **kwargs: iter(["series"]),
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_sample_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_sample_pipeline",
         lambda _context, _schema, _key_plan: iter(("sample",)),
     )
     monkeypatch.setattr(
-        "datapipeline.operations.runtime.dataset.run_dataset_pipeline",
+        "jerrythomas.operations.runtime.dataset.run_dataset_pipeline",
         lambda _context, _schema, _key_plan: iter(("post:sample",)),
     )
 

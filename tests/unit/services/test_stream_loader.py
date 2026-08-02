@@ -3,14 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.streams import (
+from jerrythomas.config.streams import (
     AlignedStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
 )
-from datapipeline.services.project import load_project
-from datapipeline.services.streams.loader import load_streams
-from datapipeline.services.streams.source import build_source
+from jerrythomas.services.project import load_project
+from jerrythomas.services.streams.loader import load_streams
+from jerrythomas.services.streams.source import build_source
 
 
 def _sources(project_yaml: Path):

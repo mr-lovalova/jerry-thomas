@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.services.scaffold.paths import (
+from jerrythomas.services.scaffold.paths import (
     default_project_yaml_path,
     ensure_project_scaffold,
 )

@@ -6,8 +6,8 @@ from typing import Any, Callable
 import numpy as np
 import pytest
 
-import datapipeline.integrations.ml as ml
-from datapipeline.artifacts.models import (
+import jerrythomas.integrations.ml as ml
+from jerrythomas.artifacts.models import (
     FoldedMetadataLayout,
     FoldOutputMetadata,
     ListVectorMetadataEntry,
@@ -19,18 +19,18 @@ from datapipeline.artifacts.models import (
     VectorMetadataFold,
     VectorSchema,
 )
-from datapipeline.artifacts.specs import VECTOR_METADATA
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
-from datapipeline.config.dataset.split import (
+from jerrythomas.artifacts.specs import VECTOR_METADATA
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
+from jerrythomas.config.dataset.split import (
     DatasetFold,
     TimeInterval,
     TimeSplitConfig,
 )
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
-from datapipeline.pipelines.dataset.pipeline import FoldOutputPlan
-from datapipeline.runtime import Runtime
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
+from jerrythomas.pipelines.dataset.pipeline import FoldOutputPlan
+from jerrythomas.runtime import Runtime
 
 
 def test_iter_samples_closes_dataset_pipeline_after_partial_read(

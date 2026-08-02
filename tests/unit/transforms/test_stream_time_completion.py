@@ -4,17 +4,17 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.artifacts.schedule import (
+from jerrythomas.artifacts.schedule import (
     Schedule,
     read_schedule,
     schedule_partition_by_from_metadata,
 )
-from datapipeline.config.transforms import EnsureCadenceConfig
-from datapipeline.transforms.stream.time_completion import (
+from jerrythomas.config.transforms import EnsureCadenceConfig
+from jerrythomas.transforms.stream.time_completion import (
     EnsureCadenceTransform,
     EnsureScheduleTransform,
 )
-from datapipeline.transforms.utils import record_establishes_domain
+from jerrythomas.transforms.utils import record_establishes_domain
 from tests.unit.transforms.helpers import make_time_record
 
 

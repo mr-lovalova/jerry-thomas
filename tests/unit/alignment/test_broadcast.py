@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from datapipeline.alignment.broadcast import broadcast_stream
-from datapipeline.domain.record import TemporalRecord
+from jerrythomas.alignment.broadcast import broadcast_stream
+from jerrythomas.domain.record import TemporalRecord
 
 
 @dataclass

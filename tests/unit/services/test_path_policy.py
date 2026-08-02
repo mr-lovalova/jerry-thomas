@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from datapipeline.artifacts.registry import ArtifactRecord
-from datapipeline.services.path_policy import (
+from jerrythomas.artifacts.registry import ArtifactRecord
+from jerrythomas.services.path_policy import (
     resolve_project_path,
     resolve_workspace_path,
 )

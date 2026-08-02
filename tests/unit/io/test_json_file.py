@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-import datapipeline.io.json_file as json_file
-from datapipeline.io.json_file import read_json_object, write_json_object
+import jerrythomas.io.json_file as json_file
+from jerrythomas.io.json_file import read_json_object, write_json_object
 
 
 def test_read_json_object(tmp_path: Path) -> None:

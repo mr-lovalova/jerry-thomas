@@ -6,41 +6,41 @@ from types import SimpleNamespace
 
 import pytest
 
-from datapipeline.artifacts import executor as build_exec
-from datapipeline.artifacts.errors import ArtifactResolutionError
-from datapipeline.artifacts.planning import build_artifact_graph
-from datapipeline.artifacts.output import ArtifactOutput
-from datapipeline.artifacts.registry import ArtifactRegistry
-from datapipeline.artifacts.settings import BuildSettings
-from datapipeline.artifacts.specs import (
+from jerrythomas.artifacts import executor as build_exec
+from jerrythomas.artifacts.errors import ArtifactResolutionError
+from jerrythomas.artifacts.planning import build_artifact_graph
+from jerrythomas.artifacts.output import ArtifactOutput
+from jerrythomas.artifacts.registry import ArtifactRegistry
+from jerrythomas.artifacts.settings import BuildSettings
+from jerrythomas.artifacts.specs import (
     SCALER_STATISTICS,
     SERIES,
     VECTOR_METADATA,
     COVERAGE_STATS,
 )
-from datapipeline.artifacts.state import (
+from jerrythomas.artifacts.state import (
     ArtifactFileFingerprint,
     BuildState,
     load_build_state,
     save_build_state,
 )
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.tasks.base import ArtifactTask
-from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
-from datapipeline.config.tasks.metadata import MetadataTask
-from datapipeline.config.tasks.scaler import ScalerTask
-from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.execution.settings import (
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig
+from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.config.tasks.base import ArtifactTask
+from jerrythomas.config.tasks.coverage_stats import CoverageStatsTask
+from jerrythomas.config.tasks.metadata import MetadataTask
+from jerrythomas.config.tasks.scaler import ScalerTask
+from jerrythomas.config.tasks.series import SeriesTask
+from jerrythomas.execution.settings import (
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,
     LogOutputSettings,
     LogOutputTarget,
     ObservabilitySettings,
 )
-from datapipeline.services.definitions import ArtifactHashes, ProjectDefinition
-from datapipeline.services.project_definition import load_project_definition
+from jerrythomas.services.definitions import ArtifactHashes, ProjectDefinition
+from jerrythomas.services.project_definition import load_project_definition
 
 
 def _dataset_with_feature(*, scale: bool) -> DatasetConfig:
@@ -177,7 +177,7 @@ def _build_artifact(runtime, task: ArtifactTask) -> ArtifactOutput:
 
 def _patch_artifact_build(monkeypatch, build) -> None:
     def load_entrypoint(operation_group, entrypoint):
-        assert operation_group == "datapipeline.operations.build"
+        assert operation_group == "jerrythomas.operations.build"
 
         def run(*, runtime, task_cfg):
             assert task_cfg.entrypoint == entrypoint

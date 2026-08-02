@@ -2,28 +2,28 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.artifacts import fingerprints
-from datapipeline.artifacts.fingerprints import calculate_artifact_hashes
-from datapipeline.artifacts.planning import build_artifact_graph
-from datapipeline.artifacts.specs import (
+from jerrythomas.artifacts import fingerprints
+from jerrythomas.artifacts.fingerprints import calculate_artifact_hashes
+from jerrythomas.artifacts.planning import build_artifact_graph
+from jerrythomas.artifacts.specs import (
     SCALER_STATISTICS,
     SERIES,
     VECTOR_METADATA,
     COVERAGE_STATS,
 )
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
-from datapipeline.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
-from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks.base import ArtifactTask
-from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
-from datapipeline.config.tasks.metadata import MetadataTask
-from datapipeline.config.tasks.scaler import ScalerTask
-from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.services import config_inventory
-from datapipeline.services.project_definition import load_project_definition
-from datapipeline.services.runtime_compiler import compile_runtime
-from datapipeline.io import yaml as yaml_loader
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
+from jerrythomas.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
+from jerrythomas.config.streams import StreamsConfig
+from jerrythomas.config.tasks.base import ArtifactTask
+from jerrythomas.config.tasks.coverage_stats import CoverageStatsTask
+from jerrythomas.config.tasks.metadata import MetadataTask
+from jerrythomas.config.tasks.scaler import ScalerTask
+from jerrythomas.config.tasks.series import SeriesTask
+from jerrythomas.services import config_inventory
+from jerrythomas.services.project_definition import load_project_definition
+from jerrythomas.services.runtime_compiler import compile_runtime
+from jerrythomas.io import yaml as yaml_loader
 
 
 def _write_project(root: Path) -> Path:
@@ -174,7 +174,7 @@ loader:
     )
     current_environment = {"SOURCE_PATH": "data/first.jsonl"}
     monkeypatch.setattr(
-        "datapipeline.services.project.merged_project_env",
+        "jerrythomas.services.project.merged_project_env",
         lambda _project_yaml: dict(current_environment),
     )
     first = load_project_definition(project_yaml)
@@ -792,9 +792,7 @@ def test_window_mode_rebuilds_metadata_dependents_but_not_series_or_scaler(
         ],
     )
     changed = baseline.model_copy(
-        update={
-            "sample": baseline.sample.model_copy(update={"window_mode": "union"})
-        }
+        update={"sample": baseline.sample.model_copy(update={"window_mode": "union"})}
     )
     tasks = (ScalerTask(), SeriesTask(), MetadataTask(), CoverageStatsTask())
 

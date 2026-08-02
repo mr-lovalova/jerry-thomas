@@ -2,24 +2,24 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.profiles.materialize import MaterializeProfile
-from datapipeline.config.tasks.base import (
+from jerrythomas.config.profiles.materialize import MaterializeProfile
+from jerrythomas.config.tasks.base import (
     ArtifactTask,
     PluginRuntimeTask,
     RuntimeTask,
 )
-from datapipeline.config.tasks.coverage import CoverageTask
-from datapipeline.config.tasks.dataset import DatasetTask
-from datapipeline.config.tasks.matrix import MatrixOptions, MatrixTask
-from datapipeline.profiles.loader import (
+from jerrythomas.config.tasks.coverage import CoverageTask
+from jerrythomas.config.tasks.dataset import DatasetTask
+from jerrythomas.config.tasks.matrix import MatrixOptions, MatrixTask
+from jerrythomas.profiles.loader import (
     apply_profile_defaults,
     profile_specs_with_defaults,
 )
-from datapipeline.services.operations import (
+from jerrythomas.services.operations import (
     operation_documents,
     operations_from_documents,
 )
-from datapipeline.services.project import load_project
+from jerrythomas.services.project import load_project
 
 
 def _tasks(project_yaml: Path):

@@ -5,16 +5,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from datapipeline.cli.command_router import execute_command
-from datapipeline.cli.commands.profile_runner import execute_profile_request
-from datapipeline.cli.output_options import build_cli_output_config
-from datapipeline.cli.parser_builder import build_parser
-from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.profiles.output import ServeOutputConfig
-from datapipeline.execution.observability import CommandFinished
-from datapipeline.execution.settings import CommandObservability
-from datapipeline.profiles.errors import ProfileCommandError
-from datapipeline.profiles.models import BuildRunRequest
+from jerrythomas.cli.command_router import execute_command
+from jerrythomas.cli.commands.profile_runner import execute_profile_request
+from jerrythomas.cli.output_options import build_cli_output_config
+from jerrythomas.cli.parser_builder import build_parser
+from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.config.profiles.output import ServeOutputConfig
+from jerrythomas.execution.observability import CommandFinished
+from jerrythomas.execution.settings import CommandObservability
+from jerrythomas.profiles.errors import ProfileCommandError
+from jerrythomas.profiles.models import BuildRunRequest
 
 
 def _serve_args() -> SimpleNamespace:
@@ -243,7 +243,7 @@ def test_build_cli_output_config_rejects_unknown_encoding() -> None:
 
 def test_execute_serve_propagates_keyboard_interrupt(monkeypatch) -> None:
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.build_runtime_run_request",
+        "jerrythomas.cli.commands.profile_runner.build_runtime_run_request",
         lambda **kwargs: object(),
     )
 
@@ -254,7 +254,7 @@ def test_execute_serve_propagates_keyboard_interrupt(monkeypatch) -> None:
         raise KeyboardInterrupt()
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.execute_profile_request",
+        "jerrythomas.cli.commands.profile_runner.execute_profile_request",
         _interrupting_execute,
     )
 
@@ -279,7 +279,7 @@ def test_execute_serve_runs_request_from_builder(monkeypatch) -> None:
         return sentinel_request
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.build_runtime_run_request",
+        "jerrythomas.cli.commands.profile_runner.build_runtime_run_request",
         _build_request,
     )
 
@@ -289,7 +289,7 @@ def test_execute_serve_runs_request_from_builder(monkeypatch) -> None:
         seen["request"] = request
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.execute_profile_request",
+        "jerrythomas.cli.commands.profile_runner.execute_profile_request",
         _capture,
     )
 
@@ -323,11 +323,11 @@ def test_runtime_command_propagates_gzip_output_override(
         return object()
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.build_runtime_run_request",
+        "jerrythomas.cli.commands.profile_runner.build_runtime_run_request",
         _capture_request,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.execute_profile_request",
+        "jerrythomas.cli.commands.profile_runner.execute_profile_request",
         lambda request: None,
     )
     args = build_parser().parse_args(
@@ -362,12 +362,12 @@ def test_runtime_command_propagates_gzip_output_override(
 
 def test_execute_serve_skips_when_no_enabled_profiles(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.build_runtime_run_request",
+        "jerrythomas.cli.commands.profile_runner.build_runtime_run_request",
         lambda **kwargs: None,
     )
 
     with caplog.at_level(
-        logging.INFO, logger="datapipeline.cli.commands.profile_runner"
+        logging.INFO, logger="jerrythomas.cli.commands.profile_runner"
     ):
         result = execute_command(
             args=_serve_args(),
@@ -389,11 +389,11 @@ def test_execute_build_passes_profile_and_force(monkeypatch) -> None:
         return object()
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.build_build_run_request",
+        "jerrythomas.cli.commands.profile_runner.build_build_run_request",
         _capture_request,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.execute_profile_request",
+        "jerrythomas.cli.commands.profile_runner.execute_profile_request",
         lambda request: None,
     )
 
@@ -430,11 +430,11 @@ def test_execute_inspect_passes_command_and_profile(monkeypatch) -> None:
         return object()
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.build_runtime_run_request",
+        "jerrythomas.cli.commands.profile_runner.build_runtime_run_request",
         _capture_request,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.execute_profile_request",
+        "jerrythomas.cli.commands.profile_runner.execute_profile_request",
         lambda request: None,
     )
 
@@ -459,12 +459,12 @@ def test_execute_inspect_passes_command_and_profile(monkeypatch) -> None:
 
 def test_execute_inspect_skips_when_no_enabled_profiles(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.build_runtime_run_request",
+        "jerrythomas.cli.commands.profile_runner.build_runtime_run_request",
         lambda **kwargs: None,
     )
 
     with caplog.at_level(
-        logging.INFO, logger="datapipeline.cli.commands.profile_runner"
+        logging.INFO, logger="jerrythomas.cli.commands.profile_runner"
     ):
         result = execute_command(
             args=_inspect_args(),
@@ -487,24 +487,24 @@ def test_profile_request_logs_expected_error_before_error_summary(monkeypatch) -
         raise error
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.run_profiles",
+        "jerrythomas.cli.commands.profile_runner.run_profiles",
         fail,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.logger.error",
+        "jerrythomas.cli.commands.profile_runner.logger.error",
         lambda message, *args: order.append(("log", message % args)),
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.route_execution_event",
+        "jerrythomas.cli.commands.profile_runner.route_execution_event",
         lambda event, _logger: order.append(("event", event)),
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.visual_summary",
+        "jerrythomas.cli.commands.profile_runner.visual_summary",
         _noop_visual_summary,
     )
     times = iter((10.0, 11.5))
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.time.perf_counter",
+        "jerrythomas.cli.commands.profile_runner.time.perf_counter",
         lambda: next(times),
     )
 
@@ -523,20 +523,20 @@ def test_profile_request_logs_expected_error_before_error_summary(monkeypatch) -
 def test_profile_request_emits_one_success_summary(monkeypatch) -> None:
     events: list[CommandFinished] = []
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.run_profiles",
+        "jerrythomas.cli.commands.profile_runner.run_profiles",
         lambda _request: None,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.route_execution_event",
+        "jerrythomas.cli.commands.profile_runner.route_execution_event",
         lambda event, _logger: events.append(event),
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.visual_summary",
+        "jerrythomas.cli.commands.profile_runner.visual_summary",
         _noop_visual_summary,
     )
     times = iter((3.0, 5.0))
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.time.perf_counter",
+        "jerrythomas.cli.commands.profile_runner.time.perf_counter",
         lambda: next(times),
     )
 
@@ -553,20 +553,20 @@ def test_profile_request_preserves_unexpected_failure(monkeypatch) -> None:
         raise error
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.run_profiles",
+        "jerrythomas.cli.commands.profile_runner.run_profiles",
         fail,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.route_execution_event",
+        "jerrythomas.cli.commands.profile_runner.route_execution_event",
         lambda event, _logger: events.append(event),
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.visual_summary",
+        "jerrythomas.cli.commands.profile_runner.visual_summary",
         _noop_visual_summary,
     )
     times = iter((6.0, 7.0))
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.time.perf_counter",
+        "jerrythomas.cli.commands.profile_runner.time.perf_counter",
         lambda: next(times),
     )
 
@@ -589,15 +589,15 @@ def test_profile_request_summary_failure_does_not_replace_command_failure(
         raise OSError("broken reporter")
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.run_profiles",
+        "jerrythomas.cli.commands.profile_runner.run_profiles",
         fail_command,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.route_execution_event",
+        "jerrythomas.cli.commands.profile_runner.route_execution_event",
         fail_summary,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.visual_summary",
+        "jerrythomas.cli.commands.profile_runner.visual_summary",
         _noop_visual_summary,
     )
 
@@ -623,24 +623,24 @@ def test_profile_request_preserves_process_control_exceptions(
         raise error
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.run_profiles",
+        "jerrythomas.cli.commands.profile_runner.run_profiles",
         fail,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.route_execution_event",
+        "jerrythomas.cli.commands.profile_runner.route_execution_event",
         lambda event, _logger: events.append(event),
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.logger.error",
+        "jerrythomas.cli.commands.profile_runner.logger.error",
         lambda message, *args: messages.append(message % args),
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.visual_summary",
+        "jerrythomas.cli.commands.profile_runner.visual_summary",
         _noop_visual_summary,
     )
     times = iter((1.0, 1.25))
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.time.perf_counter",
+        "jerrythomas.cli.commands.profile_runner.time.perf_counter",
         lambda: next(times),
     )
 
@@ -672,20 +672,20 @@ def test_profile_request_routes_summary_inside_enabled_visuals(
             order.append(("exit", enabled))
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.run_profiles",
+        "jerrythomas.cli.commands.profile_runner.run_profiles",
         lambda _request: None,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.route_execution_event",
+        "jerrythomas.cli.commands.profile_runner.route_execution_event",
         lambda event, _logger: order.append(event),
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.visual_summary",
+        "jerrythomas.cli.commands.profile_runner.visual_summary",
         visual_summary,
     )
     times = iter((2.0, 3.0))
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.time.perf_counter",
+        "jerrythomas.cli.commands.profile_runner.time.perf_counter",
         lambda: next(times),
     )
 

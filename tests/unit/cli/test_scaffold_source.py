@@ -3,9 +3,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from datapipeline.config.sources import SourceConfig
-from datapipeline.services.scaffold.paths import ensure_project_scaffold
-from datapipeline.services.scaffold.source_yaml import (
+from jerrythomas.config.sources import SourceConfig
+from jerrythomas.services.scaffold.paths import ensure_project_scaffold
+from jerrythomas.services.scaffold.source_yaml import (
     create_source_yaml,
     default_loader_config,
 )

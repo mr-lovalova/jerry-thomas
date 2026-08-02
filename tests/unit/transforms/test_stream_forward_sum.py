@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.execution.pipeline import Input, Pipeline, Stage
-from datapipeline.execution.runner import run_pipeline
-from datapipeline.runtime import Runtime
-from datapipeline.transforms.stream.forward_sum import ForwardSumTransform
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.execution.pipeline import Input, Pipeline, Stage
+from jerrythomas.execution.runner import run_pipeline
+from jerrythomas.runtime import Runtime
+from jerrythomas.transforms.stream.forward_sum import ForwardSumTransform
 from tests.unit.transforms.helpers import make_time_record
 
 

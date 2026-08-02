@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.cli.workspace import load_workspace_context
+from jerrythomas.cli.workspace import load_workspace_context
 
 
 def _write_jerry(tmp_path: Path, content: str) -> Path:

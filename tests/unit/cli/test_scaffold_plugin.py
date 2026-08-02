@@ -3,15 +3,15 @@ from pathlib import Path
 import pytest
 import yaml
 
-from datapipeline.io.yaml import read_yaml_document
-from datapipeline.profiles.loader import profile_specs_with_defaults
-from datapipeline.services.dataset import dataset_from_document
-from datapipeline.services.project import load_project
-from datapipeline.services.scaffold.plugin import scaffold_plugin
-from datapipeline.services.scaffold.templates import render
-from datapipeline.services.streams.loader import load_streams
+from jerrythomas.io.yaml import read_yaml_document
+from jerrythomas.profiles.loader import profile_specs_with_defaults
+from jerrythomas.services.dataset import dataset_from_document
+from jerrythomas.services.project import load_project
+from jerrythomas.services.scaffold.plugin import scaffold_plugin
+from jerrythomas.services.scaffold.templates import render
+from jerrythomas.services.streams.loader import load_streams
 
-_TEMPLATES_ROOT = Path(__file__).parents[3] / "src" / "datapipeline" / "templates"
+_TEMPLATES_ROOT = Path(__file__).parents[3] / "src" / "jerrythomas" / "templates"
 _PLUGIN_SKELETON_ROOT = _TEMPLATES_ROOT / "plugin_skeleton"
 _DATASET_SKELETON_ROOT = _TEMPLATES_ROOT / "dataset_skeleton"
 
@@ -183,7 +183,7 @@ def test_scaffold_plugin_normalizes_hyphenated_name(tmp_path: Path) -> None:
     pyproject = (plugin_root / "pyproject.toml").read_text()
     assert 'name = "test-datapipeline"' in pyproject
     assert '"jerry-thomas>=9.0.0"' in pyproject
-    assert '[project.entry-points."datapipeline.combiners"]' in pyproject
+    assert '[project.entry-points."jerrythomas.combiners"]' in pyproject
 
     readme = (plugin_root / "README.md").read_text()
     assert "python -m pip install -e ." in readme
@@ -253,8 +253,8 @@ def test_scaffold_plugin_does_not_remove_existing_target(tmp_path: Path) -> None
     [
         "",
         "data pipeline",
-        "datapipeline",
-        "DataPipeline",
+        "jerrythomas",
+        "JerryThomas",
         "jerry-thomas",
         "Jerry.Thomas",
         "jerry_thomas",

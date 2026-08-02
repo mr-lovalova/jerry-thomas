@@ -2,13 +2,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from datapipeline.config.dataset.split import (
+from jerrythomas.config.dataset.split import (
     DatasetFold,
     HashSplitConfig,
     TimeInterval,
     TimeSplitConfig,
 )
-from datapipeline.pipelines.dataset.split import HashLabeler, TimeLabeler
+from jerrythomas.pipelines.dataset.split import HashLabeler, TimeLabeler
 
 
 def _fold() -> DatasetFold:

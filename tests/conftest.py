@@ -5,20 +5,20 @@ import importlib
 
 import pytest
 
-import datapipeline.plugins as dp_plugins
+import jerrythomas.plugins as dp_plugins
 
 # Test-only entrypoint declarations.
 _TEST_EP_TARGETS = {
     (
-        "datapipeline.parsers",
+        "jerrythomas.parsers",
         "core.temporal.csv",
     ): "tests.parsers.temporal_csv:TemporalCsvValueParser",
     (
-        "datapipeline.combiners",
+        "jerrythomas.combiners",
         "combine_valuation_inputs",
     ): "tests.combiners:combine_valuation_inputs",
     (
-        "datapipeline.combiners",
+        "jerrythomas.combiners",
         "combine_humidity_with_baseline",
     ): "tests.combiners:combine_humidity_with_baseline",
 }

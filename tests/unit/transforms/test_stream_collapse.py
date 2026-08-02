@@ -2,7 +2,7 @@ from typing import Literal
 
 import pytest
 
-from datapipeline.transforms.stream.collapse import CollapseTransform
+from jerrythomas.transforms.stream.collapse import CollapseTransform
 from tests.unit.transforms.helpers import make_time_record
 
 

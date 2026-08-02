@@ -7,23 +7,23 @@ from pathlib import Path
 import pytest
 import pyarrow.parquet as parquet
 
-import datapipeline.operations.persistence as persistence
-from datapipeline.artifacts.models import ScalarVectorMetadataEntry
-from datapipeline.cli.visuals.execution import make_execution_observer
-from datapipeline.cli.visuals.execution_context import (
+import jerrythomas.operations.persistence as persistence
+from jerrythomas.artifacts.models import ScalarVectorMetadataEntry
+from jerrythomas.cli.visuals.execution import make_execution_observer
+from jerrythomas.cli.visuals.execution_context import (
     reset_current_execution_event_handler,
     set_current_execution_event_handler,
 )
-from datapipeline.execution.observability import (
+from jerrythomas.execution.observability import (
     FileResult,
     execution_observer,
     operation_scope,
 )
-from datapipeline.io.output import OutputTarget
-from datapipeline.io.dataset_table import DatasetTable
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
-from datapipeline.operations.persistence import (
+from jerrythomas.io.output import OutputTarget
+from jerrythomas.io.dataset_table import DatasetTable
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
+from jerrythomas.operations.persistence import (
     DatasetTableOutput,
     RoutedDatasetTableOutput,
     RoutedRuntimeOutput,
@@ -418,7 +418,7 @@ def test_runtime_payload_emits_output_path(monkeypatch, tmp_path) -> None:
 
 
 def test_runtime_persistence_reports_stdout(capsys, caplog) -> None:
-    logger = logging.getLogger("datapipeline.tests.persistence.stdout")
+    logger = logging.getLogger("jerrythomas.tests.persistence.stdout")
     with caplog.at_level(logging.INFO, logger=logger.name):
         persist_runtime_result(
             RuntimeOutput(rows=({"value": 1},)),
@@ -494,7 +494,7 @@ def test_failed_html_commit_preserves_existing_file(monkeypatch, tmp_path) -> No
         raise OSError("commit failed")
 
     monkeypatch.setattr(
-        "datapipeline.io.sinks.files._commit_temp_file",
+        "jerrythomas.io.sinks.files._commit_temp_file",
         fail_commit,
     )
 

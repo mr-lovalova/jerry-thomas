@@ -7,8 +7,8 @@ from typing import Any, Callable
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.transforms import RollingConfig
-from datapipeline.transforms.stream.rolling import RollingTransform
+from jerrythomas.config.transforms import RollingConfig
+from jerrythomas.transforms.stream.rolling import RollingTransform
 from tests.unit.transforms.helpers import make_time_record
 
 

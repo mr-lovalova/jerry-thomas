@@ -1,6 +1,6 @@
 # Python Integrations
 
-`datapipeline.integrations.ml` exposes the final dataset pipeline without
+`jerrythomas.integrations.ml` exposes the final dataset pipeline without
 persisting served output. Its prerequisites must already be current; run
 `jerry build` or a normal `jerry serve` before opening it.
 
@@ -10,7 +10,7 @@ persisting served output. Its prerequisites must already be current; run
 scaling, and postprocess:
 
 ```python
-from datapipeline.integrations.ml import iter_samples
+from jerrythomas.integrations.ml import iter_samples
 
 
 for sample in iter_samples(
@@ -35,7 +35,7 @@ python -m pip install "jerry-thomas[ml]"
 matrices:
 
 ```python
-from datapipeline.integrations.ml import iter_model_batches
+from jerrythomas.integrations.ml import iter_model_batches
 
 
 for batch in iter_model_batches(
@@ -82,6 +82,6 @@ Jerry 7 removes the stateful `VectorAdapter`, the row and DataFrame helpers,
 - served Parquet with Pandas or Polars for tabular research; and
 - `torch.from_numpy()` for framework conversion.
 
-Import the new API from `datapipeline.integrations.ml`; it is no longer
-re-exported from `datapipeline.integrations`. The `ml` extra installs NumPy
+Import the new API from `jerrythomas.integrations.ml`; it is no longer
+re-exported from `jerrythomas.integrations`. The `ml` extra installs NumPy
 only. Install PyTorch separately when using the conversion example above.

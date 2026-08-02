@@ -5,18 +5,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from datapipeline.artifacts.models import CoverageStatsArtifact, VectorMetadata
-from datapipeline.artifacts.specs import COVERAGE_STATS, VECTOR_METADATA
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.config.tasks.coverage import CoverageTask
-from datapipeline.config.tasks.matrix import MatrixTask
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
-from datapipeline.io.output import OutputTarget
-from datapipeline.operations.persistence import persist_runtime_result
-from datapipeline.operations.runtime import coverage as coverage_ops
-from datapipeline.operations.runtime import matrix as matrix_ops
+from jerrythomas.artifacts.models import CoverageStatsArtifact, VectorMetadata
+from jerrythomas.artifacts.specs import COVERAGE_STATS, VECTOR_METADATA
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig
+from jerrythomas.config.tasks.coverage import CoverageTask
+from jerrythomas.config.tasks.matrix import MatrixTask
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
+from jerrythomas.io.output import OutputTarget
+from jerrythomas.operations.persistence import persist_runtime_result
+from jerrythomas.operations.runtime import coverage as coverage_ops
+from jerrythomas.operations.runtime import matrix as matrix_ops
 
 
 def _coverage_stats() -> CoverageStatsArtifact:

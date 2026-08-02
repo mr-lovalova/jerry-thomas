@@ -1,21 +1,21 @@
 import pytest
 
-from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
-from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
-from datapipeline.artifacts.specs import (
+from jerrythomas.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
+from jerrythomas.artifacts.registry import VECTOR_METADATA_SPEC
+from jerrythomas.artifacts.specs import (
     SCALER_STATISTICS,
     SERIES,
     VECTOR_METADATA,
 )
-from datapipeline.config.tasks.metadata import MetadataTask
-from datapipeline.config.tasks.scaler import ScalerTask
-from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.operations.artifacts.metadata import build_metadata_artifact
-from datapipeline.operations.artifacts.scaler import build_scaler_artifact
-from datapipeline.operations.artifacts.series import build_series_artifact
-from datapipeline.pipelines.dataset.pipeline import run_scaled_dataset_pipeline
-from datapipeline.services.project_definition import load_project_definition
-from datapipeline.services.runtime_compiler import compile_runtime
+from jerrythomas.config.tasks.metadata import MetadataTask
+from jerrythomas.config.tasks.scaler import ScalerTask
+from jerrythomas.config.tasks.series import SeriesTask
+from jerrythomas.operations.artifacts.metadata import build_metadata_artifact
+from jerrythomas.operations.artifacts.scaler import build_scaler_artifact
+from jerrythomas.operations.artifacts.series import build_series_artifact
+from jerrythomas.pipelines.dataset.pipeline import run_scaled_dataset_pipeline
+from jerrythomas.services.project_definition import load_project_definition
+from jerrythomas.services.runtime_compiler import compile_runtime
 
 
 def _dataset_samples(project_yaml):

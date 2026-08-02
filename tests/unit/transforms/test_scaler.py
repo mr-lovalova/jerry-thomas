@@ -4,7 +4,7 @@ from math import isclose
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.artifacts.scaler import (
+from jerrythomas.artifacts.scaler import (
     FoldedScalerArtifact,
     PositionalScalerStatistics,
     ScalerStatistics,
@@ -12,7 +12,7 @@ from datapipeline.artifacts.scaler import (
     load_scaler_artifact,
     save_scaler_artifact,
 )
-from datapipeline.transforms.vector.scaler import ScalerAccumulator
+from jerrythomas.transforms.vector.scaler import ScalerAccumulator
 
 
 def _standard_artifact(

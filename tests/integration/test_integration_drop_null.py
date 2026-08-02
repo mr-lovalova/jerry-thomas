@@ -1,14 +1,14 @@
 from datetime import datetime, timezone
 
-from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
-from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
-from datapipeline.artifacts.specs import VECTOR_METADATA
-from datapipeline.config.tasks.metadata import MetadataTask
-from datapipeline.operations.artifacts.metadata import build_metadata_artifact
-from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
-from datapipeline.pipelines.sample.input import open_samples
-from datapipeline.services.project_definition import load_project_definition
-from datapipeline.services.runtime_compiler import compile_runtime
+from jerrythomas.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
+from jerrythomas.artifacts.registry import VECTOR_METADATA_SPEC
+from jerrythomas.artifacts.specs import VECTOR_METADATA
+from jerrythomas.config.tasks.metadata import MetadataTask
+from jerrythomas.operations.artifacts.metadata import build_metadata_artifact
+from jerrythomas.pipelines.dataset.postprocess import build_postprocess_plan
+from jerrythomas.pipelines.sample.input import open_samples
+from jerrythomas.services.project_definition import load_project_definition
+from jerrythomas.services.runtime_compiler import compile_runtime
 from tests.series_helpers import register_series
 
 

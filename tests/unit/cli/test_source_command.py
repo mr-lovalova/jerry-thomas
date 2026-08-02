@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from datapipeline.cli.commands import source
-from datapipeline.services.scaffold.source_yaml import (
+from jerrythomas.cli.commands import source
+from jerrythomas.services.scaffold.source_yaml import (
     DEFAULT_TEMPORAL_RECORD_PARSER_EP,
 )
 

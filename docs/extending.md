@@ -1,23 +1,31 @@
 # Extending the Runtime
 
+## Migrating plugins to Jerry 9
+
+The distribution remains `jerry-thomas` and the command remains `jerry`, but
+the Python package and plugin entry-point groups now use `jerrythomas` instead
+of `datapipeline`. Update plugin imports and group names, then reinstall the
+plugin so its installed entry-point metadata is refreshed. Jerry 9 does not
+provide a compatibility package or discover the former groups.
+
 ### Entry Points
 
 Register custom components in your plugin’s `pyproject.toml`:
 
 ```toml
-[project.entry-points."datapipeline.loaders"]
+[project.entry-points."jerrythomas.loaders"]
 demo.csv_loader = "my_datapipeline.loaders.csv:CsvLoader"
 
-[project.entry-points."datapipeline.parsers"]
+[project.entry-points."jerrythomas.parsers"]
 demo.weather_parser = "my_datapipeline.parsers.weather:WeatherParser"
 
-[project.entry-points."datapipeline.mappers"]
+[project.entry-points."jerrythomas.mappers"]
 time.ticks = "my_datapipeline.mappers.synthetic.ticks:map"
 
-[project.entry-points."datapipeline.combiners"]
+[project.entry-points."jerrythomas.combiners"]
 air_density = "my_datapipeline.combiners.air_density:combine_air_density"
 
-[project.entry-points."datapipeline.operations.runtime"]
+[project.entry-points."jerrythomas.operations.runtime"]
 demo.report = "my_datapipeline.operations:run_report"
 ```
 
@@ -29,21 +37,21 @@ unpartitioned record. An as-of combiner receives the primary followed by the
 latest eligible lookup; the lookup can be `None` when `require_match: false`.
 All combiners return one record or `None`. Combiner inputs are read-only;
 indexed broadcast records may be reused across primary partitions. Combiners
-belong to `datapipeline.combiners`, not the iterator-oriented
-`datapipeline.mappers` group. Mapper and combiner outputs must have
+belong to `jerrythomas.combiners`, not the iterator-oriented
+`jerrythomas.mappers` group. Mapper and combiner outputs must have
 timezone-aware timestamps; Jerry normalizes them to UTC before downstream
 processing.
 
 A custom runtime operation receives exactly three positional arguments:
 
 ```python
-from datapipeline.config.tasks.base import PluginRuntimeTask
-from datapipeline.operations.persistence import (
+from jerrythomas.config.tasks.base import PluginRuntimeTask
+from jerrythomas.operations.persistence import (
     RoutedRuntimeOutput,
     RuntimeOutput,
     RuntimeOutputBatch,
 )
-from datapipeline.runtime import Runtime
+from jerrythomas.runtime import Runtime
 
 
 def run_report(

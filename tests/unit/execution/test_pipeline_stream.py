@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.execution import runner as pipeline_runner
-from datapipeline.execution.pipeline import Input, Pipeline, Stage
-from datapipeline.execution.events import (
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.execution import runner as pipeline_runner
+from jerrythomas.execution.pipeline import Input, Pipeline, Stage
+from jerrythomas.execution.events import (
     NodeFinished,
     NodeProgress,
     NodeStarted,
@@ -19,9 +19,9 @@ from datapipeline.execution.events import (
     PipelineSummary,
     ProgressSnapshot,
 )
-from datapipeline.execution.observability import execution_observer
-from datapipeline.execution.runner import run_pipeline
-from datapipeline.runtime import Runtime
+from jerrythomas.execution.observability import execution_observer
+from jerrythomas.execution.runner import run_pipeline
+from jerrythomas.runtime import Runtime
 
 
 class _CollectingObserver:

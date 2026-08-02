@@ -2,14 +2,14 @@ from collections.abc import Iterator
 
 import pytest
 
-from datapipeline.artifacts.scaler import (
+from jerrythomas.artifacts.scaler import (
     PositionalScalerStatistics,
     ScalerStatistics,
     StandardScalerArtifact,
 )
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
-from datapipeline.transforms.vector.scaler import SampleScaler
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
+from jerrythomas.transforms.vector.scaler import SampleScaler
 
 
 def _artifact(

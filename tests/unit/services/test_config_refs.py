@@ -3,16 +3,16 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.config.sources import SourceConfig
-from datapipeline.services.config_refs import (
+from jerrythomas.config.sources import SourceConfig
+from jerrythomas.services.config_refs import (
     interpolate_config_vars,
     resolve_config_refs,
 )
-from datapipeline.services.project_definition import load_project_definition
-from datapipeline.services.project import load_project
-from datapipeline.services.streams.loader import load_streams
-from datapipeline.services.streams.source import build_source
-from datapipeline.config.interpolation import is_missing_interpolation
+from jerrythomas.services.project_definition import load_project_definition
+from jerrythomas.services.project import load_project
+from jerrythomas.services.streams.loader import load_streams
+from jerrythomas.services.streams.source import build_source
+from jerrythomas.config.interpolation import is_missing_interpolation
 
 
 def _project_variables(project_yaml: Path):

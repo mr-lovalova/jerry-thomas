@@ -2,8 +2,8 @@ import math
 
 import pytest
 
-from datapipeline.transforms.stream.derive import DeriveTransform
-from datapipeline.transforms.stream.logarithm import Log1pTransform, LogTransform
+from jerrythomas.transforms.stream.derive import DeriveTransform
+from jerrythomas.transforms.stream.logarithm import Log1pTransform, LogTransform
 from tests.unit.transforms.helpers import make_time_record
 
 

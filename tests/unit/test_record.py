@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, tzinfo
 
 import pytest
 
-from datapipeline.domain.record import TemporalRecord
+from jerrythomas.domain.record import TemporalRecord
 
 
 def test_temporal_record_rejects_timezone_without_utc_offset() -> None:

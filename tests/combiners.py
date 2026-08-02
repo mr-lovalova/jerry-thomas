@@ -1,4 +1,4 @@
-from datapipeline.domain.record import TemporalRecord
+from jerrythomas.domain.record import TemporalRecord
 
 
 def combine_valuation_inputs(price, earnings) -> TemporalRecord:

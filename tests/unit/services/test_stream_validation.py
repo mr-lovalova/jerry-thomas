@@ -1,7 +1,7 @@
 import pytest
 
-from datapipeline.config.sources import SourceConfig
-from datapipeline.config.streams import (
+from jerrythomas.config.sources import SourceConfig
+from jerrythomas.config.streams import (
     AlignedStreamConfig,
     AsOfStreamConfig,
     BroadcastAsOfStreamConfig,
@@ -11,7 +11,7 @@ from datapipeline.config.streams import (
     SourceStreamConfig,
     StreamConfig,
 )
-from datapipeline.services.streams.validation import (
+from jerrythomas.services.streams.validation import (
     stream_partition_by,
     validate_stream_configs,
 )

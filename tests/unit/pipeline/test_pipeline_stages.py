@@ -11,33 +11,33 @@ import pytest
 from rich.console import Console
 from rich.progress import Progress
 
-import datapipeline.operations.artifacts.series as series_operation
-import datapipeline.pipelines.stream.cross_section as cross_section_pipeline
-import datapipeline.pipelines.stream.order as stream_order
-import datapipeline.pipelines.stream.stages as stream_stages
-from datapipeline.artifacts.models import SampleDomainEntry, VectorMetadataCatalog
-from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
-from datapipeline.artifacts.specs import (
+import jerrythomas.operations.artifacts.series as series_operation
+import jerrythomas.pipelines.stream.cross_section as cross_section_pipeline
+import jerrythomas.pipelines.stream.order as stream_order
+import jerrythomas.pipelines.stream.stages as stream_stages
+from jerrythomas.artifacts.models import SampleDomainEntry, VectorMetadataCatalog
+from jerrythomas.artifacts.registry import VECTOR_METADATA_SPEC
+from jerrythomas.artifacts.specs import (
     SERIES,
     VECTOR_METADATA,
 )
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.postprocess import PostprocessConfig
-from datapipeline.config.dataset.series import (
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.postprocess import PostprocessConfig
+from jerrythomas.config.dataset.series import (
     SeriesConfig,
     SequenceConfig,
     TargetSeriesConfig,
 )
-from datapipeline.config.dataset.split import (
+from jerrythomas.config.dataset.split import (
     DatasetFold,
     TimeInterval,
     TimeSplitConfig,
 )
-from datapipeline.config.cross_section import OlsResidualConfig, RankScoreConfig
-from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.tasks.metadata import MetadataTask
-from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.config.transforms import (
+from jerrythomas.config.cross_section import OlsResidualConfig, RankScoreConfig
+from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.config.tasks.metadata import MetadataTask
+from jerrythomas.config.tasks.series import SeriesTask
+from jerrythomas.config.transforms import (
     EnsureCadenceConfig,
     EnsureScheduleConfig,
     FloorTimeConfig,
@@ -45,48 +45,48 @@ from datapipeline.config.transforms import (
     PreprocessConfig,
     TransformConfig,
 )
-from datapipeline.cli.visuals.rich.progress import (
+from jerrythomas.cli.visuals.rich.progress import (
     _ExecutionProgress,
     _RichExecutionRenderer,
 )
-from datapipeline.domain.series import SeriesRecord, SeriesSequence
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
-from datapipeline.execution.events import (
+from jerrythomas.domain.series import SeriesRecord, SeriesSequence
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
+from jerrythomas.execution.events import (
     NodeStarted,
     PipelineEvent,
     PipelineStarted,
     ProgressSnapshot,
 )
-from datapipeline.execution.observability import execution_observer
-from datapipeline.execution.pipeline import Input
-from datapipeline.execution.runner import run_pipeline
-from datapipeline.operations.artifacts.metadata import build_metadata_artifact
-from datapipeline.operations.artifacts.series import build_series_artifact
-from datapipeline.parsers.identity import IdentityParser
-from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
-from datapipeline.pipelines.dataset.pipeline import (
+from jerrythomas.execution.observability import execution_observer
+from jerrythomas.execution.pipeline import Input
+from jerrythomas.execution.runner import run_pipeline
+from jerrythomas.operations.artifacts.metadata import build_metadata_artifact
+from jerrythomas.operations.artifacts.series import build_series_artifact
+from jerrythomas.parsers.identity import IdentityParser
+from jerrythomas.pipelines.dataset.postprocess import build_postprocess_plan
+from jerrythomas.pipelines.dataset.pipeline import (
     build_dataset_pipeline,
     run_dataset_pipeline,
     run_sample_pipeline,
 )
-from datapipeline.pipelines.series.pipeline import (
+from jerrythomas.pipelines.series.pipeline import (
     build_series_pipeline,
     run_series_pipeline,
 )
-from datapipeline.pipelines.stream.pipeline import (
+from jerrythomas.pipelines.stream.pipeline import (
     build_stream_pipeline,
     run_stream_preview_pipeline,
     run_stream_pipeline,
 )
-from datapipeline.pipelines.sample import input as sample_input
-from datapipeline.pipelines.sample.keys import (
+from jerrythomas.pipelines.sample import input as sample_input
+from jerrythomas.pipelines.sample.keys import (
     sample_domain_key_plan,
     window_key_plan,
 )
-from datapipeline.pipelines.sample.input import build_sample_input, open_samples
-from datapipeline.runtime import (
+from jerrythomas.pipelines.sample.input import build_sample_input, open_samples
+from jerrythomas.runtime import (
     AlignedRuntimeStream,
     AsOfRuntimeStream,
     BroadcastRuntimeStream,
@@ -96,11 +96,11 @@ from datapipeline.runtime import (
     Runtime,
     SourceRuntimeStream,
 )
-from datapipeline.sources.adapters.fs import FsFileTransport, FsGlobTransport
-from datapipeline.sources.loader import DataLoader
-from datapipeline.sources.decoders import JsonLinesDecoder
-from datapipeline.sources.source import Source
-from datapipeline.artifacts.series import (
+from jerrythomas.sources.adapters.fs import FsFileTransport, FsGlobTransport
+from jerrythomas.sources.loader import DataLoader
+from jerrythomas.sources.decoders import JsonLinesDecoder
+from jerrythomas.sources.source import Source
+from jerrythomas.artifacts.series import (
     SeriesRow,
     load_series_manifest,
     open_series,
@@ -519,17 +519,13 @@ def test_cross_section_groups_by_time_and_restores_canonical_order(
     runtime.streams["ranked"] = CrossSectionRuntimeStream(
         input_stream="stream",
         partition_by=("symbol",),
-        cross_section=(
-            RankScoreConfig(field="value", to="rank", min_samples=2),
-        ),
+        cross_section=(RankScoreConfig(field="value", to="rank", min_samples=2),),
         transforms=(),
     )
 
     records = list(run_stream_pipeline(runtime, "ranked"))
 
-    assert [
-        (record.symbol, record.time.hour, record.rank) for record in records
-    ] == [
+    assert [(record.symbol, record.time.hour, record.rank) for record in records] == [
         ("A", 0, -0.5),
         ("A", 1, -0.5),
         ("B", 0, 0.5),
@@ -593,9 +589,7 @@ def test_cross_section_spill_matches_in_memory(
     runtime.streams["ranked"] = CrossSectionRuntimeStream(
         input_stream="stream",
         partition_by=("symbol",),
-        cross_section=(
-            RankScoreConfig(field="value", to="rank", min_samples=2),
-        ),
+        cross_section=(RankScoreConfig(field="value", to="rank", min_samples=2),),
         transforms=(),
     )
     expected = list(run_stream_pipeline(runtime, "ranked"))
@@ -632,9 +626,7 @@ def test_cross_section_previews_and_partition_local_lag(tmp_path: Path) -> None:
     runtime.streams["ranked"] = CrossSectionRuntimeStream(
         input_stream="stream",
         partition_by=("symbol",),
-        cross_section=(
-            RankScoreConfig(field="value", to="rank", min_samples=2),
-        ),
+        cross_section=(RankScoreConfig(field="value", to="rank", min_samples=2),),
         transforms=(LagConfig(field="rank", periods=1, to="previous_rank"),),
     )
 
@@ -668,9 +660,7 @@ def test_cross_section_rejects_duplicate_partition_at_one_time(
     runtime.streams["ranked"] = CrossSectionRuntimeStream(
         input_stream="stream",
         partition_by=("symbol",),
-        cross_section=(
-            RankScoreConfig(field="value", to="rank", min_samples=2),
-        ),
+        cross_section=(RankScoreConfig(field="value", to="rank", min_samples=2),),
         transforms=(),
     )
 
@@ -2783,7 +2773,7 @@ def test_cached_series_rows_close_reader_when_stopped_early(
         return _ClosingRows()
 
     monkeypatch.setattr(
-        "datapipeline.pipelines.sample.input.open_series",
+        "jerrythomas.pipelines.sample.input.open_series",
         _open_rows,
     )
 

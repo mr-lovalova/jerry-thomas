@@ -1,17 +1,17 @@
 import json
 from datetime import datetime, timezone
 
-from datapipeline.artifacts.models import VectorMetadata
-from datapipeline.artifacts.specs import VECTOR_METADATA
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
-from datapipeline.config.tasks.coverage_stats import CoverageStatsTask
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
-from datapipeline.operations.artifacts.coverage_stats import (
+from jerrythomas.artifacts.models import VectorMetadata
+from jerrythomas.artifacts.specs import VECTOR_METADATA
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
+from jerrythomas.config.tasks.coverage_stats import CoverageStatsTask
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
+from jerrythomas.operations.artifacts.coverage_stats import (
     build_coverage_stats_artifact,
 )
-from datapipeline.runtime import Runtime
+from jerrythomas.runtime import Runtime
 
 
 def _ts(day: int) -> datetime:
@@ -104,7 +104,7 @@ def test_build_coverage_stats_artifact_writes_bounded_v3_summary(
     ]
     _register_metadata(monkeypatch, runtime)
     monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.run_dataset_pipeline",
+        "jerrythomas.operations.artifacts.coverage_stats.run_dataset_pipeline",
         lambda *_args: iter(samples),
     )
 
@@ -140,7 +140,7 @@ def test_assembled_coverage_stats_do_not_apply_postprocess(
     runtime = _runtime(tmp_path)
     _register_metadata(monkeypatch, runtime)
     monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.run_sample_pipeline",
+        "jerrythomas.operations.artifacts.coverage_stats.run_sample_pipeline",
         lambda *_args, **_kwargs: iter(()),
     )
 
@@ -148,7 +148,7 @@ def test_assembled_coverage_stats_do_not_apply_postprocess(
         raise AssertionError("assembled coverage stats must not run postprocessing")
 
     monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.run_dataset_pipeline",
+        "jerrythomas.operations.artifacts.coverage_stats.run_dataset_pipeline",
         fail_postprocessed_pipeline,
     )
 
@@ -165,7 +165,7 @@ def test_postprocessed_coverage_stats_keep_columns_when_every_sample_is_dropped(
     runtime = _runtime(tmp_path)
     _register_metadata(monkeypatch, runtime)
     monkeypatch.setattr(
-        "datapipeline.operations.artifacts.coverage_stats.run_dataset_pipeline",
+        "jerrythomas.operations.artifacts.coverage_stats.run_dataset_pipeline",
         lambda *_args: iter(()),
     )
 

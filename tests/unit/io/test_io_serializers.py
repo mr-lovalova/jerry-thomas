@@ -4,11 +4,11 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.series import SeriesRecord
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.domain.vector import Vector
-from datapipeline.io.serializers import (
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.series import SeriesRecord
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.domain.vector import Vector
+from jerrythomas.io.serializers import (
     json_line_serializer,
     text_line_serializer,
 )

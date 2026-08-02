@@ -1,15 +1,15 @@
 import json
 
-from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
-from datapipeline.artifacts.specs import VECTOR_METADATA
-from datapipeline.artifacts.models import VectorMetadataCatalog
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.postprocess import PostprocessConfig
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
-from datapipeline.pipelines.dataset.postprocess import build_postprocess_plan
-from datapipeline.pipelines.dataset.pipeline import build_dataset_pipeline
-from datapipeline.runtime import Runtime
+from jerrythomas.artifacts.registry import VECTOR_METADATA_SPEC
+from jerrythomas.artifacts.specs import VECTOR_METADATA
+from jerrythomas.artifacts.models import VectorMetadataCatalog
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.postprocess import PostprocessConfig
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
+from jerrythomas.pipelines.dataset.postprocess import build_postprocess_plan
+from jerrythomas.pipelines.dataset.pipeline import build_dataset_pipeline
+from jerrythomas.runtime import Runtime
 
 
 def _runtime(

@@ -3,23 +3,23 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from datapipeline.artifacts.registry import SCALER_SPEC
-from datapipeline.artifacts.scaler import save_scaler_artifact
-from datapipeline.artifacts.specs import SCALER_STATISTICS
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
-from datapipeline.config.execution import ExecutionConfig
-from datapipeline.config.transforms import (
+from jerrythomas.artifacts.registry import SCALER_SPEC
+from jerrythomas.artifacts.scaler import save_scaler_artifact
+from jerrythomas.artifacts.specs import SCALER_STATISTICS
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
+from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.config.transforms import (
     FillConfig,
     RollingConfig,
     TransformConfig,
 )
-from datapipeline.domain.series import SeriesRecord
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.pipelines.series.pipeline import run_series_pipeline
-from datapipeline.pipelines.sample.input import open_samples
-from datapipeline.runtime import Runtime, SourceRuntimeStream
-from datapipeline.transforms.vector.scaler import SampleScaler, ScalerAccumulator
+from jerrythomas.domain.series import SeriesRecord
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.pipelines.series.pipeline import run_series_pipeline
+from jerrythomas.pipelines.sample.input import open_samples
+from jerrythomas.runtime import Runtime, SourceRuntimeStream
+from jerrythomas.transforms.vector.scaler import SampleScaler, ScalerAccumulator
 from tests.series_helpers import register_series
 
 

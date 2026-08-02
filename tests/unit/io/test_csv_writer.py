@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from datapipeline.io.writers.csv_writer import CsvFileWriter
+from jerrythomas.io.writers.csv_writer import CsvFileWriter
 
 
 def test_csv_writer_writes_flattened_rows(tmp_path) -> None:

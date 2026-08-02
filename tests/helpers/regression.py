@@ -2,12 +2,12 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from datapipeline.config.profiles.output import ServeOutputConfig
-from datapipeline.config.preview import PreviewStage
-from datapipeline.execution.settings import CommandObservability
-from datapipeline.profiles.models import RuntimeRunRequest
-from datapipeline.profiles.orchestration import run_profiles
-from datapipeline.profiles.request_builder import build_runtime_run_request
+from jerrythomas.config.profiles.output import ServeOutputConfig
+from jerrythomas.config.preview import PreviewStage
+from jerrythomas.execution.settings import CommandObservability
+from jerrythomas.profiles.models import RuntimeRunRequest
+from jerrythomas.profiles.orchestration import run_profiles
+from jerrythomas.profiles.request_builder import build_runtime_run_request
 
 
 def serve_dataset(

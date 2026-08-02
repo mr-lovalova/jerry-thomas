@@ -1,6 +1,6 @@
 # CLI Reference
 
-All commands live under the `jerry` entry point (`src/datapipeline/cli/app.py`).
+All commands live under the `jerry` entry point (`src/jerrythomas/cli/app.py`).
 Pass `--help` on any command for flags.
 All commands that take a project accept either `--project <path/to/project.yaml>` or `--dataset <alias>` (from `jerry.yaml datasets:`).
 
@@ -141,7 +141,7 @@ phase has visuals enabled.
     temporal stream, and a registered combine entry point. Matching is exact by
     timestamp.
   - Aligned streams require at least two existing input streams and the name of
-    a combine entry point already registered in `datapipeline.combiners`. The
+    a combine entry point already registered in `jerrythomas.combiners`. The
     combine function receives one matching record from each input in the
     selected order and returns one record or `None`.
   - `--identity` applies only to source-backed streams.

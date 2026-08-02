@@ -1,9 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.cross_section import OlsResidualConfig, RankScoreConfig
-from datapipeline.config.streams import CrossSectionStreamConfig
-from datapipeline.config.transforms import DedupeConfig
+from jerrythomas.config.cross_section import OlsResidualConfig, RankScoreConfig
+from jerrythomas.config.streams import CrossSectionStreamConfig
+from jerrythomas.config.transforms import DedupeConfig
 
 
 def _stream(**values: object) -> CrossSectionStreamConfig:

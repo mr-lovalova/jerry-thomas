@@ -3,23 +3,23 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.cli.output_options import build_cli_output_config
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.split import (
+from jerrythomas.cli.output_options import build_cli_output_config
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.split import (
     DatasetFold,
     HashSplitConfig,
     TimeInterval,
     TimeSplitConfig,
 )
-from datapipeline.config.preview import PreviewStage
-from datapipeline.config.profiles.build import BuildProfile
-from datapipeline.config.profiles.inspect import InspectProfile
-from datapipeline.config.profiles.output import ServeOutputConfig
-from datapipeline.config.profiles.serve import ServeProfile
-from datapipeline.config.tasks.base import PluginRuntimeTask, RuntimeTask
-from datapipeline.config.tasks.dataset import DatasetTask
-from datapipeline.execution.settings import CommandObservability, LogOutputTarget
-from datapipeline.profiles.runtime_profiles import (
+from jerrythomas.config.preview import PreviewStage
+from jerrythomas.config.profiles.build import BuildProfile
+from jerrythomas.config.profiles.inspect import InspectProfile
+from jerrythomas.config.profiles.output import ServeOutputConfig
+from jerrythomas.config.profiles.serve import ServeProfile
+from jerrythomas.config.tasks.base import PluginRuntimeTask, RuntimeTask
+from jerrythomas.config.tasks.dataset import DatasetTask
+from jerrythomas.execution.settings import CommandObservability, LogOutputTarget
+from jerrythomas.profiles.runtime_profiles import (
     resolve_inspect_profiles,
     resolve_serve_profiles,
 )

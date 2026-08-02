@@ -7,8 +7,8 @@ from typing import Any, cast
 
 import pytest
 
-import datapipeline.artifacts.series as series_store
-from datapipeline.artifacts.series import (
+import jerrythomas.artifacts.series as series_store
+from jerrythomas.artifacts.series import (
     SERIES_MANIFEST_VERSION,
     SeriesRow,
     load_series_manifest,
@@ -189,7 +189,7 @@ def test_series_writer_aborts_when_atomic_commit_fails(
         raise OSError("commit failed")
 
     monkeypatch.setattr(
-        "datapipeline.io.sinks.files._commit_temp_file",
+        "jerrythomas.io.sinks.files._commit_temp_file",
         fail_commit,
     )
     destination = tmp_path / "series.jsonl.gz"

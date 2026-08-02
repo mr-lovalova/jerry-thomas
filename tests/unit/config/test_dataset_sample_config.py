@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.dataset.dataset import DatasetConfig
+from jerrythomas.config.dataset.dataset import DatasetConfig
 
 
 def test_dataset_requires_sample_config() -> None:

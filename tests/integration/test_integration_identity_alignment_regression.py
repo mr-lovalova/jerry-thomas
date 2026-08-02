@@ -3,16 +3,16 @@ import shutil
 
 import pytest
 
-from datapipeline.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
-from datapipeline.artifacts.models import FoldedMetadataLayout
-from datapipeline.artifacts.registry import (
+from jerrythomas.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
+from jerrythomas.artifacts.models import FoldedMetadataLayout
+from jerrythomas.artifacts.registry import (
     SCALER_SPEC,
     VECTOR_METADATA_SPEC,
 )
-from datapipeline.artifacts.scaler import FoldedScalerArtifact
-from datapipeline.artifacts.specs import SERIES
-from datapipeline.services.runtime_compiler import compile_runtime
-from datapipeline.artifacts.series import load_series_manifest
+from jerrythomas.artifacts.scaler import FoldedScalerArtifact
+from jerrythomas.artifacts.specs import SERIES
+from jerrythomas.services.runtime_compiler import compile_runtime
+from jerrythomas.artifacts.series import load_series_manifest
 from tests.helpers.regression import read_jsonl, serve_dataset
 
 

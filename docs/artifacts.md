@@ -191,7 +191,8 @@ with `metadata`. Update scaffolded plugin dependencies from
 schema output (by default `build/schema.json`) are ignored and may be deleted
 after the migration.
 
-The v7 Python layer replaces
+The v7 Python layer replaces the following types under the former
+`datapipeline` namespace (Jerry 9 uses `jerrythomas`):
 `datapipeline.config.dataset.variable.VariableConfig` with
 `datapipeline.config.dataset.series.SeriesConfig`, and replaces
 `datapipeline.domain.variable.VariableRecord` / `VariableSequence` with

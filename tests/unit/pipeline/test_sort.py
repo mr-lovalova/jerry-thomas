@@ -4,8 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
-import datapipeline.pipelines.sort as sort_module
-from datapipeline.pipelines.sort import SortProgress, batch_sort
+import jerrythomas.pipelines.sort as sort_module
+from jerrythomas.pipelines.sort import SortProgress, batch_sort
 
 
 @dataclass

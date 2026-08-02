@@ -5,9 +5,9 @@ import pyarrow as arrow
 import pyarrow.parquet as parquet
 import pytest
 
-from datapipeline.config.sources import FsLoaderConfig, ParquetReaderConfig
-from datapipeline.sources.factory import build_builtin_loader
-from datapipeline.sources.parquet_loader import ParquetLoader
+from jerrythomas.config.sources import FsLoaderConfig, ParquetReaderConfig
+from jerrythomas.sources.factory import build_builtin_loader
+from jerrythomas.sources.parquet_loader import ParquetLoader
 
 
 def _write_rows(path, rows) -> None:

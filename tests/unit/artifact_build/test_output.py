@@ -2,11 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.artifacts.output import (
+from jerrythomas.artifacts.output import (
     ArtifactOutput,
     fingerprint_artifact_output,
 )
-from datapipeline.config.tasks.base import ArtifactTask
+from jerrythomas.config.tasks.base import ArtifactTask
 
 
 def test_fingerprint_artifact_output_requires_declared_file(tmp_path: Path) -> None:

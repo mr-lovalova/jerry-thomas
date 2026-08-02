@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.tasks.scaler import ScalerTask
+from jerrythomas.config.tasks.scaler import ScalerTask
 
 
 def test_scaler_task_has_only_fitting_options() -> None:

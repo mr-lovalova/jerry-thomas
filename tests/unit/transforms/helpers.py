@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from datapipeline.domain.series import SeriesRecord
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
+from jerrythomas.domain.series import SeriesRecord
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
 
 
 def make_time_record(value: float | None, hour: int) -> TemporalRecord:

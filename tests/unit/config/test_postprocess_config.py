@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.dataset.postprocess import CoverageConfig, PostprocessConfig
+from jerrythomas.config.dataset.postprocess import CoverageConfig, PostprocessConfig
 
 
 def test_postprocess_parses_sample_filters() -> None:

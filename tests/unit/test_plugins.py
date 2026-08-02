@@ -2,7 +2,7 @@ import importlib.metadata as metadata
 
 import pytest
 
-from datapipeline import plugins
+from jerrythomas import plugins
 
 
 def test_load_entrypoint_rejects_noncallable_target(

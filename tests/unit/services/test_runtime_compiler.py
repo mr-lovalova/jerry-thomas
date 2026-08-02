@@ -3,18 +3,18 @@ from math import log, log1p
 
 import pytest
 
-from datapipeline.config.cross_section import OlsResidualConfig, RankScoreConfig
-from datapipeline.config.transforms import DedupeConfig
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.execution.events import PipelineEvent, PipelineStarted
-from datapipeline.execution.observability import execution_observer
-from datapipeline.pipelines.stream.pipeline import (
+from jerrythomas.config.cross_section import OlsResidualConfig, RankScoreConfig
+from jerrythomas.config.transforms import DedupeConfig
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.execution.events import PipelineEvent, PipelineStarted
+from jerrythomas.execution.observability import execution_observer
+from jerrythomas.pipelines.stream.pipeline import (
     build_stream_pipeline,
     run_stream_preview_pipeline,
     run_stream_pipeline,
 )
-from datapipeline.plugins import COMBINERS_EP
-from datapipeline.runtime import (
+from jerrythomas.plugins import COMBINERS_EP
+from jerrythomas.runtime import (
     AsOfRuntimeStream,
     BroadcastAsOfRuntimeStream,
     BroadcastRuntimeStream,
@@ -22,9 +22,9 @@ from datapipeline.runtime import (
     DerivedRuntimeStream,
     SourceRuntimeStream,
 )
-from datapipeline.services.project_definition import load_project_definition
-from datapipeline.services.runtime_compiler import compile_runtime
-from datapipeline.sources.source import Source
+from jerrythomas.services.project_definition import load_project_definition
+from jerrythomas.services.runtime_compiler import compile_runtime
+from jerrythomas.sources.source import Source
 
 
 class _PipelineObserver:
@@ -351,7 +351,7 @@ transforms:
         "attach_factors": attach_factors,
     }
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_entrypoint",
+        "jerrythomas.services.streams.combine.load_entrypoint",
         lambda group, entrypoint: combiners[entrypoint],
     )
 
@@ -445,7 +445,7 @@ transforms:
         return record
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_entrypoint",
+        "jerrythomas.services.streams.combine.load_entrypoint",
         lambda group, entrypoint: attach_reference,
     )
 
@@ -576,7 +576,7 @@ combine:
         "attach_factor": attach_factor,
     }
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_entrypoint",
+        "jerrythomas.services.streams.combine.load_entrypoint",
         lambda group, entrypoint: combiners[entrypoint],
     )
 
@@ -696,7 +696,7 @@ combine:
         return combine
 
     monkeypatch.setattr(
-        "datapipeline.services.streams.combine.load_entrypoint",
+        "jerrythomas.services.streams.combine.load_entrypoint",
         load_mapper,
     )
 

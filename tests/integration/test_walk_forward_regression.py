@@ -2,9 +2,9 @@ import json
 import shutil
 from pathlib import Path
 
-import datapipeline.pipelines.sample.input as sample_input
+import jerrythomas.pipelines.sample.input as sample_input
 
-from datapipeline.artifacts.scaler import FoldedScalerArtifact, load_scaler_artifact
+from jerrythomas.artifacts.scaler import FoldedScalerArtifact, load_scaler_artifact
 from tests.helpers.regression import read_jsonl, serve_dataset
 
 

@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.parsers.temporal_record import TemporalRecordParser
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.parsers.temporal_record import TemporalRecordParser
 
 
 @dataclass

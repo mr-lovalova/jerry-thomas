@@ -3,13 +3,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from datapipeline.cli.command_router import execute_command
-from datapipeline.cli.commands import list_ as list_command
-from datapipeline.cli.parser_builder import build_parser
-from datapipeline.cli.workspace import WorkspaceContext
-from datapipeline.config.preview import PREVIEW_STAGES
-from datapipeline.config.workspace import WorkspaceConfig
-from datapipeline.profiles.errors import ProfileCommandError
+from jerrythomas.cli.command_router import execute_command
+from jerrythomas.cli.commands import list_ as list_command
+from jerrythomas.cli.parser_builder import build_parser
+from jerrythomas.cli.workspace import WorkspaceContext
+from jerrythomas.config.preview import PREVIEW_STAGES
+from jerrythomas.config.workspace import WorkspaceConfig
+from jerrythomas.profiles.errors import ProfileCommandError
 
 
 def _execute(args, *, plugin_root=None, workspace=None) -> None:
@@ -25,7 +25,7 @@ def _execute(args, *, plugin_root=None, workspace=None) -> None:
 def test_plugin_name_dispatches_from_positional_argument(monkeypatch) -> None:
     captured: dict[str, object] = {}
     monkeypatch.setattr(
-        "datapipeline.cli.command_router.handle_plugin",
+        "jerrythomas.cli.command_router.handle_plugin",
         lambda **kwargs: captured.update(kwargs),
     )
 
@@ -37,7 +37,7 @@ def test_plugin_name_dispatches_from_positional_argument(monkeypatch) -> None:
 def test_domain_name_dispatches_from_positional_argument(monkeypatch) -> None:
     captured: dict[str, object] = {}
     monkeypatch.setattr(
-        "datapipeline.cli.command_router.handle_domain",
+        "jerrythomas.cli.command_router.handle_domain",
         lambda **kwargs: captured.update(kwargs),
     )
 
@@ -66,7 +66,7 @@ def test_list_route_forwards_plugin_and_workspace(
     )
     captured: dict[str, object] = {}
     monkeypatch.setattr(
-        "datapipeline.cli.command_router.handle_list",
+        "jerrythomas.cli.command_router.handle_list",
         lambda **kwargs: captured.update(kwargs),
     )
 
@@ -135,11 +135,11 @@ def test_profile_request_builder_error_reaches_cli_boundary_without_lifecycle(
         raise error
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.build_runtime_run_request",
+        "jerrythomas.cli.commands.profile_runner.build_runtime_run_request",
         fail,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.profile_runner.execute_profile_request",
+        "jerrythomas.cli.commands.profile_runner.execute_profile_request",
         executed.append,
     )
     with pytest.raises(ProfileCommandError) as raised:

@@ -84,9 +84,9 @@ jobs:
           with ZipFile(wheels[0]) as archive:
               names = set(archive.namelist())
 
-          source_root = Path("src/datapipeline/templates")
+          source_root = Path("src/jerrythomas/templates")
           expected_templates = {
-              f"datapipeline/templates/{path.relative_to(source_root).as_posix()}"
+              f"jerrythomas/templates/{path.relative_to(source_root).as_posix()}"
               for path in source_root.rglob("*")
               if path.is_file()
               and path.suffix != ".pyc"
@@ -95,7 +95,7 @@ jobs:
           packaged_templates = {
               name
               for name in names
-              if name.startswith("datapipeline/templates/")
+              if name.startswith("jerrythomas/templates/")
               and not name.endswith("/")
           }
           missing = expected_templates - packaged_templates
@@ -116,11 +116,27 @@ jobs:
           )
           if junk:
               raise SystemExit(f"Wheel contains generated files: {junk}")
+
+          if not any(name.startswith("jerrythomas/") for name in names):
+              raise SystemExit("Wheel does not contain the jerrythomas package")
+          legacy = sorted(name for name in names if name.startswith("datapipeline/"))
+          if legacy:
+              raise SystemExit(f"Wheel contains the removed datapipeline package: {legacy}")
           PY
 
       - name: Smoke test installed wheel
         run: |
           python -m pip install --force-reinstall dist/*.whl
+          python - <<'PY'
+          import jerrythomas
+
+          try:
+              import datapipeline
+          except ModuleNotFoundError:
+              pass
+          else:
+              raise SystemExit(f"Legacy datapipeline package is importable: {datapipeline}")
+          PY
           jerry --help
           smoke_root="$(mktemp -d)"
           cd "$smoke_root"

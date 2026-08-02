@@ -1,7 +1,7 @@
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from datapipeline.config.streams import (
+from jerrythomas.config.streams import (
     AlignedStreamConfig,
     AsOfStreamConfig,
     BroadcastAsOfStreamConfig,

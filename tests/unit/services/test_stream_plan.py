@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.plugins import PARSERS_EP
-from datapipeline.services.scaffold.paths import ensure_project_scaffold
-from datapipeline.services.scaffold.stream_plan import (
+from jerrythomas.plugins import PARSERS_EP
+from jerrythomas.services.scaffold.paths import ensure_project_scaffold
+from jerrythomas.services.scaffold.stream_plan import (
     DomainCreation,
     DomainReference,
     MapperCreation,
@@ -23,7 +23,7 @@ def _patch_project(monkeypatch, tmp_path: Path) -> Path:
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text("[project]\nname = 'example'\n", encoding="utf-8")
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.pkg_root",
+        "jerrythomas.services.scaffold.stream_plan.pkg_root",
         lambda root: (tmp_path, "example", pyproject),
     )
     return pyproject
@@ -34,11 +34,11 @@ def test_custom_source_id_is_used_for_source_and_stream(monkeypatch, tmp_path) -
     created_source: dict[str, object] = {}
     created_stream: dict[str, object] = {}
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.create_source_yaml",
+        "jerrythomas.services.scaffold.stream_plan.create_source_yaml",
         lambda **kwargs: created_source.update(kwargs),
     )
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.write_source_stream",
+        "jerrythomas.services.scaffold.stream_plan.write_source_stream",
         lambda **kwargs: created_stream.update(kwargs),
     )
     plan = StreamPlan(
@@ -66,7 +66,7 @@ def test_invalid_source_id_fails_before_project_mutation(monkeypatch, tmp_path) 
         raise AssertionError("invalid plans must fail before project resolution")
 
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.pkg_root",
+        "jerrythomas.services.scaffold.stream_plan.pkg_root",
         fail_project_resolution,
     )
     plan = StreamPlan(
@@ -306,27 +306,27 @@ def test_creation_plan_executes_exact_declared_components(
         stream_call.update(kwargs)
 
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.create_domain",
+        "jerrythomas.services.scaffold.stream_plan.create_domain",
         create_domain,
     )
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.create_dto",
+        "jerrythomas.services.scaffold.stream_plan.create_dto",
         create_dto,
     )
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.create_parser",
+        "jerrythomas.services.scaffold.stream_plan.create_parser",
         create_parser,
     )
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.create_source_yaml",
+        "jerrythomas.services.scaffold.stream_plan.create_source_yaml",
         create_source,
     )
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.create_mapper",
+        "jerrythomas.services.scaffold.stream_plan.create_mapper",
         create_mapper,
     )
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.write_source_stream",
+        "jerrythomas.services.scaffold.stream_plan.write_source_stream",
         create_stream,
     )
     dto = PythonType("WeatherDTO", "example.dtos.weather_dto")
@@ -374,12 +374,12 @@ def test_reference_plan_only_writes_stream(monkeypatch, tmp_path) -> None:
         raise AssertionError("source must be reused")
 
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.create_source_yaml",
+        "jerrythomas.services.scaffold.stream_plan.create_source_yaml",
         fail_source_creation,
     )
     captured: dict[str, object] = {}
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.write_source_stream",
+        "jerrythomas.services.scaffold.stream_plan.write_source_stream",
         lambda **kwargs: captured.update(kwargs),
     )
     plan = StreamPlan(
@@ -408,15 +408,15 @@ def test_dto_creation_is_a_single_explicit_plan_action(monkeypatch, tmp_path) ->
         return "weather_mapper"
 
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.create_dto",
+        "jerrythomas.services.scaffold.stream_plan.create_dto",
         lambda name, root, **kwargs: created_dto.update(name=name, root=root),
     )
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.create_mapper",
+        "jerrythomas.services.scaffold.stream_plan.create_mapper",
         create_mapper,
     )
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.write_source_stream",
+        "jerrythomas.services.scaffold.stream_plan.write_source_stream",
         lambda **kwargs: None,
     )
     plan = StreamPlan(
@@ -469,7 +469,7 @@ def test_stream_plan_rolls_back_after_late_failure(
         raise OSError("stream write failed")
 
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.stream_plan.write_source_stream",
+        "jerrythomas.services.scaffold.stream_plan.write_source_stream",
         fail_stream_write,
     )
 

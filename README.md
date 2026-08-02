@@ -1,4 +1,4 @@
-# Datapipeline Runtime
+# Jerry Thomas
 
 Jerry Thomas is a time-series data pipeline runtime. It reads source data,
 maps it into ordered record streams, applies declarative transforms, and serves

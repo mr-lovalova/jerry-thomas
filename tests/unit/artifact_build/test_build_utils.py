@@ -5,29 +5,29 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.artifacts.registry import VECTOR_METADATA_SPEC
-from datapipeline.artifacts.series import SeriesRow
-from datapipeline.artifacts.specs import SERIES, VECTOR_METADATA
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, TargetSeriesConfig
-from datapipeline.config.dataset.split import (
+from jerrythomas.artifacts.registry import VECTOR_METADATA_SPEC
+from jerrythomas.artifacts.series import SeriesRow
+from jerrythomas.artifacts.specs import SERIES, VECTOR_METADATA
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
+from jerrythomas.config.dataset.split import (
     DatasetFold,
     HashSplitConfig,
     TimeInterval,
     TimeSplitConfig,
 )
-from datapipeline.config.tasks.metadata import MetadataTask
-from datapipeline.operations.artifacts import metadata as artifact_metadata
-from datapipeline.operations.artifacts.metadata import (
+from jerrythomas.config.tasks.metadata import MetadataTask
+from jerrythomas.operations.artifacts import metadata as artifact_metadata
+from jerrythomas.operations.artifacts.metadata import (
     _window_bounds_from_stats,
     build_metadata_artifact,
 )
-from datapipeline.operations.artifacts.utils import (
+from jerrythomas.operations.artifacts.utils import (
     VectorMetadataStats,
     metadata_entries_from_stats,
 )
-from datapipeline.runtime import DerivedRuntimeStream, Runtime
-from datapipeline.io.yaml import load_yaml
+from jerrythomas.runtime import DerivedRuntimeStream, Runtime
+from jerrythomas.io.yaml import load_yaml
 
 
 def test_metadata_task_rejects_dataset_window_mode() -> None:

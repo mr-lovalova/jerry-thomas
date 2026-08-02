@@ -1,15 +1,15 @@
 import pytest
 
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig, SequenceConfig
-from datapipeline.config.dataset.split import DatasetFold, HashSplitConfig
-from datapipeline.config.streams import (
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig, SequenceConfig
+from jerrythomas.config.dataset.split import DatasetFold, HashSplitConfig
+from jerrythomas.config.streams import (
     CrossSectionStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
     StreamsConfig,
 )
-from datapipeline.services.dataset import validate_dataset_streams
+from jerrythomas.services.dataset import validate_dataset_streams
 
 
 def _streams(partition_by: list[str]) -> StreamsConfig:

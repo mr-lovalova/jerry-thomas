@@ -1,33 +1,33 @@
 from types import SimpleNamespace
 
-from datapipeline.artifacts.hydration import (
+from jerrythomas.artifacts.hydration import (
     hydrate_runtime_artifacts,
     hydrate_runtime_artifacts_for_pipeline,
 )
-from datapipeline.artifacts.planning import build_artifact_graph
-from datapipeline.artifacts.specs import (
+from jerrythomas.artifacts.planning import build_artifact_graph
+from jerrythomas.artifacts.specs import (
     SCALER_STATISTICS,
     SERIES,
     VECTOR_METADATA,
 )
-from datapipeline.artifacts.validation import NestedScheduleDependency
-from datapipeline.artifacts.state import (
+from jerrythomas.artifacts.validation import NestedScheduleDependency
+from jerrythomas.artifacts.state import (
     ArtifactFileFingerprint,
     BuildState,
     save_build_state,
 )
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import SeriesConfig
-from datapipeline.config.streams import StreamsConfig
-from datapipeline.config.tasks.base import ArtifactTask
-from datapipeline.config.tasks.metadata import MetadataTask
-from datapipeline.config.tasks.scaler import ScalerTask
-from datapipeline.config.tasks.series import SeriesTask
-from datapipeline.config.tasks.schedule import ScheduleTask
-from datapipeline.runtime import Runtime
-from datapipeline.services.definitions import ArtifactHashes
-from datapipeline.services.project_definition import load_project_definition
-from datapipeline.services.runtime_compiler import compile_runtime
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig
+from jerrythomas.config.streams import StreamsConfig
+from jerrythomas.config.tasks.base import ArtifactTask
+from jerrythomas.config.tasks.metadata import MetadataTask
+from jerrythomas.config.tasks.scaler import ScalerTask
+from jerrythomas.config.tasks.series import SeriesTask
+from jerrythomas.config.tasks.schedule import ScheduleTask
+from jerrythomas.runtime import Runtime
+from jerrythomas.services.definitions import ArtifactHashes
+from jerrythomas.services.project_definition import load_project_definition
+from jerrythomas.services.runtime_compiler import compile_runtime
 
 
 def _current_hashes(*keys: str) -> ArtifactHashes:
@@ -180,7 +180,7 @@ def test_project_hydration_excludes_inactive_scaler(
     )
     runtime.artifacts.register(SCALER_STATISTICS, scaler.output)
     monkeypatch.setattr(
-        "datapipeline.artifacts.hydration.load_build_state",
+        "jerrythomas.artifacts.hydration.load_build_state",
         lambda _state_path: state,
     )
     definition = SimpleNamespace(
@@ -255,11 +255,11 @@ def test_project_hydration_excludes_nested_schedule_and_dependents(
     runtime.artifacts.register("derived_schedule", schedule.output)
     runtime.artifacts.register(SERIES, series.output)
     monkeypatch.setattr(
-        "datapipeline.artifacts.hydration.load_build_state",
+        "jerrythomas.artifacts.hydration.load_build_state",
         lambda _state_path: state,
     )
     monkeypatch.setattr(
-        "datapipeline.artifacts.hydration.nested_schedule_dependencies",
+        "jerrythomas.artifacts.hydration.nested_schedule_dependencies",
         lambda *_args: (
             NestedScheduleDependency(
                 task=schedule,

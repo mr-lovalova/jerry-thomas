@@ -3,31 +3,31 @@ from datetime import datetime, timezone
 
 import pytest
 
-from datapipeline.artifacts.scaler import (
+from jerrythomas.artifacts.scaler import (
     FoldedScalerArtifact,
     PositionalScalerStatistics,
     ScalerStatistics,
     StandardScalerArtifact,
     load_scaler_artifact,
 )
-from datapipeline.config.dataset.dataset import DatasetConfig, SampleConfig
-from datapipeline.config.dataset.series import (
+from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import (
     SeriesConfig,
     SequenceConfig,
     TargetSeriesConfig,
 )
-from datapipeline.config.dataset.split import (
+from jerrythomas.config.dataset.split import (
     DatasetFold,
     HashSplitConfig,
     TimeInterval,
     TimeSplitConfig,
 )
-from datapipeline.config.tasks.scaler import ScalerTask
-from datapipeline.config.transforms import EnsureCadenceConfig, ForwardFillConfig
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.operations.artifacts.scaler import build_scaler_artifact
-from datapipeline.runtime import Runtime, SourceRuntimeStream
-from datapipeline.transforms.utils import set_record_domain_anchor
+from jerrythomas.config.tasks.scaler import ScalerTask
+from jerrythomas.config.transforms import EnsureCadenceConfig, ForwardFillConfig
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.operations.artifacts.scaler import build_scaler_artifact
+from jerrythomas.runtime import Runtime, SourceRuntimeStream
+from jerrythomas.transforms.utils import set_record_domain_anchor
 
 
 def _time(day: int) -> datetime:
@@ -247,7 +247,7 @@ def test_standard_scaler_excludes_placeholder_only_wide_ids(
     placeholder.bucket = "future"
     set_record_domain_anchor(placeholder, False)
     monkeypatch.setattr(
-        "datapipeline.operations.artifacts.scaler.run_stream_pipeline",
+        "jerrythomas.operations.artifacts.scaler.run_stream_pipeline",
         lambda *_args: iter((genuine, placeholder)),
     )
 
@@ -297,7 +297,7 @@ def test_scaler_excludes_leading_placeholders_for_later_entities(
     trailing_placeholder_b.bucket = "B"
     set_record_domain_anchor(trailing_placeholder_b, False)
     monkeypatch.setattr(
-        "datapipeline.operations.artifacts.scaler.run_stream_pipeline",
+        "jerrythomas.operations.artifacts.scaler.run_stream_pipeline",
         lambda *_args: iter(
             (
                 genuine_a,
@@ -722,7 +722,7 @@ def test_folded_scaler_excludes_placeholder_only_wide_ids(
     placeholder.bucket = "future"
     set_record_domain_anchor(placeholder, False)
     monkeypatch.setattr(
-        "datapipeline.operations.artifacts.scaler.run_stream_pipeline",
+        "jerrythomas.operations.artifacts.scaler.run_stream_pipeline",
         lambda *_args: iter((genuine, placeholder)),
     )
 

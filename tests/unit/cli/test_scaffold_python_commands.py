@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from datapipeline.cli.commands.mapper import handle as handle_mapper
-from datapipeline.cli.commands.parser import handle as handle_parser
-from datapipeline.plugins import MAPPERS_EP, PARSERS_EP
+from jerrythomas.cli.commands.mapper import handle as handle_mapper
+from jerrythomas.cli.commands.parser import handle as handle_parser
+from jerrythomas.plugins import MAPPERS_EP, PARSERS_EP
 
 
 class PromptAborted(Exception):
@@ -35,7 +35,7 @@ def test_parser_finishes_prompting_before_creating_dto(
     pyproject = plugin / "pyproject.toml"
     original_pyproject = pyproject.read_bytes()
     monkeypatch.setattr(
-        "datapipeline.cli.commands.parser.choose_dto",
+        "jerrythomas.cli.commands.parser.choose_dto",
         lambda existing, default=None: ("WeatherDTO", True),
     )
 
@@ -43,7 +43,7 @@ def test_parser_finishes_prompting_before_creating_dto(
         raise PromptAborted
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.parser.choose_name",
+        "jerrythomas.cli.commands.parser.choose_name",
         abort_parser_name,
     )
 
@@ -64,15 +64,15 @@ def test_mapper_finishes_prompting_before_creating_dependencies(
     pyproject = plugin / "pyproject.toml"
     original_pyproject = pyproject.read_bytes()
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.pick_from_menu",
+        "jerrythomas.cli.commands.mapper.pick_from_menu",
         lambda *args, **kwargs: "dto",
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.choose_dto",
+        "jerrythomas.cli.commands.mapper.choose_dto",
         lambda existing, default=None: ("WeatherDTO", True),
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.choose_domain",
+        "jerrythomas.cli.commands.mapper.choose_domain",
         lambda existing, default=None: ("weather", True),
     )
 
@@ -80,7 +80,7 @@ def test_mapper_finishes_prompting_before_creating_dependencies(
         raise PromptAborted
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.choose_name",
+        "jerrythomas.cli.commands.mapper.choose_name",
         abort_mapper_name,
     )
 
@@ -102,7 +102,7 @@ def test_parser_validates_pyproject_before_creating_selected_dto(
     pyproject = plugin / "pyproject.toml"
     pyproject.write_text("[project\n", encoding="utf-8")
     monkeypatch.setattr(
-        "datapipeline.cli.commands.parser.choose_dto",
+        "jerrythomas.cli.commands.parser.choose_dto",
         lambda existing, default=None: ("WeatherDTO", True),
     )
 
@@ -123,15 +123,15 @@ def test_mapper_validates_pyproject_before_creating_selected_dependencies(
     pyproject = plugin / "pyproject.toml"
     pyproject.write_text("[project\n", encoding="utf-8")
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.pick_from_menu",
+        "jerrythomas.cli.commands.mapper.pick_from_menu",
         lambda *args, **kwargs: "dto",
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.choose_dto",
+        "jerrythomas.cli.commands.mapper.choose_dto",
         lambda existing, default=None: ("WeatherDTO", True),
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.choose_domain",
+        "jerrythomas.cli.commands.mapper.choose_domain",
         lambda existing, default=None: ("weather", True),
     )
 
@@ -167,7 +167,7 @@ def test_parser_collision_does_not_create_selected_dto(
             )
     original_pyproject = pyproject.read_bytes()
     monkeypatch.setattr(
-        "datapipeline.cli.commands.parser.choose_dto",
+        "jerrythomas.cli.commands.parser.choose_dto",
         lambda existing, default=None: ("WeatherDTO", True),
     )
 
@@ -201,15 +201,15 @@ def test_mapper_collision_does_not_create_selected_dependencies(
             )
     original_pyproject = pyproject.read_bytes()
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.pick_from_menu",
+        "jerrythomas.cli.commands.mapper.pick_from_menu",
         lambda *args, **kwargs: "dto",
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.choose_dto",
+        "jerrythomas.cli.commands.mapper.choose_dto",
         lambda existing, default=None: ("WeatherDTO", True),
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.choose_domain",
+        "jerrythomas.cli.commands.mapper.choose_domain",
         lambda existing, default=None: ("weather", True),
     )
 
@@ -232,11 +232,11 @@ def test_parser_rolls_back_created_dto_when_registration_fails(
     pyproject = plugin / "pyproject.toml"
     original_pyproject = pyproject.read_bytes()
     monkeypatch.setattr(
-        "datapipeline.cli.commands.parser.choose_dto",
+        "jerrythomas.cli.commands.parser.choose_dto",
         lambda existing, default=None: ("WeatherDTO", True),
     )
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.entrypoints._write_document",
+        "jerrythomas.services.scaffold.entrypoints._write_document",
         _raise_write_failure,
     )
 
@@ -258,19 +258,19 @@ def test_mapper_rolls_back_created_dependencies_when_registration_fails(
     pyproject = plugin / "pyproject.toml"
     original_pyproject = pyproject.read_bytes()
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.pick_from_menu",
+        "jerrythomas.cli.commands.mapper.pick_from_menu",
         lambda *args, **kwargs: "dto",
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.choose_dto",
+        "jerrythomas.cli.commands.mapper.choose_dto",
         lambda existing, default=None: ("WeatherDTO", True),
     )
     monkeypatch.setattr(
-        "datapipeline.cli.commands.mapper.choose_domain",
+        "jerrythomas.cli.commands.mapper.choose_domain",
         lambda existing, default=None: ("weather", True),
     )
     monkeypatch.setattr(
-        "datapipeline.services.scaffold.entrypoints._write_document",
+        "jerrythomas.services.scaffold.entrypoints._write_document",
         _raise_write_failure,
     )
 

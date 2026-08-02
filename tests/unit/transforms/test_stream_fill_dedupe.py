@@ -1,9 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.transforms import FillConfig
-from datapipeline.transforms.stream.dedupe import DedupeTransform
-from datapipeline.transforms.stream.fill import (
+from jerrythomas.config.transforms import FillConfig
+from jerrythomas.transforms.stream.dedupe import DedupeTransform
+from jerrythomas.transforms.stream.fill import (
     ForwardFillTransform,
     StatisticalFillTransform,
 )

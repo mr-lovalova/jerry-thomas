@@ -126,6 +126,9 @@ do not change `artifact_revision` solely for this migration.
 
 Custom source plugins must also update their Python imports:
 
+The following historical paths use the `datapipeline` namespace shipped by
+Jerry 6 and 7. Jerry 9 plugins use the equivalent `jerrythomas` paths.
+
 ```python
 # schema 2 / Jerry 6
 from datapipeline.sources.models.loader import BaseDataLoader
@@ -137,7 +140,7 @@ from datapipeline.sources.parser import DataParser
 ```
 
 Generative loaders can implement the structural `RowGenerator` contract and
-adapt it with `GeneratorLoader`, both from `datapipeline.sources.loader`.
+adapt it with `GeneratorLoader`, both from `jerrythomas.sources.loader`.
 Less commonly imported runtime types moved from `sources.models.source.Source`
 to `sources.source.Source` and from `sources.models.parsing_error.ParsingError`
 to `sources.parser.ParsingError`.
@@ -430,7 +433,7 @@ options: {}
   `operation`.
 - Core operations use reserved `core.runtime.*` identifiers and call their typed
   implementations directly. A custom runtime operation's `entrypoint` must
-  resolve in the `datapipeline.operations.runtime` entry-point group.
+  resolve in the `jerrythomas.operations.runtime` entry-point group.
 - `requires` declares additional prerequisite artifact operation IDs for custom or
   built-in operations. Each referenced artifact and its dependency chain must
   have available producer operations.
@@ -791,7 +794,7 @@ Notes:
 - `from.align` contains at least two canonical stream ids. List order defines
   positional combine arguments.
 - `combine` is required and cannot be replaced by the iterator-level `map`.
-- `combine.entrypoint` resolves from the `datapipeline.combiners` plugin group.
+- `combine.entrypoint` resolves from the `jerrythomas.combiners` plugin group.
 - Jerry normalizes timezone-aware combiner output timestamps to UTC.
 - Inputs must use the same `partition_by`; the aligned stream inherits it.
 - Alignment validates and merges the already ordered inputs in one pass. Each

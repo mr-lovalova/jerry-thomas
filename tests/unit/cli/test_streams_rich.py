@@ -12,8 +12,8 @@ from rich.progress import Progress
 from rich.table import Column
 from rich.text import Text
 
-import datapipeline.cli.visuals.rich.progress as rich_progress
-from datapipeline.cli.visuals.execution_context import (
+import jerrythomas.cli.visuals.rich.progress as rich_progress
+from jerrythomas.cli.visuals.execution_context import (
     current_execution_event_handler,
     current_terminal_log_handler,
     reset_current_execution_event_handler,
@@ -21,8 +21,8 @@ from datapipeline.cli.visuals.execution_context import (
     set_current_execution_event_handler,
     set_current_terminal_log_handler,
 )
-from datapipeline.execution.observability import ExecutionMessage
-from datapipeline.cli.visuals.rich.progress import (
+from jerrythomas.execution.observability import ExecutionMessage
+from jerrythomas.cli.visuals.rich.progress import (
     _ExecutionProgress,
     _ProgressRowColumn,
     _RichExecutionRenderer,
@@ -30,7 +30,7 @@ from datapipeline.cli.visuals.rich.progress import (
     visual_execution,
     visual_summary,
 )
-from datapipeline.execution.events import (
+from jerrythomas.execution.events import (
     NodeFinished,
     NodeProgress,
     NodeStarted,
@@ -40,7 +40,7 @@ from datapipeline.execution.events import (
     ProgressResource,
     ProgressSnapshot,
 )
-from datapipeline.execution.observability import (
+from jerrythomas.execution.observability import (
     CommandFinished,
     FileResult,
     OperationFinished,
@@ -885,7 +885,7 @@ def test_rich_renderer_renders_file_result_as_aligned_link() -> None:
 def test_visual_execution_restores_existing_context(monkeypatch) -> None:
     console, _ = _console()
     monkeypatch.setattr(
-        "datapipeline.cli.visuals.rich.progress.Console",
+        "jerrythomas.cli.visuals.rich.progress.Console",
         lambda **kwargs: console,
     )
 
@@ -913,11 +913,11 @@ def test_visual_summary_uses_a_stateless_renderer_and_restores_context(
 ) -> None:
     console, output = _console()
     monkeypatch.setattr(
-        "datapipeline.cli.visuals.rich.progress.Console",
+        "jerrythomas.cli.visuals.rich.progress.Console",
         lambda **_kwargs: console,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.visuals.rich.progress.rich_visuals_supported",
+        "jerrythomas.cli.visuals.rich.progress.rich_visuals_supported",
         lambda: True,
     )
 
@@ -925,7 +925,7 @@ def test_visual_summary_uses_a_stateless_renderer_and_restores_context(
         raise AssertionError("A command summary must not start live progress")
 
     monkeypatch.setattr(
-        "datapipeline.cli.visuals.rich.progress.Progress",
+        "jerrythomas.cli.visuals.rich.progress.Progress",
         fail_progress,
     )
 
@@ -945,7 +945,7 @@ def test_visual_summary_uses_a_stateless_renderer_and_restores_context(
             assert current_execution_event_handler() is previous_handler
 
         monkeypatch.setattr(
-            "datapipeline.cli.visuals.rich.progress.rich_visuals_supported",
+            "jerrythomas.cli.visuals.rich.progress.rich_visuals_supported",
             lambda: False,
         )
         with visual_summary(logging.INFO, enabled=True):
@@ -967,7 +967,7 @@ def test_visual_execution_releases_file_proxies_before_process_shutdown() -> Non
         from rich.console import Console
         from rich.file_proxy import FileProxy
 
-        import datapipeline.cli.visuals.rich.progress as progress
+        import jerrythomas.cli.visuals.rich.progress as progress
 
         progress.Console = lambda **kwargs: Console(
             file=kwargs["file"],
@@ -1043,11 +1043,11 @@ def test_visual_execution_uses_minimal_progress_styles(monkeypatch) -> None:
         return Progress(*args, **kwargs)
 
     monkeypatch.setattr(
-        "datapipeline.cli.visuals.rich.progress.Console",
+        "jerrythomas.cli.visuals.rich.progress.Console",
         lambda **_kwargs: console,
     )
     monkeypatch.setattr(
-        "datapipeline.cli.visuals.rich.progress.Progress",
+        "jerrythomas.cli.visuals.rich.progress.Progress",
         capture_progress,
     )
 

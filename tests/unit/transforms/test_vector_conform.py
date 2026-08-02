@@ -1,13 +1,13 @@
 import pytest
 
-from datapipeline.artifacts.models import (
+from jerrythomas.artifacts.models import (
     ListVectorMetadataEntry,
     ScalarVectorMetadataEntry,
     VectorMetadataEntry,
 )
-from datapipeline.domain.sample import Sample
-from datapipeline.domain.vector import Vector
-from datapipeline.transforms.vector.conform import (
+from jerrythomas.domain.sample import Sample
+from jerrythomas.domain.vector import Vector
+from jerrythomas.transforms.vector.conform import (
     ConformFeaturesTransform,
     ConformTargetsTransform,
 )

@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from datapipeline.alignment.as_of import as_of_stream
-from datapipeline.domain.record import TemporalRecord
+from jerrythomas.alignment.as_of import as_of_stream
+from jerrythomas.domain.record import TemporalRecord
 
 
 @dataclass

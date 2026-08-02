@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.transforms.cross_section import (
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.transforms.cross_section import (
     OlsResidualTransform,
     RankScoreTransform,
 )
@@ -24,9 +24,7 @@ def test_rank_score_uses_normalized_average_ranks_without_mutating_inputs() -> N
 
     output = transform.apply(records)
 
-    assert [record.score for record in output] == pytest.approx(
-        [0.5, -0.5, 0.0, 0.0]
-    )
+    assert [record.score for record in output] == pytest.approx([0.5, -0.5, 0.0, 0.0])
     assert all(not hasattr(record, "score") for record in records)
     assert all(result is not source for result, source in zip(output, records))
 
@@ -90,7 +88,9 @@ def test_rank_score_requires_its_configured_field() -> None:
         RankScoreTransform("value", "score", min_samples=2).apply([record])
 
 
-def test_ols_residual_computes_complete_case_residuals_without_mutating_inputs() -> None:
+def test_ols_residual_computes_complete_case_residuals_without_mutating_inputs() -> (
+    None
+):
     records = [
         _record(0.0, market=1.0, size=0.0, stock=4.0),
         _record(0.0, market=2.0, size=1.0, stock=8.5),

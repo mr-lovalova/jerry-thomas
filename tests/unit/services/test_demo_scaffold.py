@@ -3,12 +3,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from datapipeline.config.workspace import WorkspaceConfig
-from datapipeline.plugins import MAPPERS_EP, PARSERS_EP
-from datapipeline.services.project import load_project
-from datapipeline.services.scaffold import demo
-from datapipeline.services.scaffold.entrypoints import read_entry_points
-from datapipeline.services.streams.loader import load_streams
+from jerrythomas.config.workspace import WorkspaceConfig
+from jerrythomas.plugins import MAPPERS_EP, PARSERS_EP
+from jerrythomas.services.project import load_project
+from jerrythomas.services.scaffold import demo
+from jerrythomas.services.scaffold.entrypoints import read_entry_points
+from jerrythomas.services.streams.loader import load_streams
 
 
 def test_demo_scaffold_creates_self_contained_plugin(tmp_path: Path) -> None:
@@ -57,7 +57,7 @@ def test_demo_scaffold_creates_self_contained_plugin(tmp_path: Path) -> None:
     template_root = (
         Path(__file__).parents[3]
         / "src"
-        / "datapipeline"
+        / "jerrythomas"
         / "templates"
         / "demo_skeleton"
     )

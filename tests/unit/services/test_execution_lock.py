@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 from textwrap import dedent
 
-from datapipeline.services.execution_lock import project_execution_lock
+from jerrythomas.services.execution_lock import project_execution_lock
 
 
 def test_project_execution_lock_excludes_another_process(tmp_path: Path) -> None:
@@ -16,7 +16,7 @@ def test_project_execution_lock_excludes_another_process(tmp_path: Path) -> None
 
         sys.path.insert(0, sys.argv[1])
 
-        from datapipeline.services.execution_lock import (
+        from jerrythomas.services.execution_lock import (
             ProjectExecutionBusyError,
             project_execution_lock,
         )

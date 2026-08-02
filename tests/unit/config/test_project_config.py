@@ -1,8 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from datapipeline.config.project import ProjectConfig
-from datapipeline.services.config_refs import project_vars_from_data
+from jerrythomas.config.project import ProjectConfig
+from jerrythomas.services.config_refs import project_vars_from_data
 
 
 def _project_data(**overrides):

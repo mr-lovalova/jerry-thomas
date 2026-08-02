@@ -3,16 +3,16 @@ from pathlib import Path
 
 import pytest
 
-import datapipeline.execution.observability as observability
-from datapipeline.cli.visuals.execution import (
+import jerrythomas.execution.observability as observability
+from jerrythomas.cli.visuals.execution import (
     ExecutionEventFormatter,
     make_execution_observer,
 )
-from datapipeline.cli.visuals.execution_context import (
+from jerrythomas.cli.visuals.execution_context import (
     reset_current_execution_event_handler,
     set_current_execution_event_handler,
 )
-from datapipeline.execution.events import (
+from jerrythomas.execution.events import (
     NodeFinished,
     NodeProgress,
     NodeStarted,
@@ -23,7 +23,7 @@ from datapipeline.execution.events import (
     ProgressSnapshot,
     format_elapsed,
 )
-from datapipeline.execution.observability import (
+from jerrythomas.execution.observability import (
     CommandFinished,
     ExecutionMessage,
     FileResult,
@@ -211,7 +211,7 @@ def test_failed_terminal_events_are_errors() -> None:
 
 
 def test_observer_logs_root_lifecycle_and_summary_at_info(caplog) -> None:
-    logger = logging.getLogger("datapipeline.cli.visuals.execution.test.root")
+    logger = logging.getLogger("jerrythomas.cli.visuals.execution.test.root")
     observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.INFO, logger=logger.name):
@@ -239,7 +239,7 @@ def test_observer_logs_root_lifecycle_and_summary_at_info(caplog) -> None:
 
 
 def test_observer_logs_stages_at_debug(caplog) -> None:
-    logger = logging.getLogger("datapipeline.cli.visuals.execution.test.stages")
+    logger = logging.getLogger("jerrythomas.cli.visuals.execution.test.stages")
     observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.DEBUG, logger=logger.name):
@@ -268,7 +268,7 @@ def test_observer_logs_stages_at_debug(caplog) -> None:
 
 
 def test_observer_logs_pipeline_heartbeat_at_info(caplog) -> None:
-    logger = logging.getLogger("datapipeline.cli.visuals.execution.test.progress")
+    logger = logging.getLogger("jerrythomas.cli.visuals.execution.test.progress")
     observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.INFO, logger=logger.name):
@@ -298,7 +298,7 @@ def test_observer_logs_pipeline_heartbeat_at_info(caplog) -> None:
 
 
 def test_observer_logs_only_heartbeat_node_progress_at_debug(caplog) -> None:
-    logger = logging.getLogger("datapipeline.cli.visuals.execution.test.node-progress")
+    logger = logging.getLogger("jerrythomas.cli.visuals.execution.test.node-progress")
     observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.DEBUG, logger=logger.name):
@@ -328,7 +328,7 @@ def test_observer_logs_only_heartbeat_node_progress_at_debug(caplog) -> None:
 
 
 def test_observer_includes_error_details_on_failure(caplog) -> None:
-    logger = logging.getLogger("datapipeline.cli.visuals.execution.test.error")
+    logger = logging.getLogger("jerrythomas.cli.visuals.execution.test.error")
     observer = make_execution_observer(logger)
 
     with caplog.at_level(logging.INFO, logger=logger.name):
@@ -356,7 +356,7 @@ def test_observer_includes_error_details_on_failure(caplog) -> None:
 def test_execution_observer_routes_pipeline_events_to_logger_and_handler(
     caplog,
 ) -> None:
-    logger = logging.getLogger("datapipeline.cli.visuals.execution.test.context")
+    logger = logging.getLogger("jerrythomas.cli.visuals.execution.test.context")
     capture = _CaptureHandler()
     token = set_current_execution_event_handler(capture)
     try:
@@ -385,7 +385,7 @@ def test_execution_observer_routes_pipeline_events_to_logger_and_handler(
 
 
 def test_context_handler_is_resolved_when_each_event_is_emitted(caplog) -> None:
-    logger = logging.getLogger("datapipeline.cli.visuals.execution.test.reset")
+    logger = logging.getLogger("jerrythomas.cli.visuals.execution.test.reset")
     capture = _CaptureHandler()
     token = set_current_execution_event_handler(capture)
     try:
@@ -410,7 +410,7 @@ def test_context_handler_is_resolved_when_each_event_is_emitted(caplog) -> None:
 
 def test_execution_message_uses_execution_observer_and_logger(caplog) -> None:
     capture = _CaptureHandler()
-    logger = logging.getLogger("datapipeline.cli.visuals.execution.test.message")
+    logger = logging.getLogger("jerrythomas.cli.visuals.execution.test.message")
     token = set_current_execution_event_handler(capture)
     try:
         with caplog.at_level(logging.INFO, logger=logger.name):
@@ -432,7 +432,7 @@ def test_operation_scope_emits_flat_lifecycle_result_and_progress(
     times = iter((0.0, 1.0, 1.25))
     monkeypatch.setattr(observability.time, "perf_counter", lambda: next(times))
     capture = _CaptureHandler()
-    logger = logging.getLogger("datapipeline.cli.visuals.execution.test.operation")
+    logger = logging.getLogger("jerrythomas.cli.visuals.execution.test.operation")
     token = set_current_execution_event_handler(capture)
     try:
         with caplog.at_level(logging.INFO, logger=logger.name):

@@ -5,9 +5,9 @@ from random import Random
 import numpy as np
 import pytest
 
-from datapipeline.domain.record import TemporalRecord
-from datapipeline.transforms.stream.lag import LagTransform
-from datapipeline.transforms.stream.rolling_ols import RollingOlsTransform
+from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.transforms.stream.lag import LagTransform
+from jerrythomas.transforms.stream.rolling_ols import RollingOlsTransform
 
 
 def _record(

@@ -2,10 +2,10 @@ import sys
 from pathlib import Path
 
 import pytest
-from datapipeline.cli import app
-from datapipeline.cli.workspace import WorkspaceContext
-from datapipeline.config.workspace import WorkspaceConfig
-from datapipeline.profiles.errors import ProfileCommandError
+from jerrythomas.cli import app
+from jerrythomas.cli.workspace import WorkspaceContext
+from jerrythomas.config.workspace import WorkspaceConfig
+from jerrythomas.profiles.errors import ProfileCommandError
 
 
 def test_source_add_skips_dataset_resolution(monkeypatch, tmp_path):
@@ -39,7 +39,7 @@ def test_source_add_skips_dataset_resolution(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(
-        "datapipeline.cli.commands.source.create_source_yaml", fake_create_source_yaml
+        "jerrythomas.cli.commands.source.create_source_yaml", fake_create_source_yaml
     )
     monkeypatch.setattr(
         sys,
