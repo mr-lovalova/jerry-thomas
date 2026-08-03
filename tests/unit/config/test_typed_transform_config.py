@@ -14,6 +14,7 @@ from jerrythomas.config.transforms import (
     Log1pConfig,
     LogConfig,
     RollingConfig,
+    RollingQuantileConfig,
     RollingOlsConfig,
     RollingSlopeConfig,
     ShiftTimeConfig,
@@ -53,6 +54,13 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
                 "statistic": "mean",
             },
             {
+                "operation": "rolling_quantile",
+                "field": "close",
+                "window": 20,
+                "quantile": 0.9,
+                "to": "close_q90",
+            },
+            {
                 "operation": "fill",
                 "field": "close",
                 "window": 5,
@@ -68,6 +76,12 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
     assert stream.transforms == [
         DedupeConfig(),
         RollingConfig(field="close", window=20, statistic="mean"),
+        RollingQuantileConfig(
+            field="close",
+            window=20,
+            quantile=0.9,
+            to="close_q90",
+        ),
         FillConfig(field="close", window=5, statistic="median"),
         ForwardFillConfig(field="close", to="close_asof"),
         CollapseConfig(keep="last"),
@@ -82,6 +96,14 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
             "to": None,
             "min_samples": None,
             "statistic": "mean",
+        },
+        {
+            "operation": "rolling_quantile",
+            "field": "close",
+            "window": 20,
+            "quantile": 0.9,
+            "to": "close_q90",
+            "min_samples": None,
         },
         {
             "operation": "fill",

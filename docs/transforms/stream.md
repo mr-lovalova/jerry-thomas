@@ -59,6 +59,10 @@ nonnumeric or infinite values.
   a rolling window. Missing ticks occupy a window position but do not count
   toward `min_samples`, which defaults to `window`. Values must be finite;
   `None` and `NaN` are treated as missing.
+- `rolling_quantile`: compute a quantile between `0` and `1` using linear
+  interpolation at position `quantile * (n - 1)` in the ordered complete
+  values. It uses the same window, partition, missing-value, and `min_samples`
+  semantics as `rolling`.
 - `rolling_slope`: compute the least-squares slope of `y` on `x` over a strict
   rolling window. `x`, `y`, `to`, and `window` are required, and `window` must
   be at least two. The current record is included. A missing pair clears the
@@ -104,6 +108,18 @@ Both rolling regression operations count records. Use `ensure_schedule` first
 when their windows and subsequent lags must count scheduled sessions. In the
 example, the coefficient at time `t` comes from the regression window that
 ended 21 scheduled records earlier.
+
+Rolling quantiles use the same record-counted window and partition semantics:
+
+```yaml
+transforms:
+  - operation: rolling_quantile
+    field: return
+    window: 252
+    min_samples: 126
+    quantile: 0.9
+    to: return_q90
+```
 
 `forward_sum` also counts records rather than inferred sessions. Use
 `ensure_schedule` first for an explicit session schedule, or `ensure_cadence`

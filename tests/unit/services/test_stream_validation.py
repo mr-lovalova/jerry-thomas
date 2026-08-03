@@ -442,6 +442,13 @@ def test_validation_rejects_noncanonical_declared_order() -> None:
         {"operation": "forward_fill", "field": "close", "to": "ticker"},
         {"operation": "rolling", "field": "close", "window": 2, "to": "ticker"},
         {
+            "operation": "rolling_quantile",
+            "field": "close",
+            "window": 2,
+            "quantile": 0.9,
+            "to": "ticker",
+        },
+        {
             "operation": "rolling_slope",
             "x": "market_return",
             "y": "stock_return",

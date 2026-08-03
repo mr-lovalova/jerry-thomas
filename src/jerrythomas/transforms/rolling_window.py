@@ -158,9 +158,14 @@ class RollingPopulationStandardDeviation(RollingMoments):
         return sqrt(self._squared_deviation_sum() / self.sample_count)
 
 
-class RollingMedian(RollingWindow):
-    def __init__(self, window: int) -> None:
+class RollingQuantile(RollingWindow):
+    """Maintain a linearly interpolated quantile over a rolling window."""
+
+    def __init__(self, window: int, quantile: float) -> None:
         super().__init__(window)
+        if not 0.0 <= quantile <= 1.0:
+            raise ValueError("rolling quantile must be between 0 and 1")
+        self.quantile = quantile
         self.values: list[float] = []
 
     def _add(self, value: float) -> None:
@@ -170,14 +175,27 @@ class RollingMedian(RollingWindow):
         self.values.pop(bisect_left(self.values, value))
 
     def result(self) -> float:
-        middle = self.sample_count // 2
-        if self.sample_count % 2:
-            return self.values[middle]
-        lower = self.values[middle - 1]
-        upper = self.values[middle]
+        if not self.values:
+            raise ValueError("rolling quantile requires at least one sample")
+
+        position = (self.sample_count - 1) * self.quantile
+        lower_index = int(position)
+        weight = position - lower_index
+        lower = self.values[lower_index]
+        if weight == 0.0:
+            return lower
+
+        upper = self.values[lower_index + 1]
         if lower < 0 < upper:
-            return (lower + upper) / 2
-        return lower + (upper - lower) / 2
+            if weight == 0.5:
+                return (lower + upper) / 2
+            return lower * (1.0 - weight) + upper * weight
+        return lower + (upper - lower) * weight
+
+
+class RollingMedian(RollingQuantile):
+    def __init__(self, window: int) -> None:
+        super().__init__(window, quantile=0.5)
 
 
 class RollingMaximum(RollingWindow):

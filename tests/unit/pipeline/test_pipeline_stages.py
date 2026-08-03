@@ -43,6 +43,7 @@ from jerrythomas.config.transforms import (
     FloorTimeConfig,
     LagConfig,
     PreprocessConfig,
+    RollingQuantileConfig,
     TransformConfig,
 )
 from jerrythomas.cli.visuals.rich.progress import (
@@ -1253,6 +1254,30 @@ def test_stream_pipeline_applies_stream_transforms(tmp_path: Path) -> None:
         (1, None),
         (2, 2.0),
     ]
+
+
+def test_stream_pipeline_applies_rolling_quantile(tmp_path: Path) -> None:
+    rows = [
+        {"time": _ts(hour), "value": value}
+        for hour, value in enumerate([0.0, 10.0, 20.0, 30.0])
+    ]
+    runtime = _runtime_with_rows(
+        tmp_path,
+        rows,
+        transforms=[
+            RollingQuantileConfig(
+                field="value",
+                window=4,
+                min_samples=1,
+                quantile=0.25,
+                to="q25",
+            )
+        ],
+    )
+
+    transformed = list(run_stream_pipeline(runtime, "stream"))
+
+    assert [record.q25 for record in transformed] == [0.0, 2.5, 5.0, 7.5]
 
 
 def test_ensure_cadence_placeholders_do_not_copy_payload_fields(

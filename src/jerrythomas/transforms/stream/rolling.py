@@ -8,6 +8,7 @@ from jerrythomas.transforms.rolling_window import (
     RollingMedian,
     RollingMinimum,
     RollingPopulationStandardDeviation,
+    RollingQuantile,
     RollingSampleStandardDeviation,
     RollingWindow,
 )
@@ -50,18 +51,62 @@ class RollingTransform:
 
     def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
         for _, records in adjacent_partitions(stream, self.partition_fields):
-            rolling_window = self._window_type(self.window)
+            yield from _roll_records(
+                records,
+                self._window_type(self.window),
+                self.field,
+                self.to,
+                self.min_samples,
+            )
 
-            for record in records:
-                value = finite_number_or_none(get_field(record, self.field), self.field)
-                rolling_window.append(value)
-                if rolling_window.sample_count >= self.min_samples:
-                    rolled = rolling_window.result()
-                    if not isfinite(rolled):
-                        raise OverflowError(
-                            f"Rolling field {self.field!r} exceeds the supported "
-                            "floating-point range"
-                        )
-                else:
-                    rolled = None
-                yield clone_record_with_field(record, self.to, rolled)
+
+class RollingQuantileTransform:
+    """Compute a rolling quantile over record field values."""
+
+    def __init__(
+        self,
+        field: str,
+        window: int,
+        quantile: float,
+        partition_fields: tuple[str, ...],
+        to: str | None = None,
+        min_samples: int | None = None,
+    ) -> None:
+        self.field = field
+        self.to = field if to is None else to
+        self.window = window
+        self.quantile = quantile
+        self.partition_fields = partition_fields
+        self.min_samples = window if min_samples is None else min_samples
+
+    def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
+        for _, records in adjacent_partitions(stream, self.partition_fields):
+            yield from _roll_records(
+                records,
+                RollingQuantile(self.window, self.quantile),
+                self.field,
+                self.to,
+                self.min_samples,
+            )
+
+
+def _roll_records(
+    records: Iterator[TemporalRecord],
+    rolling_window: RollingWindow,
+    field: str,
+    to: str,
+    min_samples: int,
+) -> Iterator[TemporalRecord]:
+    for record in records:
+        value = finite_number_or_none(get_field(record, field), field)
+        rolling_window.append(value)
+        if rolling_window.sample_count >= min_samples:
+            rolled = rolling_window.result()
+            if not isfinite(rolled):
+                raise OverflowError(
+                    f"Rolling field {field!r} exceeds the supported "
+                    "floating-point range"
+                )
+        else:
+            rolled = None
+        yield clone_record_with_field(record, to, rolled)

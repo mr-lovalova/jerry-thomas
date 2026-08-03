@@ -21,6 +21,7 @@ from jerrythomas.config.transforms import (
     Log1pConfig,
     LogConfig,
     RollingConfig,
+    RollingQuantileConfig,
     RollingOlsConfig,
     RollingSlopeConfig,
 )
@@ -72,6 +73,7 @@ def validate_stream_configs(
                     FillConfig,
                     ForwardFillConfig,
                     RollingConfig,
+                    RollingQuantileConfig,
                 ),
             ):
                 output_field = operation.field if operation.to is None else operation.to

@@ -25,6 +25,7 @@ from jerrythomas.config.transforms import (
     LogConfig,
     PreprocessConfig,
     RollingConfig,
+    RollingQuantileConfig,
     RollingOlsConfig,
     RollingSlopeConfig,
     ShiftTimeConfig,
@@ -44,7 +45,10 @@ from jerrythomas.transforms.stream.collapse import CollapseTransform
 from jerrythomas.transforms.stream.lag import LagTransform
 from jerrythomas.transforms.stream.lead import LeadTransform
 from jerrythomas.transforms.stream.logarithm import Log1pTransform, LogTransform
-from jerrythomas.transforms.stream.rolling import RollingTransform
+from jerrythomas.transforms.stream.rolling import (
+    RollingQuantileTransform,
+    RollingTransform,
+)
 from jerrythomas.transforms.stream.rolling_ols import RollingOlsTransform
 from jerrythomas.transforms.stream.rolling_slope import RollingSlopeTransform
 from jerrythomas.transforms.stream.time_completion import (
@@ -177,6 +181,15 @@ def build_transform_stages(
                 operation.to,
                 operation.min_samples,
                 operation.statistic,
+            ).apply
+        elif isinstance(operation, RollingQuantileConfig):
+            stage_op = RollingQuantileTransform(
+                operation.field,
+                operation.window,
+                operation.quantile,
+                partition_by,
+                operation.to,
+                operation.min_samples,
             ).apply
         elif isinstance(operation, RollingSlopeConfig):
             stage_op = RollingSlopeTransform(

@@ -173,6 +173,26 @@ class RollingConfig(_TransformConfig):
         return self
 
 
+class RollingQuantileConfig(_TransformConfig):
+    operation: Literal["rolling_quantile"] = "rolling_quantile"
+
+    field: NonEmptyString
+    window: PositiveInt
+    quantile: Annotated[
+        float,
+        Field(strict=True, ge=0.0, le=1.0, allow_inf_nan=False),
+    ]
+    to: NonEmptyString | None = None
+    min_samples: PositiveInt | None = None
+
+    @model_validator(mode="after")
+    def validate_samples(self) -> "RollingQuantileConfig":
+        min_samples = self.window if self.min_samples is None else self.min_samples
+        if min_samples > self.window:
+            raise ValueError("rolling_quantile min_samples cannot exceed window")
+        return self
+
+
 class RollingSlopeConfig(_TransformConfig):
     operation: Literal["rolling_slope"] = "rolling_slope"
 
@@ -264,6 +284,7 @@ TransformConfig = Annotated[
     | ForwardFillConfig
     | CollapseConfig
     | RollingConfig
+    | RollingQuantileConfig
     | RollingSlopeConfig
     | RollingOlsConfig
     | LogConfig

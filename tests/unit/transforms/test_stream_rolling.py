@@ -7,12 +7,16 @@ from typing import Any, Callable
 import pytest
 from pydantic import ValidationError
 
-from jerrythomas.config.transforms import RollingConfig
+from jerrythomas.config.transforms import RollingConfig, RollingQuantileConfig
 from jerrythomas.transforms.rolling_window import (
     RollingMean,
+    RollingQuantile,
     RollingSampleStandardDeviation,
 )
-from jerrythomas.transforms.stream.rolling import RollingTransform
+from jerrythomas.transforms.stream.rolling import (
+    RollingQuantileTransform,
+    RollingTransform,
+)
 from tests.unit.transforms.helpers import make_time_record
 
 
@@ -28,6 +32,24 @@ def _rolling_values(
         window=window,
         partition_fields=(),
         statistic=statistic,
+        min_samples=min_samples,
+    )
+    records = (make_time_record(value, 0) for value in values)
+    return [record.rolled for record in transform.apply(records)]
+
+
+def _rolling_quantile_values(
+    values: Sequence[float | None],
+    quantile: float,
+    window: int,
+    min_samples: int | None = None,
+) -> list[float | None]:
+    transform = RollingQuantileTransform(
+        field="value",
+        to="rolled",
+        window=window,
+        quantile=quantile,
+        partition_fields=(),
         min_samples=min_samples,
     )
     records = (make_time_record(value, 0) for value in values)
@@ -60,6 +82,126 @@ def test_rolling_pstdev_of_one_sample_is_zero() -> None:
         window=3,
         min_samples=1,
     ) == [0.0]
+
+
+def test_rolling_quantile_uses_linear_interpolation() -> None:
+    assert _rolling_quantile_values(
+        [0.0, 10.0, 20.0, 30.0],
+        quantile=0.25,
+        window=4,
+        min_samples=1,
+    ) == [0.0, 2.5, 5.0, 7.5]
+
+
+@pytest.mark.parametrize(
+    ("quantile", "expected"),
+    [
+        (0.0, [None, None, 1.0, 3.0]),
+        (1.0, [None, None, 5.0, 5.0]),
+    ],
+)
+def test_rolling_quantile_endpoints_follow_expiring_window(
+    quantile: float,
+    expected: list[float | None],
+) -> None:
+    assert (
+        _rolling_quantile_values(
+            [1.0, 5.0, 3.0, 4.0],
+            quantile=quantile,
+            window=3,
+        )
+        == expected
+    )
+
+
+def test_rolling_quantile_expires_one_duplicate_at_a_time() -> None:
+    assert _rolling_quantile_values(
+        [5.0, 5.0, 1.0, 1.0],
+        quantile=0.5,
+        window=3,
+    ) == [None, None, 5.0, 1.0]
+
+
+def test_rolling_quantile_excludes_missing_values_from_interpolation() -> None:
+    assert _rolling_quantile_values(
+        [0.0, None, 20.0, 40.0],
+        quantile=0.25,
+        window=3,
+        min_samples=2,
+    ) == [None, None, 5.0, 25.0]
+
+
+def test_rolling_quantile_interpolates_opposite_extremes_without_overflow() -> None:
+    assert _rolling_quantile_values(
+        [-1e308, 1e308],
+        quantile=0.5,
+        window=2,
+    ) == [None, 0.0]
+
+
+def test_rolling_quantile_config_round_trips() -> None:
+    config = RollingQuantileConfig(
+        field="value",
+        window=20,
+        min_samples=10,
+        quantile=0.9,
+    )
+
+    assert RollingQuantileConfig.model_validate(config.model_dump()) == config
+
+
+def test_rolling_quantile_requires_probability() -> None:
+    with pytest.raises(ValidationError, match="quantile"):
+        RollingQuantileConfig(field="value", window=3)
+
+
+def test_rolling_quantile_rejects_impossible_minimum_sample_count() -> None:
+    with pytest.raises(ValidationError, match="min_samples cannot exceed window"):
+        RollingQuantileConfig(
+            field="value",
+            window=3,
+            min_samples=4,
+            quantile=0.5,
+        )
+
+
+def test_regular_rolling_rejects_quantile_parameter() -> None:
+    with pytest.raises(ValidationError, match="quantile"):
+        RollingConfig(field="value", window=3, quantile=0.5)
+
+
+@pytest.mark.parametrize(
+    "quantile",
+    [-0.1, 1.1, float("nan"), float("inf"), True, "0.5"],
+)
+def test_rolling_quantile_requires_finite_probability(quantile: object) -> None:
+    with pytest.raises(ValidationError, match="quantile"):
+        RollingQuantileConfig(
+            field="value",
+            window=3,
+            quantile=quantile,
+        )
+
+
+@pytest.mark.parametrize("quantile", [-0.1, 1.1, float("nan")])
+def test_rolling_quantile_algorithm_rejects_invalid_probability(
+    quantile: float,
+) -> None:
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        RollingQuantile(window=3, quantile=quantile)
+
+
+def test_rolling_quantile_requires_a_sample() -> None:
+    with pytest.raises(ValueError, match="requires at least one sample"):
+        RollingQuantile(window=3, quantile=0.5).result()
+
+
+def test_rolling_median_preserves_subnormal_midpoint() -> None:
+    assert _rolling_values(
+        [-5e-324, 1.5e-323],
+        statistic="median",
+        window=2,
+    ) == [None, 5e-324]
 
 
 def test_rolling_stdev_matches_statistics_stdev() -> None:
