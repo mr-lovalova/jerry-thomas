@@ -13,6 +13,7 @@ from jerrythomas.config.streams import (
 )
 from jerrythomas.config.transforms import (
     DeriveConfig,
+    EwmMeanConfig,
     FillConfig,
     ForwardFillConfig,
     ForwardSumConfig,
@@ -70,6 +71,7 @@ def validate_stream_configs(
                 (
                     LagConfig,
                     LeadConfig,
+                    EwmMeanConfig,
                     FillConfig,
                     ForwardFillConfig,
                     RollingConfig,

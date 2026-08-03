@@ -6,6 +6,7 @@ from jerrythomas.config.streams import DerivedStreamConfig, SourceStreamConfig
 from jerrythomas.config.transforms import (
     CollapseConfig,
     DedupeConfig,
+    EwmMeanConfig,
     EnsureCadenceConfig,
     EnsureScheduleConfig,
     FillConfig,
@@ -61,6 +62,12 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
                 "to": "close_q90",
             },
             {
+                "operation": "ewm_mean",
+                "field": "close",
+                "alpha": 0.1,
+                "to": "close_ewm",
+            },
+            {
                 "operation": "fill",
                 "field": "close",
                 "window": 5,
@@ -82,6 +89,7 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
             quantile=0.9,
             to="close_q90",
         ),
+        EwmMeanConfig(field="close", alpha=0.1, to="close_ewm"),
         FillConfig(field="close", window=5, statistic="median"),
         ForwardFillConfig(field="close", to="close_asof"),
         CollapseConfig(keep="last"),
@@ -104,6 +112,13 @@ def test_streams_parse_builtins_into_typed_configs() -> None:
             "quantile": 0.9,
             "to": "close_q90",
             "min_samples": None,
+        },
+        {
+            "operation": "ewm_mean",
+            "field": "close",
+            "alpha": 0.1,
+            "to": "close_ewm",
+            "min_samples": 1,
         },
         {
             "operation": "fill",

@@ -152,6 +152,18 @@ class CollapseConfig(_TransformConfig):
     keep: Literal["first", "last"]
 
 
+class EwmMeanConfig(_TransformConfig):
+    operation: Literal["ewm_mean"] = "ewm_mean"
+
+    field: NonEmptyString
+    alpha: Annotated[
+        float,
+        Field(strict=True, gt=0.0, le=1.0, allow_inf_nan=False),
+    ]
+    to: NonEmptyString | None = None
+    min_samples: PositiveInt = 1
+
+
 class RollingConfig(_TransformConfig):
     operation: Literal["rolling"] = "rolling"
 
@@ -283,6 +295,7 @@ TransformConfig = Annotated[
     | FillConfig
     | ForwardFillConfig
     | CollapseConfig
+    | EwmMeanConfig
     | RollingConfig
     | RollingQuantileConfig
     | RollingSlopeConfig

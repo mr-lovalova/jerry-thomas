@@ -38,6 +38,7 @@ from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.config.tasks.metadata import MetadataTask
 from jerrythomas.config.tasks.series import SeriesTask
 from jerrythomas.config.transforms import (
+    EwmMeanConfig,
     EnsureCadenceConfig,
     EnsureScheduleConfig,
     FloorTimeConfig,
@@ -1278,6 +1279,22 @@ def test_stream_pipeline_applies_rolling_quantile(tmp_path: Path) -> None:
     transformed = list(run_stream_pipeline(runtime, "stream"))
 
     assert [record.q25 for record in transformed] == [0.0, 2.5, 5.0, 7.5]
+
+
+def test_stream_pipeline_applies_ewm_mean(tmp_path: Path) -> None:
+    rows = [
+        {"time": _ts(hour), "value": value}
+        for hour, value in enumerate([10.0, 20.0, 30.0])
+    ]
+    runtime = _runtime_with_rows(
+        tmp_path,
+        rows,
+        transforms=[EwmMeanConfig(field="value", alpha=0.5, to="smoothed")],
+    )
+
+    transformed = list(run_stream_pipeline(runtime, "stream"))
+
+    assert [record.smoothed for record in transformed] == [10.0, 15.0, 22.5]
 
 
 def test_ensure_cadence_placeholders_do_not_copy_payload_fields(

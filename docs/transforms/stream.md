@@ -55,6 +55,12 @@ nonnumeric or infinite values.
 - `fill`: impute missing values from rolling history using an explicit `mean`
   or `median` statistic.
 - `forward_fill`: carry the last known value within each partition.
+- `ewm_mean`: compute an unadjusted exponentially weighted mean using the
+  recursive update `mean = mean + alpha * (value - mean)`. The first valid
+  observation initializes the mean. `alpha` must be greater than zero and no
+  greater than one. `min_samples` counts valid observations and defaults to
+  one. Missing observations do not change the state; after warmup they emit
+  the current mean. Weighting is observation-based, not elapsed-time-based.
 - `rolling`: compute `mean`, `median`, `stdev`, `pstdev`, `max`, or `min` over
   a rolling window. Missing ticks occupy a window position but do not count
   toward `min_samples`, which defaults to `window`. Values must be finite;
@@ -119,6 +125,13 @@ transforms:
     min_samples: 126
     quantile: 0.9
     to: return_q90
+```
+
+Exponentially weighted means use constant memory and have no fixed window:
+
+```yaml
+transforms:
+  - { operation: ewm_mean, field: return, alpha: 0.1, min_samples: 20, to: smoothed_return }
 ```
 
 `forward_sum` also counts records rather than inferred sessions. Use

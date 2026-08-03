@@ -449,6 +449,12 @@ def test_validation_rejects_noncanonical_declared_order() -> None:
             "to": "ticker",
         },
         {
+            "operation": "ewm_mean",
+            "field": "close",
+            "alpha": 0.1,
+            "to": "ticker",
+        },
+        {
             "operation": "rolling_slope",
             "x": "market_return",
             "y": "stock_return",

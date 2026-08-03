@@ -13,6 +13,7 @@ from jerrythomas.config.transforms import (
     CollapseConfig,
     DedupeConfig,
     DeriveConfig,
+    EwmMeanConfig,
     EnsureCadenceConfig,
     EnsureScheduleConfig,
     FillConfig,
@@ -36,6 +37,7 @@ from jerrythomas.execution.pipeline import Stage, StageOp
 from jerrythomas.runtime import Runtime
 from jerrythomas.transforms.stream.dedupe import DedupeTransform
 from jerrythomas.transforms.stream.derive import DeriveTransform
+from jerrythomas.transforms.stream.ewm import EwmMeanTransform
 from jerrythomas.transforms.stream.fill import (
     ForwardFillTransform,
     StatisticalFillTransform,
@@ -172,6 +174,14 @@ def build_transform_stages(
             stage_op = CollapseTransform(
                 partition_by,
                 operation.keep,
+            ).apply
+        elif isinstance(operation, EwmMeanConfig):
+            stage_op = EwmMeanTransform(
+                operation.field,
+                operation.alpha,
+                partition_by,
+                operation.to,
+                operation.min_samples,
             ).apply
         elif isinstance(operation, RollingConfig):
             stage_op = RollingTransform(
