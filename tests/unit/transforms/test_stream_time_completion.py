@@ -63,6 +63,12 @@ def test_ensure_cadence_rejects_nonpositive_duration(cadence: str) -> None:
         EnsureCadenceConfig(cadence=cadence)
 
 
+@pytest.mark.parametrize("cadence", ["0m", "-1h"])
+def test_ensure_cadence_transform_rejects_nonpositive_duration(cadence: str) -> None:
+    with pytest.raises(ValueError, match="cadence must be positive"):
+        EnsureCadenceTransform(cadence, ())
+
+
 def test_ensure_schedule_fills_leading_internal_and_trailing_times() -> None:
     records = list(
         EnsureScheduleTransform(

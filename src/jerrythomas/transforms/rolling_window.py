@@ -29,6 +29,8 @@ class RollingWindow(ABC):
     """Maintain one statistic over a fixed number of ticks."""
 
     def __init__(self, window: int) -> None:
+        if window <= 0:
+            raise ValueError("rolling window must be positive")
         self.window = window
         self.ticks: deque[float | None] = deque()
         self.sample_count = 0
@@ -146,6 +148,8 @@ class RollingMoments(RollingWindow):
 
 class RollingSampleStandardDeviation(RollingMoments):
     def result(self) -> float:
+        if self.sample_count < 2:
+            raise ValueError("sample standard deviation requires at least two samples")
         return sqrt(self._squared_deviation_sum() / (self.sample_count - 1))
 
 

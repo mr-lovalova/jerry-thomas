@@ -8,6 +8,10 @@ import pytest
 from pydantic import ValidationError
 
 from jerrythomas.config.transforms import RollingConfig
+from jerrythomas.transforms.rolling_window import (
+    RollingMean,
+    RollingSampleStandardDeviation,
+)
 from jerrythomas.transforms.stream.rolling import RollingTransform
 from tests.unit.transforms.helpers import make_time_record
 
@@ -43,6 +47,12 @@ def test_rolling_pstdev_matches_statistics_pstdev() -> None:
     assert actual[2:] == pytest.approx([pstdev(values[:3]), pstdev(values[1:])])
 
 
+@pytest.mark.parametrize("window", [-1, 0])
+def test_rolling_window_requires_positive_size(window: int) -> None:
+    with pytest.raises(ValueError, match="window must be positive"):
+        RollingMean(window)
+
+
 def test_rolling_pstdev_of_one_sample_is_zero() -> None:
     assert _rolling_values(
         [1e12],
@@ -63,6 +73,18 @@ def test_rolling_stdev_matches_statistics_stdev() -> None:
 
     assert actual[:2] == [None, None]
     assert actual[2] == pytest.approx(stdev(values))
+
+
+@pytest.mark.parametrize("values", [[], [1.0]])
+def test_rolling_sample_standard_deviation_requires_two_samples(
+    values: list[float],
+) -> None:
+    deviation = RollingSampleStandardDeviation(window=2)
+    for value in values:
+        deviation.append(value)
+
+    with pytest.raises(ValueError, match="requires at least two samples"):
+        deviation.result()
 
 
 def test_rolling_stdev_respects_missing_values_and_min_samples() -> None:

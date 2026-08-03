@@ -31,6 +31,8 @@ class RankScoreTransform:
     """Score one numeric field against the complete cross-section."""
 
     def __init__(self, field: str, to: str, min_samples: int) -> None:
+        if min_samples < 2:
+            raise ValueError("rank_score min_samples must be at least 2")
         self.field = field
         self.to = to
         self.min_samples = min_samples

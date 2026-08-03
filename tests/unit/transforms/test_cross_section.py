@@ -29,6 +29,12 @@ def test_rank_score_uses_normalized_average_ranks_without_mutating_inputs() -> N
     assert all(result is not source for result, source in zip(output, records))
 
 
+@pytest.mark.parametrize("min_samples", [0, 1])
+def test_rank_score_requires_two_samples(min_samples: int) -> None:
+    with pytest.raises(ValueError, match="min_samples must be at least 2"):
+        RankScoreTransform("value", "score", min_samples)
+
+
 def test_rank_score_preserves_missing_values() -> None:
     records = [_record(None), _record(1.0), _record(float("nan")), _record(3.0)]
 

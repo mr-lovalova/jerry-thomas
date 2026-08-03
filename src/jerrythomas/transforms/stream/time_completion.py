@@ -22,6 +22,8 @@ class EnsureCadenceTransform:
     ) -> None:
         self.partition_fields = partition_fields
         self.step = parse_timecode(cadence)
+        if self.step.total_seconds() <= 0:
+            raise ValueError("ensure_cadence cadence must be positive")
 
     def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
         for _, records in adjacent_partitions(stream, self.partition_fields):
