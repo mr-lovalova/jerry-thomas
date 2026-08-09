@@ -3,8 +3,6 @@ import logging
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-import pytest
-
 from jerrythomas.artifacts.models import CoverageStatsArtifact, VectorMetadata
 from jerrythomas.artifacts.specs import COVERAGE_STATS, VECTOR_METADATA
 from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
@@ -112,7 +110,7 @@ def _patch_matrix(monkeypatch) -> None:
     )
 
 
-def _persist_result(result, target: OutputTarget | None) -> None:
+def _persist_result(result, target: OutputTarget) -> None:
     persist_runtime_result(
         result,
         target=target,
@@ -199,17 +197,6 @@ def test_inspect_matrix_writes_jsonl(monkeypatch, tmp_path) -> None:
         "group": "g0",
         "status": "present",
     }
-
-
-def test_inspect_matrix_requires_output_target(monkeypatch) -> None:
-    _patch_matrix(monkeypatch)
-    result = matrix_ops.run_matrix_operation(
-        runtime=_matrix_runtime(),
-        task=MatrixTask(id="matrix"),
-    )
-
-    with pytest.raises(ValueError, match="requires profile output target"):
-        _persist_result(result, None)
 
 
 def test_inspect_matrix_writes_html(monkeypatch, tmp_path) -> None:

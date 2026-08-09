@@ -12,11 +12,10 @@ from jerrythomas.artifacts.models import (
 from jerrythomas.artifacts.registry import VECTOR_METADATA_SPEC
 from jerrythomas.artifacts.series import load_series_manifest
 from jerrythomas.artifacts.specs import SERIES, dataset_requires_scaler
-from jerrythomas.config.dataset.series import SeriesConfig
 from jerrythomas.config.preview import PreviewStage
+from jerrythomas.config.profiles.output import Format
 from jerrythomas.domain.sample import Sample
 from jerrythomas.io.dataset_table import DatasetTable
-from jerrythomas.io.output import OutputTarget, output_destination_key
 from jerrythomas.operations.persistence import (
     DatasetTableOutput,
     RoutedDatasetTableOutput,
@@ -32,6 +31,7 @@ from jerrythomas.pipelines.dataset.pipeline import (
     run_sample_pipeline,
     run_scaled_dataset_pipeline,
 )
+from jerrythomas.pipelines.dataset.preview import preview_output_plan
 from jerrythomas.pipelines.series.pipeline import run_series_pipeline
 from jerrythomas.pipelines.sample.keys import require_metadata_key_plan
 from jerrythomas.pipelines.stream.pipeline import run_stream_preview_pipeline
@@ -39,8 +39,6 @@ from jerrythomas.runtime import Runtime
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
-
-_RECORD_PREVIEWS = {"input", "canonical", "records"}
 
 
 def limit_items(items: Iterator[T], limit: int | None) -> Iterator[T]:
@@ -77,27 +75,21 @@ def _close_iterator(items: Iterator[object]) -> None:
 
 def _runtime_output(
     stream: Iterator[object],
-    target: OutputTarget,
     limit: int | None,
 ) -> RuntimeOutput:
-    return RuntimeOutput(
-        rows=limit_items(stream, limit),
-        target=target,
-    )
+    return RuntimeOutput(rows=limit_items(stream, limit))
 
 
 def _sample_output(
     stream: Iterator[Sample],
-    target: OutputTarget,
     limit: int | None,
     throttle_ms: float | None,
 ) -> RuntimeOutput:
-    return _runtime_output(throttle_items(stream, throttle_ms), target, limit)
+    return _runtime_output(throttle_items(stream, throttle_ms), limit)
 
 
 def _parquet_sample_output(
     stream: Iterator[Sample],
-    target: OutputTarget,
     limit: int | None,
     throttle_ms: float | None,
     table: DatasetTable,
@@ -105,37 +97,18 @@ def _parquet_sample_output(
     return DatasetTableOutput(
         rows=limit_items(throttle_items(stream, throttle_ms), limit),
         table=table,
-        target=target,
     )
-
-
-def _preview_plan(
-    preview_cfgs: Sequence[SeriesConfig],
-    preview: PreviewStage,
-) -> list[tuple[str, SeriesConfig]]:
-    if preview not in _RECORD_PREVIEWS:
-        return [(cfg.id, cfg) for cfg in preview_cfgs]
-
-    seen: set[str] = set()
-    plan: list[tuple[str, SeriesConfig]] = []
-    for cfg in preview_cfgs:
-        stream_id = cfg.stream
-        if stream_id in seen:
-            continue
-        seen.add(stream_id)
-        plan.append((stream_id, cfg))
-    return plan
 
 
 def _serve_preview(
     runtime: Runtime,
     limit: int | None,
-    target: OutputTarget,
+    output_format: Format,
     throttle_ms: float | None,
     preview: PreviewStage,
 ) -> RuntimeOutputItem | RuntimeOutputBatch:
     dataset = runtime.dataset
-    if target.format == "parquet" and preview not in {"samples", "postprocess"}:
+    if output_format == "parquet" and preview not in {"samples", "postprocess"}:
         raise ValueError(
             "Parquet preview supports only the 'samples' and 'postprocess' stages."
         )
@@ -159,7 +132,7 @@ def _serve_preview(
                 metadata.catalog,
                 key_plan,
             )
-        if target.format == "parquet":
+        if output_format == "parquet":
             table = _dataset_table(
                 runtime,
                 metadata.catalog.features,
@@ -167,32 +140,14 @@ def _serve_preview(
             )
             return _parquet_sample_output(
                 sample_stream,
-                target,
                 limit,
                 throttle_ms,
                 table,
             )
-        return _sample_output(sample_stream, target, limit, throttle_ms)
+        return _sample_output(sample_stream, limit, throttle_ms)
 
-    outputs: list[RuntimeOutput] = []
-    preview_plan = _preview_plan(dataset.series, preview)
-    resolved_outputs: list[tuple[str, SeriesConfig, OutputTarget]] = []
-    destinations: dict[str, str] = {}
-    for output_id, cfg in preview_plan:
-        output_target = target.for_output(output_id)
-        destination = output_target.destination
-        if destination is not None:
-            collision_key = output_destination_key(destination)
-            if collision_key in destinations:
-                first_id = destinations[collision_key]
-                raise ValueError(
-                    f"Preview outputs {first_id!r} and {output_id!r} resolve to "
-                    f"the same destination: {destination}"
-                )
-            destinations[collision_key] = output_id
-        resolved_outputs.append((output_id, cfg, output_target))
-
-    for output_id, cfg, output_target in resolved_outputs:
+    outputs: dict[str, RuntimeOutput] = {}
+    for output_id, cfg in preview_output_plan(dataset.series, preview):
         stream: Iterator[object]
         match preview:
             case "input" | "canonical" | "records":
@@ -205,14 +160,14 @@ def _serve_preview(
                 stream = run_series_pipeline(runtime, cfg)
             case _:
                 raise ValueError(f"Unsupported preview stage: {preview!r}")
-        outputs.append(_runtime_output(stream, output_target, limit))
-    return RuntimeOutputBatch(outputs=tuple(outputs))
+        outputs[output_id] = _runtime_output(stream, limit)
+    return RuntimeOutputBatch(outputs=outputs)
 
 
 def _serve_dataset(
     runtime: Runtime,
     limit: int | None,
-    target: OutputTarget,
+    output_format: Format,
     throttle_ms: float | None,
 ) -> RuntimeOutput | DatasetTableOutput:
     dataset = runtime.dataset
@@ -237,10 +192,9 @@ def _serve_dataset(
         metadata.catalog,
         key_plan,
     )
-    if target.format == "parquet":
+    if output_format == "parquet":
         return _parquet_sample_output(
             samples,
-            target,
             limit,
             throttle_ms,
             _served_dataset_table(
@@ -248,19 +202,17 @@ def _serve_dataset(
                 metadata.catalog,
             ),
         )
-    return _sample_output(samples, target, limit, throttle_ms)
+    return _sample_output(samples, limit, throttle_ms)
 
 
 def _serve_fold_outputs(
     runtime: Runtime,
     output_ids: tuple[str, ...],
     limit: int | None,
-    target: OutputTarget,
+    output_format: Format,
     throttle_ms: float | None,
 ) -> RoutedRuntimeOutput | RoutedDatasetTableOutput:
     dataset = runtime.dataset
-    if target.transport != "fs":
-        raise ValueError("Fold outputs require fs output.")
     split_cfg = dataset.split
     if split_cfg is None:
         raise ValueError("Fold outputs require dataset split configuration.")
@@ -271,9 +223,6 @@ def _serve_fold_outputs(
         plans,
     )
     rows = throttle_items(samples, throttle_ms)
-    output_targets = {
-        output_id: target.for_output(output_id) for output_id in output_ids
-    }
     tables = (
         {
             output_id: _served_dataset_table(
@@ -283,20 +232,18 @@ def _serve_fold_outputs(
             for plan in plans
             for output_id in plan.outputs
         }
-        if target.format == "parquet"
+        if output_format == "parquet"
         else None
     )
     output = (
         RoutedDatasetTableOutput(
             rows=rows,
             tables=tables,
-            targets=output_targets,
             limit_per_output=limit,
         )
         if tables is not None
         else RoutedRuntimeOutput(
             rows=rows,
-            targets=output_targets,
             limit_per_output=limit,
         )
     )
@@ -344,7 +291,7 @@ def run_dataset_operation(
     runtime: Runtime,
     output_ids: tuple[str, ...],
     limit: int | None,
-    target: OutputTarget,
+    output_format: Format,
     throttle_ms: float | None,
     preview: PreviewStage | None,
 ) -> RuntimeOutputItem | RuntimeOutputBatch | None:
@@ -358,7 +305,7 @@ def run_dataset_operation(
         return _serve_preview(
             runtime,
             limit,
-            target,
+            output_format,
             throttle_ms,
             preview,
         )
@@ -370,13 +317,13 @@ def run_dataset_operation(
             runtime,
             output_ids,
             limit,
-            target,
+            output_format,
             throttle_ms,
         )
 
     return _serve_dataset(
         runtime,
         limit,
-        target,
+        output_format,
         throttle_ms,
     )

@@ -30,6 +30,7 @@ from jerrythomas.execution.settings import (
 )
 from jerrythomas.io.output import OutputResolutionError
 from jerrythomas.io.runs import RunPaths
+from jerrythomas.profiles.destinations import validate_command_destinations
 from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.profiles.loader import (
     apply_profile_defaults,
@@ -206,6 +207,16 @@ def build_build_run_request(
             )
         )
 
+    try:
+        validate_command_destinations(
+            definition.project.artifacts_root,
+            (),
+            [job.settings.observability.log_output for job in build_jobs],
+            (),
+        )
+    except ValueError as exc:
+        raise ProfileCommandError(f"Invalid build configuration: {exc}") from exc
+
     return BuildRunRequest(
         definition=definition,
         jobs=build_jobs,
@@ -342,6 +353,18 @@ def build_runtime_run_request(
             )
             for profile in resolved_profiles
         ]
+        outputs = [output for job in jobs for output in job.configured_outputs]
+        log_outputs = (
+            artifact_settings.observability.log_output,
+            *(job.observability.log_output for job in jobs),
+        )
+        serve_run_plans = _serve_run_plans(jobs) if command == "serve" else ()
+        validate_command_destinations(
+            definition.project.artifacts_root,
+            outputs,
+            log_outputs,
+            [plan.paths for plan in serve_run_plans],
+        )
     except OutputResolutionError as exc:
         raise ProfileCommandError(f"Invalid output configuration: {exc}") from exc
     except ValueError as exc:
@@ -353,7 +376,7 @@ def build_runtime_run_request(
         jobs=jobs,
         execution=defaults.execution,
         artifact_settings=artifact_settings,
-        serve_run_plans=(_serve_run_plans(jobs) if command == "serve" else ()),
+        serve_run_plans=serve_run_plans,
     )
 
 
@@ -402,21 +425,30 @@ def build_materialize_run_request(
             defaults.observability,
             command_observability,
         )
+        artifact_settings = BuildSettings(
+            mode=resolved_artifact_mode,
+            observability=replace(
+                artifact_observability,
+                log_output=resolve_execution_log_outputs(
+                    artifact_observability.log_output,
+                    execution_dir,
+                    default_path=Path("logs") / "materialize.artifacts.log",
+                ),
+            ),
+        )
+        log_outputs = (
+            artifact_settings.observability.log_output,
+            *(job.observability.log_output for job in jobs),
+        )
+        validate_command_destinations(
+            definition.project.artifacts_root,
+            [job.output for job in jobs],
+            log_outputs,
+            (),
+        )
         runtime = compile_runtime(definition)
     except (OSError, TypeError, ValueError) as exc:
         raise ProfileCommandError(f"Invalid materialize configuration: {exc}") from exc
-
-    artifact_settings = BuildSettings(
-        mode=resolved_artifact_mode,
-        observability=replace(
-            artifact_observability,
-            log_output=resolve_execution_log_outputs(
-                artifact_observability.log_output,
-                execution_dir,
-                default_path=Path("logs") / "materialize.artifacts.log",
-            ),
-        ),
-    )
     return MaterializeRunRequest(
         definition=definition,
         jobs=jobs,

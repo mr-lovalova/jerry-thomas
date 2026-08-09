@@ -143,7 +143,7 @@ def test_preflight_rejects_duplicate_destinations(tmp_path, filenames) -> None:
         streams={"adv.20": object(), "adv.63": object()},
         artifacts_root=tmp_path / "artifacts",
     )
-    with pytest.raises(ValueError, match="write the same path"):
+    with pytest.raises(ValueError, match="resolve to the same path"):
         materialize.preflight_materialize_jobs(
             runtime,
             [

@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from unicodedata import normalize
@@ -78,6 +79,39 @@ class OutputTarget:
 def output_destination_key(path: Path) -> str:
     """Return the portable identity used to reject colliding output paths."""
     return normalize("NFC", str(path)).casefold()
+
+
+def output_paths_overlap(first: Path, second: Path) -> bool:
+    """Return whether two filesystem destinations cannot both be files."""
+    first_path = Path(output_destination_key(first.resolve()))
+    second_path = Path(output_destination_key(second.resolve()))
+    return first_path.is_relative_to(second_path) or second_path.is_relative_to(
+        first_path
+    )
+
+
+def validate_output_destinations(
+    outputs: Sequence[OutputTarget],
+) -> None:
+    data_paths: list[tuple[Path, str]] = []
+
+    for output in outputs:
+        if output.transport == "stdout":
+            continue
+        if output.destination is None:
+            raise ValueError("Filesystem data output has no destination.")
+        destination = output.destination.resolve()
+        destination_key = output_destination_key(destination)
+        for previous, previous_key in data_paths:
+            if destination_key == previous_key:
+                raise ValueError(
+                    f"Data outputs resolve to the same path '{destination}'."
+                )
+            if output_paths_overlap(destination, previous):
+                raise ValueError(
+                    f"Data output paths overlap: '{previous}' and '{destination}'."
+                )
+        data_paths.append((destination, destination_key))
 
 
 class OutputResolutionError(ValueError):

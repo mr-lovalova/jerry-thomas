@@ -317,6 +317,7 @@ def resolve_execution_log_outputs(
             LogOutputTarget(
                 transport="fs",
                 destination=(execution_dir / relative_path).resolve(),
+                scope="execution",
             )
         )
     return LogOutputSettings(outputs=tuple(outputs))

@@ -7,6 +7,13 @@ All commands that take a project accept either `--project <path/to/project.yaml>
 Profile commands run enabled profiles by default. `--profile <name>` selects
 that profile explicitly, including one configured with `enabled: false`.
 
+Profile commands validate every selected data and log destination before
+activating filesystem logging. Data and logs cannot both use stdout, and
+data files cannot overlap another selected file path. Distinct log files cannot
+be nested, although profiles may intentionally share one exact log path. Global
+logs must also stay outside the artifacts root and managed serve `runs`/`latest`
+paths; use execution-scoped logging for managed command logs.
+
 With `--visuals on` in an interactive terminal, runtime commands show one live
 pipeline row with the active input or stage. `--log-level DEBUG` expands that view
 to one row per active input or stage. File-backed sources include the current file
@@ -39,7 +46,7 @@ phase has visuals enabled.
     selected profiles and prepares that union once. The artifact graph orders
     those internal jobs; it never changes profile order.
 - `jerry serve --project <project.yaml> --output-transport <stdout|fs> --output-format <jsonl|csv|parquet|pickle> [--output-view flat|raw] [--output-encoding <codec>] [--output-compression gzip] --limit N [--artifact-mode AUTO|FORCE|OFF] [--log-level LEVEL] [--visuals on|off] [--heartbeat-interval SECONDS] [--profile name]`
-  - Conforms samples to the declared schema and applies configured row filters before emitting. A configured dataset split routes a full dataset serve to one fs output per fold role, named `<profile-or-filename>.<fold-id>.<role>.<ext>`; profile `include_outputs` can narrow the set using IDs such as `fold_0.train`. Preview emits one combined stage and cannot be combined with explicit `include_outputs`. `--limit` applies separately to each output.
+  - Conforms samples to the declared schema and applies configured row filters before emitting. A configured dataset split routes a full dataset serve to one fs output per fold role, named `<profile-or-filename>.<fold-id>.<role>.<ext>`; profile `include_outputs` can narrow the set using IDs such as `fold_0.train`. Record previews emit once per unique referenced stream, `series` once per configured feature or target, and sample previews once for the combined stage. Preview cannot be combined with explicit `include_outputs`. `--limit` applies separately to each output.
   - Use `--output-transport fs --output-format jsonl --output-directory build/serve` (or `csv`, `parquet`, `pickle`) to write outputs under `<output-directory>/runs/<run_id>/dataset/`.
   - `--output-view` controls payload shape:
     - `flat`: key + kind + flattened fields for JSONL/CSV; Parquet uses the

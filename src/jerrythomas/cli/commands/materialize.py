@@ -1,6 +1,7 @@
 import logging
 
 from jerrythomas.cli.commands.profile_runner import execute_profile_request
+from jerrythomas.cli.logging_setup import configure_profile_logging
 from jerrythomas.cli.workspace import WorkspaceContext
 from jerrythomas.execution.settings import CommandObservability, LogOutputTarget
 from jerrythomas.profiles.request_builder import build_materialize_run_request
@@ -50,4 +51,5 @@ def handle(
     if request is None:
         logger.info("No enabled materialize profiles; skipping materialize.")
         return
+    configure_profile_logging(cli_log_level, cli_log_outputs)
     execute_profile_request(request)

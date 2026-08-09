@@ -99,9 +99,7 @@ def _placeholder_record(
     partition_fields: tuple[str, ...],
 ) -> TemporalRecord:
     keep = {"time", *partition_fields}
-    updates = {
-        key: None for key in public_record_fields(record) if key not in keep
-    }
+    updates = {key: None for key in public_record_fields(record) if key not in keep}
     placeholder = clone_record(record, time=time, **updates)
     set_record_domain_anchor(placeholder, False)
     return placeholder

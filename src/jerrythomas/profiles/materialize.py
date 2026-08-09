@@ -15,7 +15,7 @@ from jerrythomas.execution.observability import (
     emit_file_result,
     operation_scope,
 )
-from jerrythomas.io.output import output_destination_key
+from jerrythomas.io.output import validate_output_destinations
 from jerrythomas.profiles.models import MaterializeJob
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.materialize import (
@@ -75,7 +75,6 @@ def preflight_materialize_jobs(
     jobs: Sequence[MaterializeJob],
 ) -> None:
     destinations: list[tuple[MaterializeJob, Path]] = []
-    owners: dict[str, str] = {}
     available_streams = set(runtime.streams)
     artifacts_root = runtime.artifacts_root.resolve()
     for job in jobs:
@@ -95,15 +94,7 @@ def preflight_materialize_jobs(
                 f"Materialize profile '{job.name}' writes inside the managed "
                 f"artifacts root: {path}"
             )
-        destination_key = output_destination_key(path)
-        owner = owners.get(destination_key)
-        if owner is not None:
-            raise ValueError(
-                f"Materialize profiles '{owner}' and '{job.name}' "
-                f"write the same path: {path}"
-            )
-        owners[destination_key] = job.name
-
+    validate_output_destinations([job.output for job in jobs])
     for job, path in destinations:
         check_materialize_destination(path, job.overwrite)
 

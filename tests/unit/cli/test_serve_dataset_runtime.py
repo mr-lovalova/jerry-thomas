@@ -215,7 +215,7 @@ def _serve(
         runtime=runtime,
         output_ids=output_ids,
         limit=None,
-        target=target,
+        output_format=target.format,
         throttle_ms=None,
         preview=preview,
     )
@@ -242,7 +242,7 @@ def test_dataset_operation_reraises_keyboard_interrupt_and_marks_run_failed(
         runtime=runtime,
         output_ids=(),
         limit=None,
-        target=target,
+        output_format=target.format,
         throttle_ms=None,
         preview=None,
     )
@@ -320,14 +320,6 @@ def test_dataset_operation_returns_split_fanout_output(monkeypatch, tmp_path):
     )
 
     assert isinstance(result, RoutedRuntimeOutput)
-    assert (
-        result.targets["holdout.train"].destination
-        == tmp_path / "dataset.holdout.train.jsonl"
-    )
-    assert (
-        result.targets["holdout.validation"].destination
-        == tmp_path / "dataset.holdout.validation.jsonl"
-    )
     assert list(result.rows) == [
         ("holdout.train", samples[0]),
         ("holdout.validation", samples[1]),
@@ -374,14 +366,6 @@ def test_dataset_operation_returns_parquet_split_outputs(monkeypatch, tmp_path):
         "holdout.train",
         "holdout.validation",
     }
-    assert {
-        target.destination.name
-        for target in result.targets.values()
-        if target.destination is not None
-    } == {
-        "dataset.holdout.train.parquet",
-        "dataset.holdout.validation.parquet",
-    }
 
 
 def test_samples_preview_stops_before_postprocess(monkeypatch):
@@ -405,7 +389,6 @@ def test_samples_preview_stops_before_postprocess(monkeypatch):
     result = _serve(runtime, dataset, target, preview="samples")
 
     assert isinstance(result, RuntimeOutput)
-    assert result.target == target
     assert list(result.rows) == ["sample"]
 
 
@@ -421,7 +404,7 @@ def test_limited_preview_closes_sample_pipeline_once(monkeypatch, throttle_ms):
         runtime=_runtime(),
         output_ids=(),
         limit=1,
-        target=_target(),
+        output_format="jsonl",
         throttle_ms=throttle_ms,
         preview="samples",
     )
@@ -505,7 +488,7 @@ def test_record_previews_use_stream_preview_pipeline(monkeypatch, preview, expec
     )
 
     assert captured == {"stream_id": "derived.prices", "preview": preview}
-    assert list(result.outputs[0].rows) == [expected]
+    assert list(result.outputs["derived.prices"].rows) == [expected]
 
 
 def test_series_preview_returns_processed_series(monkeypatch):
@@ -521,39 +504,7 @@ def test_series_preview_returns_processed_series(monkeypatch):
         preview="series",
     )
 
-    assert list(result.outputs[0].rows) == ["series"]
-
-
-def test_series_preview_rejects_duplicate_resolved_destinations(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    dataset = DatasetConfig(
-        features=[
-            SeriesConfig(id="a/b", stream="first", field="value"),
-            SeriesConfig(id="a?b", stream="second", field="value"),
-        ],
-        sample=SampleConfig(cadence="1d"),
-    )
-    monkeypatch.setattr(
-        "jerrythomas.operations.runtime.dataset.run_series_pipeline",
-        lambda *args, **kwargs: pytest.fail(
-            "preview streams must not be opened before destinations are validated"
-        ),
-    )
-
-    with pytest.raises(
-        ValueError,
-        match=r"Preview outputs 'a/b' and 'a\?b' resolve to the same destination",
-    ):
-        _serve(
-            _runtime(),
-            dataset,
-            _fs_target(tmp_path / "preview.jsonl"),
-            preview="series",
-        )
-
-    assert not list(tmp_path.iterdir())
+    assert list(result.outputs["price"].rows) == ["series"]
 
 
 def test_postprocess_preview_runs_postprocess(monkeypatch):
@@ -625,6 +576,7 @@ def test_all_preview_stages_write_gzip_through_the_shared_output_path(
     persist_runtime_result(
         result,
         target=target,
+        output_ids=(output_id,) if output_id is not None else (),
         logger=logging.getLogger(__name__),
     )
 

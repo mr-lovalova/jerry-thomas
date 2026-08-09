@@ -14,7 +14,7 @@ from jerrythomas.execution.observability import (
     emit_execution_message,
     operation_scope,
 )
-from jerrythomas.operations.persistence import persist_runtime_result
+from jerrythomas.operations.persistence import RuntimeOutput, persist_runtime_result
 from jerrythomas.operations.runtime.coverage import run_coverage_operation
 from jerrythomas.operations.runtime.dataset import run_dataset_operation
 from jerrythomas.operations.runtime.matrix import run_matrix_operation
@@ -81,7 +81,7 @@ def run_runtime_operation(job: RuntimeJob) -> object:
             runtime=job.runtime,
             output_ids=job.output_ids,
             limit=job.limit,
-            target=job.output,
+            output_format=job.output.format,
             throttle_ms=job.throttle_ms,
             preview=job.preview,
         )
@@ -93,7 +93,10 @@ def run_runtime_operation(job: RuntimeJob) -> object:
         raise TypeError(f"Unsupported runtime task: {type(task).__name__}")
 
     plugin = load_entrypoint(RUNTIME_OPERATIONS_EP, task.entrypoint)
-    return plugin(job.runtime, task, job.limit)
+    result = plugin(job.runtime, task, job.limit)
+    if result is not None and not isinstance(result, RuntimeOutput):
+        raise TypeError("Custom runtime operation must return RuntimeOutput or None.")
+    return result
 
 
 def execute_runtime_job(
@@ -153,7 +156,8 @@ def execute_runtime_job(
         result = run_runtime_operation(job)
         persist_runtime_result(
             result,
-            target=job.output,
-            heartbeat_interval_seconds=job.runtime.heartbeat_interval_seconds,
+            job.output,
+            job.output_ids,
+            job.runtime.heartbeat_interval_seconds,
             logger=logger,
         )

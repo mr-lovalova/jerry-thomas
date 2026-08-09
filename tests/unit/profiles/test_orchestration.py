@@ -52,6 +52,7 @@ from jerrythomas.io.runs import (
 )
 from jerrythomas.operations.persistence import (
     RoutedRuntimeOutput,
+    RuntimeOutput,
     RuntimeOutputBatch,
 )
 from jerrythomas.profiles.execution import (
@@ -796,7 +797,7 @@ def test_runtime_plugin_receives_the_documented_contract(
         def run(runtime, operation_task, limit):
             nonlocal received
             received = runtime, operation_task, limit
-            return "result"
+            return RuntimeOutput(payload={"result": "ok"})
 
         return run
 
@@ -805,8 +806,34 @@ def test_runtime_plugin_receives_the_documented_contract(
         load_runner,
     )
 
-    assert run_runtime_operation(job) == "result"
+    assert run_runtime_operation(job) == RuntimeOutput(payload={"result": "ok"})
     assert received == (job.runtime, task, 7)
+
+
+@pytest.mark.parametrize(
+    "result",
+    (
+        RoutedRuntimeOutput(rows=()),
+        RuntimeOutputBatch(outputs={"extra": RuntimeOutput(payload={})}),
+    ),
+)
+def test_runtime_plugin_rejects_multi_output_results(
+    monkeypatch,
+    tmp_path: Path,
+    result,
+) -> None:
+    task = PluginRuntimeTask(id="report", entrypoint="plugin.runtime.report")
+    job = _runtime_job("report", task, _runtime(tmp_path))
+    monkeypatch.setattr(
+        "jerrythomas.profiles.execution.load_entrypoint",
+        lambda *_args: lambda *_runner_args: result,
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="Custom runtime operation must return RuntimeOutput or None",
+    ):
+        run_runtime_operation(job)
 
 
 def test_base_runtime_task_is_not_dispatched_as_a_plugin(
@@ -839,12 +866,12 @@ def test_dataset_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> 
         runtime,
         output_ids,
         limit,
-        target,
+        output_format,
         throttle_ms,
         preview,
     ):
         nonlocal received
-        received = runtime, output_ids, limit, target, throttle_ms, preview
+        received = runtime, output_ids, limit, output_format, throttle_ms, preview
         return "dataset"
 
     monkeypatch.setattr(
@@ -857,7 +884,14 @@ def test_dataset_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> 
     )
 
     assert run_runtime_operation(job) == "dataset"
-    assert received == (job.runtime, job.output_ids, 5, job.output, None, None)
+    assert received == (
+        job.runtime,
+        job.output_ids,
+        5,
+        job.output.format,
+        None,
+        None,
+    )
 
 
 def test_matrix_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> None:
@@ -1196,41 +1230,38 @@ def test_later_output_commit_failure_marks_run_failed_and_preserves_latest(
     finish_run_success(previous_paths)
     set_latest_run(previous_paths)
 
-    first_output = current_paths.dataset_dir / "first.jsonl"
-    blocked_output = current_paths.dataset_dir / "blocked.jsonl"
-    blocked_output.mkdir(parents=True)
-    result = RuntimeOutputBatch(
-        outputs=(
-            RoutedRuntimeOutput(
-                rows=(
-                    ("first", {"output": "first", "value": 1}),
-                    ("blocked", {"output": "blocked", "value": 2}),
-                ),
-                targets={
-                    "first": OutputTarget(
-                        transport="fs",
-                        format="jsonl",
-                        view="raw",
-                        encoding="utf-8",
-                        destination=first_output,
-                    ),
-                    "blocked": OutputTarget(
-                        transport="fs",
-                        format="jsonl",
-                        view="raw",
-                        encoding="utf-8",
-                        destination=blocked_output,
-                    ),
-                },
-            ),
-        )
+    output = OutputTarget(
+        transport="fs",
+        format="jsonl",
+        view="raw",
+        encoding="utf-8",
+        destination=current_paths.dataset_dir / "dataset.jsonl",
     )
-    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    first_output = output.for_output("first").destination
+    blocked_output = output.for_output("blocked").destination
+    assert first_output is not None
+    assert blocked_output is not None
+    blocked_output.mkdir(parents=True)
+    result = RoutedRuntimeOutput(
+        rows=(
+            ("first", {"output": "first", "value": 1}),
+            ("blocked", {"output": "blocked", "value": 2}),
+        ),
+    )
+    task = DatasetTask(id="dataset")
     request = _runtime_request(
         tmp_path,
         command="serve",
         artifact_tasks=[],
-        jobs=[_runtime_job("dataset", task, _runtime(tmp_path))],
+        jobs=[
+            _runtime_job(
+                "dataset",
+                task,
+                _runtime(tmp_path),
+                output_ids=("first", "blocked"),
+                output=output,
+            )
+        ],
         serve_run_plans=(ServeRunPlan(current_paths, None),),
     )
     monkeypatch.setattr(
@@ -1238,8 +1269,12 @@ def test_later_output_commit_failure_marks_run_failed_and_preserves_latest(
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "jerrythomas.profiles.execution.load_entrypoint",
-        lambda *_args: lambda *_plugin_args: result,
+        "jerrythomas.profiles.orchestration.plan_runtime_job",
+        lambda job, _definition: RuntimeJobPlan(job, ()),
+    )
+    monkeypatch.setattr(
+        "jerrythomas.profiles.execution.run_dataset_operation",
+        lambda **_kwargs: result,
     )
 
     with pytest.raises(OSError):

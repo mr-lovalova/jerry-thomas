@@ -299,47 +299,99 @@ def test_runtime_batch_failure_closes_pending_rows(tmp_path) -> None:
         destination=tmp_path / "out.jsonl",
     )
     result = RuntimeOutputBatch(
-        outputs=(
-            RuntimeOutput(
+        outputs={
+            "first": RuntimeOutput(
                 rows=_ClosableRows(iteration_error=RuntimeError("processing failed")),
-                target=target,
             ),
-            RuntimeOutput(rows=pending_rows, target=target),
-        )
+            "pending": RuntimeOutput(rows=pending_rows),
+        }
     )
 
     with pytest.raises(RuntimeError, match="processing failed"):
         persist_runtime_result(
             result,
-            target=None,
+            target=target,
+            output_ids=("first", "pending"),
             logger=logging.getLogger(__name__),
         )
 
     assert pending_rows.closed
 
 
-def test_routed_runtime_output_rejects_colliding_destinations(tmp_path) -> None:
-    targets = {
-        output_id: OutputTarget(
-            transport="fs",
-            format="jsonl",
-            view="raw",
-            encoding="utf-8",
-            destination=tmp_path / filename,
-        )
-        for output_id, filename in (
-            ("train", "SPLIT.jsonl"),
-            ("test", "split.jsonl"),
-        )
-    }
+def test_runtime_batch_rejects_unplanned_ids_and_closes_every_output(
+    tmp_path,
+) -> None:
+    first_rows = _ClosableRows(({"value": 1},))
+    extra_rows = _ClosableRows(({"value": 2},))
+    target = OutputTarget(
+        transport="fs",
+        format="jsonl",
+        view="raw",
+        encoding="utf-8",
+        destination=tmp_path / "out.jsonl",
+    )
 
-    with pytest.raises(ValueError, match="resolve to the same destination"):
+    with pytest.raises(ValueError, match="do not match the planned output IDs"):
         persist_runtime_result(
-            RoutedRuntimeOutput(
-                rows=iter(()),
-                targets=targets,
+            RuntimeOutputBatch(
+                outputs={
+                    "first": RuntimeOutput(rows=first_rows),
+                    "extra": RuntimeOutput(rows=extra_rows),
+                }
             ),
-            target=None,
+            target=target,
+            output_ids=("first", "second"),
+            logger=logging.getLogger(__name__),
+        )
+
+    assert first_rows.closed
+    assert extra_rows.closed
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_runtime_batch_rejects_colliding_output_ids_and_closes_rows(tmp_path) -> None:
+    first_rows = _ClosableRows(({"value": 1},))
+    second_rows = _ClosableRows(({"value": 2},))
+    target = OutputTarget(
+        transport="fs",
+        format="jsonl",
+        view="raw",
+        encoding="utf-8",
+        destination=tmp_path / "out.jsonl",
+    )
+
+    with pytest.raises(ValueError, match="Data outputs resolve to the same path"):
+        persist_runtime_result(
+            RuntimeOutputBatch(
+                outputs={
+                    "a/b": RuntimeOutput(rows=first_rows),
+                    "a?b": RuntimeOutput(rows=second_rows),
+                }
+            ),
+            target=target,
+            output_ids=("a/b", "a?b"),
+            logger=logging.getLogger(__name__),
+        )
+
+    assert first_rows.closed
+    assert second_rows.closed
+    assert not (tmp_path / "out.jsonl").exists()
+
+
+def test_routed_runtime_output_rejects_colliding_destinations(tmp_path) -> None:
+    target = OutputTarget(
+        transport="fs",
+        format="jsonl",
+        view="raw",
+        encoding="utf-8",
+        destination=tmp_path / "out.jsonl",
+    )
+
+    with pytest.raises(ValueError, match="resolve to the same path"):
+        persist_runtime_result(
+            RoutedRuntimeOutput(rows=iter(())),
+            target=target,
+            output_ids=("SPLIT", "split"),
             logger=logging.getLogger(__name__),
         )
 
@@ -349,13 +401,18 @@ def test_routed_runtime_output_rejects_colliding_destinations(tmp_path) -> None:
 def test_invalid_routed_runtime_output_closes_rows() -> None:
     rows = _ClosableRows()
 
-    with pytest.raises(ValueError, match="at least one target"):
+    target = OutputTarget(
+        transport="fs",
+        format="jsonl",
+        view="raw",
+        encoding="utf-8",
+        destination=Path("out.jsonl"),
+    )
+
+    with pytest.raises(ValueError, match="planned output IDs"):
         persist_runtime_result(
-            RoutedRuntimeOutput(
-                rows=rows,
-                targets={},
-            ),
-            target=None,
+            RoutedRuntimeOutput(rows=rows),
+            target=target,
             logger=logging.getLogger(__name__),
         )
 
@@ -519,30 +576,19 @@ def test_routed_runtime_output_routes_rows_to_output_targets(
     monkeypatch,
     tmp_path,
 ) -> None:
-    train_path = tmp_path / "train.jsonl"
-    val_path = tmp_path / "val.jsonl"
-    train_target = OutputTarget(
+    target = OutputTarget(
         transport="fs",
         format="jsonl",
         view="raw",
         encoding="utf-8",
-        destination=train_path,
+        destination=tmp_path / "dataset.jsonl",
     )
-    val_target = OutputTarget(
-        transport="fs",
-        format="jsonl",
-        view="raw",
-        encoding="utf-8",
-        destination=val_path,
-    )
-    empty_path = tmp_path / "empty.jsonl"
-    empty_target = OutputTarget(
-        transport="fs",
-        format="jsonl",
-        view="raw",
-        encoding="utf-8",
-        destination=empty_path,
-    )
+    train_path = target.for_output("train").destination
+    val_path = target.for_output("val").destination
+    empty_path = target.for_output("empty").destination
+    assert train_path is not None
+    assert val_path is not None
+    assert empty_path is not None
     rows = [
         {"output": "train", "value": 1},
         {"output": "val", "value": 2},
@@ -563,13 +609,9 @@ def test_routed_runtime_output_routes_rows_to_output_targets(
     persist_runtime_result(
         RoutedRuntimeOutput(
             rows=iter((("train", rows[0]), ("val", rows[1]))),
-            targets={
-                "train": train_target,
-                "val": val_target,
-                "empty": empty_target,
-            },
         ),
-        target=None,
+        target=target,
+        output_ids=("train", "val", "empty"),
         logger=logging.getLogger(__name__),
     )
 
@@ -593,16 +635,13 @@ def test_routed_runtime_output_routes_rows_to_output_targets(
 
 
 def test_routed_runtime_output_rejects_unknown_output_id(tmp_path) -> None:
-    targets = {
-        output_id: OutputTarget(
-            transport="fs",
-            format="jsonl",
-            view="raw",
-            encoding="utf-8",
-            destination=tmp_path / f"{output_id}.jsonl",
-        )
-        for output_id in ("train", "val")
-    }
+    target = OutputTarget(
+        transport="fs",
+        format="jsonl",
+        view="raw",
+        encoding="utf-8",
+        destination=tmp_path / "dataset.jsonl",
+    )
 
     with pytest.raises(
         ValueError,
@@ -616,9 +655,9 @@ def test_routed_runtime_output_rejects_unknown_output_id(tmp_path) -> None:
                         ("test", {"value": 2}),
                     )
                 ),
-                targets=targets,
             ),
-            target=None,
+            target=target,
+            output_ids=("train", "val"),
             logger=logging.getLogger(__name__),
         )
 
@@ -626,11 +665,20 @@ def test_routed_runtime_output_rejects_unknown_output_id(tmp_path) -> None:
 
 
 def test_routed_rows_failure_preserves_every_destination(tmp_path) -> None:
+    target = OutputTarget(
+        transport="fs",
+        format="jsonl",
+        view="raw",
+        encoding="utf-8",
+        destination=tmp_path / "dataset.jsonl",
+    )
+    output_ids = ("fold_0.train", "fold_1.train")
     destinations = {
-        output_id: tmp_path / f"{output_id}.jsonl"
-        for output_id in ("fold_0.train", "fold_1.train")
+        output_id: target.for_output(output_id).destination for output_id in output_ids
     }
+    assert all(destination is not None for destination in destinations.values())
     for destination in destinations.values():
+        assert destination is not None
         destination.write_text("previous\n", encoding="utf-8")
 
     def rows():
@@ -640,20 +688,9 @@ def test_routed_rows_failure_preserves_every_destination(tmp_path) -> None:
 
     with pytest.raises(RuntimeError, match="assembly failed"):
         persist_runtime_result(
-            RoutedRuntimeOutput(
-                rows=rows(),
-                targets={
-                    output_id: OutputTarget(
-                        transport="fs",
-                        format="jsonl",
-                        view="raw",
-                        encoding="utf-8",
-                        destination=destination,
-                    )
-                    for output_id, destination in destinations.items()
-                },
-            ),
-            target=None,
+            RoutedRuntimeOutput(rows=rows()),
+            target=target,
+            output_ids=output_ids,
             logger=logging.getLogger(__name__),
         )
 
@@ -665,17 +702,15 @@ def test_routed_rows_failure_preserves_every_destination(tmp_path) -> None:
 
 
 def test_routed_runtime_output_writes_gzip_targets(tmp_path) -> None:
-    targets = {
-        output_id: OutputTarget(
-            transport="fs",
-            format="jsonl",
-            view="raw",
-            encoding="utf-8",
-            destination=tmp_path / f"{output_id}.jsonl.gz",
-            compression="gzip",
-        )
-        for output_id in ("train", "validation")
-    }
+    target = OutputTarget(
+        transport="fs",
+        format="jsonl",
+        view="raw",
+        encoding="utf-8",
+        destination=tmp_path / "dataset.jsonl.gz",
+        compression="gzip",
+    )
+    output_ids = ("train", "validation")
     rows = [
         {"output": "train", "value": 1},
         {"output": "validation", "value": 2},
@@ -689,36 +724,31 @@ def test_routed_runtime_output_writes_gzip_targets(tmp_path) -> None:
                     ("validation", rows[1]),
                 )
             ),
-            targets=targets,
         ),
-        target=None,
+        target=target,
+        output_ids=output_ids,
         logger=logging.getLogger(__name__),
     )
 
     for output_id, expected in (("train", rows[:1]), ("validation", rows[1:])):
-        destination = targets[output_id].destination
+        destination = target.for_output(output_id).destination
         assert destination is not None
         with gzip.open(destination, "rt", encoding="utf-8") as stream:
             assert [json.loads(line) for line in stream] == expected
 
 
 def test_routed_runtime_output_limit_applies_per_output(tmp_path) -> None:
-    train_path = tmp_path / "train.jsonl"
-    val_path = tmp_path / "val.jsonl"
-    train_target = OutputTarget(
+    target = OutputTarget(
         transport="fs",
         format="jsonl",
         view="raw",
         encoding="utf-8",
-        destination=train_path,
+        destination=tmp_path / "dataset.jsonl",
     )
-    val_target = OutputTarget(
-        transport="fs",
-        format="jsonl",
-        view="raw",
-        encoding="utf-8",
-        destination=val_path,
-    )
+    train_path = target.for_output("train").destination
+    val_path = target.for_output("val").destination
+    assert train_path is not None
+    assert val_path is not None
     rows = [
         {"split": None, "value": 0},
         {"split": "train", "value": 1},
@@ -730,10 +760,10 @@ def test_routed_runtime_output_limit_applies_per_output(tmp_path) -> None:
     persist_runtime_result(
         RoutedRuntimeOutput(
             rows=iter((row["split"], row) for row in rows if row["split"] is not None),
-            targets={"train": train_target, "val": val_target},
             limit_per_output=1,
         ),
-        target=None,
+        target=target,
+        output_ids=("train", "val"),
         logger=logging.getLogger(__name__),
     )
 
@@ -781,16 +811,14 @@ def test_dataset_table_output_persists_parquet_rows(tmp_path) -> None:
 
 
 def test_routed_dataset_table_output_persists_each_parquet_output(tmp_path) -> None:
-    targets = {
-        output_id: OutputTarget(
-            transport="fs",
-            format="parquet",
-            view="flat",
-            encoding=None,
-            destination=tmp_path / f"{output_id}.parquet",
-        )
-        for output_id in ("train", "validation")
-    }
+    target = OutputTarget(
+        transport="fs",
+        format="parquet",
+        view="flat",
+        encoding=None,
+        destination=tmp_path / "dataset.parquet",
+    )
+    output_ids = ("train", "validation")
     tables = {
         "train": _dataset_table(),
         "validation": DatasetTable(
@@ -826,24 +854,28 @@ def test_routed_dataset_table_output_persists_each_parquet_output(tmp_path) -> N
                 )
             ),
             tables=tables,
-            targets=targets,
         ),
-        target=None,
+        target=target,
+        output_ids=output_ids,
         logger=logging.getLogger(__name__),
     )
 
-    assert parquet.read_table(targets["train"].destination).column(
-        "sample.ticker"
-    ).to_pylist() == ["AAPL"]
-    assert parquet.read_table(targets["validation"].destination).column(
-        "sample.ticker"
-    ).to_pylist() == ["MSFT"]
-    assert parquet.read_table(targets["train"].destination).column_names == [
+    train_path = target.for_output("train").destination
+    validation_path = target.for_output("validation").destination
+    assert train_path is not None
+    assert validation_path is not None
+    assert parquet.read_table(train_path).column("sample.ticker").to_pylist() == [
+        "AAPL"
+    ]
+    assert parquet.read_table(validation_path).column("sample.ticker").to_pylist() == [
+        "MSFT"
+    ]
+    assert parquet.read_table(train_path).column_names == [
         "sample.time",
         "sample.ticker",
         "features.price",
     ]
-    assert parquet.read_table(targets["validation"].destination).column_names == [
+    assert parquet.read_table(validation_path).column_names == [
         "sample.time",
         "sample.ticker",
         "features.score",
@@ -853,29 +885,30 @@ def test_routed_dataset_table_output_persists_each_parquet_output(tmp_path) -> N
 def test_routed_dataset_table_output_requires_a_table_for_every_target(
     tmp_path,
 ) -> None:
-    targets = {
-        output_id: OutputTarget(
-            transport="fs",
-            format="parquet",
-            view="flat",
-            encoding=None,
-            destination=tmp_path / f"{output_id}.parquet",
-        )
-        for output_id in ("train", "validation")
-    }
+    target = OutputTarget(
+        transport="fs",
+        format="parquet",
+        view="flat",
+        encoding=None,
+        destination=tmp_path / "dataset.parquet",
+    )
 
     with pytest.raises(
         ValueError,
         match=r"missing tables for output IDs: \['validation'\]",
     ):
-        RoutedDatasetTableOutput(
-            rows=iter(()),
-            tables={"train": _dataset_table()},
-            targets=targets,
+        persist_runtime_result(
+            RoutedDatasetTableOutput(
+                rows=iter(()),
+                tables={"train": _dataset_table()},
+            ),
+            target=target,
+            output_ids=("train", "validation"),
+            logger=logging.getLogger(__name__),
         )
 
 
-def test_routed_dataset_table_output_rejects_a_table_without_a_target(
+def test_routed_dataset_table_output_rejects_an_unplanned_table(
     tmp_path,
 ) -> None:
     target = OutputTarget(
@@ -888,15 +921,19 @@ def test_routed_dataset_table_output_rejects_a_table_without_a_target(
 
     with pytest.raises(
         ValueError,
-        match=r"tables without targets for output IDs: \['validation'\]",
+        match=r"tables without planned output IDs: \['validation'\]",
     ):
-        RoutedDatasetTableOutput(
-            rows=iter(()),
-            tables={
-                "train": _dataset_table(),
-                "validation": _dataset_table(),
-            },
-            targets={"train": target},
+        persist_runtime_result(
+            RoutedDatasetTableOutput(
+                rows=iter(()),
+                tables={
+                    "train": _dataset_table(),
+                    "validation": _dataset_table(),
+                },
+            ),
+            target=target,
+            output_ids=("train",),
+            logger=logging.getLogger(__name__),
         )
 
 

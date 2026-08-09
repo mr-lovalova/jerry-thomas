@@ -108,6 +108,276 @@ def test_inspect_request_rejects_preview(tmp_path: Path) -> None:
     assert "Inspect profiles do not support previews" in str(exc.value)
 
 
+def test_runtime_request_rejects_stdout_data_and_logging(tmp_path: Path) -> None:
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir(parents=True, exist_ok=True)
+    (profiles / "serve.coverage.yaml").write_text(
+        (
+            "operation: coverage\n"
+            "observability:\n"
+            "  logging:\n"
+            "    outputs:\n"
+            "      - transport: stdout\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProfileCommandError, match="cannot both use stdout"):
+        build_runtime_run_request(
+            command="serve",
+            project=str(project_yaml),
+        )
+
+
+def test_runtime_request_rejects_cross_profile_output_log_collision(
+    tmp_path: Path,
+) -> None:
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir(parents=True, exist_ok=True)
+    (profiles / "inspect.first.yaml").write_text(
+        (
+            "operation: coverage\n"
+            "output:\n"
+            "  transport: fs\n"
+            "  format: jsonl\n"
+            "  directory: out\n"
+        ),
+        encoding="utf-8",
+    )
+    (profiles / "inspect.second.yaml").write_text(
+        (
+            "operation: matrix\n"
+            "output:\n"
+            "  transport: fs\n"
+            "  format: jsonl\n"
+            "  directory: out\n"
+            "observability:\n"
+            "  logging:\n"
+            "    outputs:\n"
+            "      - transport: fs\n"
+            "        path: out/first/first.jsonl\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProfileCommandError, match="same path"):
+        build_runtime_run_request(
+            command="inspect",
+            project=str(project_yaml),
+        )
+
+
+def test_runtime_request_rejects_cross_profile_output_collision(
+    tmp_path: Path,
+) -> None:
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir(parents=True, exist_ok=True)
+    profile = (
+        "operation: coverage\n"
+        "output:\n"
+        "  transport: fs\n"
+        "  format: jsonl\n"
+        "  directory: out\n"
+        "  filename: shared\n"
+    )
+    (profiles / "serve.first.yaml").write_text(profile, encoding="utf-8")
+    (profiles / "serve.second.yaml").write_text(profile, encoding="utf-8")
+
+    with pytest.raises(ProfileCommandError, match="same path"):
+        build_runtime_run_request(
+            command="serve",
+            project=str(project_yaml),
+        )
+
+
+def test_runtime_request_rejects_log_at_latest_run_pointer(tmp_path: Path) -> None:
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir(parents=True, exist_ok=True)
+    (profiles / "serve.coverage.yaml").write_text(
+        (
+            "operation: coverage\n"
+            "output:\n"
+            "  transport: fs\n"
+            "  format: jsonl\n"
+            "  directory: served\n"
+            "observability:\n"
+            "  logging:\n"
+            "    outputs:\n"
+            "      - transport: fs\n"
+            "        path: served/latest\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProfileCommandError, match="managed serve run paths"):
+        build_runtime_run_request(
+            command="serve",
+            project=str(project_yaml),
+        )
+
+
+def test_runtime_request_rejects_colliding_routed_output_ids(
+    tmp_path: Path,
+) -> None:
+    project_yaml = _write_project(tmp_path)
+    (tmp_path / "dataset.yaml").write_text(
+        (
+            "sample: {cadence: 1h}\n"
+            "split:\n"
+            "  mode: hash\n"
+            "  ratios: {train: 1.0}\n"
+            "  folds:\n"
+            "    - {id: north/west, train: [train]}\n"
+            "    - {id: north_west, train: [train]}\n"
+        ),
+        encoding="utf-8",
+    )
+    profiles = tmp_path / "profiles"
+    profiles.mkdir(parents=True, exist_ok=True)
+    (profiles / "serve.dataset.yaml").write_text(
+        (
+            "operation: dataset\n"
+            "include_outputs: [north/west.train, north_west.train]\n"
+            "output:\n"
+            "  transport: fs\n"
+            "  format: jsonl\n"
+            "  directory: output\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProfileCommandError, match="same path"):
+        build_runtime_run_request(
+            command="serve",
+            project=str(project_yaml),
+        )
+
+
+def test_runtime_request_rejects_colliding_preview_output_ids(
+    tmp_path: Path,
+) -> None:
+    project_yaml = _write_project(tmp_path)
+    (tmp_path / "sources" / "source.yaml").write_text(
+        (
+            "id: source\n"
+            "parser: {entrypoint: core.temporal_record}\n"
+            "loader:\n"
+            "  entrypoint: core.synthetic.ticks\n"
+            "  args:\n"
+            '    start: "2024-01-01T00:00:00Z"\n'
+            '    end: "2024-01-02T00:00:00Z"\n'
+            "    frequency: 1h\n"
+        ),
+        encoding="utf-8",
+    )
+    for stream_id in ("first", "second"):
+        (tmp_path / "streams" / f"{stream_id}.yaml").write_text(
+            (
+                f"id: {stream_id}\n"
+                "from: {source: source}\n"
+                "map: {entrypoint: identity}\n"
+            ),
+            encoding="utf-8",
+        )
+    (tmp_path / "dataset.yaml").write_text(
+        (
+            "sample: {cadence: 1h}\n"
+            "features:\n"
+            '  - {id: "a/b", stream: first, field: value}\n'
+            '  - {id: "a?b", stream: second, field: value}\n'
+        ),
+        encoding="utf-8",
+    )
+    profiles = tmp_path / "profiles"
+    profiles.mkdir(parents=True, exist_ok=True)
+    (profiles / "serve.dataset.yaml").write_text(
+        (
+            "operation: dataset\n"
+            "preview: series\n"
+            "output:\n"
+            "  transport: fs\n"
+            "  format: jsonl\n"
+            "  directory: output\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProfileCommandError, match="same path"):
+        build_runtime_run_request(
+            command="serve",
+            project=str(project_yaml),
+        )
+
+
+@pytest.mark.parametrize(
+    "log_path",
+    (
+        "artifacts/build/metadata.json",
+        "artifacts/build",
+        "artifacts/_system/build/state.json",
+        "ARTIFACTS/logs/build.log",
+    ),
+)
+def test_build_request_rejects_logs_under_artifacts_root(
+    tmp_path: Path,
+    log_path: str,
+) -> None:
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir(parents=True, exist_ok=True)
+    (profiles / "build.metadata.yaml").write_text(
+        (
+            "operation: metadata\n"
+            "observability:\n"
+            "  logging:\n"
+            "    outputs:\n"
+            "      - transport: fs\n"
+            f"        path: {log_path}\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProfileCommandError, match="outside the artifacts root"):
+        build_build_run_request(project=str(project_yaml))
+
+
+def test_runtime_request_allows_profiles_to_share_a_log(tmp_path: Path) -> None:
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir(parents=True, exist_ok=True)
+    for name, operation in (("first", "coverage"), ("second", "matrix")):
+        (profiles / f"inspect.{name}.yaml").write_text(
+            (
+                f"operation: {operation}\n"
+                "output:\n"
+                "  transport: fs\n"
+                "  format: jsonl\n"
+                "  directory: output\n"
+                "observability:\n"
+                "  logging:\n"
+                "    outputs:\n"
+                "      - transport: fs\n"
+                "        path: logs/shared.log\n"
+            ),
+            encoding="utf-8",
+        )
+
+    request = build_runtime_run_request(
+        command="inspect",
+        project=str(project_yaml),
+    )
+
+    assert request is not None
+    assert len(request.jobs) == 2
+    assert {
+        job.observability.log_output.outputs[0].destination for job in request.jobs
+    } == {tmp_path / "logs" / "shared.log"}
+
+
 def test_serve_profile_rejects_artifact_operation(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
@@ -403,7 +673,16 @@ def test_serve_profile_nested_observability_deep_merges_defaults(
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
     (profiles / "serve.defaults.yaml").write_text(
-        ("observability:\n  logging:\n    outputs:\n      - transport: stdout\n"),
+        (
+            "output:\n"
+            "  transport: fs\n"
+            "  format: jsonl\n"
+            "  directory: output\n"
+            "observability:\n"
+            "  logging:\n"
+            "    outputs:\n"
+            "      - transport: stdout\n"
+        ),
         encoding="utf-8",
     )
     (profiles / "serve.train.yaml").write_text(

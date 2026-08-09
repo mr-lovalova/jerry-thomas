@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from jerrythomas.cli.output_options import build_cli_output_config
 from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.series import SeriesConfig
 from jerrythomas.config.dataset.split import (
     DatasetFold,
     HashSplitConfig,
@@ -16,6 +17,7 @@ from jerrythomas.config.profiles.build import BuildProfile
 from jerrythomas.config.profiles.inspect import InspectProfile
 from jerrythomas.config.profiles.output import ServeOutputConfig
 from jerrythomas.config.profiles.serve import ServeProfile
+from jerrythomas.config.streams import SourceStreamConfig, StreamsConfig
 from jerrythomas.config.tasks.base import PluginRuntimeTask, RuntimeTask
 from jerrythomas.config.tasks.dataset import DatasetTask
 from jerrythomas.execution.settings import CommandObservability, LogOutputTarget
@@ -301,6 +303,62 @@ def test_dataset_preview_bypasses_default_routed_outputs(tmp_path):
     assert resolved.output_ids == ()
 
 
+@pytest.mark.parametrize(
+    ("preview", "expected_ids"),
+    [
+        ("input", ("prices", "fundamentals")),
+        ("canonical", ("prices", "fundamentals")),
+        ("records", ("prices", "fundamentals")),
+        ("series", ("close", "open", "pe")),
+        ("samples", ()),
+        ("postprocess", ()),
+    ],
+)
+def test_dataset_preview_plans_every_output_id(
+    tmp_path,
+    preview,
+    expected_ids,
+) -> None:
+    streams = StreamsConfig(
+        streams={
+            stream_id: SourceStreamConfig.model_validate(
+                {
+                    "id": stream_id,
+                    "from": {"source": f"{stream_id}.source"},
+                    "map": {"entrypoint": "identity"},
+                }
+            )
+            for stream_id in ("prices", "fundamentals")
+        }
+    )
+    definition = project_definition(
+        tmp_path / "project.yaml",
+        dataset=DatasetConfig(
+            sample=SampleConfig(cadence="1h"),
+            features=[
+                SeriesConfig(id="close", stream="prices", field="close"),
+                SeriesConfig(id="open", stream="prices", field="open"),
+                SeriesConfig(id="pe", stream="fundamentals", field="pe"),
+            ],
+        ),
+        streams=streams,
+        runtime_operations=(DatasetTask(id="dataset"),),
+    )
+    profile = ServeProfile.model_validate(
+        {"cmd": "serve", "name": "dataset", "operation": "dataset"}
+    )
+
+    resolved = resolve_serve_profiles(
+        definition,
+        [profile],
+        preview=preview,
+        limit=None,
+        cli_output=None,
+    )
+
+    assert resolved[0].output_ids == expected_ids
+
+
 def test_dataset_preview_rejects_explicit_include_outputs(tmp_path):
     profile = ServeProfile.model_validate(
         {
@@ -571,40 +629,6 @@ def test_default_split_output_uses_explicit_filename_as_base(tmp_path):
     )
 
 
-@pytest.mark.parametrize(
-    ("first", "second"),
-    [("north/west", "north_west"), ("train", "TRAIN")],
-)
-def test_run_profiles_reject_include_outputs_with_colliding_output_filenames(
-    tmp_path, first, second
-):
-    profile = ServeProfile.model_validate(
-        {
-            "cmd": "serve",
-            "name": "dataset",
-            "operation": "serve",
-            "include_outputs": [f"{first}.train", f"{second}.train"],
-            "output": {
-                "transport": "fs",
-                "format": "jsonl",
-                "directory": "runs",
-            },
-        }
-    )
-    with pytest.raises(ValueError, match="resolve to the same path"):
-        _resolve_serve(
-            tmp_path / "project.yaml",
-            [profile],
-            split=HashSplitConfig(
-                ratios={"train": 1.0},
-                folds=[
-                    DatasetFold(id=first, train=["train"]),
-                    DatasetFold(id=second, train=["train"]),
-                ],
-            ),
-        )
-
-
 def test_run_profiles_leave_unconfigured_throttle_unset(tmp_path):
     profile = ServeProfile.model_validate(
         {"cmd": "serve", "name": "demo", "operation": "serve"}
@@ -844,33 +868,6 @@ def test_serve_runtime_profiles_share_run_and_namespace_outputs(tmp_path):
     assert not planned_run.metadata_path.exists()
 
 
-@pytest.mark.parametrize(
-    "names",
-    [("daily/eu", "daily_eu"), ("Daily", "daily")],
-)
-def test_runtime_profiles_reject_sanitized_output_collision(tmp_path, names):
-    profiles = [
-        ServeProfile.model_validate(
-            {"cmd": "serve", "name": name, "operation": "serve"}
-        )
-        for name in names
-    ]
-    output_root = tmp_path / "out"
-
-    with pytest.raises(ValueError, match="resolve to the same path"):
-        _resolve_serve(
-            tmp_path / "project.yaml",
-            profiles,
-            cli_output=ServeOutputConfig(
-                transport="fs",
-                format="jsonl",
-                directory=output_root,
-            ),
-        )
-
-    assert not output_root.exists()
-
-
 def test_shared_serve_run_rejects_mixed_preview_stages_without_writes(tmp_path):
     profiles = [
         ServeProfile.model_validate(
@@ -897,30 +894,6 @@ def test_shared_serve_run_rejects_mixed_preview_stages_without_writes(tmp_path):
         )
 
     assert not output_root.exists()
-
-
-def test_shared_serve_runs_reject_colliding_explicit_output_filenames(tmp_path):
-    profiles = [
-        ServeProfile.model_validate(
-            {
-                "cmd": "serve",
-                "name": name,
-                "operation": "serve",
-                "output": {
-                    "transport": "fs",
-                    "format": "jsonl",
-                    "directory": str(tmp_path / "out"),
-                    "filename": "vectors",
-                },
-            }
-        )
-        for name in ("train", "val")
-    ]
-
-    with pytest.raises(ValueError, match="resolve to the same path"):
-        _resolve_serve(tmp_path / "project.yaml", profiles)
-
-    assert not (tmp_path / "out").exists()
 
 
 def test_shared_serve_runs_allow_distinct_explicit_output_filenames(tmp_path):

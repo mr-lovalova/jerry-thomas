@@ -205,7 +205,7 @@ def test_inspect_request_materializes_execution_scoped_log_output(
     )
     assert request is not None
     job = request.jobs[0]
-    assert job.observability.log_output.outputs[0].scope == "global"
+    assert job.observability.log_output.outputs[0].scope == "execution"
     assert job.observability.log_output.outputs[0].destination == (
         execution_dir / "logs" / "inspect.coverage.log"
     )
@@ -340,3 +340,30 @@ def test_materialize_request_uses_shared_resolution_snapshot(
         == execution_dir / "logs" / "materialize.artifacts.log"
     )
     assert execution_root_calls == [tmp_path / "artifacts"]
+
+
+def test_materialize_request_rejects_output_log_collision(tmp_path: Path) -> None:
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir(parents=True, exist_ok=True)
+    (profiles / "materialize.adv.yaml").write_text(
+        (
+            "stream: adv\n"
+            "output: output/adv.jsonl\n"
+            "observability:\n"
+            "  logging:\n"
+            "    outputs:\n"
+            "      - transport: fs\n"
+            "        path: output/adv.jsonl\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProfileCommandError, match="same path"):
+        build_materialize_run_request(
+            project=str(project_yaml),
+            profile_name=None,
+            overwrite=None,
+            output=None,
+            artifact_mode=None,
+        )

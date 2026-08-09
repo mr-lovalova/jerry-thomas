@@ -154,6 +154,7 @@ def test_resolve_execution_log_outputs_resolves_under_execution_directory(
                 / "logs"
                 / "serve.execution.log"
             ),
+            scope="execution",
         ),
     )
 

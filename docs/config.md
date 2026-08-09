@@ -250,6 +250,14 @@ throttle_ms: null # milliseconds to sleep between emitted samples
 - `output.compression: gzip` writes fs `jsonl`/`csv` outputs with a `.gz`
   suffix. This applies unchanged to full dataset, split, inspect, and preview
   outputs; Jerry does not infer compression from a filename.
+- Selected data and log destinations are validated before any filesystem log
+  is activated. Data and logs cannot both use stdout. Data files must be unique
+  and cannot overlap another selected file path. Distinct log paths
+  cannot be nested; multiple profiles may intentionally share the same log
+  file.
+- Global log files must stay outside the artifacts root and managed serve
+  `runs`/`latest` paths. Use `scope: EXECUTION` for logs owned by a command
+  execution.
 - Dataset Parquet output is filesystem-only and schema-aware. It uses bounded
   Zstandard-compressed row groups and the stable columns `sample.time`,
   `sample.<key>`, `features.<id>`, and `targets.<id>`; fixed-length lists
@@ -265,8 +273,10 @@ throttle_ms: null # milliseconds to sleep between emitted samples
   using the same `<fold-id>.<role>` IDs. Split fanout requires filesystem
   output. When set, `output.filename` becomes the base name, producing files
   such as `dataset.holdout.train.jsonl`.
-- Preview bypasses automatic split fanout and emits one combined stage output.
-  A profile cannot combine explicit `include_outputs` with preview.
+- Preview bypasses automatic split fanout. Record stages emit once per unique
+  referenced stream, `series` emits once per configured feature or target, and
+  `samples`/`postprocess` emit one combined output. A profile cannot combine
+  explicit `include_outputs` with preview.
 - Before any selected serve profile runs, Jerry unions their artifact
   requirements and prepares the union once according to `artifact_mode`.
   `AUTO` builds missing or stale artifacts, `FORCE` rebuilds the required
@@ -455,8 +465,8 @@ options: {}
 - Unknown keys on built-in runtime operations are rejected. Custom plugin
   runtime operations retain their plugin-defined `options` mapping.
 - A custom runtime entry point has one positional contract: `(runtime, task,
-  limit)`. It returns `RuntimeOutput`, `RoutedRuntimeOutput`,
-  `RuntimeOutputBatch`, or `None`; shared persistence applies the profile output.
+  limit)`. It returns one `RuntimeOutput`, or `None`; shared persistence applies
+  the profile output. Runtime results cannot choose output paths.
 
 Jerry 7 names the built-in dataset runtime consistently. Explicit
 `core.runtime.pipeline` references become `core.runtime.dataset`; Python users

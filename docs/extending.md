@@ -46,11 +46,7 @@ A custom runtime operation receives exactly three positional arguments:
 
 ```python
 from jerrythomas.config.tasks.base import PluginRuntimeTask
-from jerrythomas.operations.persistence import (
-    RoutedRuntimeOutput,
-    RuntimeOutput,
-    RuntimeOutputBatch,
-)
+from jerrythomas.operations.persistence import RuntimeOutput
 from jerrythomas.runtime import Runtime
 
 
@@ -58,18 +54,21 @@ def run_report(
     runtime: Runtime,
     task: PluginRuntimeTask,
     limit: int | None,
-) -> RuntimeOutput | RoutedRuntimeOutput | RuntimeOutputBatch | None: ...
+) -> RuntimeOutput | None: ...
 ```
 
 `runtime` is the compiled `Runtime`, `task` is the configured
 `PluginRuntimeTask`,
-and `limit` is the CLI cap or `None`. Return `RuntimeOutput`,
-`RoutedRuntimeOutput`, `RuntimeOutputBatch`, or `None`. Jerry persists the result
-using the profile output. A routed output yields `(output_id, row)` pairs, where
-each output ID is present in its `targets` mapping. Omit a row from the iterable
-to drop it; an unknown output ID fails the operation. Dataset split routing,
-preview, throttle, and `include_outputs` belong to the built-in dataset operation
-and are not passed to plugins.
+and `limit` is the CLI cap or `None`. Return one `RuntimeOutput`, or `None` when
+there is nothing to persist. The profile owns its output destination; runtime
+results cannot select paths. Dataset split routing, preview, throttle, and
+`include_outputs` belong to the built-in dataset operation and are not passed to
+plugins.
+
+Jerry 10 removes result-owned `target`/`targets` fields and custom
+`RuntimeOutputBatch`/`RoutedRuntimeOutput` returns. Custom runtime operations
+that used those Python APIs must return one `RuntimeOutput`; built-in dataset
+fanout remains available through dataset profiles.
 
 Preprocess and ordered transforms are validated built-in operations rather than
 plugin entry points. Series shaping and postprocess policies are fixed pipeline

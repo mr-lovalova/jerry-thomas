@@ -38,6 +38,14 @@ class RuntimeJob:
     preview: PreviewStage | None
     output_ids: tuple[str, ...]
 
+    @property
+    def configured_outputs(self) -> tuple[OutputTarget, ...]:
+        if self.output_ids:
+            return tuple(
+                self.output.for_output(output_id) for output_id in self.output_ids
+            )
+        return (self.output,)
+
 
 @dataclass(frozen=True)
 class MaterializeJob:

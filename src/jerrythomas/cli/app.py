@@ -6,20 +6,17 @@ from pathlib import Path
 from jerrythomas.cli.command_router import execute_command
 from jerrythomas.cli.workspace import WorkspaceContext, load_workspace_context
 from jerrythomas.cli.logging_setup import (
-    configure_root_logging,
+    configure_cli_logging,
     parse_log_output_specs,
 )
 from jerrythomas.cli.parser_builder import build_parser
-from jerrythomas.execution.settings import (
-    LogOutputTarget,
-    resolve_log_level,
-    resolve_log_output,
-)
+from jerrythomas.execution.settings import LogOutputTarget
 from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.services.path_policy import resolve_workspace_path, workspace_cwd
 
 
 logger = logging.getLogger(__name__)
+_PROFILE_COMMANDS = {"build", "inspect", "materialize", "serve"}
 
 
 def _dataset_to_project_path(
@@ -84,7 +81,7 @@ def _resolve_project_arguments(
     args: argparse.Namespace,
     workspace_context: WorkspaceContext | None,
 ) -> None:
-    if args.cmd not in {"serve", "build", "inspect", "materialize"}:
+    if args.cmd not in _PROFILE_COMMANDS:
         return
     args.project = _resolve_project_from_args(
         args.project,
@@ -102,7 +99,6 @@ def _configure_cli_logging(
     cli_log_output_specs = args.log_output
 
     try:
-        base_level = resolve_log_level(cli_level_arg)
         cli_log_outputs = parse_log_output_specs(
             cli_log_output_specs,
             resolve_global_path=lambda value: resolve_workspace_path(
@@ -110,17 +106,19 @@ def _configure_cli_logging(
                 workspace_context.root if workspace_context is not None else None,
             ),
         )
-        base_log_output = resolve_log_output(
-            cli_outputs=[
-                output for output in cli_log_outputs if output.scope != "execution"
-            ],
-            allow_execution_scope=False,
+        initial_log_outputs = cli_log_outputs
+        if args.cmd in _PROFILE_COMMANDS:
+            initial_log_outputs = [
+                output for output in cli_log_outputs if output.transport != "fs"
+            ]
+        configure_cli_logging(
+            cli_level_arg,
+            initial_log_outputs,
         )
     except ValueError as exc:
         parser.error(str(exc))
         raise SystemExit(2) from exc
 
-    configure_root_logging(level=base_level.value, output=base_log_output)
     return cli_level_arg, cli_log_outputs
 
 

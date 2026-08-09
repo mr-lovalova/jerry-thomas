@@ -7,7 +7,12 @@ from pathlib import Path
 from jerrythomas.cli.visuals.execution_context import current_execution_event_handler
 from jerrythomas.cli.visuals.execution_context import current_terminal_log_handler
 from jerrythomas.execution.observability import ExecutionMessage
-from jerrythomas.execution.settings import LogOutputSettings, LogOutputTarget
+from jerrythomas.execution.settings import (
+    LogOutputSettings,
+    LogOutputTarget,
+    resolve_log_level,
+    resolve_log_output,
+)
 
 
 def parse_log_output_specs(
@@ -130,6 +135,27 @@ def configure_root_logging(level: int, output: LogOutputSettings) -> None:
         handlers=handlers,
         force=True,
     )
+
+
+def configure_cli_logging(
+    level_arg: str | None,
+    outputs: Sequence[LogOutputTarget],
+) -> None:
+    level = resolve_log_level(level_arg)
+    global_outputs = [output for output in outputs if output.scope != "execution"]
+    settings = resolve_log_output(
+        cli_outputs=global_outputs,
+        allow_execution_scope=False,
+    )
+    configure_root_logging(level.value, settings)
+
+
+def configure_profile_logging(
+    level_arg: str | None,
+    outputs: Sequence[LogOutputTarget],
+) -> None:
+    if any(output.scope != "execution" for output in outputs):
+        configure_cli_logging(level_arg, outputs)
 
 
 @contextmanager

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from jerrythomas.operations.runtime.dataset import _preview_plan
+from jerrythomas.pipelines.dataset.preview import preview_output_plan
 
 
 def _cfg(id_: str, stream: str):
@@ -14,15 +14,15 @@ def test_record_preview_plan_dedupes_shared_streams() -> None:
         _cfg("linear_time", "time.ticks.linear"),
     ]
 
-    plan = _preview_plan(
+    plan = preview_output_plan(
         preview_cfgs,
         "input",
     )
 
-    assert plan == [
+    assert plan == (
         ("equity.ohlcv", preview_cfgs[0]),
         ("time.ticks.linear", preview_cfgs[2]),
-    ]
+    )
 
 
 def test_series_preview_plan_keeps_each_series() -> None:
@@ -31,12 +31,12 @@ def test_series_preview_plan_keeps_each_series() -> None:
         _cfg("opening_price", "equity.ohlcv"),
     ]
 
-    plan = _preview_plan(
+    plan = preview_output_plan(
         preview_cfgs,
         "series",
     )
 
-    assert plan == [
+    assert plan == (
         ("closing_price", preview_cfgs[0]),
         ("opening_price", preview_cfgs[1]),
-    ]
+    )

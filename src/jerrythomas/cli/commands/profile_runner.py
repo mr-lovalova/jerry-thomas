@@ -2,6 +2,7 @@ import argparse
 import logging
 import time
 
+from jerrythomas.cli.logging_setup import configure_profile_logging
 from jerrythomas.cli.output_options import build_cli_output_config
 from jerrythomas.cli.visuals.execution import route_execution_event
 from jerrythomas.cli.visuals.rich.progress import visual_summary
@@ -95,6 +96,7 @@ def handle_build(
     if request is None:
         logger.info("No enabled build profiles; skipping build.")
         return
+    configure_profile_logging(cli_log_level, cli_log_outputs)
     execute_profile_request(request)
 
 
@@ -132,6 +134,7 @@ def handle_serve(
     if request is None:
         logger.info("No enabled serve profiles; skipping serve.")
         return
+    configure_profile_logging(cli_log_level, cli_log_outputs)
     execute_profile_request(request)
 
 
@@ -168,4 +171,5 @@ def handle_inspect(
     if request is None:
         logger.info("No enabled inspect profiles; skipping inspect.")
         return
+    configure_profile_logging(cli_log_level, cli_log_outputs)
     execute_profile_request(request)

@@ -252,7 +252,9 @@ Build profiles remain explicit roots for `jerry build` and retain their own
 - Output IDs are `<fold-id>.<role>`, such as `fold_1.train`. A full serve
   publishes every configured fold output; profile `include_outputs` can narrow
   that set. Without a dataset split, serve emits one combined stream.
-- Preview bypasses split fanout and emits one combined stage output.
+- Preview bypasses split fanout. Record stages emit once per unique referenced
+  stream, `series` emits once per configured feature or target, and sample
+  stages emit one combined output.
 - Split datasets fit one scaler from each fold's `train` labels. Every output in
   a fold uses that fold's scaler.
 - Every target declares a conservative elapsed `horizon`. Time folds remove a

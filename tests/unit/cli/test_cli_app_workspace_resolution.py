@@ -8,6 +8,34 @@ from jerrythomas.config.workspace import WorkspaceConfig
 from jerrythomas.profiles.errors import ProfileCommandError
 
 
+def _write_build_project(tmp_path: Path, enabled: bool = True) -> Path:
+    project = tmp_path / "project.yaml"
+    project.write_text(
+        (
+            "schema_version: 5\n"
+            "artifact_revision: 1\n"
+            "paths:\n"
+            "  streams: streams\n"
+            "  sources: sources\n"
+            "  dataset: dataset.yaml\n"
+            "  artifacts: artifacts\n"
+            "  profiles: profiles\n"
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "dataset.yaml").write_text(
+        "sample: {cadence: 1h}\n",
+        encoding="utf-8",
+    )
+    for directory in ("profiles", "sources", "streams"):
+        (tmp_path / directory).mkdir()
+    (tmp_path / "profiles" / "build.metadata.yaml").write_text(
+        f"operation: metadata\nenabled: {str(enabled).lower()}\n",
+        encoding="utf-8",
+    )
+    return project
+
+
 def test_source_add_skips_dataset_resolution(monkeypatch, tmp_path):
     # Running source scaffolding should not attempt workspace dataset/project resolution.
     monkeypatch.chdir(tmp_path)
@@ -199,6 +227,124 @@ def test_main_converts_profile_error_to_cli_exit(monkeypatch):
     assert raised.value.code == 2
     assert raised.value.__cause__ is error
     assert messages == ["invalid serve profile", "additional profile detail"]
+
+
+def test_invalid_cli_log_target_does_not_modify_artifact(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    project = _write_build_project(tmp_path)
+    artifact = tmp_path / "artifacts" / "build" / "metadata.json"
+    artifact.parent.mkdir(parents=True)
+    original = b'{"valid": true}\n'
+    artifact.write_bytes(original)
+
+    monkeypatch.setattr(app, "load_workspace_context", lambda _cwd: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "jerry",
+            "--log-output",
+            f"fs:{artifact}",
+            "build",
+            "--project",
+            str(project),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        app.main()
+
+    assert raised.value.code == 2
+    assert artifact.read_bytes() == original
+
+
+def test_noop_profile_command_does_not_activate_cli_file_logging(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    project = _write_build_project(tmp_path, enabled=False)
+    log_path = tmp_path / "logs" / "build.log"
+    monkeypatch.setattr(app, "load_workspace_context", lambda _cwd: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "jerry",
+            "--log-output",
+            f"fs:{log_path}",
+            "build",
+            "--project",
+            str(project),
+        ],
+    )
+
+    app.main()
+
+    assert not log_path.exists()
+    assert "No enabled build profiles; skipping build." in capsys.readouterr().err
+
+
+def test_noop_profile_command_preserves_cli_stdout_logging(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    project = _write_build_project(tmp_path, enabled=False)
+    log_path = tmp_path / "logs" / "build.log"
+    monkeypatch.setattr(app, "load_workspace_context", lambda _cwd: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "jerry",
+            "--log-output",
+            "stdout",
+            "--log-output",
+            f"fs:{log_path}",
+            "build",
+            "--project",
+            str(project),
+        ],
+    )
+
+    app.main()
+
+    captured = capsys.readouterr()
+    assert "No enabled build profiles; skipping build." in captured.out
+    assert captured.err == ""
+    assert not log_path.exists()
+
+
+def test_noop_profile_command_does_not_modify_artifact_through_logging(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    project = _write_build_project(tmp_path, enabled=False)
+    artifact = tmp_path / "artifacts" / "build" / "metadata.json"
+    artifact.parent.mkdir(parents=True)
+    original = b'{"valid": true}\n'
+    artifact.write_bytes(original)
+
+    monkeypatch.setattr(app, "load_workspace_context", lambda _cwd: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "jerry",
+            "--log-output",
+            f"fs:{artifact}",
+            "build",
+            "--project",
+            str(project),
+        ],
+    )
+
+    app.main()
+
+    assert artifact.read_bytes() == original
 
 
 def test_main_parses_help_before_loading_workspace(monkeypatch, capsys):

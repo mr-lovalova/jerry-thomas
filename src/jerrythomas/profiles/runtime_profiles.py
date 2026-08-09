@@ -16,11 +16,11 @@ from jerrythomas.execution.settings import (
 )
 from jerrythomas.io.output import (
     OutputTarget,
-    output_destination_key,
     resolve_output_directory,
     resolve_output_target,
 )
 from jerrythomas.io.runs import RunPaths, get_run_paths
+from jerrythomas.pipelines.dataset.preview import preview_output_plan
 from jerrythomas.services.definitions import ProjectDefinition
 
 
@@ -71,35 +71,15 @@ def _resolve_serve_output_ids(
 
     if isinstance(operation, DatasetTask) and preview is None and not include_outputs:
         return dataset_output_ids
-    return include_outputs
-
-
-def _validate_output_collisions(profiles: Sequence[ResolvedRuntimeProfile]) -> None:
-    output_owners: dict[str, str] = {}
-    for profile in profiles:
-        if profile.output.destination is None:
-            continue
-        destinations = (
-            [
-                (output_id, profile.output.for_output(output_id).destination)
-                for output_id in profile.output_ids
-            ]
-            if profile.output_ids
-            else [(None, profile.output.destination)]
+    if isinstance(operation, DatasetTask) and preview is not None:
+        return tuple(
+            output_id
+            for output_id, _config in preview_output_plan(
+                definition.dataset.series,
+                preview,
+            )
         )
-        for output_id, destination in destinations:
-            assert destination is not None
-            owner = f"profile '{profile.name}'"
-            if output_id is not None:
-                owner = f"{owner} output {output_id!r}"
-            destination_key = output_destination_key(destination)
-            previous = output_owners.get(destination_key)
-            if previous is not None:
-                raise ValueError(
-                    f"Runtime outputs for {previous} and {owner} resolve to the "
-                    f"same path '{destination}'."
-                )
-            output_owners[destination_key] = owner
+    return include_outputs
 
 
 def resolve_serve_profiles(
@@ -155,7 +135,7 @@ def resolve_serve_profiles(
             profile_name=profile.name,
             run_paths=run_paths,
         )
-        if output_ids and target.transport != "fs":
+        if output_ids and resolved_preview is None and target.transport != "fs":
             raise ValueError(
                 f"Serve profile '{profile.name}' requires fs output for routed "
                 "dataset outputs."
@@ -179,7 +159,6 @@ def resolve_serve_profiles(
             )
         )
 
-    _validate_output_collisions(resolved)
     return resolved
 
 
@@ -218,5 +197,4 @@ def resolve_inspect_profiles(
             )
         )
 
-    _validate_output_collisions(resolved)
     return resolved

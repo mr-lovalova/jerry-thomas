@@ -109,9 +109,7 @@ def build_schedule_artifact(
         try:
             for row in _unique_schedule_rows(ordered_rows):
                 rows += 1
-                sink.write_text(
-                    json_text(_json_schedule_row(row, partition_by))
-                )
+                sink.write_text(json_text(_json_schedule_row(row, partition_by)))
                 sink.write_text("\n")
                 write_progress.advance()
             sink.close()
