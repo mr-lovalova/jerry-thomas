@@ -3,7 +3,7 @@ from datetime import datetime
 from itertools import chain
 
 from jerrythomas.artifacts.schedule import Schedule
-from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.domain.record import TemporalRecord, public_record_fields
 from jerrythomas.transforms.utils import (
     adjacent_partitions,
     clone_record,
@@ -100,7 +100,7 @@ def _placeholder_record(
 ) -> TemporalRecord:
     keep = {"time", *partition_fields}
     updates = {
-        key: None for key in vars(record) if not key.startswith("_") and key not in keep
+        key: None for key in public_record_fields(record) if key not in keep
     }
     placeholder = clone_record(record, time=time, **updates)
     set_record_domain_anchor(placeholder, False)

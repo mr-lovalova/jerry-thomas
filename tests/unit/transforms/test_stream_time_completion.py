@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import pytest
@@ -10,6 +11,7 @@ from jerrythomas.artifacts.schedule import (
     schedule_partition_by_from_metadata,
 )
 from jerrythomas.config.transforms import EnsureCadenceConfig
+from jerrythomas.domain.record import TemporalRecord
 from jerrythomas.transforms.stream.time_completion import (
     EnsureCadenceTransform,
     EnsureScheduleTransform,
@@ -35,6 +37,12 @@ def _record(
 
 def _global_schedule(*hours: int) -> Schedule:
     return Schedule(partition_by=(), times={(): [_time(hour) for hour in hours]})
+
+
+@dataclass(slots=True)
+class _SlottedRecord(TemporalRecord):
+    security_id: str
+    value: float | None
 
 
 def test_ensure_cadence_inserts_fixed_duration_records() -> None:
@@ -168,6 +176,28 @@ def test_ensure_schedule_placeholders_clear_unrelated_payload() -> None:
     assert records[0].security_id == "AAPL"
     assert records[0].value is None
     assert records[0].volume is None
+
+
+def test_ensure_schedule_placeholders_clear_slotted_payload() -> None:
+    record = _SlottedRecord(
+        time=_time(1),
+        security_id="AAPL",
+        value=3.0,
+    )
+    schedule = Schedule(
+        partition_by=("security_id",),
+        times={("AAPL",): [_time(0), _time(1)]},
+    )
+
+    records = list(
+        EnsureScheduleTransform(
+            schedule=schedule,
+            partition_fields=("security_id",),
+        ).apply(iter([record]))
+    )
+
+    assert records[0].security_id == "AAPL"
+    assert records[0].value is None
 
 
 def test_ensure_schedule_does_not_slice_times() -> None:

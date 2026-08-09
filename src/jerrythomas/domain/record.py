@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 
 
@@ -21,11 +21,7 @@ class TemporalRecord:
 
     def _identity_fields(self) -> dict:
         """Return a mapping of domain fields excluding 'time'."""
-        data = {
-            key: value
-            for key, value in self.__dict__.items()
-            if not key.startswith("_")
-        }
+        data = public_record_fields(self)
         data.pop("time", None)
         return data
 
@@ -38,3 +34,18 @@ class TemporalRecord:
             self.time == other.time
             and self._identity_fields() == other._identity_fields()
         )
+
+
+def public_record_fields(record: TemporalRecord) -> dict[str, object]:
+    """Return declared and dynamic public fields in stable declaration order."""
+    values = {
+        definition.name: getattr(record, definition.name)
+        for definition in fields(record)
+        if not definition.name.startswith("_")
+    }
+    values.update(
+        (name, value)
+        for name, value in vars(record).items()
+        if not name.startswith("_")
+    )
+    return values

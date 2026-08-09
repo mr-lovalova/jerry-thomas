@@ -4,7 +4,7 @@ from dataclasses import fields, is_dataclass
 from datetime import date, datetime
 from typing import Any, Literal
 
-from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.domain.record import TemporalRecord, public_record_fields
 from jerrythomas.domain.sample import Sample
 from jerrythomas.domain.value import normalize_data_value
 
@@ -75,8 +75,7 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, TemporalRecord):
         return {
             name: _jsonable(field_value)
-            for name, field_value in vars(value).items()
-            if not name.startswith("_")
+            for name, field_value in public_record_fields(value).items()
         }
     if not isinstance(value, type) and is_dataclass(value):
         return {

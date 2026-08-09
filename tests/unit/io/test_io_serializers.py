@@ -14,6 +14,12 @@ from jerrythomas.io.serializers import (
 )
 
 
+@dataclass(slots=True)
+class _SlottedTemporalRecord(TemporalRecord):
+    security_id: str
+    close: float
+
+
 def test_record_json_serializer_emits_plain_payload() -> None:
     @dataclass
     class Record:
@@ -62,6 +68,24 @@ def test_temporal_record_serializer_includes_mapped_fields() -> None:
         "time": "2024-07-04 00:00:00+00:00",
         "security_id": "AAPL",
         "close": 42.5,
+    }
+
+
+def test_temporal_record_serializer_includes_slotted_and_dynamic_fields() -> None:
+    record = _SlottedTemporalRecord(
+        datetime(2024, 7, 4, tzinfo=timezone.utc),
+        security_id="AAPL",
+        close=42.5,
+    )
+    record.exchange = "XNAS"
+
+    payload = json.loads(json_line_serializer()(record))
+
+    assert payload == {
+        "time": "2024-07-04 00:00:00+00:00",
+        "security_id": "AAPL",
+        "close": 42.5,
+        "exchange": "XNAS",
     }
 
 
