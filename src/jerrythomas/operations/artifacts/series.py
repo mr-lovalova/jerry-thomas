@@ -16,6 +16,7 @@ from jerrythomas.artifacts.series import (
     SeriesEntry,
     SeriesManifest,
     SeriesRow,
+    series_cache_root,
     write_series_rows,
 )
 from jerrythomas.config.dataset.series import SeriesConfig
@@ -77,7 +78,7 @@ def build_series_artifact(
     dataset = runtime.dataset
     relative_path = Path(task_cfg.output)
     destination = resolve_artifact_output_path(relative_path, runtime.artifacts_root)
-    cache_root = destination.parent / f"{destination.stem}.data"
+    cache_root = series_cache_root(destination)
     if cache_root.is_symlink():
         raise ValueError("Series data directory must not be a symlink.")
 

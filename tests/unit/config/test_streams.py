@@ -185,8 +185,8 @@ def test_broadcast_as_of_stream_has_primary_and_global_lookup() -> None:
         (BroadcastAsOfStreamConfig, "broadcast_as_of"),
     ],
 )
-@pytest.mark.parametrize("max_age", ["0s", "-1d", "forever"])
-def test_as_of_streams_require_a_positive_max_age(
+@pytest.mark.parametrize("max_age", ["-1d", "forever"])
+def test_as_of_streams_require_a_non_negative_max_age(
     config_type: type[AsOfStreamConfig] | type[BroadcastAsOfStreamConfig],
     lookup_key: str,
     max_age: str,
@@ -200,6 +200,30 @@ def test_as_of_streams_require_a_positive_max_age(
                 "combine": {"entrypoint": "combine"},
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("config_type", "lookup_key"),
+    [
+        (AsOfStreamConfig, "as_of"),
+        (BroadcastAsOfStreamConfig, "broadcast_as_of"),
+    ],
+)
+def test_as_of_streams_accept_zero_max_age_for_exact_matching(
+    config_type: type[AsOfStreamConfig] | type[BroadcastAsOfStreamConfig],
+    lookup_key: str,
+) -> None:
+    config = config_type.model_validate(
+        {
+            "id": "joined",
+            "from": {"stream": "primary", lookup_key: "lookup"},
+            "max_age": "0s",
+            "require_match": False,
+            "combine": {"entrypoint": "combine"},
+        }
+    )
+
+    assert config.max_age == "0s"
 
 
 @pytest.mark.parametrize(

@@ -152,6 +152,37 @@ class CollapseConfig(_TransformConfig):
     keep: Literal["first", "last"]
 
 
+class AggregateSumConfig(_TransformConfig):
+    operation: Literal["aggregate_sum"] = "aggregate_sum"
+
+    field: NonEmptyString
+    count_to: NonEmptyString | None = None
+
+    @model_validator(mode="after")
+    def validate_outputs(self) -> "AggregateSumConfig":
+        if self.count_to == self.field:
+            raise ValueError("aggregate_sum count_to must differ from field")
+        return self
+
+
+class FillMissingConfig(_TransformConfig):
+    operation: Literal["fill_missing"] = "fill_missing"
+
+    field: NonEmptyString
+    value: bool | int | float | str
+    to: NonEmptyString | None = None
+
+    @field_validator("value")
+    @classmethod
+    def validate_value(
+        cls,
+        value: bool | int | float | str,
+    ) -> bool | int | float | str:
+        if isinstance(value, float) and not isfinite(value):
+            raise ValueError("fill_missing value must be finite")
+        return value
+
+
 class EwmMeanConfig(_TransformConfig):
     operation: Literal["ewm_mean"] = "ewm_mean"
 
@@ -295,6 +326,8 @@ TransformConfig = Annotated[
     | FillConfig
     | ForwardFillConfig
     | CollapseConfig
+    | AggregateSumConfig
+    | FillMissingConfig
     | EwmMeanConfig
     | RollingConfig
     | RollingQuantileConfig

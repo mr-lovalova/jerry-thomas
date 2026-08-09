@@ -4,12 +4,14 @@ from pydantic import ValidationError
 from jerrythomas.config.dataset.series import SeriesConfig, SequenceConfig
 from jerrythomas.config.streams import DerivedStreamConfig, SourceStreamConfig
 from jerrythomas.config.transforms import (
+    AggregateSumConfig,
     CollapseConfig,
     DedupeConfig,
     EwmMeanConfig,
     EnsureCadenceConfig,
     EnsureScheduleConfig,
     FillConfig,
+    FillMissingConfig,
     ForwardFillConfig,
     ForwardSumConfig,
     Log1pConfig,
@@ -214,6 +216,44 @@ def test_stream_config_rejects_invalid_builtin_parameters(clause: object) -> Non
 def test_stream_config_rejects_a_record_only_transform_model() -> None:
     with pytest.raises(ValidationError, match="shift_time"):
         _stream(transforms=[ShiftTimeConfig(by="1h")])
+
+
+def test_stream_parses_aggregate_and_literal_fill_configs() -> None:
+    stream = _stream(
+        transforms=[
+            {
+                "operation": "aggregate_sum",
+                "field": "signed_amount",
+                "count_to": "event_count",
+            },
+            {
+                "operation": "fill_missing",
+                "field": "event_count",
+                "value": 0,
+                "to": "event_count_filled",
+            },
+        ]
+    )
+
+    assert stream.transforms == [
+        AggregateSumConfig(field="signed_amount", count_to="event_count"),
+        FillMissingConfig(
+            field="event_count",
+            value=0,
+            to="event_count_filled",
+        ),
+    ]
+
+
+def test_aggregate_sum_requires_distinct_output_fields() -> None:
+    with pytest.raises(ValidationError, match="count_to must differ from field"):
+        AggregateSumConfig(field="events", count_to="events")
+
+
+@pytest.mark.parametrize("value", [None, [], {}, float("nan"), float("inf")])
+def test_fill_missing_requires_a_finite_scalar_literal(value: object) -> None:
+    with pytest.raises(ValidationError, match="value|finite"):
+        FillMissingConfig(field="value", value=value)  # type: ignore[arg-type]
 
 
 def test_stream_parses_strict_rolling_slope_config() -> None:

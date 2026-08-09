@@ -13,6 +13,7 @@ from jerrythomas.artifacts.specs import (
     ArtifactDefinition,
     dataset_requires_scaler,
 )
+from jerrythomas.artifacts.series import series_cache_root
 from jerrythomas.artifacts.state import BuildState
 from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.preview import PREVIEW_STAGES, PreviewStage
@@ -22,6 +23,7 @@ from jerrythomas.config.tasks.coverage import CoverageTask
 from jerrythomas.config.tasks.dataset import DatasetTask
 from jerrythomas.config.tasks.matrix import MatrixTask
 from jerrythomas.config.tasks.schedule import ScheduleTask
+from jerrythomas.config.tasks.series import SeriesTask
 from jerrythomas.config.transforms import EnsureScheduleConfig
 from jerrythomas.io.output import output_destination_key
 from jerrythomas.services.definitions import ArtifactHashes
@@ -391,17 +393,7 @@ def build_artifact_graph(
             raise ValueError(f"Duplicate artifact operation id '{task.id}'.")
         tasks_by_id[task.id] = task
 
-    tasks_by_output: dict[str, str] = {}
-    for task in tasks:
-        output = Path(task.output)
-        destination_key = output_destination_key(output)
-        previous_task_id = tasks_by_output.get(destination_key)
-        if previous_task_id is not None:
-            raise ValueError(
-                f"Artifact operations '{previous_task_id}' and '{task.id}' write "
-                f"the same output '{task.output}'."
-            )
-        tasks_by_output[destination_key] = task.id
+    _validate_artifact_output_paths(tasks)
 
     definitions = list(ARTIFACT_DEFINITIONS)
     built_in_keys = {definition.key for definition in definitions}
@@ -438,3 +430,42 @@ def build_artifact_graph(
         definitions.append(ArtifactDefinition(key=task.id))
 
     return ArtifactGraph(tuple(definitions), tasks_by_id)
+
+
+def _validate_artifact_output_paths(tasks: tuple[ArtifactTask, ...]) -> None:
+    outputs = [
+        (task, Path(output_destination_key(Path(task.output)))) for task in tasks
+    ]
+    for index, (task, output) in enumerate(outputs):
+        for previous_task, previous_output in outputs[:index]:
+            if output == previous_output:
+                raise ValueError(
+                    f"Artifact operations '{previous_task.id}' and '{task.id}' write "
+                    f"the same output '{task.output}'."
+                )
+            if output.is_relative_to(previous_output) or previous_output.is_relative_to(
+                output
+            ):
+                raise ValueError(
+                    f"Artifact operations '{previous_task.id}' and '{task.id}' declare "
+                    f"nested output paths '{previous_task.output}' and '{task.output}'."
+                )
+
+    series_task = next(
+        (task for task in tasks if isinstance(task, SeriesTask)),
+        None,
+    )
+    if series_task is None:
+        return
+    cache_root = Path(
+        output_destination_key(series_cache_root(Path(series_task.output)))
+    )
+    for task, output in outputs:
+        if task is series_task:
+            continue
+        if output.is_relative_to(cache_root):
+            raise ValueError(
+                f"Artifact operation '{task.id}' writes inside series cache directory "
+                f"'{series_cache_root(Path(series_task.output))}' owned by artifact "
+                f"operation '{series_task.id}'."
+            )

@@ -147,8 +147,8 @@ class _AsOfStreamConfig(_StreamConfig):
     @field_validator("max_age")
     @classmethod
     def validate_max_age(cls, max_age: str | None) -> str | None:
-        if max_age is not None and parse_timecode(max_age).total_seconds() <= 0:
-            raise ValueError("max_age must be positive")
+        if max_age is not None and parse_timecode(max_age).total_seconds() < 0:
+            raise ValueError("max_age must be non-negative")
         return max_age
 
 

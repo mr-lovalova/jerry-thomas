@@ -39,6 +39,12 @@ _NonEmptyString = Annotated[
 _Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 
 
+def series_cache_root(manifest_path: Path) -> Path:
+    """Return the directory owned by a series manifest's data generations."""
+
+    return manifest_path.parent / f"{manifest_path.stem}.data"
+
+
 class SeriesEntry(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -420,7 +426,7 @@ def prune_series_cache(
     if not manifest_path.is_file():
         return ()
     manifest = load_series_manifest(manifest_path)
-    cache_root = manifest_path.parent / f"{manifest_path.stem}.data"
+    cache_root = series_cache_root(manifest_path)
     if not cache_root.exists():
         return ()
     if cache_root.is_symlink() or not cache_root.is_dir():

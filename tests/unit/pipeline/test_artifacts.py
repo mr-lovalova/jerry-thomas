@@ -344,6 +344,65 @@ def test_artifact_graph_rejects_duplicate_output_paths(outputs):
         )
 
 
+@pytest.mark.parametrize(
+    ("series_output", "output"),
+    [
+        ("build/series/manifest.json", "build/series/manifest.data"),
+        ("build/series/manifest.json", "build/series/manifest.data/custom.json"),
+        ("build/series/manifest.json", "build/series/MANIFEST.DATA/custom.json"),
+        ("custom/inputs.json", "custom/inputs.data/custom.json"),
+    ],
+)
+def test_artifact_graph_rejects_outputs_owned_by_series_cache(
+    series_output,
+    output,
+):
+    with pytest.raises(ValueError, match="inside series cache directory"):
+        build_artifact_graph(
+            [
+                SeriesTask(output=series_output),
+                ArtifactTask(
+                    id="custom",
+                    entrypoint="plugin.custom",
+                    output=output,
+                ),
+            ]
+        )
+
+
+def test_artifact_graph_allows_similarly_prefixed_series_sibling():
+    graph = build_artifact_graph(
+        [
+            SeriesTask(),
+            ArtifactTask(
+                id="custom",
+                entrypoint="plugin.custom",
+                output="build/series/manifest.data.json",
+            ),
+        ]
+    )
+
+    assert set(graph.tasks_by_id) == {"series", "custom"}
+
+
+def test_artifact_graph_rejects_nested_primary_output_paths():
+    with pytest.raises(ValueError, match="nested output paths"):
+        build_artifact_graph(
+            [
+                ArtifactTask(
+                    id="parent",
+                    entrypoint="plugin.parent",
+                    output="build/result.json",
+                ),
+                ArtifactTask(
+                    id="child",
+                    entrypoint="plugin.child",
+                    output="build/result.json/child.json",
+                ),
+            ]
+        )
+
+
 def test_artifact_graph_rejects_unknown_dependencies():
     with pytest.raises(ValueError, match="unknown dependency 'missing'"):
         ArtifactGraph(

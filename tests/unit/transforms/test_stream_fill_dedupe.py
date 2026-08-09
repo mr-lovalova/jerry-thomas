@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from jerrythomas.config.transforms import FillConfig
 from jerrythomas.transforms.stream.dedupe import DedupeTransform
 from jerrythomas.transforms.stream.fill import (
+    FillMissingTransform,
     ForwardFillTransform,
     StatisticalFillTransform,
 )
@@ -204,6 +205,52 @@ def test_fill_requires_configured_field() -> None:
                 partition_fields=(),
             ).apply(iter([record]))
         )
+
+
+def test_fill_missing_replaces_only_missing_values() -> None:
+    records = [
+        make_time_record(None, 0),
+        make_time_record(float("nan"), 1),
+        make_time_record(0.0, 2),
+        make_time_record(False, 3),
+    ]
+
+    output = list(FillMissingTransform(field="value", value=7).apply(iter(records)))
+
+    assert [record.value for record in output] == [7, 7, 0.0, False]
+    assert output[0] is not records[0]
+    assert records[0].value is None
+
+
+def test_fill_missing_can_write_to_a_separate_field() -> None:
+    present = make_time_record(3.0, 0)
+    missing = make_time_record(None, 1)
+
+    output = list(
+        FillMissingTransform(
+            field="value",
+            value=0,
+            to="filled",
+        ).apply(iter([present, missing]))
+    )
+
+    assert [record.filled for record in output] == [3.0, 0]
+    assert [record.value for record in output] == [3.0, None]
+
+
+def test_fill_missing_requires_configured_field() -> None:
+    with pytest.raises(KeyError, match="missing"):
+        list(
+            FillMissingTransform(field="missing", value=0).apply(
+                iter([make_time_record(1.0, 0)])
+            )
+        )
+
+
+@pytest.mark.parametrize("value", [None, [], float("nan"), float("inf")])
+def test_fill_missing_requires_a_finite_scalar_literal(value: object) -> None:
+    with pytest.raises((TypeError, ValueError), match="scalar literal|finite"):
+        FillMissingTransform(field="value", value=value)  # type: ignore[arg-type]
 
 
 def test_stream_dedupe_removes_exact_duplicates():

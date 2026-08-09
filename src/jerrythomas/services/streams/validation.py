@@ -12,9 +12,11 @@ from jerrythomas.config.streams import (
     StreamConfig,
 )
 from jerrythomas.config.transforms import (
+    AggregateSumConfig,
     DeriveConfig,
     EwmMeanConfig,
     FillConfig,
+    FillMissingConfig,
     ForwardFillConfig,
     ForwardSumConfig,
     LagConfig,
@@ -66,19 +68,28 @@ def validate_stream_configs(
 
         canonical_fields = {"time", *partition_by}
         for operation in stream.transforms:
-            if isinstance(
+            if isinstance(operation, AggregateSumConfig):
+                output_fields = (
+                    (operation.field,)
+                    if operation.count_to is None
+                    else (operation.field, operation.count_to)
+                )
+            elif isinstance(
                 operation,
                 (
                     LagConfig,
                     LeadConfig,
                     EwmMeanConfig,
                     FillConfig,
+                    FillMissingConfig,
                     ForwardFillConfig,
                     RollingConfig,
                     RollingQuantileConfig,
                 ),
             ):
-                output_field = operation.field if operation.to is None else operation.to
+                output_fields = (
+                    operation.field if operation.to is None else operation.to,
+                )
             elif isinstance(
                 operation,
                 (
@@ -90,14 +101,15 @@ def validate_stream_configs(
                     RollingSlopeConfig,
                 ),
             ):
-                output_field = operation.to
+                output_fields = (operation.to,)
             else:
                 continue
-            if output_field in canonical_fields:
-                raise ValueError(
-                    f"Stream '{stream_id}' transform '{operation.operation}' cannot "
-                    f"write canonical order field '{output_field}'"
-                )
+            for output_field in output_fields:
+                if output_field in canonical_fields:
+                    raise ValueError(
+                        f"Stream '{stream_id}' transform '{operation.operation}' "
+                        f"cannot write canonical order field '{output_field}'"
+                    )
 
         if isinstance(stream, CrossSectionStreamConfig):
             for cross_section_operation in stream.cross_section:

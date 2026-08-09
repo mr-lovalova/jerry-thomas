@@ -152,15 +152,55 @@ def test_as_of_stream_treats_max_age_as_inclusive() -> None:
     assert rows[1][1] is None
 
 
-@pytest.mark.parametrize("max_age", [timedelta(0), timedelta(microseconds=-1)])
-def test_as_of_stream_rejects_nonpositive_max_age(max_age: timedelta) -> None:
-    with pytest.raises(ValueError, match="max_age must be a positive timedelta"):
+def test_as_of_stream_zero_max_age_matches_only_exact_keys() -> None:
+    rows = list(
+        as_of_stream(
+            iter(
+                [
+                    _record("A", 1, "primary-A1"),
+                    _record("A", 2, "primary-A2"),
+                    _record("A", 3, "primary-A3"),
+                ]
+            ),
+            iter(
+                [
+                    _record("A", 0, "stale-A0"),
+                    _record("A", 2, "exact-A2"),
+                ]
+            ),
+            partition_by=("id_",),
+            max_age=timedelta(0),
+            require_match=False,
+        )
+    )
+
+    assert [lookup.value if lookup is not None else None for _, lookup in rows] == [
+        None,
+        "exact-A2",
+        None,
+    ]
+
+
+def test_as_of_stream_zero_max_age_can_require_an_exact_match() -> None:
+    with pytest.raises(ValueError, match="has no eligible record"):
+        list(
+            as_of_stream(
+                iter([_record("A", 2, "primary")]),
+                iter([_record("A", 1, "stale")]),
+                partition_by=("id_",),
+                max_age=timedelta(0),
+            )
+        )
+
+
+def test_as_of_stream_rejects_negative_max_age() -> None:
+    with pytest.raises(ValueError, match="max_age must be a non-negative timedelta"):
         list(
             as_of_stream(
                 iter(()),
                 iter(()),
                 partition_by=("id_",),
-                max_age=max_age,
+                max_age=timedelta(microseconds=-1),
             )
         )
 

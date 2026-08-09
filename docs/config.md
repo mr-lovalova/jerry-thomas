@@ -739,10 +739,13 @@ Notes:
   eligible. There is no nearest or forward match.
 - Lookup `time` is its availability time. Keep an effective or reporting period
   in a separate record field when it differs.
-- `max_age` is optional and inclusive. It accepts a positive timecode such as
-  `30min`, `12h`, or `180d`.
+- `max_age` is optional, inclusive, and non-negative. Positive values such as
+  `30min`, `12h`, or `180d` permit earlier lookup records. Use `0s` for exact
+  timestamp matching only.
 - `require_match` defaults to `true`. With `false`, an unmatched lookup is
-  passed to the combiner as `None`.
+  passed to the combiner as `None`. Together, `max_age: 0s` and
+  `require_match: false` provide exact optional left alignment while preserving
+  every primary record unless the combiner explicitly drops it.
 - `from.as_of` must have the same `partition_by` as the primary. Both may be
   unpartitioned. Matching streams in canonical order uses constant memory.
 - `from.broadcast_as_of` must be unpartitioned, while its primary must be

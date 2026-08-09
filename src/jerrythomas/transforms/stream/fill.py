@@ -87,3 +87,30 @@ class ForwardFillTransform:
                 if not is_missing(value):
                     last_value = value
                 yield clone_record_with_field(record, self.to, last_value)
+
+
+class FillMissingTransform:
+    """Replace a missing field value with one explicit scalar literal."""
+
+    def __init__(
+        self,
+        field: str,
+        value: bool | int | float | str,
+        to: str | None = None,
+    ) -> None:
+        if type(value) not in {bool, int, float, str}:
+            raise TypeError("fill_missing value must be a scalar literal")
+        if isinstance(value, float) and not isfinite(value):
+            raise ValueError("fill_missing value must be finite")
+        self.field = field
+        self.value = value
+        self.to = field if to is None else to
+
+    def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
+        for record in stream:
+            value = get_field(record, self.field)
+            yield clone_record_with_field(
+                record,
+                self.to,
+                self.value if is_missing(value) else value,
+            )

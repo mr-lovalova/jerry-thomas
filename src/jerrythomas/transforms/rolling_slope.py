@@ -1,7 +1,7 @@
 from collections import deque
 from math import isfinite
 
-from jerrythomas.transforms.rolling_window import CompensatedSum
+from jerrythomas.transforms.numeric import CompensatedSum
 
 
 class RollingSlope:

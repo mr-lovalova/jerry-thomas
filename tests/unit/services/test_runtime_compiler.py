@@ -623,6 +623,128 @@ combine:
     ]
 
 
+def test_yaml_aggregate_exact_optional_alignment_and_literal_fill(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    project_yaml, sources_dir, streams_dir, data_dir = _write_test_project(tmp_path)
+    rows_by_input = {
+        "prices": [
+            '{"time":"2025-01-01T00:00:00Z","ticker":"A","value":10}',
+            '{"time":"2025-01-02T00:00:00Z","ticker":"A","value":20}',
+            '{"time":"2025-01-03T00:00:00Z","ticker":"A","value":30}',
+            '{"time":"2025-01-01T00:00:00Z","ticker":"B","value":40}',
+            '{"time":"2025-01-02T00:00:00Z","ticker":"B","value":50}',
+        ],
+        "events": [
+            '{"time":"2025-01-03T00:00:00Z","ticker":"A","value":4}',
+            '{"time":"2025-01-01T00:00:00Z","ticker":"A","value":1.5}',
+            '{"time":"2025-01-01T00:00:00Z","ticker":"A","value":2}',
+        ],
+    }
+    for input_name, rows in rows_by_input.items():
+        (data_dir / f"{input_name}.jsonl").write_text(
+            "\n".join(rows) + "\n",
+            encoding="utf-8",
+        )
+        (sources_dir / f"{input_name}.yaml").write_text(
+            f"""\
+id: {input_name}.source
+parser:
+  entrypoint: core.temporal_record
+loader:
+  transport: fs
+  path: data/{input_name}.jsonl
+  reader:
+    format: jsonl
+""",
+            encoding="utf-8",
+        )
+
+    (streams_dir / "prices.yaml").write_text(
+        """\
+id: prices
+from: {source: prices.source}
+map: {entrypoint: identity}
+partition_by: [ticker]
+""",
+        encoding="utf-8",
+    )
+    (streams_dir / "events.yaml").write_text(
+        """\
+id: events
+from: {source: events.source}
+map: {entrypoint: identity}
+partition_by: [ticker]
+transforms:
+  - {operation: aggregate_sum, field: value, count_to: event_count}
+""",
+        encoding="utf-8",
+    )
+    (streams_dir / "enriched.yaml").write_text(
+        """\
+id: enriched
+from:
+  stream: prices
+  as_of: events
+max_age: 0s
+require_match: false
+combine:
+  entrypoint: attach_events
+transforms:
+  - {operation: fill_missing, field: event_value, value: 0}
+  - {operation: fill_missing, field: event_count, value: 0}
+""",
+        encoding="utf-8",
+    )
+
+    def attach_events(price, event):
+        record = TemporalRecord(time=price.time)
+        record.ticker = price.ticker
+        record.price = price.value
+        record.event_value = None if event is None else event.value
+        record.event_count = None if event is None else event.event_count
+        return record
+
+    monkeypatch.setattr(
+        "jerrythomas.services.streams.combine.load_entrypoint",
+        lambda group, entrypoint: attach_events,
+    )
+
+    runtime = compile_runtime(load_project_definition(project_yaml))
+    enriched = runtime.streams["enriched"]
+
+    assert isinstance(enriched, AsOfRuntimeStream)
+    assert enriched.max_age == timedelta(0)
+    assert enriched.require_match is False
+
+    output = list(run_stream_pipeline(runtime, "enriched"))
+
+    assert [
+        (
+            record.time.day,
+            record.price,
+            record.event_value,
+            record.event_count,
+        )
+        for record in output
+    ] == [
+        (1, 10, 3.5, 2),
+        (2, 20, 0, 0),
+        (3, 30, 4.0, 1),
+        (1, 40, 0, 0),
+        (2, 50, 0, 0),
+    ]
+
+    (data_dir / "events.jsonl").write_text("", encoding="utf-8")
+    empty_output = list(run_stream_pipeline(runtime, "enriched"))
+
+    assert len(empty_output) == 5
+    assert [record.ticker for record in empty_output] == ["A", "A", "A", "B", "B"]
+    assert all(record.event_value == 0 for record in empty_output)
+    assert all(record.event_count == 0 for record in empty_output)
+
+
 def test_yaml_aligned_stream_runs_with_inherited_partition_and_combiner(
     tmp_path,
     monkeypatch,

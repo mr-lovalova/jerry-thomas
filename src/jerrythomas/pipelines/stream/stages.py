@@ -10,6 +10,7 @@ from jerrythomas.artifacts.schedule import (
     schedule_partition_by_from_metadata,
 )
 from jerrythomas.config.transforms import (
+    AggregateSumConfig,
     CollapseConfig,
     DedupeConfig,
     DeriveConfig,
@@ -17,6 +18,7 @@ from jerrythomas.config.transforms import (
     EnsureCadenceConfig,
     EnsureScheduleConfig,
     FillConfig,
+    FillMissingConfig,
     FloorTimeConfig,
     ForwardFillConfig,
     ForwardSumConfig,
@@ -35,15 +37,17 @@ from jerrythomas.config.transforms import (
 )
 from jerrythomas.execution.pipeline import Stage, StageOp
 from jerrythomas.runtime import Runtime
+from jerrythomas.transforms.stream.aggregate import AggregateSumTransform
+from jerrythomas.transforms.stream.collapse import CollapseTransform
 from jerrythomas.transforms.stream.dedupe import DedupeTransform
 from jerrythomas.transforms.stream.derive import DeriveTransform
 from jerrythomas.transforms.stream.ewm import EwmMeanTransform
 from jerrythomas.transforms.stream.fill import (
+    FillMissingTransform,
     ForwardFillTransform,
     StatisticalFillTransform,
 )
 from jerrythomas.transforms.stream.forward_sum import ForwardSumTransform
-from jerrythomas.transforms.stream.collapse import CollapseTransform
 from jerrythomas.transforms.stream.lag import LagTransform
 from jerrythomas.transforms.stream.lead import LeadTransform
 from jerrythomas.transforms.stream.logarithm import Log1pTransform, LogTransform
@@ -174,6 +178,18 @@ def build_transform_stages(
             stage_op = CollapseTransform(
                 partition_by,
                 operation.keep,
+            ).apply
+        elif isinstance(operation, AggregateSumConfig):
+            stage_op = AggregateSumTransform(
+                operation.field,
+                partition_by,
+                operation.count_to,
+            ).apply
+        elif isinstance(operation, FillMissingConfig):
+            stage_op = FillMissingTransform(
+                operation.field,
+                operation.value,
+                operation.to,
             ).apply
         elif isinstance(operation, EwmMeanConfig):
             stage_op = EwmMeanTransform(

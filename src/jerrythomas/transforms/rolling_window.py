@@ -3,26 +3,7 @@ from bisect import bisect_left, insort
 from collections import deque
 from math import sqrt
 
-
-class CompensatedSum:
-    def __init__(self) -> None:
-        self.total = 0.0
-        self.correction = 0.0
-
-    def add(self, value: float) -> None:
-        updated = self.total + value
-        if abs(self.total) >= abs(value):
-            self.correction += (self.total - updated) + value
-        else:
-            self.correction += (value - updated) + self.total
-        self.total = updated
-
-    def reset(self) -> None:
-        self.total = 0.0
-        self.correction = 0.0
-
-    def result(self) -> float:
-        return self.total + self.correction
+from jerrythomas.transforms.numeric import CompensatedSum
 
 
 class RollingWindow(ABC):

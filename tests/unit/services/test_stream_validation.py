@@ -440,6 +440,13 @@ def test_validation_rejects_noncanonical_declared_order() -> None:
             "to": "ticker",
         },
         {"operation": "forward_fill", "field": "close", "to": "ticker"},
+        {"operation": "fill_missing", "field": "close", "value": 0, "to": "ticker"},
+        {"operation": "aggregate_sum", "field": "ticker"},
+        {
+            "operation": "aggregate_sum",
+            "field": "value",
+            "count_to": "ticker",
+        },
         {"operation": "rolling", "field": "close", "window": 2, "to": "ticker"},
         {
             "operation": "rolling_quantile",

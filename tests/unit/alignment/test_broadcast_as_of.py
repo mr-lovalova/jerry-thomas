@@ -203,15 +203,36 @@ def test_broadcast_as_of_yields_none_before_first_lookup_when_optional() -> None
     assert rows[1][1].value == "lookup"
 
 
-@pytest.mark.parametrize("max_age", [timedelta(0), timedelta(microseconds=-1)])
-def test_broadcast_as_of_requires_positive_max_age(max_age: timedelta) -> None:
-    with pytest.raises(ValueError, match="max_age must be a positive timedelta"):
+def test_broadcast_as_of_zero_max_age_matches_only_exact_times() -> None:
+    rows = list(
+        broadcast_as_of_stream(
+            iter(
+                [
+                    _primary("A", 1, "exact", hour=2),
+                    _primary("A", 1, "stale", hour=3),
+                ]
+            ),
+            iter([_lookup(1, "lookup", hour=2)]),
+            partition_by=("id_",),
+            max_age=timedelta(0),
+            require_match=False,
+        )
+    )
+
+    assert [right.value if right is not None else None for _, right in rows] == [
+        "lookup",
+        None,
+    ]
+
+
+def test_broadcast_as_of_rejects_negative_max_age() -> None:
+    with pytest.raises(ValueError, match="max_age must be a non-negative timedelta"):
         list(
             broadcast_as_of_stream(
                 iter(()),
                 iter(()),
                 partition_by=("id_",),
-                max_age=max_age,
+                max_age=timedelta(microseconds=-1),
             )
         )
 

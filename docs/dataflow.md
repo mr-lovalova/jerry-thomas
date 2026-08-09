@@ -171,9 +171,10 @@ combine:
 
 The `broadcast_as_of` form attaches one unpartitioned lookup history to every
 primary partition. Exact timestamps are eligible; future lookups never are.
-`max_age` is an optional inclusive bound. With `require_match: false`, the
-combiner receives `None` when no eligible lookup exists. Lookup `time` must
-represent when the data became available.
+`max_age` is an optional inclusive, non-negative bound. `max_age: 0s` permits
+only exact timestamps. With `require_match: false`, the combiner receives
+`None` when no eligible lookup exists. Lookup `time` must represent when the
+data became available.
 
 Aligned streams intersect their inputs by partition and time. Input order is
 also combine argument order:

@@ -49,11 +49,24 @@ Both logarithms preserve `None` and `NaN` as missing and reject other
 nonnumeric or infinite values.
 - `derive`: write `to` from binary arithmetic on `left` and exactly one of
   `right_field` or `right_value`. Operators: `add`, `sub`, `mul`, `div`.
+- `aggregate_sum`: emit one record for each adjacent canonical
+  `(*partition_by, time)` key, replacing `field` with its sum. An optional
+  `count_to` field receives the number of input records. Values must be finite
+  integers or floats; missing values fail rather than being treated as zero.
+  Integer-only groups retain exact integer sums. Groups containing floats sum
+  every binary value exactly and round once at the end, so equivalent input
+  ordering cannot change the summed value. Integer contributions that cannot be
+  represented exactly as floats fail instead of losing precision. Other fields
+  come from the first record in the group. Put `dedupe` first when exact
+  duplicate events should not count twice.
 - `collapse`: keep the `first` or `last` adjacent record for each partition and
   timestamp.
 - `dedupe`: drop exact duplicate records from an already sorted stream.
 - `fill`: impute missing values from rolling history using an explicit `mean`
   or `median` statistic.
+- `fill_missing`: replace `None` or `NaN` in `field` with an explicit finite
+  scalar `value`. Falsey values such as `0`, `false`, and empty strings remain
+  unchanged. Use optional `to` to preserve the source field.
 - `forward_fill`: carry the last known value within each partition.
 - `ewm_mean`: compute an unadjusted exponentially weighted mean using the
   recursive update `mean = mean + alpha * (value - mean)`. The first valid
@@ -80,6 +93,31 @@ nonnumeric or infinite values.
   predictors. Missing values clear the window; nonnumeric, infinite, or
   rank-deficient windows fail explicitly. Install `jerry-thomas[numerical]`
   to use this NumPy-backed transform.
+
+Sparse events can be aggregated, attached to a complete primary stream with an
+exact optional as-of match, and then filled explicitly:
+
+```yaml
+# Sparse event stream
+transforms:
+  - { operation: aggregate_sum, field: signed_amount, count_to: event_count }
+
+# Complete primary stream enriched by those events
+from:
+  stream: eligible_sessions
+  as_of: session_events
+max_age: 0s
+require_match: false
+combine:
+  entrypoint: attach_session_events
+transforms:
+  - { operation: fill_missing, field: signed_amount, value: 0 }
+  - { operation: fill_missing, field: event_count, value: 0 }
+```
+
+The combiner receives `None` for an unmatched event record and must emit the
+configured fields as missing. `fill_missing` then makes the absence policy
+explicit without creating rows outside the primary stream.
 
 `rolling_slope` needs consecutive records, not merely consecutive values. Put
 `ensure_schedule` or `ensure_cadence` first when absent timestamps must reset the

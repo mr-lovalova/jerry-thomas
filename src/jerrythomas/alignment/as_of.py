@@ -20,8 +20,8 @@ def as_of_stream(
     with closing_alignment_inputs((primary, lookup)):
         if max_age is not None and not isinstance(max_age, timedelta):
             raise TypeError("As-of max_age must be a timedelta or None")
-        if max_age is not None and max_age <= timedelta(0):
-            raise ValueError("As-of max_age must be a positive timedelta")
+        if max_age is not None and max_age < timedelta(0):
+            raise ValueError("As-of max_age must be a non-negative timedelta")
         if type(require_match) is not bool:
             raise TypeError("As-of require_match must be a boolean")
 
