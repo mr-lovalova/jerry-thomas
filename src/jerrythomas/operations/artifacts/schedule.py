@@ -4,6 +4,7 @@ from typing import Any, Iterator
 
 from jerrythomas.artifacts.output import ArtifactOutput
 from jerrythomas.config.tasks.schedule import ScheduleTask
+from jerrythomas.domain.stream import require_consistent_partition_types
 from jerrythomas.domain.value import normalize_data_value
 from jerrythomas.execution.observability import OperationProgressTracker
 from jerrythomas.execution.settings import resolve_heartbeat_interval_seconds
@@ -28,7 +29,7 @@ def _to_iso(ts: datetime) -> str:
     return text
 
 
-def _schedule_row(record, partition_by: list[str]) -> tuple:
+def _schedule_row(record, partition_by: tuple[str, ...]) -> tuple:
     values = tuple(
         normalize_data_value(get_field(record, field)) for field in partition_by
     )
@@ -40,7 +41,7 @@ def _schedule_row(record, partition_by: list[str]) -> tuple:
     return (record.time, *values)
 
 
-def _json_schedule_row(row: tuple, partition_by: list[str]) -> dict:
+def _json_schedule_row(row: tuple, partition_by: tuple[str, ...]) -> dict:
     payload = {"time": _to_iso(row[0])}
     for field, value in zip(partition_by, row[1:]):
         payload[field] = value
@@ -76,6 +77,7 @@ def build_schedule_artifact(
     )
     runtime_stream = require_runtime_stream(runtime, task_cfg.stream)
     stream = run_stream_pipeline(runtime, task_cfg.stream)
+    partition_by = tuple(task_cfg.partition_by)
     project_progress = OperationProgressTracker(
         "project_schedule",
         "records",
@@ -83,10 +85,10 @@ def build_schedule_artifact(
     )
     schedule_rows = _project_schedule_rows(
         stream,
-        task_cfg.partition_by,
+        partition_by,
         project_progress,
     )
-    if tuple(task_cfg.partition_by) == runtime_stream.partition_by:
+    if partition_by == runtime_stream.partition_by:
         ordered_rows = schedule_rows
     else:
         ordered_rows = batch_sort(
@@ -108,7 +110,7 @@ def build_schedule_artifact(
             for row in _unique_schedule_rows(ordered_rows):
                 rows += 1
                 sink.write_text(
-                    json_text(_json_schedule_row(row, task_cfg.partition_by))
+                    json_text(_json_schedule_row(row, partition_by))
                 )
                 sink.write_text("\n")
                 write_progress.advance()
@@ -124,16 +126,24 @@ def build_schedule_artifact(
         meta={
             "rows": rows,
             "stream": task_cfg.stream,
-            "partition_by": list(task_cfg.partition_by),
+            "partition_by": list(partition_by),
         },
     )
 
 
 def _project_schedule_rows(
     stream,
-    partition_by: list[str],
+    partition_by: tuple[str, ...],
     progress: OperationProgressTracker,
 ) -> Iterator[tuple]:
-    for record in stream:
-        yield _schedule_row(record, partition_by)
+    expected_types: dict[str, type] = {}
+    for position, record in enumerate(stream, start=1):
+        row = _schedule_row(record, partition_by)
+        require_consistent_partition_types(
+            partition_by,
+            row[1:],
+            expected_types,
+            position,
+        )
+        yield row
         progress.advance()

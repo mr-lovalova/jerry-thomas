@@ -328,6 +328,42 @@ def test_build_schedule_artifact_rejects_non_finite_partition_values_atomically(
     assert not (runtime.artifacts_root / "build/schedule.jsonl").exists()
 
 
+@pytest.mark.parametrize(
+    "partition_values",
+    [
+        (False, 0),
+        (1, 1.0),
+    ],
+)
+def test_build_schedule_artifact_rejects_mixed_partition_types_atomically(
+    tmp_path,
+    partition_values: tuple[object, object],
+) -> None:
+    records = []
+    for value in partition_values:
+        record = _record(0)
+        record.security_id = value
+        records.append(record)
+    runtime = _runtime(
+        tmp_path,
+        records,
+    )
+
+    with pytest.raises(TypeError, match="partition fields must use one exact type"):
+        build_schedule_artifact(
+            runtime,
+            ScheduleTask(
+                id="schedule",
+                entrypoint="core.artifact.schedule",
+                stream="source.stream",
+                partition_by=["security_id"],
+                output="build/schedule.jsonl",
+            ),
+        )
+
+    assert not (runtime.artifacts_root / "build/schedule.jsonl").exists()
+
+
 def test_build_schedule_artifact_uses_stream_transforms(
     monkeypatch,
     tmp_path,

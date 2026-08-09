@@ -2,27 +2,13 @@ from collections.abc import Iterator
 from functools import partial
 from typing import Any
 
-from jerrythomas.domain.stream import canonical_record_order
+from jerrythomas.domain.stream import (
+    canonical_record_order,
+    require_consistent_partition_types,
+)
 from jerrythomas.execution.pipeline import Stage
 from jerrythomas.pipelines.sort import SortProgress, batch_sort
 from jerrythomas.transforms.utils import partition_key
-
-
-def _require_consistent_partition_types(
-    partition_by: tuple[str, ...],
-    values: tuple[Any, ...],
-    expected_types: dict[str, type],
-    position: int,
-) -> None:
-    for field, value in zip(partition_by, values):
-        value_type = type(value)
-        expected_type = expected_types.setdefault(field, value_type)
-        if value_type is not expected_type:
-            raise TypeError(
-                f"Record {position} changes partition field {field!r} from "
-                f"{expected_type.__name__} to {value_type.__name__}; partition "
-                "fields must use one exact type."
-            )
 
 
 def build_record_order_stage(
@@ -53,7 +39,7 @@ def validate_record_order(
     previous_key = None
     for position, record in enumerate(records, start=1):
         partition = partition_key(record, partition_by)
-        _require_consistent_partition_types(
+        require_consistent_partition_types(
             partition_by,
             partition,
             expected_types,
@@ -82,7 +68,7 @@ def sort_records(
 
     def validated_records() -> Iterator[Any]:
         for position, record in enumerate(records, start=1):
-            _require_consistent_partition_types(
+            require_consistent_partition_types(
                 partition_by,
                 partition_key(record, partition_by),
                 expected_types,
