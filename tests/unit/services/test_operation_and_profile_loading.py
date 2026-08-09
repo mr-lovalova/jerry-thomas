@@ -285,6 +285,39 @@ def test_artifact_operation_rejects_empty_output(
         _artifact_tasks(project_yaml)
 
 
+@pytest.mark.parametrize(
+    "output",
+    [
+        "_system",
+        "_system/build/state.json",
+        "_SYSTEM/execution.lock",
+        "_system./build/state.json",
+        "_system /execution.lock",
+    ],
+)
+def test_artifact_operation_rejects_reserved_system_output(output: str) -> None:
+    with pytest.raises(ValueError, match="reserved '_system' directory"):
+        ArtifactTask(
+            id="snapshot",
+            entrypoint="plugin.artifact.snapshot",
+            output=output,
+        )
+
+
+@pytest.mark.parametrize(
+    "output",
+    ["_systematic/output.json", "build/_system/output.json"],
+)
+def test_artifact_operation_allows_non_reserved_system_names(output: str) -> None:
+    task = ArtifactTask(
+        id="snapshot",
+        entrypoint="plugin.artifact.snapshot",
+        output=output,
+    )
+
+    assert task.output == output
+
+
 def test_core_operation_rejects_entrypoint_override(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)

@@ -57,6 +57,8 @@ class ArtifactTask(Task):
             raise ValueError("output must be a relative path under artifacts root")
         if ".." in output_path.parts:
             raise ValueError("output must not traverse outside artifacts root")
+        if output_path.parts[0].rstrip(" .").casefold() == "_system":
+            raise ValueError("output must not use the reserved '_system' directory")
         return output
 
 
