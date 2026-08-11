@@ -125,7 +125,7 @@ def build_transform_stages(
                 operation.comparand,
             ).apply
         elif isinstance(operation, DedupeConfig):
-            stage_op = DedupeTransform().apply
+            stage_op = DedupeTransform(partition_by).apply
         elif isinstance(operation, LagConfig):
             stage_op = LagTransform(
                 operation.field,

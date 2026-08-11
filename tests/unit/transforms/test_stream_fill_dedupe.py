@@ -1,12 +1,19 @@
+from dataclasses import dataclass
+
 import pytest
 from pydantic import ValidationError
 
 from jerrythomas.config.transforms import FillConfig
+from jerrythomas.domain.record import TemporalRecord
 from jerrythomas.transforms.stream.dedupe import DedupeTransform
 from jerrythomas.transforms.stream.fill import (
     FillMissingTransform,
     ForwardFillTransform,
     StatisticalFillTransform,
+)
+from jerrythomas.transforms.utils import (
+    record_establishes_domain,
+    set_record_domain_anchor,
 )
 from tests.unit.transforms.helpers import make_time_record
 
@@ -253,19 +260,18 @@ def test_fill_missing_requires_a_finite_scalar_literal(value: object) -> None:
         FillMissingTransform(field="value", value=value)  # type: ignore[arg-type]
 
 
-def test_stream_dedupe_removes_exact_duplicates():
+def test_stream_dedupe_removes_exact_duplicates_within_record_key():
     stream = iter(
         [
             make_time_record(10.0, 0),
+            make_time_record(12.0, 0),
             make_time_record(10.0, 0),
-            make_time_record(12.0, 1),
-            make_time_record(5.0, 0),
-            make_time_record(5.0, 0),
+            make_time_record(10.0, 1),
         ]
     )
-    transform = DedupeTransform()
+    transform = DedupeTransform(())
     out = list(transform.apply(stream))
-    assert [rec.value for rec in out] == [10.0, 12.0, 5.0]
+    assert [rec.value for rec in out] == [10.0, 12.0, 10.0]
 
 
 def test_stream_dedupe_keeps_distinct_values():
@@ -275,11 +281,42 @@ def test_stream_dedupe_keeps_distinct_values():
             make_time_record(11.0, 0),
         ]
     )
-    transform = DedupeTransform()
+    transform = DedupeTransform(())
     out = list(transform.apply(stream))
     assert [rec.value for rec in out] == [10.0, 11.0]
 
 
+def test_stream_dedupe_compares_dynamic_subclass_fields() -> None:
+    @dataclass
+    class PriceRecord(TemporalRecord):
+        ticker: str
+
+    time = make_time_record(0.0, 0).time
+    first = PriceRecord(time=time, ticker="AAPL")
+    second = PriceRecord(time=time, ticker="AAPL")
+    first.value = 10.0
+    second.value = 11.0
+
+    assert first == second  # Dataclass equality ignores dynamic fields.
+
+    output = list(DedupeTransform(("ticker",)).apply(iter([first, second])))
+
+    assert [record.value for record in output] == [10.0, 11.0]
+
+
+def test_stream_dedupe_preserves_domain_provenance() -> None:
+    first = make_time_record(10.0, 0)
+    second = make_time_record(10.0, 0)
+    set_record_domain_anchor(first, False)
+    set_record_domain_anchor(second, True)
+
+    output = list(DedupeTransform(()).apply(iter([first, second])))
+
+    assert len(output) == 1
+    assert record_establishes_domain(output[0]) is True
+    assert record_establishes_domain(first) is False
+
+
 def test_stream_dedupe_rejects_unknown_options() -> None:
-    with pytest.raises(TypeError, match="takes no arguments"):
-        DedupeTransform(typo=True)
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        DedupeTransform((), typo=True)
