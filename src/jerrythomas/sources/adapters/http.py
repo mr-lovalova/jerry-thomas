@@ -41,10 +41,21 @@ class HttpTransport(SourceTransport):
             except (URLError, HTTPError) as exc:
                 raise RuntimeError(f"failed to fetch {self.url}: {exc}") from exc
             with resp:
+                expected_bytes = resp.length
+                received_bytes = 0
                 while True:
                     chunk = resp.read(self.chunk_size)
                     if not chunk:
+                        if (
+                            expected_bytes is not None
+                            and received_bytes != expected_bytes
+                        ):
+                            raise RuntimeError(
+                                f"failed to fetch {self.url}: response ended after "
+                                f"{received_bytes} of {expected_bytes} bytes"
+                            )
                         break
+                    received_bytes += len(chunk)
                     yield chunk
 
         yield SourceResource(uri=req_url, stream=byte_stream())

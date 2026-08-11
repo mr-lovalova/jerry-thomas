@@ -1,4 +1,5 @@
 import gzip
+from io import BytesIO
 from urllib.parse import parse_qsl, urlparse
 
 import pytest
@@ -23,6 +24,12 @@ from jerrythomas.sources.ports import SourceResource, SourceTransport
 def _write_gzip(path, text: str) -> None:
     with gzip.open(path, "wt", encoding="utf-8", newline="") as stream:
         stream.write(text)
+
+
+class _HttpResponse(BytesIO):
+    def __init__(self, body: bytes, length: int | None) -> None:
+        super().__init__(body)
+        self.length = length
 
 
 def test_fs_path_selects_file_or_glob_transport(tmp_path) -> None:
@@ -233,6 +240,35 @@ def test_http_transport_does_not_drop_parameters_when_encoding_fails(
         list(transport.resources())
 
     assert not opened
+
+
+def test_http_transport_accepts_complete_declared_response(monkeypatch) -> None:
+    body = b'{"value": 1}\n'
+    monkeypatch.setattr(
+        http_adapter,
+        "urlopen",
+        lambda _request, timeout: _HttpResponse(body, len(body)),
+    )
+
+    [resource] = HttpTransport("https://example.test/rows").resources()
+
+    assert b"".join(resource.stream) == body
+
+
+def test_http_transport_rejects_premature_eof(monkeypatch) -> None:
+    body = b'{"value": 1}\n'
+    declared_length = len(body) + 20
+    monkeypatch.setattr(
+        http_adapter,
+        "urlopen",
+        lambda _request, timeout: _HttpResponse(body, declared_length),
+    )
+
+    [resource] = HttpTransport("https://example.test/rows").resources()
+
+    message = f"ended after {len(body)} of {declared_length} bytes"
+    with pytest.raises(RuntimeError, match=message):
+        list(resource.stream)
 
 
 def test_data_loader_tracks_current_resource_uri(tmp_path):
