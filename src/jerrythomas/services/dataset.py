@@ -1,11 +1,34 @@
+import jerrythomas.config.transforms as transform_config
 from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.dataset.split import HashSplitConfig
-from jerrythomas.config.streams import CrossSectionStreamConfig, StreamsConfig
+from jerrythomas.config.streams import (
+    AsOfStreamConfig,
+    BroadcastAsOfStreamConfig,
+    CrossSectionStreamConfig,
+    StreamsConfig,
+)
 from jerrythomas.io.yaml import YamlDocument
 from jerrythomas.services.definitions import ProjectManifest
 from jerrythomas.services.streams.validation import (
     stream_dependency_closure,
     stream_partition_by,
+)
+from jerrythomas.utils.time import parse_timecode
+
+
+_CROSS_TIMESTAMP_TRANSFORMS = (
+    transform_config.EwmMeanConfig,
+    transform_config.EnsureCadenceConfig,
+    transform_config.EnsureScheduleConfig,
+    transform_config.FillConfig,
+    transform_config.ForwardFillConfig,
+    transform_config.ForwardSumConfig,
+    transform_config.LagConfig,
+    transform_config.LeadConfig,
+    transform_config.RollingConfig,
+    transform_config.RollingOlsConfig,
+    transform_config.RollingQuantileConfig,
+    transform_config.RollingSlopeConfig,
 )
 
 
@@ -51,4 +74,27 @@ def validate_dataset_streams(
             raise ValueError(
                 "hash splits cannot be used with cross-sectional streams: "
                 + ", ".join(cross_sections)
+            )
+
+        cross_timestamp_streams: list[str] = []
+        for stream_id in selected_streams:
+            stream = streams.streams[stream_id]
+            uses_cross_timestamp_transform = any(
+                isinstance(operation, _CROSS_TIMESTAMP_TRANSFORMS)
+                for operation in stream.transforms
+            )
+            uses_temporal_as_of = isinstance(
+                stream,
+                (AsOfStreamConfig, BroadcastAsOfStreamConfig),
+            ) and (
+                stream.max_age is None
+                or parse_timecode(stream.max_age).total_seconds() > 0
+            )
+            if uses_cross_timestamp_transform or uses_temporal_as_of:
+                cross_timestamp_streams.append(stream_id)
+
+        if cross_timestamp_streams:
+            raise ValueError(
+                "hash splits cannot be used with cross-timestamp streams: "
+                + ", ".join(sorted(cross_timestamp_streams))
             )

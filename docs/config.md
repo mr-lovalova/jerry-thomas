@@ -992,10 +992,11 @@ postprocess:
   ```
 
 - Hash-ratio mappings are canonicalized by label, so YAML key order does not
-  change sample assignment. Hash splits are not allowed when any feature or
-  target uses `sequence`, or when any target has a positive horizon, because
-  temporal support could cross hash partitions. Use a time split for temporal
-  datasets.
+  change sample assignment. Hash splits reject sequences, positive target
+  horizons, selected cross-sectional streams, and selected stream dependencies
+  that derive records across timestamps. Cross-timestamp dependencies include
+  lag, lead, rolling, temporal filling and completion, and as-of joins without
+  `max_age: 0s`. Use a time split for temporal datasets.
 - `postprocess.features` and `postprocess.targets` filter
   complete rows after typed conformance.
 - `ids` is optional. Sample filters default to every declared ID.

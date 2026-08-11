@@ -266,6 +266,9 @@ Build profiles remain explicit roots for `jerry build` and retain their own
   time split for sequence datasets.
 - Hash splits likewise reject positive target horizons because temporal support
   cannot be isolated by a key hash.
+- Selected stream dependencies that derive records across timestamps are also
+  rejected. This includes lag, lead, rolling, temporal filling and completion,
+  and as-of joins unless `max_age: 0s` makes matching exact.
 
 Canonical series artifacts remain unscaled and independent of fold
 selection. The scaler artifact records the fold-specific statistics needed at
