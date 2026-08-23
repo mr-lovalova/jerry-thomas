@@ -43,29 +43,21 @@ def _is_dataclass(node: ast.ClassDef) -> bool:
 
 def list_parsers(root: Path | None = None) -> dict[str, str]:
     _, _, pyproject = pkg_root(root)
-    if not pyproject.exists():
-        return {}
     return read_entry_points(pyproject, PARSERS_EP)
 
 
 def list_loaders(root: Path | None = None) -> dict[str, str]:
     _, _, pyproject = pkg_root(root)
-    if not pyproject.exists():
-        return {}
     return read_entry_points(pyproject, LOADERS_EP)
 
 
 def list_mappers(root: Path | None = None) -> dict[str, str]:
     _, _, pyproject = pkg_root(root)
-    if not pyproject.exists():
-        return {}
     return read_entry_points(pyproject, MAPPERS_EP)
 
 
 def list_combiners(root: Path | None = None) -> dict[str, str]:
     _, _, pyproject = pkg_root(root)
-    if not pyproject.exists():
-        return {}
     return read_entry_points(pyproject, COMBINERS_EP)
 
 

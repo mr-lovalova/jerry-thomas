@@ -138,8 +138,8 @@ def sort_spill_directory(root: Path | None = None) -> Iterator[Path]:
 
 def format_bytes(value: int) -> str:
     amount = float(max(0, value))
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if amount < 1024.0 or unit == "TB":
+    for unit in ("B", "KB", "MB", "GB"):
+        if amount < 1024.0:
             if unit == "B":
                 return f"{int(amount)}B"
             return f"{amount:.1f}{unit}"

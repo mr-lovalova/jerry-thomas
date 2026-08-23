@@ -117,7 +117,6 @@ def _configure_cli_logging(
         )
     except ValueError as exc:
         parser.error(str(exc))
-        raise SystemExit(2) from exc
 
     return cli_level_arg, cli_log_outputs
 
