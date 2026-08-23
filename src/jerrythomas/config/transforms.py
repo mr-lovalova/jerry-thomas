@@ -22,6 +22,12 @@ class _TransformConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
+def _has_missing_interpolation(value: object) -> bool:
+    if isinstance(value, (list, tuple)):
+        return any(_has_missing_interpolation(item) for item in value)
+    return is_missing_interpolation(value)
+
+
 class WhereConfig(_TransformConfig):
     operation: Literal["where"] = "where"
 
@@ -31,7 +37,7 @@ class WhereConfig(_TransformConfig):
 
     @model_validator(mode="after")
     def validate_comparand(self) -> "WhereConfig":
-        if is_missing_interpolation(self.comparand):
+        if _has_missing_interpolation(self.comparand):
             raise ValueError("where comparand must resolve to a value")
         if self.operator in {"in", "not_in"}:
             if not isinstance(self.comparand, (list, tuple)):

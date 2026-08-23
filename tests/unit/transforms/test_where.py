@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from jerrythomas.config.interpolation import MissingInterpolation
 from jerrythomas.config.transforms import WhereConfig
+from jerrythomas.services.config_refs import interpolate_config_vars
 from jerrythomas.transforms.where import WhereTransform
 from tests.unit.transforms.helpers import make_time_record
 
@@ -16,6 +17,34 @@ def test_where_rejects_missing_interpolation_comparand():
             operator="ge",
             comparand=MissingInterpolation("start_time"),
         )
+
+
+def test_where_rejects_missing_interpolation_inside_membership_comparand():
+    with pytest.raises(ValidationError, match="comparand must resolve"):
+        WhereConfig(
+            field="value",
+            operator="not_in",
+            comparand=["us", MissingInterpolation("region")],
+        )
+
+
+def test_where_rejects_missing_interpolation_in_nested_membership_comparand():
+    with pytest.raises(ValidationError, match="comparand must resolve"):
+        WhereConfig(
+            field="value",
+            operator="in",
+            comparand=[["us", MissingInterpolation("region")]],
+        )
+
+
+def test_where_resolves_null_var_before_membership_validation():
+    data = interpolate_config_vars(
+        {"field": "region", "operator": "not_in", "comparand": ["${region}"]},
+        {"region": None},
+    )
+
+    with pytest.raises(ValidationError, match="comparand must resolve"):
+        WhereConfig.model_validate(data)
 
 
 def test_time_where_rejects_invalid_datetime_comparand():
