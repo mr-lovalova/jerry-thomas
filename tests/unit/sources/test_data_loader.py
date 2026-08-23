@@ -271,6 +271,18 @@ def test_http_transport_rejects_premature_eof(monkeypatch) -> None:
         list(resource.stream)
 
 
+def test_http_transport_streams_non_http_response_without_declared_length(
+    tmp_path,
+) -> None:
+    body = '{"value": 1}\n'
+    rows = tmp_path / "rows.jsonl"
+    rows.write_text(body, encoding="utf-8")
+
+    [resource] = HttpTransport(rows.as_uri()).resources()
+
+    assert b"".join(resource.stream) == body.encode("utf-8")
+
+
 def test_data_loader_tracks_current_resource_uri(tmp_path):
     appl = tmp_path / "APPL.jsonl"
     msft = tmp_path / "MSFT.jsonl"

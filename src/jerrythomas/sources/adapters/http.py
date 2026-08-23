@@ -41,7 +41,7 @@ class HttpTransport(SourceTransport):
             except (URLError, HTTPError) as exc:
                 raise RuntimeError(f"failed to fetch {self.url}: {exc}") from exc
             with resp:
-                expected_bytes = resp.length
+                expected_bytes = getattr(resp, "length", None)
                 received_bytes = 0
                 while True:
                     chunk = resp.read(self.chunk_size)
