@@ -170,6 +170,44 @@ def test_process_env_overrides_project_dotenv(
     assert _project_variables(project_yaml)["raw_root"] == "/runtime/raw"
 
 
+_DOTENV_ESCAPE_CASES = [
+    # (raw .env line, expected decoded value)
+    ('ESCAPED_BACKSLASH="x\\\\ny"', "x\\ny"),
+    ('TAB="a\\tb"', "a\tb"),
+    ('CARRIAGE_RETURN="a\\rb"', "a\rb"),
+    ('NEWLINE="l1\\nl2"', "l1\nl2"),
+    ('QUOTE="say \\"hi\\""', 'say "hi"'),
+    ('BACKSLASH_BEFORE_QUOTE="abc\\\\"', "abc\\"),
+    ('UNKNOWN_ESCAPE="\\q"', "\\q"),
+    ("SINGLE_QUOTED='a\\nb'", "a\\nb"),
+]
+
+
+def test_project_dotenv_decodes_escapes_left_to_right(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    keys = [line.split("=", 1)[0] for line, _ in _DOTENV_ESCAPE_CASES]
+    for key in keys:
+        monkeypatch.delenv(key, raising=False)
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    _write_project_files(project_root)
+    (project_root / ".env").write_text(
+        "".join(f"{line}\n" for line, _ in _DOTENV_ESCAPE_CASES),
+        encoding="utf-8",
+    )
+    project_yaml = _write_project_yaml(
+        project_root,
+        globals_lines=[f"{key.lower()}: ${{env:{key}}}" for key in keys],
+    )
+
+    variables = _project_variables(project_yaml)
+
+    for key, (_, expected) in zip(keys, _DOTENV_ESCAPE_CASES, strict=True):
+        assert variables[key.lower()] == expected, key
+
+
 def test_config_refs_resolve_full_and_embedded_env_values(tmp_path: Path) -> None:
     resolved = resolve_config_refs(
         {

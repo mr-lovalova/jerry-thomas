@@ -12,6 +12,8 @@ from jerrythomas.config.interpolation import (
 
 _CONFIG_REF_RE = re.compile(r"\$\{([A-Za-z_][\w-]*):([^}]+)\}")
 _INTERPOLATION_RE = re.compile(r"\$\{([^}]+)\}")
+_DOTENV_ESCAPES = {"n": "\n", "r": "\r", "t": "\t", '"': '"', "\\": "\\"}
+_DOTENV_ESCAPE_RE = re.compile(r"\\(.)")
 _PROJECT_VAR_MISSING = object()
 
 
@@ -256,12 +258,9 @@ def _parse_dotenv_line(line: str) -> tuple[str, str] | None:
     if quote in {"'", '"'} and value.endswith(quote):
         inner = value[1:-1]
         if quote == '"':
-            inner = (
-                inner.replace("\\n", "\n")
-                .replace("\\r", "\r")
-                .replace("\\t", "\t")
-                .replace('\\"', '"')
-                .replace("\\\\", "\\")
+            inner = _DOTENV_ESCAPE_RE.sub(
+                lambda match: _DOTENV_ESCAPES.get(match.group(1), match.group(0)),
+                inner,
             )
         return key, inner
 
