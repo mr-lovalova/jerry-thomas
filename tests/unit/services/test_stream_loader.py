@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from jerrythomas.config.streams import (
-    AlignedStreamConfig,
+    CombinedStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
 )
@@ -23,7 +23,7 @@ def _write_project_yaml(project_root: Path) -> Path:
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 5",
+                "schema_version: 6",
                 "artifact_revision: 1",
                 "name: sample",
                 "paths:",
@@ -185,7 +185,7 @@ def test_load_sources_reads_multiple_source_roots(tmp_path: Path) -> None:
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 5",
+                "schema_version: 6",
                 "artifact_revision: 1",
                 "name: sample",
                 "paths:",
@@ -230,7 +230,7 @@ def test_load_sources_rejects_duplicate_source_ids_across_roots(tmp_path: Path) 
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 5",
+                "schema_version: 6",
                 "artifact_revision: 1",
                 "name: sample",
                 "paths:",
@@ -335,7 +335,8 @@ def test_load_streams_reads_all_stream_variants_from_one_catalog(
         "\n".join(
             [
                 "id: aligned",
-                "from: {align: [prices, returns]}",
+                "from: {stream: prices}",
+                "join: {kind: align, streams: [returns]}",
                 "combine: {entrypoint: combine_records}",
             ]
         ),
@@ -346,7 +347,7 @@ def test_load_streams_reads_all_stream_variants_from_one_catalog(
 
     assert isinstance(loaded["prices"], SourceStreamConfig)
     assert isinstance(loaded["returns"], DerivedStreamConfig)
-    assert isinstance(loaded["aligned"], AlignedStreamConfig)
+    assert isinstance(loaded["aligned"], CombinedStreamConfig)
 
 
 def test_load_streams_rejects_duplicate_ids_across_roots(tmp_path: Path) -> None:

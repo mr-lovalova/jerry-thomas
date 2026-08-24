@@ -36,7 +36,7 @@ All dataset configuration is rooted at a single `project.yaml` file. Other YAML 
 ### `project.yaml`
 
 ```yaml
-schema_version: 5
+schema_version: 6
 artifact_revision: 1
 name: default
 paths:
@@ -95,120 +95,6 @@ globals:
   `dataset.yaml:split.intervals` (time).
 - Dataset output IDs are `<fold-id>.<role>`, where role is `train`,
   `validation`, or `test`.
-
-#### Migrating project schema 2 to 3
-
-Schema 3 makes built-in filesystem and HTTP loaders structural and separates
-their transport settings from reader settings:
-
-```yaml
-# schema 2
-loader:
-  entrypoint: core.io
-  args:
-    transport: fs
-    format: csv
-    path: prices.csv
-    delimiter: ","
-
-# schema 3
-loader:
-  transport: fs
-  path: prices.csv
-  reader:
-    format: csv
-    delimiter: ","
-```
-
-The same move applies to `encoding`, `error_prefixes`, and JSON `array_field`.
-Existing source-dependent artifacts become stale and rebuild when next selected;
-do not change `artifact_revision` solely for this migration.
-
-Custom source plugins must also update their Python imports:
-
-The following historical paths use the `datapipeline` namespace shipped by
-Jerry 6 and 7. Jerry 9 plugins use the equivalent `jerrythomas` paths.
-
-```python
-# schema 2 / Jerry 6
-from datapipeline.sources.models.loader import BaseDataLoader
-from datapipeline.sources.models.parser import DataParser
-
-# schema 3 / Jerry 7
-from datapipeline.sources.loader import BaseDataLoader
-from datapipeline.sources.parser import DataParser
-```
-
-Generative loaders can implement the structural `RowGenerator` contract and
-adapt it with `GeneratorLoader`, both from `jerrythomas.sources.loader`.
-Less commonly imported runtime types moved from `sources.models.source.Source`
-to `sources.source.Source` and from `sources.models.parsing_error.ParsingError`
-to `sources.parser.ParsingError`.
-
-#### Migrating project schema 3 to 4
-
-Schema 4 makes target timing and fold-owned dataset contracts explicit:
-
-```yaml
-# project.yaml
-schema_version: 4
-
-# dataset.yaml
-targets:
-  - id: current_return
-    stream: equity.returns
-    field: current
-    horizon: 0s
-  - id: forward_return
-    stream: equity.returns
-    field: forward_21
-    horizon: 21d
-```
-
-- Add `horizon: 0s` to contemporaneous targets and a conservative wall-clock
-  horizon to every future-derived target.
-- Remove `postprocess.columns`. Declare the intended feature and target columns
-  directly; postprocess now filters rows only.
-- When a split is configured, positive target horizons and sequences require
-  a time split. Hash splits cannot isolate their temporal support.
-- Replace any older `metadata.window_mode: relaxed` override with `union`.
-
-Upgrade Jerry and project plugins together, then run the normal command in
-`AUTO` mode. Jerry rebuilds incompatible series, scaler, metadata, and dependent
-artifacts. Existing served runs remain immutable, so rerun `serve` to publish a
-dataset with the corrected fold contracts. Do not increment `artifact_revision`
-or delete build state solely for this migration.
-
-#### Migrating project schema 4 to 5
-
-Schema 5 makes the sample-window policy part of the dataset contract and
-removes the redundant `postprocess.samples` wrapper:
-
-```yaml
-# project.yaml
-schema_version: 5
-
-# dataset.yaml
-sample:
-  cadence: 1d
-  keys: [security_id]
-  window_mode: intersection # union | intersection | strict
-
-postprocess:
-  features:
-    threshold: 0.95
-```
-
-Move any `window_mode` setting from `operations/metadata.yaml` to
-`dataset.yaml:sample.window_mode`. If that was the only metadata override,
-delete the file; if the operations directory then has no declarations, remove
-`paths.operations` too. Use `union` for a former pre-schema-4 `relaxed` value.
-Move `postprocess.samples.features` and `postprocess.samples.targets` directly
-under `postprocess.features` and `postprocess.targets`.
-
-`AUTO` preserves compatible series and scaler artifacts while rebuilding
-metadata and its dependents. The serialized metadata format is unchanged, so
-do not increment `artifact_revision` solely for this migration.
 
 ### Serve Profiles (`profiles/serve.<name>.yaml`)
 
@@ -679,7 +565,9 @@ identity and output order; the broadcast stream supplies shared temporal data.
 id: equity.price_with_factors
 from:
   stream: equity.price.daily
-  broadcast: market.factors.daily
+join:
+  kind: broadcast
+  with: market.factors.daily
 combine:
   entrypoint: combine_price_and_factors
   args: {}
@@ -692,9 +580,9 @@ Notes:
 
 - `from.stream` is the primary input and must resolve to a non-empty
   `partition_by`. The broadcast stream inherits that partition identity.
-- `from.broadcast` must resolve to an empty `partition_by`.
+- `join.with` must resolve to an empty `partition_by`.
 - To attach several global series, align them into one unpartitioned stream,
-  then use that stream as `from.broadcast`.
+  then use that stream as the broadcast input.
 - Matching is exact timestamp equality. Broadcast streams do not perform
   as-of matching, filling, tolerance matching, or many-to-many expansion.
 - The primary input must contain at most one record per `(partition, time)`
@@ -720,23 +608,27 @@ primary record. Use `as_of` when both inputs have the same partition identity:
 id: equity.price_with_fundamentals
 from:
   stream: equity.price.daily
-  as_of: equity.fundamentals.reported
-max_age: 180d
-require_match: true
+join:
+  kind: as_of
+  lookup: equity.fundamentals.reported
+  max_age: 180d
+  require_match: true
 combine:
   entrypoint: combine_price_and_fundamentals
   args: {}
 ```
 
-Use `broadcast_as_of` when one global lookup history applies to every primary
-partition:
+Use `kind: broadcast_as_of` when one global lookup history applies to every
+primary partition:
 
 ```yaml
 id: equity.return_with_market_factor
 from:
   stream: equity.return.daily
-  broadcast_as_of: market.factors.published
-max_age: 7d
+join:
+  kind: broadcast_as_of
+  lookup: market.factors.published
+  max_age: 7d
 combine:
   entrypoint: combine_return_and_factor
   args: {}
@@ -744,21 +636,26 @@ combine:
 
 Notes:
 
-- Matching is strictly backward-looking: the selected lookup has the greatest
-  `time` satisfying `lookup.time <= primary.time`. Exact timestamps are
-  eligible. There is no nearest or forward match.
+- `direction` defaults to `backward`: the selected lookup has the greatest
+  `time` satisfying `lookup.time <= primary.time`. With
+  `direction: forward`, the selected lookup has the smallest `time`
+  satisfying `lookup.time >= primary.time` — for example, the first monthly
+  session at or after a filing becomes available. Exact timestamps are
+  eligible in both directions; there is no nearest match.
 - Lookup `time` is its availability time. Keep an effective or reporting period
   in a separate record field when it differs.
 - `max_age` is optional, inclusive, and non-negative. Positive values such as
-  `30min`, `12h`, or `180d` permit earlier lookup records. Use `0s` for exact
-  timestamp matching only.
+  `30min`, `12h`, or `180d` permit earlier lookup records under backward
+  direction and later lookup records under forward direction. Use `0s` for
+  exact timestamp matching only.
 - `require_match` defaults to `true`. With `false`, an unmatched lookup is
   passed to the combiner as `None`. Together, `max_age: 0s` and
   `require_match: false` provide exact optional left alignment while preserving
   every primary record unless the combiner explicitly drops it.
-- `from.as_of` must have the same `partition_by` as the primary. Both may be
-  unpartitioned. Matching streams in canonical order uses constant memory.
-- `from.broadcast_as_of` must be unpartitioned, while its primary must be
+- `join.lookup` in an `as_of` join must have the same `partition_by` as the
+  primary. Both may be unpartitioned. Matching streams in canonical order uses
+  constant memory.
+- `broadcast_as_of` lookups must be unpartitioned, while their primary must be
   partitioned. Jerry indexes the finite lookup history in memory so it can be
   reused when time restarts for each primary partition.
 - Primary and lookup canonical keys must be unique and ordered.
@@ -778,8 +675,10 @@ records in the configured order. In this example, both inputs use
 # <project_root>/streams/air_density.processed.yaml
 id: air_density.processed
 from:
-  align:
-    - pressure.processed
+  stream: pressure.processed
+join:
+  kind: align
+  streams:
     - temp_dry.processed
 combine:
   entrypoint: combine_air_density

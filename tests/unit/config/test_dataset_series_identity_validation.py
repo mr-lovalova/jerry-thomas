@@ -5,8 +5,7 @@ from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
 from jerrythomas.config.dataset.series import SeriesConfig, SequenceConfig
 from jerrythomas.config.dataset.split import DatasetFold, HashSplitConfig
 from jerrythomas.config.streams import (
-    AsOfStreamConfig,
-    BroadcastAsOfStreamConfig,
+    CombinedStreamConfig,
     CrossSectionStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
@@ -41,13 +40,17 @@ def _as_of_streams(max_age: str | None) -> StreamsConfig:
             "partition_by": ["ticker"],
         }
     )
-    joined = AsOfStreamConfig.model_validate(
+    joined = CombinedStreamConfig.model_validate(
         {
             "id": "joined",
-            "from": {"stream": "prices", "as_of": "fundamentals"},
+            "from": {"stream": "prices"},
+            "join": {
+                "kind": "as_of",
+                "lookup": "fundamentals",
+                "max_age": max_age,
+                "require_match": False,
+            },
             "combine": {"entrypoint": "combine"},
-            "max_age": max_age,
-            "require_match": False,
         }
     )
     return StreamsConfig(
@@ -290,12 +293,12 @@ def test_hash_split_rejects_broadcast_as_of_dependency() -> None:
             "map": {"entrypoint": "identity"},
         }
     )
-    joined = BroadcastAsOfStreamConfig.model_validate(
+    joined = CombinedStreamConfig.model_validate(
         {
             "id": "joined",
-            "from": {"stream": "prices", "broadcast_as_of": "market"},
+            "from": {"stream": "prices"},
+            "join": {"kind": "broadcast_as_of", "lookup": "market", "max_age": "1d"},
             "combine": {"entrypoint": "combine"},
-            "max_age": "1d",
         }
     )
     streams = StreamsConfig(

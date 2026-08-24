@@ -495,3 +495,108 @@ def test_as_of_stream_preserves_processing_error_when_cleanup_fails() -> None:
 
     assert primary.close_calls == 1
     assert lookup.close_calls == 1
+
+
+def test_as_of_stream_forward_pairs_with_next_lookup_in_partition() -> None:
+    primary = [
+        _record("A", 2, "primary-A2"),
+        _record("A", 4, "primary-A4"),
+        _record("A", 5, "primary-A5"),
+        _record("B", 2, "primary-B2"),
+    ]
+    lookup = [
+        _record("A", 5, "lookup-A5"),
+        _record("A", 7, "unused-A7"),
+        _record("B", 3, "lookup-B3"),
+        _record("B", 6, "lookup-B6"),
+    ]
+
+    rows = list(
+        as_of_stream(
+            iter(primary),
+            iter(lookup),
+            partition_by=("id_",),
+            direction="forward",
+        )
+    )
+
+    assert [
+        (primary_record.value, lookup_record.value if lookup_record else None)
+        for primary_record, lookup_record in rows
+    ] == [
+        ("primary-A2", "lookup-A5"),
+        ("primary-A4", "lookup-A5"),
+        ("primary-A5", "lookup-A5"),
+        ("primary-B2", "lookup-B3"),
+    ]
+
+
+def test_as_of_stream_forward_requires_match_by_default() -> None:
+    with pytest.raises(ValueError, match="has no eligible record"):
+        list(
+            as_of_stream(
+                iter([_record("A", 8, "primary")]),
+                iter([_record("A", 1, "past"), _record("A", 5, "last")]),
+                partition_by=("id_",),
+                direction="forward",
+            )
+        )
+
+
+def test_as_of_stream_forward_drops_unmatched_past_last_lookup() -> None:
+    rows = list(
+        as_of_stream(
+            iter([_record("A", 2, "early"), _record("A", 8, "late")]),
+            iter([_record("A", 5, "last")]),
+            partition_by=("id_",),
+            direction="forward",
+            require_match=False,
+        )
+    )
+
+    assert [
+        (primary.value, lookup.value if lookup else None) for primary, lookup in rows
+    ] == [("early", "last"), ("late", None)]
+
+
+def test_as_of_stream_forward_treats_max_age_as_inclusive_ahead() -> None:
+    within = list(
+        as_of_stream(
+            iter([_record("A", 3, "primary")]),
+            iter([_record("A", 6, "lookup")]),
+            partition_by=("id_",),
+            max_age=timedelta(hours=3),
+            direction="forward",
+        )
+    )
+    assert [
+        (primary.value, lookup.value if lookup else None)
+        for primary, lookup in within
+    ] == [("primary", "lookup")]
+
+    dropped = list(
+        as_of_stream(
+            iter([_record("A", 4, "primary")]),
+            iter([_record("A", 6, "lookup")]),
+            partition_by=("id_",),
+            max_age=timedelta(hours=1),
+            direction="forward",
+            require_match=False,
+        )
+    )
+    assert [
+        (primary.value, lookup.value if lookup else None)
+        for primary, lookup in dropped
+    ] == [("primary", None)]
+
+
+def test_as_of_stream_forward_rejects_invalid_direction() -> None:
+    with pytest.raises(ValueError, match="direction must be"):
+        list(
+            as_of_stream(
+                iter([_record("A", 2, "primary")]),
+                iter([_record("A", 3, "lookup")]),
+                partition_by=("id_",),
+                direction="sideways",
+            )
+        )

@@ -46,7 +46,7 @@ def _write_test_project(tmp_path):
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
         """\
-schema_version: 5
+schema_version: 6
 artifact_revision: 1
 name: runtime-compiler-test
 paths:
@@ -301,7 +301,10 @@ map: {{entrypoint: identity}}
         """\
 id: factors
 from:
-  align: [spy, hyg, lqd]
+  stream: spy
+join:
+  kind: align
+  streams: [hyg, lqd]
 combine:
   entrypoint: combine_factors
 """,
@@ -312,7 +315,9 @@ combine:
 id: enriched
 from:
   stream: stocks
-  broadcast: factors
+join:
+  kind: broadcast
+  with: factors
 combine:
   entrypoint: attach_factors
 transforms:
@@ -422,7 +427,9 @@ map: {entrypoint: identity}
 id: enriched
 from:
   stream: measurements
-  broadcast: reference
+join:
+  kind: broadcast
+  with: reference
 combine:
   entrypoint: attach_reference
   args: {offset: 2}
@@ -534,9 +541,11 @@ from: {{source: {input_name}.source}}
 id: reported
 from:
   stream: prices
-  as_of: reports
-max_age: 1d
-require_match: false
+join:
+  kind: as_of
+  lookup: reports
+  max_age: 1d
+  require_match: false
 combine:
   entrypoint: attach_report
 transforms:
@@ -549,8 +558,10 @@ transforms:
 id: factor_adjusted
 from:
   stream: prices
-  broadcast_as_of: factors
-max_age: 2d
+join:
+  kind: broadcast_as_of
+  lookup: factors
+  max_age: 2d
 combine:
   entrypoint: attach_factor
 """,
@@ -588,10 +599,12 @@ combine:
     assert reported.partition_by == ("ticker",)
     assert reported.max_age == timedelta(days=1)
     assert reported.require_match is False
+    assert reported.direction == "backward"
     assert isinstance(factor_adjusted, BroadcastAsOfRuntimeStream)
     assert factor_adjusted.partition_by == ("ticker",)
     assert factor_adjusted.max_age == timedelta(days=2)
     assert factor_adjusted.require_match is True
+    assert factor_adjusted.direction == "backward"
 
     reported_canonical = list(
         run_stream_preview_pipeline(runtime, "reported", "canonical")
@@ -686,9 +699,11 @@ transforms:
 id: enriched
 from:
   stream: prices
-  as_of: events
-max_age: 0s
-require_match: false
+join:
+  kind: as_of
+  lookup: events
+  max_age: 0s
+  require_match: false
 combine:
   entrypoint: attach_events
 transforms:
@@ -795,8 +810,10 @@ map:
         """\
 id: combined
 from:
-  align:
-    - left
+  stream: left
+join:
+  kind: align
+  streams:
     - right
 combine:
   entrypoint: combine
@@ -847,3 +864,82 @@ combine:
         (2, "A", 225),
     ]
     assert observer.started == ["stream:combined"]
+
+
+def test_yaml_forward_as_of_stream_compiles_and_runs(tmp_path, monkeypatch) -> None:
+    project_yaml, sources_dir, streams_dir, data_dir = _write_test_project(tmp_path)
+    rows_by_input = {
+        "prices": [
+            '{"time":"2025-01-02T00:00:00Z","ticker":"A","value":2}',
+            '{"time":"2025-01-04T00:00:00Z","ticker":"A","value":4}',
+        ],
+        "reports": [
+            '{"time":"2025-01-05T00:00:00Z","ticker":"A","value":500}',
+            '{"time":"2025-01-07T00:00:00Z","ticker":"A","value":700}',
+        ],
+    }
+    for input_name, rows in rows_by_input.items():
+        (data_dir / f"{input_name}.jsonl").write_text(
+            "\n".join(rows) + "\n",
+            encoding="utf-8",
+        )
+        (sources_dir / f"{input_name}.yaml").write_text(
+            f"""\
+id: {input_name}.source
+parser:
+  entrypoint: core.temporal_record
+loader:
+  transport: fs
+  path: data/{input_name}.jsonl
+  reader:
+    format: jsonl
+""",
+            encoding="utf-8",
+        )
+        (streams_dir / f"{input_name}.yaml").write_text(
+            f"""\
+id: {input_name}
+from: {{source: {input_name}.source}}
+partition_by: [ticker]
+map: {{entrypoint: identity}}
+""",
+            encoding="utf-8",
+        )
+    (streams_dir / "next_report.yaml").write_text(
+        """\
+id: next_report
+from:
+  stream: prices
+join:
+  kind: as_of
+  lookup: reports
+  direction: forward
+  require_match: false
+combine:
+  entrypoint: attach_next_report
+""",
+        encoding="utf-8",
+    )
+
+    def attach_next_report(price, report):
+        record = TemporalRecord(time=price.time)
+        record.ticker = price.ticker
+        record.price = price.value
+        record.next_report = None if report is None else report.value
+        return record
+
+    monkeypatch.setattr(
+        "jerrythomas.services.streams.combine.load_entrypoint",
+        lambda group, entrypoint: attach_next_report,
+    )
+
+    runtime = compile_runtime(load_project_definition(project_yaml))
+    stream = runtime.streams["next_report"]
+    assert isinstance(stream, AsOfRuntimeStream)
+    assert stream.direction == "forward"
+
+    records = list(run_stream_preview_pipeline(runtime, "next_report", "canonical"))
+    assert [(record.price, record.next_report) for record in records] == [
+        (2, 500),
+        (4, 500),
+    ]

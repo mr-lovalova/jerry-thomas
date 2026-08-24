@@ -209,7 +209,8 @@ def test_schedule_artifact_rejects_nested_schedule_in_upstream_stream() -> None:
                 },
                 "derived": {
                     "id": "derived",
-                    "from": {"align": ["base", "duration"]},
+                    "from": {"stream": "base"},
+                    "join": {"kind": "align", "streams": ["duration"]},
                     "combine": {"entrypoint": "combine"},
                 },
                 "duration": {

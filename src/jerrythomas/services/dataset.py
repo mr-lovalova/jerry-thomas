@@ -2,8 +2,9 @@ import jerrythomas.config.transforms as transform_config
 from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.dataset.split import HashSplitConfig
 from jerrythomas.config.streams import (
-    AsOfStreamConfig,
-    BroadcastAsOfStreamConfig,
+    AsOfJoin,
+    BroadcastAsOfJoin,
+    CombinedStreamConfig,
     CrossSectionStreamConfig,
     StreamsConfig,
 )
@@ -83,12 +84,13 @@ def validate_dataset_streams(
                 isinstance(operation, _CROSS_TIMESTAMP_TRANSFORMS)
                 for operation in stream.transforms
             )
-            uses_temporal_as_of = isinstance(
-                stream,
-                (AsOfStreamConfig, BroadcastAsOfStreamConfig),
-            ) and (
-                stream.max_age is None
-                or parse_timecode(stream.max_age).total_seconds() > 0
+            uses_temporal_as_of = (
+                isinstance(stream, CombinedStreamConfig)
+                and isinstance(stream.join, (AsOfJoin, BroadcastAsOfJoin))
+                and (
+                    stream.join.max_age is None
+                    or parse_timecode(stream.join.max_age).total_seconds() > 0
+                )
             )
             if uses_cross_timestamp_transform or uses_temporal_as_of:
                 cross_timestamp_streams.append(stream_id)

@@ -29,7 +29,7 @@ def test_ensure_project_scaffold_creates_dotenv_example(tmp_path: Path) -> None:
 def test_ensure_project_scaffold_reports_invalid_project(tmp_path: Path) -> None:
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 5\npaths:\n  profiels: ./profiles\n",
+        "schema_version: 6\npaths:\n  profiels: ./profiles\n",
         encoding="utf-8",
     )
 

@@ -2,10 +2,7 @@ import pytest
 
 from jerrythomas.config.sources import SourceConfig
 from jerrythomas.config.streams import (
-    AlignedStreamConfig,
-    AsOfStreamConfig,
-    BroadcastAsOfStreamConfig,
-    BroadcastStreamConfig,
+    CombinedStreamConfig,
     CrossSectionStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
@@ -88,11 +85,13 @@ def _cross_section(
     )
 
 
-def _aligned(stream_id: str, inputs: list[str]) -> AlignedStreamConfig:
-    return AlignedStreamConfig.model_validate(
+def _aligned(stream_id: str, inputs: list[str]) -> CombinedStreamConfig:
+    primary, *rest = inputs
+    return CombinedStreamConfig.model_validate(
         {
             "id": stream_id,
-            "from": {"align": inputs},
+            "from": {"stream": primary},
+            "join": {"kind": "align", "streams": rest},
             "combine": {"entrypoint": "calculate"},
         }
     )
@@ -103,11 +102,12 @@ def _broadcast(
     primary: str,
     broadcast: str,
     transforms: list[dict[str, object]] | None = None,
-) -> BroadcastStreamConfig:
-    return BroadcastStreamConfig.model_validate(
+) -> CombinedStreamConfig:
+    return CombinedStreamConfig.model_validate(
         {
             "id": stream_id,
-            "from": {"stream": primary, "broadcast": broadcast},
+            "from": {"stream": primary},
+            "join": {"kind": "broadcast", "with": broadcast},
             "combine": {"entrypoint": "attach_reference"},
             "transforms": [] if transforms is None else transforms,
         }
@@ -118,11 +118,12 @@ def _as_of(
     stream_id: str,
     primary: str,
     lookup: str,
-) -> AsOfStreamConfig:
-    return AsOfStreamConfig.model_validate(
+) -> CombinedStreamConfig:
+    return CombinedStreamConfig.model_validate(
         {
             "id": stream_id,
-            "from": {"stream": primary, "as_of": lookup},
+            "from": {"stream": primary},
+            "join": {"kind": "as_of", "lookup": lookup},
             "combine": {"entrypoint": "attach_lookup"},
         }
     )
@@ -132,11 +133,12 @@ def _broadcast_as_of(
     stream_id: str,
     primary: str,
     lookup: str,
-) -> BroadcastAsOfStreamConfig:
-    return BroadcastAsOfStreamConfig.model_validate(
+) -> CombinedStreamConfig:
+    return CombinedStreamConfig.model_validate(
         {
             "id": stream_id,
-            "from": {"stream": primary, "broadcast_as_of": lookup},
+            "from": {"stream": primary},
+            "join": {"kind": "broadcast_as_of", "lookup": lookup},
             "combine": {"entrypoint": "attach_lookup"},
         }
     )
@@ -325,7 +327,7 @@ def test_validation_rejects_partitioned_broadcast_as_of_lookup() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            r"Broadcast as-of stream 'enriched' lookup input 'lookup' must have an "
+            r"Stream 'enriched' join input 'lookup' must have an "
             r"empty partition_by; got \['region'\]"
         ),
     ):
@@ -359,7 +361,7 @@ def test_validation_rejects_partitioned_broadcast_input() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            r"Broadcast stream 'enriched' broadcast input 'reference' must have an "
+            r"Stream 'enriched' join input 'reference' must have an "
             r"empty partition_by; got \['region'\]"
         ),
     ):
@@ -602,10 +604,11 @@ def test_cross_section_ordinary_transforms_use_inherited_partition() -> None:
 
 
 def test_aligned_transforms_use_the_inherited_partition() -> None:
-    aligned = AlignedStreamConfig.model_validate(
+    aligned = CombinedStreamConfig.model_validate(
         {
             "id": "market_cap",
-            "from": {"align": ["prices", "shares"]},
+            "from": {"stream": "prices"},
+            "join": {"kind": "align", "streams": ["shares"]},
             "combine": {"entrypoint": "calculate"},
             "transforms": [
                 {

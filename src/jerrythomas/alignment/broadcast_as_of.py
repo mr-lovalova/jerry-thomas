@@ -1,4 +1,4 @@
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from collections.abc import Generator, Iterator
 from datetime import datetime, timedelta
 
@@ -16,11 +16,14 @@ def broadcast_as_of_stream(
     partition_by: tuple[str, ...],
     max_age: timedelta | None = None,
     require_match: bool = True,
+    direction: str = "backward",
 ) -> Generator[tuple[TemporalRecord, TemporalRecord | None], None, None]:
-    """Attach the latest eligible global lookup record to each primary record.
+    """Attach the latest or next eligible global lookup record to each primary.
 
-    Lookup records at the primary time are eligible. When max_age is set, a
-    lookup exactly max_age before the primary is also eligible.
+    With ``direction="backward"`` (the default) each primary record pairs with
+    the latest lookup record at or before its time. With ``direction="forward"``
+    it pairs with the first lookup record at or after its time. When max_age is
+    set, a lookup exactly max_age away from the primary is also eligible.
 
     The lookup is fully indexed before primary records are consumed. This uses
     O(number of lookup records) memory so the same global history can be reused
@@ -30,6 +33,11 @@ def broadcast_as_of_stream(
     lookup_records: list[TemporalRecord] = []
 
     with closing_alignment_inputs((primary, lookup)):
+        if type(direction) is not str or direction not in {"backward", "forward"}:
+            raise ValueError(
+                "Broadcast as-of direction must be 'backward' or 'forward', "
+                f"got {direction!r}"
+            )
         if max_age is not None and not isinstance(max_age, timedelta):
             raise TypeError("Broadcast as-of max_age must be a timedelta or None")
         if max_age is not None and max_age < timedelta(0):
@@ -72,23 +80,39 @@ def broadcast_as_of_stream(
                 )
             previous_primary_key = key
 
-            lookup_index = bisect_right(lookup_times, primary_record.time) - 1
-            if lookup_index < 0:
-                if require_match:
-                    raise ValueError(
-                        "Broadcast as-of lookup has no record at or before primary "
-                        f"partition={partition!r}, "
-                        f"time={primary_record.time.isoformat()}"
-                    )
-                yield primary_record, None
-                continue
+            if direction == "forward":
+                lookup_index = bisect_left(lookup_times, primary_record.time)
+                if lookup_index == len(lookup_times):
+                    if require_match:
+                        raise ValueError(
+                            "Broadcast as-of lookup has no record at or after primary "
+                            f"partition={partition!r}, "
+                            f"time={primary_record.time.isoformat()}"
+                        )
+                    yield primary_record, None
+                    continue
+            else:
+                lookup_index = bisect_right(lookup_times, primary_record.time) - 1
+                if lookup_index < 0:
+                    if require_match:
+                        raise ValueError(
+                            "Broadcast as-of lookup has no record at or before primary "
+                            f"partition={partition!r}, "
+                            f"time={primary_record.time.isoformat()}"
+                        )
+                    yield primary_record, None
+                    continue
 
             lookup_record = lookup_records[lookup_index]
-            age = primary_record.time - lookup_record.time
+            age = abs(lookup_record.time - primary_record.time)
             if max_age is not None and age > max_age:
                 if require_match:
+                    if direction == "forward":
+                        detail = "is too far ahead of primary"
+                    else:
+                        detail = "is too old for primary"
                     raise ValueError(
-                        "Broadcast as-of lookup record is too old for primary "
+                        f"Broadcast as-of lookup record {detail} "
                         f"partition={partition!r}, "
                         f"time={primary_record.time.isoformat()}: "
                         f"lookup_time={lookup_record.time.isoformat()}, "

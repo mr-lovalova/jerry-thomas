@@ -38,7 +38,7 @@ Expected behavior:
 `project.yaml` is the root map for all dataset config.
 
 ```yaml
-schema_version: 5
+schema_version: 6
 artifact_revision: 1
 paths:
   sources: ./sources
@@ -141,7 +141,9 @@ of a primary stream at an exact timestamp:
 id: equity.price_with_factors
 from:
   stream: equity.price.daily
-  broadcast: market.factors.daily
+join:
+  kind: broadcast
+  with: market.factors.daily
 combine:
   entrypoint: combine_price_and_factors
   args: {}
@@ -162,15 +164,18 @@ The ordinary form requires matching partition identities:
 id: equity.price_with_fundamentals
 from:
   stream: equity.price.daily
-  as_of: equity.fundamentals.reported
-max_age: 180d
-require_match: true
+join:
+  kind: as_of
+  lookup: equity.fundamentals.reported
+  max_age: 180d
+  require_match: true
 combine:
   entrypoint: combine_price_and_fundamentals
 ```
 
-The `broadcast_as_of` form attaches one unpartitioned lookup history to every
-primary partition. Exact timestamps are eligible; future lookups never are.
+The `broadcast_as_of` kind attaches one unpartitioned lookup history to every
+primary partition. Backward matches pick the latest record at or before the
+primary time; `direction: forward` picks the next record at or after it.
 `max_age` is an optional inclusive, non-negative bound. `max_age: 0s` permits
 only exact timestamps. With `require_match: false`, the combiner receives
 `None` when no eligible lookup exists. Lookup `time` must represent when the
@@ -183,8 +188,10 @@ also combine argument order:
 # streams/equity.price_to_earnings.yaml
 id: equity.price_to_earnings
 from:
-  align:
-    - equity.price.daily
+  stream: equity.price.daily
+join:
+  kind: align
+  streams:
     - equity.earnings.daily
 combine:
   entrypoint: combine_price_to_earnings

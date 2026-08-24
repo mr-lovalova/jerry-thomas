@@ -39,7 +39,7 @@ def project_definition(
         path=project_path,
         config=ProjectConfig.model_validate(
             {
-                "schema_version": 5,
+                "schema_version": 6,
                 "artifact_revision": 1,
                 "paths": {
                     "streams": "streams",

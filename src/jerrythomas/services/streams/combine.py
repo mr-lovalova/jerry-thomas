@@ -2,12 +2,7 @@ from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timezone
 from typing import Any
 
-from jerrythomas.config.streams import (
-    AlignedStreamConfig,
-    AsOfStreamConfig,
-    BroadcastAsOfStreamConfig,
-    BroadcastStreamConfig,
-)
+from jerrythomas.config.streams import AlignJoin, CombinedStreamConfig
 from jerrythomas.config.interpolation import normalize_interpolated_args
 from jerrythomas.plugins import COMBINERS_EP, load_entrypoint
 from jerrythomas.transforms.utils import (
@@ -18,12 +13,7 @@ from jerrythomas.transforms.utils import (
 
 
 def build_combine_stage(
-    config: (
-        AlignedStreamConfig
-        | BroadcastStreamConfig
-        | AsOfStreamConfig
-        | BroadcastAsOfStreamConfig
-    ),
+    config: CombinedStreamConfig,
     partition_by: tuple[str, ...],
 ) -> Callable[[Iterator[tuple[Any, ...]]], Iterable[Any]]:
     combine = load_entrypoint(COMBINERS_EP, config.combine.entrypoint)
@@ -74,7 +64,7 @@ def build_combine_stage(
                     )
             establishes_domain = (
                 any(record_establishes_domain(item) for item in records)
-                if isinstance(config, AlignedStreamConfig)
+                if isinstance(config.join, AlignJoin)
                 else record_establishes_domain(records[0])
             )
             set_record_domain_anchor(record, establishes_domain)

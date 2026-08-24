@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from jerrythomas.config.streams import AlignedStreamConfig
+from jerrythomas.config.streams import CombinedStreamConfig
 from jerrythomas.domain.record import TemporalRecord
 from jerrythomas.services.streams.combine import build_combine_stage
 from jerrythomas.transforms.utils import (
@@ -28,11 +28,12 @@ def _record(day: int, value: float) -> _Record:
     )
 
 
-def _config() -> AlignedStreamConfig:
-    return AlignedStreamConfig.model_validate(
+def _config() -> CombinedStreamConfig:
+    return CombinedStreamConfig.model_validate(
         {
             "id": "aligned.out",
-            "from": {"align": ["stream.a", "stream.b"]},
+            "from": {"stream": "stream.a"},
+            "join": {"kind": "align", "streams": ["stream.b"]},
             "combine": {"entrypoint": "calculate", "args": {"offset": 3}},
         }
     )

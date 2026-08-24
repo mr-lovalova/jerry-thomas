@@ -1,4 +1,4 @@
-from typing import Annotated, TypeAlias
+from typing import Annotated, Literal, TypeAlias
 
 from pydantic import (
     BaseModel,
@@ -34,58 +34,78 @@ class StreamRefConfig(BaseModel):
     stream: _StreamId
 
 
-class BroadcastFromConfig(BaseModel):
+class BroadcastJoin(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    stream: _StreamId
-    broadcast: _StreamId
+    kind: Literal["broadcast"]
+    with_: _StreamId = Field(alias="with")
 
-    @model_validator(mode="after")
-    def validate_distinct_inputs(self) -> "BroadcastFromConfig":
-        if self.stream == self.broadcast:
-            raise ValueError("from.stream and from.broadcast must be different streams")
-        return self
+    def partner_stream_ids(self) -> tuple[str, ...]:
+        return (self.with_,)
 
 
-class AsOfFromConfig(BaseModel):
+class _LookupJoin(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    stream: _StreamId
-    as_of: _StreamId
+    max_age: _Timecode | None = None
+    require_match: bool = Field(default=True, strict=True)
+    direction: Literal["backward", "forward"] = "backward"
 
-    @model_validator(mode="after")
-    def validate_distinct_inputs(self) -> "AsOfFromConfig":
-        if self.stream == self.as_of:
-            raise ValueError("from.stream and from.as_of must be different streams")
-        return self
+    @field_validator("max_age")
+    @classmethod
+    def validate_max_age(cls, max_age: str | None) -> str | None:
+        if max_age is not None and parse_timecode(max_age).total_seconds() < 0:
+            raise ValueError("max_age must be non-negative")
+        return max_age
 
 
-class BroadcastAsOfFromConfig(BaseModel):
+class AsOfJoin(_LookupJoin):
+    kind: Literal["as_of"]
+    lookup: _StreamId
+
+    def partner_stream_ids(self) -> tuple[str, ...]:
+        return (self.lookup,)
+
+
+class BroadcastAsOfJoin(_LookupJoin):
+    kind: Literal["broadcast_as_of"]
+    lookup: _StreamId
+
+    def partner_stream_ids(self) -> tuple[str, ...]:
+        return (self.lookup,)
+
+
+class AlignJoin(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    stream: _StreamId
-    broadcast_as_of: _StreamId
+    kind: Literal["align"]
+    streams: tuple[_StreamId, ...] = Field(min_length=1)
 
-    @model_validator(mode="after")
-    def validate_distinct_inputs(self) -> "BroadcastAsOfFromConfig":
-        if self.stream == self.broadcast_as_of:
-            raise ValueError(
-                "from.stream and from.broadcast_as_of must be different streams"
-            )
-        return self
-
-
-class AlignFromConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    align: tuple[_StreamId, ...] = Field(min_length=2)
-
-    @field_validator("align")
+    @field_validator("streams")
     @classmethod
     def validate_streams(cls, streams: tuple[str, ...]) -> tuple[str, ...]:
         if len(set(streams)) != len(streams):
-            raise ValueError("from.align must not contain duplicate stream ids")
+            raise ValueError("align join must not contain duplicate stream ids")
         return streams
+
+    def partner_stream_ids(self) -> tuple[str, ...]:
+        return self.streams
+
+
+CombinedJoin: TypeAlias = Annotated[
+    Annotated[BroadcastJoin, Tag("broadcast")]
+    | Annotated[AsOfJoin, Tag("as_of")]
+    | Annotated[BroadcastAsOfJoin, Tag("broadcast_as_of")]
+    | Annotated[AlignJoin, Tag("align")],
+    Discriminator(
+        "kind",
+        custom_error_type="join_config_type",
+        custom_error_message=(
+            "Stream 'join.kind' must be one of broadcast, as_of, "
+            "broadcast_as_of, or align"
+        ),
+    ),
+]
 
 
 class _StreamConfig(BaseModel):
@@ -131,47 +151,24 @@ class CrossSectionStreamConfig(_StreamConfig):
         return (self.from_.stream,)
 
 
-class BroadcastStreamConfig(_StreamConfig):
-    from_: BroadcastFromConfig = Field(alias="from")
+class CombinedStreamConfig(_StreamConfig):
+    from_: StreamRefConfig = Field(alias="from")
+    join: CombinedJoin
     combine: EntryPointConfig
 
-    def input_streams(self) -> tuple[str, ...]:
-        return (self.from_.stream, self.from_.broadcast)
-
-
-class _AsOfStreamConfig(_StreamConfig):
-    combine: EntryPointConfig
-    max_age: _Timecode | None = None
-    require_match: bool = Field(default=True, strict=True)
-
-    @field_validator("max_age")
-    @classmethod
-    def validate_max_age(cls, max_age: str | None) -> str | None:
-        if max_age is not None and parse_timecode(max_age).total_seconds() < 0:
-            raise ValueError("max_age must be non-negative")
-        return max_age
-
-
-class AsOfStreamConfig(_AsOfStreamConfig):
-    from_: AsOfFromConfig = Field(alias="from")
+    @model_validator(mode="after")
+    def validate_distinct_inputs(self) -> "CombinedStreamConfig":
+        primary = self.from_.stream
+        for partner in self.join.partner_stream_ids():
+            if partner == primary:
+                raise ValueError(
+                    f"join input '{partner}' must differ from the primary "
+                    f"stream '{primary}'"
+                )
+        return self
 
     def input_streams(self) -> tuple[str, ...]:
-        return (self.from_.stream, self.from_.as_of)
-
-
-class BroadcastAsOfStreamConfig(_AsOfStreamConfig):
-    from_: BroadcastAsOfFromConfig = Field(alias="from")
-
-    def input_streams(self) -> tuple[str, ...]:
-        return (self.from_.stream, self.from_.broadcast_as_of)
-
-
-class AlignedStreamConfig(_StreamConfig):
-    from_: AlignFromConfig = Field(alias="from")
-    combine: EntryPointConfig
-
-    def input_streams(self) -> tuple[str, ...]:
-        return self.from_.align
+        return (self.from_.stream, *self.join.partner_stream_ids())
 
 
 def _stream_config_tag(value: object) -> str | None:
@@ -179,31 +176,15 @@ def _stream_config_tag(value: object) -> str | None:
         value = value.model_dump(by_alias=True)
     if not isinstance(value, dict):
         return None
-
+    if "join" in value:
+        return "combined"
     from_ = value.get("from")
-    if isinstance(from_, BaseModel):
-        from_ = from_.model_dump(by_alias=True)
     if not isinstance(from_, dict):
         return None
-
-    selectors = (
-        ("source", "source"),
-        ("align", "aligned"),
-        ("broadcast", "broadcast"),
-        ("as_of", "as_of"),
-        ("broadcast_as_of", "broadcast_as_of"),
-    )
-    selected = [tag for field, tag in selectors if field in from_]
-    if len(selected) > 1:
-        return None
-    if selected:
-        return selected[0]
-    if "stream" not in from_:
-        return None
+    if "source" in from_:
+        return "source"
     if "cross_section" in value:
         return "cross_section"
-    if "combine" in value:
-        return None
     return "derived"
 
 
@@ -211,16 +192,13 @@ StreamConfig: TypeAlias = Annotated[
     Annotated[SourceStreamConfig, Tag("source")]
     | Annotated[DerivedStreamConfig, Tag("derived")]
     | Annotated[CrossSectionStreamConfig, Tag("cross_section")]
-    | Annotated[BroadcastStreamConfig, Tag("broadcast")]
-    | Annotated[AsOfStreamConfig, Tag("as_of")]
-    | Annotated[BroadcastAsOfStreamConfig, Tag("broadcast_as_of")]
-    | Annotated[AlignedStreamConfig, Tag("aligned")],
+    | Annotated[CombinedStreamConfig, Tag("combined")],
     Discriminator(
         _stream_config_tag,
         custom_error_type="stream_config_type",
         custom_error_message=(
-            "Stream 'from' must use source, stream, align, stream+broadcast, "
-            "stream+as_of, or stream+broadcast_as_of"
+            "Stream 'from' must use source, stream+transforms, "
+            "stream+cross_section, or stream+join"
         ),
     ),
 ]

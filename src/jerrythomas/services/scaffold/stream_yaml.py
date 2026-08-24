@@ -1,8 +1,8 @@
 from pathlib import Path
 
 from jerrythomas.config.streams import (
-    AlignedStreamConfig,
-    BroadcastStreamConfig,
+    BroadcastJoin,
+    CombinedStreamConfig,
     SourceStreamConfig,
 )
 from jerrythomas.services.project import load_project
@@ -62,11 +62,13 @@ def write_aligned_stream(
     combine_entrypoint: str,
     scaffold_lock: ScaffoldLock | None = None,
 ) -> Path:
+    primary, *rest = input_streams
     with acquire_scaffold_lock(project_yaml.parent, scaffold_lock) as project_lock:
-        config = AlignedStreamConfig.model_validate(
+        config = CombinedStreamConfig.model_validate(
             {
                 "id": stream_id,
-                "from": {"align": input_streams},
+                "from": {"stream": primary},
+                "join": {"kind": "align", "streams": rest},
                 "combine": {"entrypoint": combine_entrypoint},
             }
         )
@@ -75,7 +77,8 @@ def write_aligned_stream(
             render(
                 "streams/aligned.yaml.j2",
                 stream_id=config.id,
-                input_streams=list(config.from_.align),
+                primary_stream=config.from_.stream,
+                join_streams=list(config.join.partner_stream_ids()),
                 combine_entrypoint=config.combine.entrypoint,
             ).strip()
             + "\n"
@@ -93,23 +96,22 @@ def write_broadcast_stream(
     scaffold_lock: ScaffoldLock | None = None,
 ) -> Path:
     with acquire_scaffold_lock(project_yaml.parent, scaffold_lock) as project_lock:
-        config = BroadcastStreamConfig.model_validate(
+        config = CombinedStreamConfig.model_validate(
             {
                 "id": stream_id,
-                "from": {
-                    "stream": primary_stream,
-                    "broadcast": broadcast_stream,
-                },
+                "from": {"stream": primary_stream},
+                "join": {"kind": "broadcast", "with": broadcast_stream},
                 "combine": {"entrypoint": combine_entrypoint},
             }
         )
+        assert isinstance(config.join, BroadcastJoin)
         path = _new_stream_path(project_yaml, config.id, project_lock)
         content = (
             render(
                 "streams/broadcast.yaml.j2",
                 stream_id=config.id,
                 primary_stream=config.from_.stream,
-                broadcast_stream=config.from_.broadcast,
+                broadcast_stream=config.join.with_,
                 combine_entrypoint=config.combine.entrypoint,
             ).strip()
             + "\n"

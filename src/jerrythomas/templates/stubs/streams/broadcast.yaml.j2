@@ -2,7 +2,10 @@ id: {{ stream_id | tojson }}  # format: domain.dataset.(variant)
 
 from:
   stream: {{ primary_stream | tojson }}
-  broadcast: {{ broadcast_stream | tojson }}
+
+join:
+  kind: broadcast
+  with: {{ broadcast_stream | tojson }}
 
 combine:
   entrypoint: {{ combine_entrypoint | tojson }}

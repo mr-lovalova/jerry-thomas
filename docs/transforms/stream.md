@@ -105,9 +105,11 @@ transforms:
 # Complete primary stream enriched by those events
 from:
   stream: eligible_sessions
-  as_of: session_events
-max_age: 0s
-require_match: false
+join:
+  kind: as_of
+  lookup: session_events
+  max_age: 0s
+  require_match: false
 combine:
   entrypoint: attach_session_events
 transforms:

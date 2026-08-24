@@ -59,6 +59,7 @@ class AsOfRuntimeStream:
     max_age: timedelta | None
     require_match: bool
     transforms: tuple[TransformConfig, ...]
+    direction: str = "backward"
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,7 @@ class BroadcastAsOfRuntimeStream:
     max_age: timedelta | None
     require_match: bool
     transforms: tuple[TransformConfig, ...]
+    direction: str = "backward"
 
 
 @dataclass(frozen=True)

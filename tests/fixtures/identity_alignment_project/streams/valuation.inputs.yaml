@@ -1,7 +1,9 @@
 id: valuation.inputs
 from:
-  align:
-    - market.price
+  stream: market.price
+join:
+  kind: align
+  streams:
     - company.earnings
 combine:
   entrypoint: combine_valuation_inputs

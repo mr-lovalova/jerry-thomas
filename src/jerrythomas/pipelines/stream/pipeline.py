@@ -150,6 +150,7 @@ def build_stream_pipeline(
                     stream.partition_by,
                     stream.max_age,
                     stream.require_match,
+                    stream.direction,
                 ),
             ),
             stages=_combined_stages(runtime, stream),
@@ -168,6 +169,7 @@ def build_stream_pipeline(
                     stream.partition_by,
                     stream.max_age,
                     stream.require_match,
+                    stream.direction,
                 ),
             ),
             stages=_combined_stages(runtime, stream),
@@ -307,6 +309,7 @@ def _as_of_inputs(
     partition_by: tuple[str, ...],
     max_age: timedelta | None,
     require_match: bool,
+    direction: str,
 ) -> Iterator[tuple[Any, Any | None]]:
     primary = _run_internal_stream(runtime, input_stream)
     lookup = _run_internal_stream(runtime, lookup_stream)
@@ -316,6 +319,7 @@ def _as_of_inputs(
         partition_by,
         max_age=max_age,
         require_match=require_match,
+        direction=direction,
     )
 
 
@@ -326,6 +330,7 @@ def _broadcast_as_of_inputs(
     partition_by: tuple[str, ...],
     max_age: timedelta | None,
     require_match: bool,
+    direction: str,
 ) -> Iterator[tuple[Any, Any | None]]:
     primary = _run_internal_stream(runtime, input_stream)
     lookup = _run_internal_stream(runtime, lookup_stream)
@@ -335,6 +340,7 @@ def _broadcast_as_of_inputs(
         partition_by,
         max_age=max_age,
         require_match=require_match,
+        direction=direction,
     )
 
 

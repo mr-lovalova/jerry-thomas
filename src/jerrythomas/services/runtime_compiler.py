@@ -2,10 +2,11 @@ from pathlib import Path
 
 from jerrythomas.config.sources import SourceConfig
 from jerrythomas.config.streams import (
-    AlignedStreamConfig,
-    AsOfStreamConfig,
-    BroadcastAsOfStreamConfig,
-    BroadcastStreamConfig,
+    AlignJoin,
+    AsOfJoin,
+    BroadcastAsOfJoin,
+    BroadcastJoin,
+    CombinedStreamConfig,
     CrossSectionStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
@@ -16,6 +17,7 @@ from jerrythomas.runtime import (
     AsOfRuntimeStream,
     BroadcastAsOfRuntimeStream,
     BroadcastRuntimeStream,
+    CombinedRuntimeStream,
     CrossSectionRuntimeStream,
     DerivedRuntimeStream,
     Runtime,
@@ -67,62 +69,52 @@ def _compile_cross_section_stream(
     )
 
 
-def _compile_broadcast_stream(
-    config: BroadcastStreamConfig,
+def _compile_combined_stream(
+    config: CombinedStreamConfig,
     stream_configs: dict[str, StreamConfig],
-) -> BroadcastRuntimeStream:
+) -> CombinedRuntimeStream:
     partition_by = stream_partition_by(stream_configs, config.id)
-    return BroadcastRuntimeStream(
-        input_stream=config.from_.stream,
-        broadcast_stream=config.from_.broadcast,
-        combine=build_combine_stage(config, partition_by),
-        partition_by=partition_by,
-        transforms=tuple(config.transforms),
-    )
+    combine = build_combine_stage(config, partition_by)
+    transforms = tuple(config.transforms)
+    primary = config.from_.stream
+    join = config.join
 
-
-def _compile_as_of_stream(
-    config: AsOfStreamConfig,
-    stream_configs: dict[str, StreamConfig],
-) -> AsOfRuntimeStream:
-    partition_by = stream_partition_by(stream_configs, config.id)
-    return AsOfRuntimeStream(
-        input_stream=config.from_.stream,
-        lookup_stream=config.from_.as_of,
-        combine=build_combine_stage(config, partition_by),
-        partition_by=partition_by,
-        max_age=None if config.max_age is None else parse_timecode(config.max_age),
-        require_match=config.require_match,
-        transforms=tuple(config.transforms),
-    )
-
-
-def _compile_broadcast_as_of_stream(
-    config: BroadcastAsOfStreamConfig,
-    stream_configs: dict[str, StreamConfig],
-) -> BroadcastAsOfRuntimeStream:
-    partition_by = stream_partition_by(stream_configs, config.id)
-    return BroadcastAsOfRuntimeStream(
-        input_stream=config.from_.stream,
-        lookup_stream=config.from_.broadcast_as_of,
-        combine=build_combine_stage(config, partition_by),
-        partition_by=partition_by,
-        max_age=None if config.max_age is None else parse_timecode(config.max_age),
-        require_match=config.require_match,
-        transforms=tuple(config.transforms),
-    )
-
-
-def _compile_aligned_stream(
-    config: AlignedStreamConfig,
-    stream_configs: dict[str, StreamConfig],
-) -> AlignedRuntimeStream:
-    partition_by = stream_partition_by(stream_configs, config.id)
+    if isinstance(join, AsOfJoin):
+        return AsOfRuntimeStream(
+            input_stream=primary,
+            lookup_stream=join.lookup,
+            combine=combine,
+            partition_by=partition_by,
+            max_age=None if join.max_age is None else parse_timecode(join.max_age),
+            require_match=join.require_match,
+            direction=join.direction,
+            transforms=transforms,
+        )
+    if isinstance(join, BroadcastAsOfJoin):
+        return BroadcastAsOfRuntimeStream(
+            input_stream=primary,
+            lookup_stream=join.lookup,
+            combine=combine,
+            partition_by=partition_by,
+            max_age=None if join.max_age is None else parse_timecode(join.max_age),
+            require_match=join.require_match,
+            direction=join.direction,
+            transforms=transforms,
+        )
+    if isinstance(join, BroadcastJoin):
+        return BroadcastRuntimeStream(
+            input_stream=primary,
+            broadcast_stream=join.with_,
+            combine=combine,
+            partition_by=partition_by,
+            transforms=transforms,
+        )
+    assert isinstance(join, AlignJoin)
     return AlignedRuntimeStream(
-        inputs=config.from_.align,
-        combine=build_combine_stage(config, partition_by),
+        inputs=(primary, *join.streams),
+        combine=combine,
         partition_by=partition_by,
-        transforms=tuple(config.transforms),
+        transforms=transforms,
     )
 
 
@@ -146,23 +138,8 @@ def compile_runtime(definition: ProjectDefinition) -> Runtime:
                 config,
                 stream_configs,
             )
-        elif isinstance(config, BroadcastStreamConfig):
-            runtime_streams[stream_id] = _compile_broadcast_stream(
-                config,
-                stream_configs,
-            )
-        elif isinstance(config, AsOfStreamConfig):
-            runtime_streams[stream_id] = _compile_as_of_stream(
-                config,
-                stream_configs,
-            )
-        elif isinstance(config, BroadcastAsOfStreamConfig):
-            runtime_streams[stream_id] = _compile_broadcast_as_of_stream(
-                config,
-                stream_configs,
-            )
-        elif isinstance(config, AlignedStreamConfig):
-            runtime_streams[stream_id] = _compile_aligned_stream(
+        elif isinstance(config, CombinedStreamConfig):
+            runtime_streams[stream_id] = _compile_combined_stream(
                 config,
                 stream_configs,
             )

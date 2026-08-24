@@ -12,7 +12,7 @@ from pydantic import (
 from jerrythomas.config.constraints import NonEmptyString as ProjectPath
 
 
-PROJECT_SCHEMA_VERSION: Final = 5
+PROJECT_SCHEMA_VERSION: Final = 6
 
 
 class ProjectPaths(BaseModel):
@@ -60,7 +60,7 @@ class ProjectGlobals(BaseModel):
 class ProjectConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[5]
+    schema_version: Literal[6]
     artifact_revision: int = Field(strict=True, gt=0)
     name: str | None = None
     variant: str | None = None

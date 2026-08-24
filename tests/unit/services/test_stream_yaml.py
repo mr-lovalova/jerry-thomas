@@ -5,8 +5,7 @@ import yaml
 from pydantic import ValidationError
 
 from jerrythomas.config.streams import (
-    AlignedStreamConfig,
-    BroadcastStreamConfig,
+    CombinedStreamConfig,
     SourceStreamConfig,
 )
 from jerrythomas.services.scaffold.paths import ensure_project_scaffold
@@ -172,16 +171,17 @@ def test_stream_scaffolds_render_valid_configs(tmp_path: Path) -> None:
     source = SourceStreamConfig.model_validate(
         yaml.safe_load(source_path.read_text(encoding="utf-8"))
     )
-    aligned = AlignedStreamConfig.model_validate(
+    aligned = CombinedStreamConfig.model_validate(
         yaml.safe_load(aligned_path.read_text(encoding="utf-8"))
     )
-    broadcast = BroadcastStreamConfig.model_validate(
+    broadcast = CombinedStreamConfig.model_validate(
         yaml.safe_load(broadcast_path.read_text(encoding="utf-8"))
     )
     assert source.id == "prices.daily-us"
-    assert aligned.from_.align == ("prices.bid", "prices.ask")
+    assert aligned.from_.stream == "prices.bid"
+    assert list(aligned.join.partner_stream_ids()) == ["prices.ask"]
     assert broadcast.from_.stream == "prices.daily"
-    assert broadcast.from_.broadcast == "market.adjustment"
+    assert broadcast.join.with_ == "market.adjustment"
     assert broadcast.combine.entrypoint == "apply_adjustment"
 
 
@@ -211,10 +211,10 @@ def test_stream_scaffolds_quote_yaml_sensitive_strings(tmp_path: Path) -> None:
     source = SourceStreamConfig.model_validate(
         yaml.safe_load(source_path.read_text(encoding="utf-8"))
     )
-    aligned = AlignedStreamConfig.model_validate(
+    aligned = CombinedStreamConfig.model_validate(
         yaml.safe_load(aligned_path.read_text(encoding="utf-8"))
     )
-    broadcast = BroadcastStreamConfig.model_validate(
+    broadcast = CombinedStreamConfig.model_validate(
         yaml.safe_load(broadcast_path.read_text(encoding="utf-8"))
     )
 
@@ -222,9 +222,10 @@ def test_stream_scaffolds_quote_yaml_sensitive_strings(tmp_path: Path) -> None:
     assert source.from_.source == "null"
     assert source.map.entrypoint == "null"
     assert aligned.id == "yes"
-    assert aligned.from_.align == ("null", "off")
+    assert aligned.from_.stream == "null"
+    assert list(aligned.join.partner_stream_ids()) == ["off"]
     assert aligned.combine.entrypoint == "null"
     assert broadcast.id == "on"
     assert broadcast.from_.stream == "null"
-    assert broadcast.from_.broadcast == "off"
+    assert broadcast.join.with_ == "off"
     assert broadcast.combine.entrypoint == "yes"

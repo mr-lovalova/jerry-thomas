@@ -44,7 +44,7 @@ def _runtime_with_config(tmp_path, dataset: DatasetConfig) -> Runtime:
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 5",
+                "schema_version: 6",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: streams",

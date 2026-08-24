@@ -419,3 +419,77 @@ def test_broadcast_as_of_closes_both_inputs_when_consumer_stops() -> None:
 
     assert primary.close_calls == 1
     assert lookup.close_calls == 1
+
+
+def test_broadcast_as_of_forward_pairs_with_next_lookup() -> None:
+    primary = [_primary("A", 2, "A-early"), _primary("B", 3, "B-later")]
+    lookup = [_lookup(3, "shared"), _lookup(6, "unused")]
+
+    rows = list(
+        broadcast_as_of_stream(
+            iter(primary),
+            iter(lookup),
+            partition_by=("id_",),
+            direction="forward",
+        )
+    )
+
+    assert [
+        (primary_record.value, lookup_record.value if lookup_record else None)
+        for primary_record, lookup_record in rows
+    ] == [("A-early", "shared"), ("B-later", "shared")]
+
+
+def test_broadcast_as_of_forward_requires_match_past_last_lookup() -> None:
+    with pytest.raises(ValueError, match="no record at or after primary"):
+        list(
+            broadcast_as_of_stream(
+                iter([_primary("A", 8, "primary")]),
+                iter([_lookup(1, "past"), _lookup(5, "last")]),
+                partition_by=("id_",),
+                direction="forward",
+            )
+        )
+
+
+def test_broadcast_as_of_forward_treats_max_age_as_inclusive_ahead() -> None:
+    within = list(
+        broadcast_as_of_stream(
+            iter([_primary("A", 3, "primary")]),
+            iter([_lookup(6, "lookup")]),
+            partition_by=("id_",),
+            max_age=timedelta(days=3),
+            direction="forward",
+        )
+    )
+    assert [
+        (primary.value, lookup.value if lookup else None)
+        for primary, lookup in within
+    ] == [("primary", "lookup")]
+
+    dropped = list(
+        broadcast_as_of_stream(
+            iter([_primary("A", 4, "primary")]),
+            iter([_lookup(6, "lookup")]),
+            partition_by=("id_",),
+            max_age=timedelta(days=1),
+            direction="forward",
+            require_match=False,
+        )
+    )
+    assert [
+        (primary.value, lookup.value if lookup else None)
+        for primary, lookup in dropped
+    ] == [("primary", None)]
+
+
+def test_broadcast_as_of_forward_rejects_invalid_direction() -> None:
+    with pytest.raises(ValueError, match="direction must be"):
+        list(
+            broadcast_as_of_stream(
+                iter([_primary("A", 1, "primary")]),
+                iter([_lookup(2, "lookup")]),
+                partition_by=("id_",),
+                direction="sideways",
+            )
+        )

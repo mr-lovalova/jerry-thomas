@@ -31,7 +31,7 @@ def _write_project(root: Path) -> Path:
         (root / name).mkdir(parents=True)
     project_yaml = root / "project.yaml"
     project_yaml.write_text(
-        """schema_version: 5
+        """schema_version: 6
 artifact_revision: 1
 name: snapshot
 paths:

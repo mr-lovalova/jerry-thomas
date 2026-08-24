@@ -6,8 +6,7 @@ import yaml
 
 from jerrythomas.cli.commands.stream import handle as handle_stream_create
 from jerrythomas.config.streams import (
-    AlignedStreamConfig,
-    BroadcastStreamConfig,
+    CombinedStreamConfig,
     SourceStreamConfig,
 )
 from jerrythomas.plugins import MAPPERS_EP
@@ -40,7 +39,7 @@ def _write_project_yaml(
     streams_dir.mkdir(parents=True, exist_ok=True)
     content = textwrap.dedent(
         f"""
-        schema_version: 5
+        schema_version: 6
         artifact_revision: 1
         paths:
           streams: {streams_dir}
@@ -315,8 +314,9 @@ def test_aligned_stream_scaffold_writes_ordered_inputs(
     stream_path = streams_dir / "air_density.processed.yaml"
     assert stream_path.exists()
     config = yaml.safe_load(stream_path.read_text(encoding="utf-8"))
-    spec = AlignedStreamConfig.model_validate(config)
-    assert spec.from_.align == ("weather.pressure", "weather.temperature")
+    spec = CombinedStreamConfig.model_validate(config)
+    assert spec.from_.stream == "weather.pressure"
+    assert list(spec.join.partner_stream_ids()) == ["weather.temperature"]
     assert spec.combine.entrypoint == "combine_air_density"
     assert spec.combine.args == {}
 
@@ -392,9 +392,9 @@ def test_broadcast_stream_scaffold_selects_partitioned_and_global_inputs(
     handle_stream_create(plugin_root=plugin_root)
 
     stream_path = streams_dir / "weather.adjusted.yaml"
-    config = BroadcastStreamConfig.model_validate(
+    config = CombinedStreamConfig.model_validate(
         yaml.safe_load(stream_path.read_text(encoding="utf-8"))
     )
     assert config.from_.stream == "weather.temperature"
-    assert config.from_.broadcast == "weather.baseline"
+    assert config.join.with_ == "weather.baseline"
     assert config.combine.entrypoint == "attach_baseline"

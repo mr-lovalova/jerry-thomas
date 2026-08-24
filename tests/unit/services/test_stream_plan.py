@@ -94,7 +94,7 @@ def test_existing_project_with_missing_config_dirs_can_be_scaffolded(
     _patch_project(monkeypatch, tmp_path)
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 5\n"
+        "schema_version: 6\n"
         "artifact_revision: 1\n"
         "name: default\n"
         "paths:\n"

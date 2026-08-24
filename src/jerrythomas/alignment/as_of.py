@@ -15,9 +15,22 @@ def as_of_stream(
     partition_by: tuple[str, ...],
     max_age: timedelta | None = None,
     require_match: bool = True,
+    direction: str = "backward",
 ) -> Generator[tuple[TemporalRecord, TemporalRecord | None], None, None]:
-    """Pair primary records with the latest eligible lookup in the same partition."""
+    """Pair primary records with the latest or next eligible lookup record.
+
+    With ``direction="backward"`` (the default) each primary record pairs with
+    the latest lookup record at or before its time in the same partition.
+    With ``direction="forward"`` it pairs with the first lookup record at or
+    after its time. Lookup records are never consumed by a match alone, so
+    several primary records may share one lookup record in either direction.
+    """
     with closing_alignment_inputs((primary, lookup)):
+        if type(direction) is not str or direction not in {"backward", "forward"}:
+            raise ValueError(
+                "As-of direction must be 'backward' or 'forward', got "
+                f"{direction!r}"
+            )
         if max_age is not None and not isinstance(max_age, timedelta):
             raise TypeError("As-of max_age must be a timedelta or None")
         if max_age is not None and max_age < timedelta(0):
@@ -114,19 +127,34 @@ def as_of_stream(
             while lookup_key is not None and lookup_key[0] < primary_partition:
                 advance_lookup(primary_partition_types)
 
-            while (
-                lookup_key is not None
-                and lookup_key[0] == primary_partition
-                and lookup_key[1] <= primary_record.time
-            ):
-                candidate = lookup_record
-                advance_lookup(primary_partition_types)
+            if direction == "forward":
+                while (
+                    lookup_key is not None
+                    and lookup_key[0] == primary_partition
+                    and lookup_key[1] < primary_record.time
+                ):
+                    advance_lookup(primary_partition_types)
+                match = None
+                if (
+                    lookup_key is not None
+                    and lookup_key[0] == primary_partition
+                    and lookup_key[1] >= primary_record.time
+                ):
+                    match = lookup_record
+            else:
+                while (
+                    lookup_key is not None
+                    and lookup_key[0] == primary_partition
+                    and lookup_key[1] <= primary_record.time
+                ):
+                    candidate = lookup_record
+                    advance_lookup(primary_partition_types)
+                match = candidate
 
-            match = candidate
             if (
                 match is not None
                 and max_age is not None
-                and primary_record.time - match.time > max_age
+                and abs(match.time - primary_record.time) > max_age
             ):
                 match = None
 

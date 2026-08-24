@@ -2,10 +2,11 @@ from collections.abc import Iterable
 
 from jerrythomas.config.sources import SourceConfig
 from jerrythomas.config.streams import (
-    AlignedStreamConfig,
-    AsOfStreamConfig,
-    BroadcastAsOfStreamConfig,
-    BroadcastStreamConfig,
+    AlignJoin,
+    AsOfJoin,
+    BroadcastAsOfJoin,
+    BroadcastJoin,
+    CombinedStreamConfig,
     CrossSectionStreamConfig,
     DerivedStreamConfig,
     SourceStreamConfig,
@@ -138,74 +139,58 @@ def stream_partition_by(
                 f"'{stream.from_.stream}' must have a non-empty partition_by"
             )
         return partition_by
-    if isinstance(stream, AsOfStreamConfig):
-        primary_partition = stream_partition_by(streams, stream.from_.stream)
-        lookup_partition = stream_partition_by(streams, stream.from_.as_of)
-        if lookup_partition != primary_partition:
-            raise ValueError(
-                f"As-of stream '{stream_id}' lookup input '{stream.from_.as_of}' has "
-                f"partition_by {list(lookup_partition)!r}; expected "
-                f"{list(primary_partition)!r}"
-            )
-        return primary_partition
-    if isinstance(stream, BroadcastStreamConfig):
-        primary_partition = stream_partition_by(streams, stream.from_.stream)
+    if isinstance(stream, CombinedStreamConfig):
+        return _combined_stream_partition_by(streams, stream_id, stream)
+
+    raise TypeError(f"Unsupported stream config: {type(stream).__name__}")
+
+
+def _combined_stream_partition_by(
+    streams: dict[str, StreamConfig],
+    stream_id: str,
+    stream: CombinedStreamConfig,
+) -> tuple[str, ...]:
+    primary = stream.from_.stream
+    primary_partition = stream_partition_by(streams, primary)
+    join = stream.join
+
+    if isinstance(join, (BroadcastJoin, BroadcastAsOfJoin)):
         if not primary_partition:
+            kind = "Broadcast" if isinstance(join, BroadcastJoin) else "Broadcast as-of"
             raise ValueError(
-                f"Broadcast stream '{stream_id}' primary input "
-                f"'{stream.from_.stream}' must have a non-empty partition_by"
+                f"{kind} stream '{stream_id}' primary input "
+                f"'{primary}' must have a non-empty partition_by"
             )
-
-        broadcast_partition = stream_partition_by(
-            streams,
-            stream.from_.broadcast,
-        )
-        if broadcast_partition:
+        partner = join.with_ if isinstance(join, BroadcastJoin) else join.lookup
+        partner_partition = stream_partition_by(streams, partner)
+        if partner_partition:
             raise ValueError(
-                f"Broadcast stream '{stream_id}' broadcast input "
-                f"'{stream.from_.broadcast}' must have an empty partition_by; "
-                f"got {list(broadcast_partition)!r}"
-            )
-        return primary_partition
-    if isinstance(stream, BroadcastAsOfStreamConfig):
-        primary_partition = stream_partition_by(streams, stream.from_.stream)
-        if not primary_partition:
-            raise ValueError(
-                f"Broadcast as-of stream '{stream_id}' primary input "
-                f"'{stream.from_.stream}' must have a non-empty partition_by"
-            )
-
-        lookup_partition = stream_partition_by(
-            streams,
-            stream.from_.broadcast_as_of,
-        )
-        if lookup_partition:
-            raise ValueError(
-                f"Broadcast as-of stream '{stream_id}' lookup input "
-                f"'{stream.from_.broadcast_as_of}' must have an empty partition_by; "
-                f"got {list(lookup_partition)!r}"
+                f"Stream '{stream_id}' join input '{partner}' must have an "
+                f"empty partition_by; got {list(partner_partition)!r}"
             )
         return primary_partition
 
-    if isinstance(stream, AlignedStreamConfig):
-        input_partitions = [
-            stream_partition_by(streams, input_stream)
-            for input_stream in stream.input_streams()
-        ]
+    if isinstance(join, (AsOfJoin, AlignJoin)):
+        partner_ids = join.partner_stream_ids()
+        input_partitions = [primary_partition]
+        input_partitions.extend(
+            stream_partition_by(streams, partner) for partner in partner_ids
+        )
         expected = input_partitions[0]
         for input_stream, partition_by in zip(
-            stream.input_streams()[1:],
-            input_partitions[1:],
+            (primary, *partner_ids),
+            input_partitions,
             strict=True,
         ):
             if partition_by != expected:
                 raise ValueError(
-                    f"Aligned stream '{stream_id}' input '{input_stream}' has "
-                    f"partition_by {list(partition_by)!r}; expected {list(expected)!r}"
+                    f"Stream '{stream_id}' input '{input_stream}' has "
+                    f"partition_by {list(partition_by)!r}; expected "
+                    f"{list(expected)!r}"
                 )
         return expected
 
-    raise TypeError(f"Unsupported stream config: {type(stream).__name__}")
+    raise TypeError(f"Unsupported join config: {type(join).__name__}")
 
 
 def stream_dependency_closure(

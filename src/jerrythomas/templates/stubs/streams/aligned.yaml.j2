@@ -1,12 +1,18 @@
 id: {{ stream_id | tojson }}  # format: domain.dataset.(variant)
 
 from:
-  align:
-{{ input_streams | to_yaml(indent=4) }}
+  stream: {{ primary_stream | tojson }}
+
+join:
+  kind: align
+  streams:
+{{ join_streams | to_yaml(indent=4) }}
 
 combine:
   entrypoint: {{ combine_entrypoint | tojson }}
   args: {}
 
+# All inputs must share the same partition_by. Records combine only when their
+# timestamps match exactly.
 # Dataset sample.keys select row identity; remaining partition fields suffix series IDs.
 # transforms: []
