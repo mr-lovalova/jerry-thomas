@@ -208,7 +208,9 @@ class RollingConfig(_TransformConfig):
     window: PositiveInt
     to: NonEmptyString | None = None
     min_samples: PositiveInt | None = None
-    statistic: Literal["mean", "median", "stdev", "pstdev", "max", "min"] = "mean"
+    statistic: Literal["mean", "median", "stdev", "pstdev", "max", "min", "sum"] = (
+        "mean"
+    )
 
     @model_validator(mode="after")
     def validate_samples(self) -> "RollingConfig":

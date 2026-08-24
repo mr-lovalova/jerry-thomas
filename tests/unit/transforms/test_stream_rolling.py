@@ -413,6 +413,59 @@ def test_rolling_reports_floating_point_overflow(
         _rolling_values(values, statistic, window=2, min_samples=2)
 
 
+def test_rolling_sum_matches_naive_sum() -> None:
+    values = [1.5, 2.0, -0.5, 4.0]
+    actual = _rolling_values(
+        values,
+        statistic="sum",
+        window=3,
+        min_samples=3,
+    )
+
+    assert actual[:2] == [None, None]
+    assert actual[2] == pytest.approx(3.0)
+    assert actual[3] == pytest.approx(5.5)
+
+
+def test_rolling_sum_over_partial_windows_sums_available_samples() -> None:
+    assert _rolling_values(
+        [1.0, 2.0, 4.0],
+        statistic="sum",
+        window=3,
+        min_samples=1,
+    ) == [1.0, 3.0, 7.0]
+
+
+def test_rolling_sum_excludes_missing_values() -> None:
+    # Missing values occupy window slots and do not count toward min_samples.
+    assert _rolling_values(
+        [1.0, None, 2.0],
+        statistic="sum",
+        window=2,
+        min_samples=1,
+    ) == [1.0, 1.0, 2.0]
+
+    assert _rolling_values(
+        [1.0, None, 2.0],
+        statistic="sum",
+        window=2,
+        min_samples=2,
+    ) == [None, None, None]
+
+
+def test_rolling_sum_survives_cancellation() -> None:
+    values = [1e308, -1e308, 1e308]
+    actual = _rolling_values(
+        values,
+        statistic="sum",
+        window=3,
+        min_samples=3,
+    )
+
+    assert actual[:2] == [None, None]
+    assert actual[2] == pytest.approx(1e308)
+
+
 def test_rolling_mean_preserves_cancellation() -> None:
     assert _rolling_values(
         [0.0, -1_000_000_000_001.0, 1_000_000_000_000.0],

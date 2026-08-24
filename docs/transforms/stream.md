@@ -74,7 +74,8 @@ nonnumeric or infinite values.
   greater than one. `min_samples` counts valid observations and defaults to
   one. Missing observations do not change the state; after warmup they emit
   the current mean. Weighting is observation-based, not elapsed-time-based.
-- `rolling`: compute `mean`, `median`, `stdev`, `pstdev`, `max`, or `min` over
+- `rolling`: compute `mean`, `median`, `stdev`, `pstdev`, `max`, `min`, or
+  `sum` over
   a rolling window. Missing ticks occupy a window position but do not count
   toward `min_samples`, which defaults to `window`. Values must be finite;
   `None` and `NaN` are treated as missing.

@@ -10,6 +10,7 @@ from jerrythomas.transforms.rolling_window import (
     RollingPopulationStandardDeviation,
     RollingQuantile,
     RollingSampleStandardDeviation,
+    RollingSum,
     RollingWindow,
 )
 from jerrythomas.transforms.utils import (
@@ -27,6 +28,7 @@ _STATISTICS: dict[str, type[RollingWindow]] = {
     "pstdev": RollingPopulationStandardDeviation,
     "max": RollingMaximum,
     "min": RollingMinimum,
+    "sum": RollingSum,
 }
 
 
