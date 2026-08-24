@@ -1,7 +1,7 @@
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Literal, Mapping, Sequence
 
 from pydantic import ValidationError
 
@@ -231,7 +231,7 @@ def build_runtime_run_request(
     artifact_mode: str | None = None,
     limit: int | None = None,
     preview: PreviewStage | None = None,
-    cli_output: ServeOutputConfig | None = None,
+    cli_output: ServeOutputConfig | Mapping[str, object] | None = None,
     command_observability: CommandObservability = CommandObservability(),
 ) -> RuntimeRunRequest | None:
     definition = _load_definition(project)

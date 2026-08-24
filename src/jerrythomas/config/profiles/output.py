@@ -1,8 +1,9 @@
 import codecs
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from jerrythomas.config.options import OUTPUT_STDOUT_FORMATS, OUTPUT_VIEWS
 from jerrythomas.io.compression import Compression
@@ -10,6 +11,39 @@ from jerrythomas.io.compression import Compression
 Transport = Literal["fs", "stdout"]
 Format = Literal["csv", "jsonl", "parquet", "pickle", "txt", "html"]
 View = Literal["flat", "raw"]
+
+OUTPUT_MATRIX_HELP = (
+    "Valid output combinations:\n"
+    "  stdout: format=jsonl|txt\n"
+    "          jsonl view=raw|flat, txt has no view\n"
+    "          encoding is not supported\n"
+    "  fs:     format=jsonl|csv|parquet|pickle|txt|html\n"
+    "          encoding is supported only for jsonl/csv/txt (default utf-8)\n"
+    "          gzip compression is supported only for jsonl/csv\n"
+    "          jsonl supports view=raw|flat\n"
+    "          csv supports view=flat\n"
+    "          parquet supports view=flat and uses internal compression\n"
+    "          pickle supports view=raw\n"
+    "          txt/html output does not support view\n"
+    "          html output support depends on the selected runtime operation\n"
+)
+
+
+def merge_output_overrides(
+    base: "ServeOutputConfig | None",
+    overrides: Mapping[str, object] | None,
+) -> "ServeOutputConfig | None":
+    """Return base with explicitly provided CLI leaves applied, revalidated."""
+    if not overrides:
+        return base
+    merged = {**(base.model_dump() if base is not None else {}), **overrides}
+    try:
+        return ServeOutputConfig.model_validate(merged)
+    except ValidationError as exc:
+        raise ValueError(
+            f"invalid output configuration: {exc.errors()[0]['msg']}\n"
+            f"{OUTPUT_MATRIX_HELP}"
+        ) from exc
 
 
 class ServeOutputConfig(BaseModel):

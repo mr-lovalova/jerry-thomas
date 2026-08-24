@@ -666,6 +666,38 @@ def test_serve_profile_fields_override_serve_defaults(tmp_path: Path):
     assert job.output.run is None
 
 
+def test_cli_directory_override_inherits_profile_transport_and_format(
+    tmp_path: Path,
+):
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir(parents=True, exist_ok=True)
+    (profiles / "serve.defaults.yaml").write_text(
+        ("output:\n  transport: fs\n  format: jsonl\n  directory: ./artifacts/serve\n"),
+        encoding="utf-8",
+    )
+    (profiles / "serve.train.yaml").write_text("operation: dataset\n")
+
+    request = build_runtime_run_request(
+        command="serve",
+        project=str(project_yaml),
+        profile_name="train",
+        cli_output={"directory": tmp_path / "elsewhere"},
+    )
+    assert request is not None
+    job = request.jobs[0]
+    assert job.output.transport == "fs"
+    assert job.output.format == "jsonl"
+    assert job.output.run is not None
+    assert job.output.run.dataset_dir == (
+        (tmp_path / "elsewhere").resolve()
+        / "runs"
+        / job.output.run.run_id
+        / "dataset"
+    )
+    assert job.output.destination == job.output.run.dataset_dir / "train.jsonl"
+
+
 def test_serve_profile_nested_observability_deep_merges_defaults(
     tmp_path: Path,
 ):

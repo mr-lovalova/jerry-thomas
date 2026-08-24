@@ -923,15 +923,15 @@ def test_shared_serve_runs_allow_distinct_explicit_output_filenames(tmp_path):
 
 
 def test_cli_output_directory_resolves_relative_to_workspace(tmp_path):
-    config = build_cli_output_config(
+    overrides = build_cli_output_config(
         "fs",
         "jsonl",
         ".",
         workspace_root=tmp_path,
     )
 
-    assert config is not None
-    assert config.directory == tmp_path.resolve()
+    assert overrides is not None
+    assert overrides["directory"] == tmp_path.resolve()
 
 
 def test_inspect_profiles_accept_html_output_for_matrix(tmp_path):

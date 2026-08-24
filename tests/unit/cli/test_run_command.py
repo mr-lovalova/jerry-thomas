@@ -10,7 +10,10 @@ from jerrythomas.cli.commands.profile_runner import execute_profile_request
 from jerrythomas.cli.output_options import build_cli_output_config
 from jerrythomas.cli.parser_builder import build_parser
 from jerrythomas.config.execution import ExecutionConfig
-from jerrythomas.config.profiles.output import ServeOutputConfig
+from jerrythomas.config.profiles.output import (
+    ServeOutputConfig,
+    merge_output_overrides,
+)
 from jerrythomas.execution.observability import CommandFinished
 from jerrythomas.execution.settings import CommandObservability
 from jerrythomas.profiles.errors import ProfileCommandError
@@ -82,163 +85,81 @@ def _noop_visual_summary(_level, _enabled):
     yield
 
 
-def test_build_cli_output_config_fs_requires_directory() -> None:
-    with pytest.raises(SystemExit) as exc:
-        build_cli_output_config(
-            transport="fs",
-            fmt="jsonl",
-            directory=None,
-        )
-    assert exc.value.code == 2
+def test_build_cli_output_config_returns_none_without_flags() -> None:
+    assert build_cli_output_config(None, None, None) is None
 
 
-def test_build_cli_output_config_rejects_unknown_transport() -> None:
-    with pytest.raises(SystemExit) as exc:
-        build_cli_output_config(
-            transport="s3",
-            fmt="jsonl",
-            directory=None,
-        )
+def test_build_cli_output_config_collects_provided_fs_leaves() -> None:
+    overrides = build_cli_output_config("FS", "jsonl", "artifacts")
 
-    assert exc.value.code == 2
-
-
-def test_build_cli_output_config_stdout_rejects_directory() -> None:
-    with pytest.raises(SystemExit) as exc:
-        build_cli_output_config(
-            transport="stdout",
-            fmt="jsonl",
-            directory="out",
-        )
-    assert exc.value.code == 2
+    assert overrides == {
+        "transport": "fs",
+        "format": "jsonl",
+        "directory": Path("artifacts").resolve(),
+    }
 
 
-def test_build_cli_output_config_rejects_stdout_csv() -> None:
-    with pytest.raises(SystemExit) as exc:
-        build_cli_output_config(
-            transport="stdout",
-            fmt="csv",
-            directory=None,
-            view="flat",
-        )
-    assert exc.value.code == 2
+def test_build_cli_output_config_collects_partial_leaves() -> None:
+    assert build_cli_output_config(None, None, "out") == {
+        "directory": Path("out").resolve()
+    }
+    assert build_cli_output_config(None, None, None, output_compression="gzip") == {
+        "compression": "gzip"
+    }
+    assert build_cli_output_config(None, None, None, view="flat") == {"view": "flat"}
+    assert build_cli_output_config(
+        "stdout", None, None, output_encoding="utf-8-sig"
+    ) == {"transport": "stdout", "encoding": "utf-8-sig"}
 
 
-def test_build_cli_output_config_fs_populates_output() -> None:
-    config = build_cli_output_config(
-        transport="fs",
-        fmt="jsonl",
-        directory="artifacts",
-    )
-    assert config is not None
-    assert config.transport == "fs"
-    assert config.format == "jsonl"
-    assert config.view is None
-    assert config.encoding == "utf-8"
-    assert config.directory == Path("artifacts").resolve()
-
-
-def test_build_cli_output_config_fs_populates_gzip_compression() -> None:
-    config = build_cli_output_config(
-        transport="fs",
-        fmt="jsonl",
-        directory="artifacts",
-        output_compression="gzip",
+def test_merge_output_overrides_directory_only_inherits_profile_leaves() -> None:
+    base = ServeOutputConfig.model_validate(
+        {"transport": "fs", "format": "jsonl", "directory": "artifacts/serve"}
     )
 
-    assert config is not None
-    assert config.compression == "gzip"
+    merged = merge_output_overrides(base, {"directory": Path("elsewhere")})
+
+    assert merged is not None
+    assert merged.transport == "fs"
+    assert merged.format == "jsonl"
+    assert merged.encoding == "utf-8"
+    assert merged.directory == Path("elsewhere")
 
 
-def test_output_compression_requires_complete_output_override() -> None:
-    with pytest.raises(SystemExit) as exc:
-        build_cli_output_config(
-            transport=None,
-            fmt=None,
-            directory=None,
-            output_compression="gzip",
-        )
-
-    assert exc.value.code == 2
-
-
-def test_build_cli_output_config_rejects_stdout_compression() -> None:
-    with pytest.raises(SystemExit) as exc:
-        build_cli_output_config(
-            transport="stdout",
-            fmt="jsonl",
-            directory=None,
-            output_compression="gzip",
-        )
-
-    assert exc.value.code == 2
-
-
-def test_build_cli_output_config_honors_view() -> None:
-    config = build_cli_output_config(
-        transport="stdout",
-        fmt="jsonl",
-        directory=None,
-        view="flat",
+def test_merge_output_overrides_gzip_alone_applies_to_jsonl_profile() -> None:
+    base = ServeOutputConfig.model_validate(
+        {"transport": "fs", "format": "jsonl", "directory": "out"}
     )
-    assert config is not None
-    assert config.view == "flat"
+
+    merged = merge_output_overrides(base, {"compression": "gzip"})
+
+    assert merged is not None
+    assert merged.compression == "gzip"
 
 
-def test_build_cli_output_config_rejects_non_flat_csv_view() -> None:
-    with pytest.raises(SystemExit) as exc:
-        build_cli_output_config(
-            transport="fs",
-            fmt="csv",
-            directory="out",
-            view="raw",
-        )
-    assert exc.value.code == 2
+def test_merge_output_overrides_rejects_invalid_combinations() -> None:
+    with pytest.raises(ValueError, match="fs outputs require a directory"):
+        merge_output_overrides(None, {"transport": "fs", "format": "jsonl"})
 
+    stdout_jsonl = ServeOutputConfig.model_validate({"transport": "stdout", "format": "jsonl"})
+    with pytest.raises(ValueError, match="stdout cannot define a directory"):
+        merge_output_overrides(stdout_jsonl, {"directory": "out"})
 
-def test_build_cli_output_config_rejects_non_raw_pickle_view() -> None:
-    with pytest.raises(SystemExit) as exc:
-        build_cli_output_config(
-            transport="fs",
-            fmt="pickle",
-            directory="out",
-            view="flat",
-        )
-    assert exc.value.code == 2
-
-
-def test_build_cli_output_config_honors_encoding_for_fs() -> None:
-    config = build_cli_output_config(
-        transport="fs",
-        fmt="csv",
-        directory="out",
-        output_encoding="utf-8-sig",
-        view="flat",
+    fs_jsonl = ServeOutputConfig.model_validate(
+        {"transport": "fs", "format": "jsonl", "directory": "out"}
     )
-    assert config is not None
-    assert config.encoding == "utf-8-sig"
-
-
-def test_build_cli_output_config_rejects_encoding_for_stdout() -> None:
-    with pytest.raises(SystemExit) as exc:
-        build_cli_output_config(
-            transport="stdout",
-            fmt="jsonl",
-            directory=None,
-            output_encoding="utf-8",
-        )
-    assert exc.value.code == 2
-
-
-def test_build_cli_output_config_rejects_unknown_encoding() -> None:
-    with pytest.raises(SystemExit) as exc:
-        build_cli_output_config(
-            transport="fs",
-            fmt="jsonl",
-            directory="out",
-            output_encoding="definitely-not-a-codec",
-        )
-    assert exc.value.code == 2
+    with pytest.raises(ValueError, match="supports only jsonl and csv"):
+        merge_output_overrides(fs_jsonl, {"format": "parquet", "compression": "gzip"})
+    with pytest.raises(ValueError, match="csv output supports only view"):
+        merge_output_overrides(fs_jsonl, {"format": "csv", "view": "raw"})
+    with pytest.raises(ValueError, match="pickle output supports only view"):
+        merge_output_overrides(fs_jsonl, {"format": "pickle", "view": "flat"})
+    with pytest.raises(ValueError, match="stdout outputs do not support encoding"):
+        merge_output_overrides(stdout_jsonl, {"encoding": "utf-8"})
+    with pytest.raises(ValueError, match="encoding must name a registered codec"):
+        merge_output_overrides(fs_jsonl, {"encoding": "definitely-not-a-codec"})
+    with pytest.raises(ValueError, match="invalid output configuration"):
+        merge_output_overrides(fs_jsonl, {"transport": "s3"})
 
 
 def test_execute_serve_propagates_keyboard_interrupt(monkeypatch) -> None:
@@ -353,11 +274,12 @@ def test_runtime_command_propagates_gzip_output_override(
     )
 
     output = captured["cli_output"]
-    assert isinstance(output, ServeOutputConfig)
-    assert output.transport == "fs"
-    assert output.format == "jsonl"
-    assert output.directory == tmp_path
-    assert output.compression == "gzip"
+    assert output == {
+        "transport": "fs",
+        "format": "jsonl",
+        "directory": tmp_path,
+        "compression": "gzip",
+    }
 
 
 def test_execute_serve_skips_when_no_enabled_profiles(monkeypatch, caplog) -> None:

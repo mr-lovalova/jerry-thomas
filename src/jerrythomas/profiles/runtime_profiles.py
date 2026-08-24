@@ -1,11 +1,14 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from jerrythomas.config.dataset.split import split_output_ids
 from jerrythomas.config.preview import PreviewStage
 from jerrythomas.config.profiles.inspect import InspectProfile
-from jerrythomas.config.profiles.output import ServeOutputConfig
+from jerrythomas.config.profiles.output import (
+    ServeOutputConfig,
+    merge_output_overrides,
+)
 from jerrythomas.config.profiles.serve import ServeProfile
 from jerrythomas.config.tasks.base import RuntimeTask
 from jerrythomas.config.tasks.dataset import DatasetTask
@@ -82,12 +85,22 @@ def _resolve_serve_output_ids(
     return include_outputs
 
 
+def _effective_cli_output(
+    profile_output: ServeOutputConfig | None,
+    cli_output: ServeOutputConfig | Mapping[str, object] | None,
+) -> ServeOutputConfig | None:
+    """Apply CLI leaves onto a profile output; complete configs pass through."""
+    if cli_output is None or isinstance(cli_output, ServeOutputConfig):
+        return profile_output if cli_output is None else cli_output
+    return merge_output_overrides(profile_output, cli_output)
+
+
 def resolve_serve_profiles(
     definition: ProjectDefinition,
     profiles: Sequence[ServeProfile],
     preview: PreviewStage | None,
     limit: int | None,
-    cli_output: ServeOutputConfig | None,
+    cli_output: ServeOutputConfig | Mapping[str, object] | None,
     command_observability: CommandObservability = CommandObservability(),
 ) -> list[ResolvedRuntimeProfile]:
     project_path = definition.project.path
@@ -107,8 +120,9 @@ def resolve_serve_profiles(
             resolved_preview,
             runtime_operations.get(profile.operation),
         )
+        effective_output = _effective_cli_output(profile.output, cli_output)
         serve_root = resolve_output_directory(
-            cli_output or profile.output,
+            effective_output,
             base_path=project_path.parent,
         )
         run_paths = None
@@ -128,7 +142,7 @@ def resolve_serve_profiles(
                 shared_runs[serve_root] = run_paths
 
         target = resolve_output_target(
-            cli_output=cli_output,
+            cli_output=effective_output,
             config_output=profile.output,
             default=None,
             base_path=project_path.parent,
@@ -166,14 +180,14 @@ def resolve_inspect_profiles(
     definition: ProjectDefinition,
     profiles: Sequence[InspectProfile],
     limit: int | None,
-    cli_output: ServeOutputConfig | None,
+    cli_output: ServeOutputConfig | Mapping[str, object] | None,
     command_observability: CommandObservability = CommandObservability(),
 ) -> list[ResolvedRuntimeProfile]:
     project_path = definition.project.path
     resolved: list[ResolvedRuntimeProfile] = []
     for profile in profiles:
         target = resolve_output_target(
-            cli_output=cli_output,
+            cli_output=_effective_cli_output(profile.output, cli_output),
             config_output=profile.output,
             default=None,
             base_path=project_path.parent,

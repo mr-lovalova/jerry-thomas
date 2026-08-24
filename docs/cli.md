@@ -14,6 +14,20 @@ be nested, although profiles may intentionally share one exact log path. Global
 logs must also stay outside the artifacts root and managed serve `runs`/`latest`
 paths; use execution-scoped logging for managed command logs.
 
+### CLI Overrides
+
+Every `--output-*` flag addresses exactly one leaf of the selected profile's
+`output` block; absent flags inherit from the profile. For example,
+`jerry serve --output-directory /tmp/out` keeps the profile's transport, format,
+encoding, and compression and writes to `/tmp/out` instead. The combined
+configuration must still be a valid output; invalid combinations are rejected
+with the same rules that govern profile files.
+
+`--log-level` overrides the profile's `observability.logging.level`. When
+`--log-output` targets are provided they replace the profile's
+`observability.logging.outputs` list; omit the flags to use the configured
+outputs unchanged.
+
 With `--visuals on` in an interactive terminal, runtime commands show one live
 pipeline row with the active input or stage. `--log-level DEBUG` expands that view
 to one row per active input or stage. File-backed sources include the current file
