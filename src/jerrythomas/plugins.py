@@ -8,6 +8,7 @@ PARSERS_EP = "jerrythomas.parsers"
 LOADERS_EP = "jerrythomas.loaders"
 MAPPERS_EP = "jerrythomas.mappers"
 COMBINERS_EP = "jerrythomas.combiners"
+TRANSFORMS_EP = "jerrythomas.transforms"
 BUILD_OPERATIONS_EP = "jerrythomas.operations.build"
 RUNTIME_OPERATIONS_EP = "jerrythomas.operations.runtime"
 

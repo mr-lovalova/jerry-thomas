@@ -9,9 +9,11 @@ from jerrythomas.artifacts.schedule import (
     read_schedule,
     schedule_partition_by_from_metadata,
 )
+from jerrythomas.config.interpolation import normalize_interpolated_args
 from jerrythomas.config.transforms import (
     AggregateSumConfig,
     CollapseConfig,
+    CustomTransformConfig,
     DedupeConfig,
     DeriveConfig,
     EwmMeanConfig,
@@ -36,6 +38,7 @@ from jerrythomas.config.transforms import (
     WhereConfig,
 )
 from jerrythomas.execution.pipeline import Stage, StageOp
+from jerrythomas.plugins import TRANSFORMS_EP, load_entrypoint
 from jerrythomas.runtime import Runtime
 from jerrythomas.transforms.stream.aggregate import AggregateSumTransform
 from jerrythomas.transforms.stream.collapse import CollapseTransform
@@ -246,6 +249,20 @@ def build_transform_stages(
                 right_field=operation.right_field,
                 right_value=operation.right_value,
             ).apply
+        elif isinstance(operation, CustomTransformConfig):
+            factory = load_entrypoint(TRANSFORMS_EP, operation.entrypoint)
+            instance = factory(
+                normalize_interpolated_args(operation.args),
+                partition_by,
+            )
+            stage_op_candidate = getattr(instance, "apply", None)
+            if not callable(stage_op_candidate):
+                raise TypeError(
+                    f"Custom transform '{operation.entrypoint}' must return "
+                    "an object with an apply(records) method; got "
+                    f"{type(instance).__name__}."
+                )
+            stage_op = stage_op_candidate
         else:
             raise TypeError(f"Unsupported transform config: {type(operation).__name__}")
 

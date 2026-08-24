@@ -14,6 +14,7 @@ from jerrythomas.config.streams import (
 )
 from jerrythomas.config.transforms import (
     AggregateSumConfig,
+    CustomTransformConfig,
     DeriveConfig,
     EwmMeanConfig,
     FillConfig,
@@ -69,6 +70,7 @@ def validate_stream_configs(
 
         canonical_fields = {"time", *partition_by}
         for operation in stream.transforms:
+            output_fields: tuple[str, ...]
             if isinstance(operation, AggregateSumConfig):
                 output_fields = (
                     (operation.field,)
@@ -103,6 +105,8 @@ def validate_stream_configs(
                 ),
             ):
                 output_fields = (operation.to,)
+            elif isinstance(operation, CustomTransformConfig):
+                output_fields = operation.writes
             else:
                 continue
             for output_field in output_fields:

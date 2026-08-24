@@ -317,12 +317,28 @@ class DeriveConfig(_TransformConfig):
         return self
 
 
+class CustomTransformConfig(_TransformConfig):
+    operation: Literal["custom"] = "custom"
+
+    entrypoint: NonEmptyString
+    args: dict[str, Any] = Field(default_factory=dict)
+    writes: tuple[NonEmptyString, ...] = Field(default_factory=tuple)
+
+    @field_validator("writes", mode="before")
+    @classmethod
+    def _coerce_writes(cls, value: object) -> object:
+        if isinstance(value, (list, tuple)):
+            return tuple(value)
+        return value
+
+
 PreprocessConfig = Annotated[
     WhereConfig | FloorTimeConfig | ShiftTimeConfig,
     Field(discriminator="operation"),
 ]
 TransformConfig = Annotated[
     WhereConfig
+    | CustomTransformConfig
     | DedupeConfig
     | LagConfig
     | LeadConfig

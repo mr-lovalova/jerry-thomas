@@ -18,6 +18,7 @@ from jerrythomas.utils.time import parse_timecode
 
 
 _CROSS_TIMESTAMP_TRANSFORMS = (
+    transform_config.CustomTransformConfig,
     transform_config.EwmMeanConfig,
     transform_config.EnsureCadenceConfig,
     transform_config.EnsureScheduleConfig,

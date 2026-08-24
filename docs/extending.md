@@ -25,6 +25,9 @@ time.ticks = "my_datapipeline.mappers.synthetic.ticks:map"
 [project.entry-points."jerrythomas.combiners"]
 air_density = "my_datapipeline.combiners.air_density:combine_air_density"
 
+[project.entry-points."jerrythomas.transforms"]
+issuer_states = "my_datapipeline.transforms:IssuerStatesTransform"
+
 [project.entry-points."jerrythomas.operations.runtime"]
 demo.report = "my_datapipeline.operations:run_report"
 ```
@@ -70,8 +73,42 @@ Jerry 10 removes result-owned `target`/`targets` fields and custom
 that used those Python APIs must return one `RuntimeOutput`; built-in dataset
 fanout remains available through dataset profiles.
 
-Preprocess and ordered transforms are validated built-in operations rather than
-plugin entry points. Series shaping and postprocess policies are fixed pipeline
-stages. See [Transforms](transforms/index.md) for their explicit configuration.
+### Custom Stream Transforms
+
+The `{operation: custom}` transform runs plugin code on one stream. The
+entry point is a factory receiving `(args, partition_by)` and returning an
+object with an `apply(records_iterator) -> records_iterator` method. Extend
+`PartitionScopedTransform` from `jerrythomas.transforms.scoped` to receive
+each partition's records in canonical order with state that resets between
+partitions:
+
+```python
+from jerrythomas.transforms.scoped import PartitionScopedTransform
+
+
+class IssuerStatesTransform(PartitionScopedTransform):
+    def process_partition(self, records):
+        state = None
+        for record in records:
+            ...
+            yield enriched
+```
+
+```yaml
+transforms:
+  - operation: custom
+    entrypoint: my_datapipeline.transforms:IssuerStatesTransform
+    args: {window: 5d}
+    writes: [ocf_ratio] # optional; declares outputs for validation
+```
+
+Custom transforms are stateful across time within a partition, so datasets
+using hash splits reject streams that contain them. Declare every field the
+transform may add via `writes`; Jerry rejects declarations that collide with
+`time` or the stream's partition fields.
+
+Preprocess and ordered built-in transforms remain validated core operations.
+Series shaping and postprocess policies are fixed pipeline stages. See
+[Transforms](transforms/index.md) for their explicit configuration.
 
 ---
