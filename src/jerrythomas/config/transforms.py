@@ -201,6 +201,18 @@ class EwmMeanConfig(_TransformConfig):
     min_samples: PositiveInt = 1
 
 
+class EwmStdConfig(_TransformConfig):
+    operation: Literal["ewm_std"] = "ewm_std"
+
+    field: NonEmptyString
+    alpha: Annotated[
+        float,
+        Field(strict=True, gt=0.0, le=1.0, allow_inf_nan=False),
+    ]
+    to: NonEmptyString | None = None
+    min_samples: PositiveInt = 1
+
+
 class RollingConfig(_TransformConfig):
     operation: Literal["rolling"] = "rolling"
 
@@ -353,6 +365,7 @@ TransformConfig = Annotated[
     | AggregateSumConfig
     | FillMissingConfig
     | EwmMeanConfig
+    | EwmStdConfig
     | RollingConfig
     | RollingQuantileConfig
     | RollingSlopeConfig

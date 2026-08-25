@@ -74,6 +74,12 @@ nonnumeric or infinite values.
   greater than one. `min_samples` counts valid observations and defaults to
   one. Missing observations do not change the state; after warmup they emit
   the current mean. Weighting is observation-based, not elapsed-time-based.
+- `ewm_std`: compute an exponentially weighted standard deviation with the
+  same `alpha`, `min_samples`, and missing-observation semantics as
+  `ewm_mean`. After warmup, missing observations emit the current standard
+  deviation. The first two valid observations are required before a value is
+  produced because dispersion over fewer samples is undefined. Weighting is
+  observation-based, not elapsed-time-based.
 - `rolling`: compute `mean`, `median`, `stdev`, `pstdev`, `max`, `min`, or
   `sum` over
   a rolling window. Missing ticks occupy a window position but do not count

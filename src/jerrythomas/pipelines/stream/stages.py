@@ -19,6 +19,7 @@ from jerrythomas.config.transforms import (
     EwmMeanConfig,
     EnsureCadenceConfig,
     EnsureScheduleConfig,
+    EwmStdConfig,
     FillConfig,
     FillMissingConfig,
     FloorTimeConfig,
@@ -45,6 +46,7 @@ from jerrythomas.transforms.stream.collapse import CollapseTransform
 from jerrythomas.transforms.stream.dedupe import DedupeTransform
 from jerrythomas.transforms.stream.derive import DeriveTransform
 from jerrythomas.transforms.stream.ewm import EwmMeanTransform
+from jerrythomas.transforms.stream.ewm_std import EwmStdTransform
 from jerrythomas.transforms.stream.fill import (
     FillMissingTransform,
     ForwardFillTransform,
@@ -248,6 +250,14 @@ def build_transform_stages(
                 operation.to,
                 right_field=operation.right_field,
                 right_value=operation.right_value,
+            ).apply
+        elif isinstance(operation, EwmStdConfig):
+            stage_op = EwmStdTransform(
+                operation.field,
+                operation.alpha,
+                partition_by,
+                to=operation.to,
+                min_samples=operation.min_samples,
             ).apply
         elif isinstance(operation, CustomTransformConfig):
             factory = load_entrypoint(TRANSFORMS_EP, operation.entrypoint)
