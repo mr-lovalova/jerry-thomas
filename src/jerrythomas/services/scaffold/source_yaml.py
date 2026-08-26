@@ -31,7 +31,6 @@ def default_loader_config(
                 "frequency": "1h",
             },
         }
-
     if source_format not in {None, "csv", "json", "jsonl", "parquet"}:
         raise ValueError(f"Unsupported source format: {source_format!r}")
 
@@ -82,6 +81,13 @@ def validate_source_id(source_id: str) -> None:
         )
 
 
+def source_freshness(loader: dict[str, object]) -> str | None:
+    """Return the freshness declaration scaffolded sources must carry."""
+    if loader.get("transport") == "fs":
+        return None
+    return "opaque"
+
+
 def create_source_yaml(
     *,
     source_id: str,
@@ -118,6 +124,7 @@ def create_source_yaml(
                 parser_ep=parser_ep,
                 parser_args=parser_args,
                 loader=loader,
+                freshness=source_freshness(loader),
             ),
         )
         return src_cfg_path.resolve()

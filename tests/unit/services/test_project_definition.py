@@ -129,7 +129,8 @@ def test_load_project_definition_rejects_legacy_scaler_fold_config(
     (tmp_path / "sources" / "prices.yaml").write_text(
         "id: prices\n"
         "parser: {entrypoint: identity}\n"
-        "loader: {entrypoint: custom.loader}\n",
+        "loader: {entrypoint: custom.loader}\n"
+        "freshness: opaque\n",
         encoding="utf-8",
     )
     (tmp_path / "streams" / "prices.yaml").write_text(
@@ -242,13 +243,15 @@ def test_project_definition_keeps_retargeted_yaml_symlink_snapshot(
     first = tmp_path / "first-source.yaml"
     first.write_text(
         "id: linked\nparser: {entrypoint: identity}\n"
-        "loader: {entrypoint: custom.loader}\n",
+        "loader: {entrypoint: custom.loader}\n"
+        "freshness: opaque\n",
         encoding="utf-8",
     )
     second = tmp_path / "second-source.yaml"
     second.write_text(
         "id: linked\nparser: {entrypoint: identity}\n"
-        "loader: {entrypoint: other.loader}\n",
+        "loader: {entrypoint: other.loader}\n"
+        "freshness: opaque\n",
         encoding="utf-8",
     )
     linked = tmp_path / "sources" / "linked.yaml"
@@ -474,7 +477,8 @@ def test_artifact_hashing_rejects_missing_active_scaler(tmp_path: Path) -> None:
     (tmp_path / "sources" / "prices.yaml").write_text(
         "id: prices\n"
         "parser: {entrypoint: identity}\n"
-        "loader: {entrypoint: custom.loader}\n",
+        "loader: {entrypoint: custom.loader}\n"
+        "freshness: opaque\n",
         encoding="utf-8",
     )
     (tmp_path / "streams" / "prices.yaml").write_text(
@@ -870,6 +874,7 @@ def _single_stream_catalog() -> StreamsConfig:
                     "id": "raw",
                     "parser": {"entrypoint": "parse"},
                     "loader": {"entrypoint": "custom.loader"},
+                    "freshness": "opaque",
                 }
             },
             "streams": {
@@ -891,6 +896,7 @@ def _wide_stream_catalog() -> StreamsConfig:
                     "id": "raw",
                     "parser": {"entrypoint": "parse"},
                     "loader": {"entrypoint": "custom.loader"},
+                    "freshness": "opaque",
                 }
             },
             "streams": {
@@ -986,7 +992,8 @@ def test_cross_section_config_changes_series_artifact_hash(tmp_path: Path) -> No
     (tmp_path / "sources" / "signals.yaml").write_text(
         "id: signals\n"
         "parser: {entrypoint: identity}\n"
-        "loader: {entrypoint: custom.loader}\n",
+        "loader: {entrypoint: custom.loader}\n"
+        "freshness: opaque\n",
         encoding="utf-8",
     )
     (tmp_path / "streams" / "signals.yaml").write_text(

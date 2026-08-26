@@ -133,6 +133,7 @@ def _stream_catalog() -> StreamsConfig:
                     "id": "test.source",
                     "parser": {"entrypoint": "identity"},
                     "loader": {"entrypoint": "identity"},
+                    "freshness": "opaque",
                 }
             },
             "streams": {

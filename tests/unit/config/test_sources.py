@@ -16,6 +16,9 @@ def source_config(**overrides: object) -> SourceConfig:
         "loader": {"entrypoint": "load"},
     }
     values.update(overrides)
+    loader = values["loader"]
+    if isinstance(loader, dict) and "entrypoint" in loader:
+        values.setdefault("freshness", "opaque")
     return SourceConfig.model_validate(values)
 
 
@@ -252,7 +255,8 @@ def test_http_source_config_round_trips() -> None:
             "transport": "http",
             "url": "https://example.test/records.json",
             "reader": {"format": "json", "array_field": "rows"},
-        }
+        },
+        freshness="opaque",
     )
 
     assert SourceConfig.model_validate(source.model_dump()) == source
@@ -318,4 +322,58 @@ def test_http_source_rejects_invalid_timeout(value: object) -> None:
                 "timeout_seconds": value,
                 "reader": {"format": "jsonl"},
             }
+        )
+
+
+def test_entrypoint_loader_requires_inputs_or_opaque() -> None:
+    with pytest.raises(ValueError, match="'a.src' uses a custom loader"):
+        SourceConfig.model_validate(
+            {
+                "id": "a.src",
+                "parser": {"entrypoint": "parse"},
+                "loader": {"entrypoint": "load"},
+            }
+        )
+
+
+def test_http_source_requires_inputs_or_opaque() -> None:
+    with pytest.raises(ValueError, match="uses an HTTP loader"):
+        source_config(
+            loader={
+                "transport": "http",
+                "url": "https://example.test/records.json",
+                "reader": {"format": "json", "array_field": "rows"},
+            }
+        )
+
+
+def test_declared_inputs_satisfy_freshness_for_custom_loader() -> None:
+    source = SourceConfig.model_validate(
+        {
+            "id": "a.src",
+            "parser": {"entrypoint": "parse"},
+            "loader": {"entrypoint": "load"},
+            "inputs": {"files": ["data/events.jsonl"]},
+        }
+    )
+
+    assert source.freshness == "tracked"
+
+
+def test_explicit_opaque_acknowledges_untracked_custom_loader() -> None:
+    source = source_config(loader={"entrypoint": "load"}, freshness="opaque")
+
+    assert source.freshness == "opaque"
+    assert source.inputs is None
+
+
+def test_fs_sources_reject_opaque_freshness() -> None:
+    with pytest.raises(ValueError, match="always tracks"):
+        source_config(
+            loader={
+                "transport": "fs",
+                "path": "data/rows.csv",
+                "reader": {"format": "csv", "encoding": "utf-8", "delimiter": ","},
+            },
+            freshness="opaque",
         )

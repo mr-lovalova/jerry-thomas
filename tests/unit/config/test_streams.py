@@ -484,6 +484,7 @@ def test_stream_catalog_rejects_source_registry_key_mismatch() -> None:
                         "id": "demo.source",
                         "parser": {"entrypoint": "parse"},
                         "loader": {"entrypoint": "load"},
+                        "freshness": "opaque",
                     }
                 }
             }

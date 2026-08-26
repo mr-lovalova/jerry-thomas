@@ -151,3 +151,28 @@ class SourceConfig(BaseModel):
     parser: EntryPointConfig
     loader: BuiltInLoaderConfig | EntryPointConfig
     inputs: SourceInputsConfig | None = None
+    freshness: Literal["tracked", "opaque"] = "tracked"
+
+    @model_validator(mode="after")
+    def validate_input_freshness(self) -> Self:
+        if isinstance(self.loader, FsLoaderConfig):
+            if self.freshness == "opaque":
+                raise ValueError(
+                    f"Source '{self.id}' reads the filesystem, which Jerry "
+                    "always tracks for artifact freshness; remove "
+                    "'freshness: opaque'."
+                )
+            return self
+        if self.inputs is not None or self.freshness == "opaque":
+            return self
+        kind = (
+            "an HTTP loader"
+            if isinstance(self.loader, HttpLoaderConfig)
+            else "a custom loader"
+        )
+        raise ValueError(
+            f"Source '{self.id}' uses {kind}, whose inputs Jerry cannot "
+            "see. Declare them under 'inputs.files' so artifacts track "
+            "freshness, or set 'freshness: opaque' to acknowledge that "
+            "changes to these inputs will not invalidate artifacts."
+        )

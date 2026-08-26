@@ -9,3 +9,4 @@ loader:
     start: "${start_time}"
     end: "${end_time}"
     frequency: "2h"
+freshness: opaque

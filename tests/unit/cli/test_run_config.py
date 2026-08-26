@@ -271,6 +271,7 @@ def test_runtime_request_rejects_colliding_preview_output_ids(
             '    start: "2024-01-01T00:00:00Z"\n'
             '    end: "2024-01-02T00:00:00Z"\n'
             "    frequency: 1h\n"
+            "freshness: opaque\n"
         ),
         encoding="utf-8",
     )

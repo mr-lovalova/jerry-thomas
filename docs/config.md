@@ -415,6 +415,11 @@ loader:
   to track custom-loader inputs for artifact freshness. Built-in filesystem
   paths are tracked automatically. The list is order-insensitive;
   duplicate entries are rejected.
+- `freshness` defaults to `tracked`. Sources whose inputs Jerry cannot see —
+  custom loaders and HTTP loaders without `inputs.files` — must either declare
+  those files or set `freshness: opaque` to acknowledge that input changes will
+  not invalidate artifacts. Filesystem sources are always tracked and reject
+  `freshness: opaque`.
 - A filesystem `path` containing standard glob characters (`*`, `?`, `[`) loads
   every matching file in sorted order; a path without them loads one file.
 - Filesystem CSV and JSONL sources may set `compression: gzip`. Compression is
@@ -430,8 +435,9 @@ loader:
   filesystem modification metadata. HTTP response bodies and headers are not
   fingerprinted: use `--artifact-mode FORCE` when a stable URL can return new
   data, and increment `artifact_revision` when that change must invalidate
-  other workspaces. The same rule applies to other opaque source changes that
-  cannot be declared through `inputs.files`.
+  other workspaces. The same rule applies to sources marked
+  `freshness: opaque` and to other source changes that cannot be declared
+  through `inputs.files`.
 - Keep secrets and machine-local paths out of source files. Prefer `${env:...}`
   directly or route them through `project.yaml.globals` aliases like `${raw_root}`.
 

@@ -20,6 +20,7 @@ def _source(source_id: str = "source.alias") -> SourceConfig:
             "id": source_id,
             "parser": {"entrypoint": "identity"},
             "loader": {"entrypoint": "load"},
+            "freshness": "opaque",
         }
     )
 

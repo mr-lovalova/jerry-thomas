@@ -8,6 +8,9 @@ parser:
 {{ parser_args | to_yaml(4) }}
 
 # Built-in loaders declare transport and reader directly.
-# Custom loaders use entrypoint and args.
+# Custom loaders use entrypoint and args. Entry-point and HTTP loaders must
+# either declare their input files under `inputs.files` or set
+# `freshness: opaque` to acknowledge untracked inputs.
 loader:
 {{ loader | to_yaml(2) }}
+{% if freshness %}freshness: {{ freshness | tojson }}{% endif %}

@@ -63,6 +63,7 @@ def _write_source_yaml(path: Path, alias: str) -> None:
         loader:
           entrypoint: identity
           args: {{}}
+        freshness: opaque
         """
     ).strip()
     path.write_text(content + "\n", encoding="utf-8")
