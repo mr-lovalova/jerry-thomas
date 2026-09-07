@@ -1,24 +1,41 @@
 from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import json
 from pathlib import Path
 
 import pytest
 
+from jerrythomas.artifacts.specs import SERIES
 from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
 from jerrythomas.config.dataset.series import SeriesConfig
-from jerrythomas.config.dataset.split import DatasetFold, HashSplitConfig
+from jerrythomas.config.dataset.split import (
+    DatasetFold,
+    HashSplitConfig,
+    TimeInterval,
+    TimeSplitConfig,
+)
 from jerrythomas.config.interpolation import MissingInterpolation
 from jerrythomas.config.streams import SourceStreamConfig, StreamsConfig
-from jerrythomas.config.transforms import CustomTransformConfig
+from jerrythomas.config.tasks.metadata import MetadataTask
+from jerrythomas.config.tasks.series import SeriesTask
+from jerrythomas.config.transforms import (
+    CustomTransformConfig,
+    EnsureCadenceConfig,
+    WhereConfig,
+)
 from jerrythomas.domain.record import TemporalRecord
+from jerrythomas.operations.artifacts.metadata import build_metadata_artifact
+from jerrythomas.operations.artifacts.series import build_series_artifact
 from jerrythomas.pipelines.stream.pipeline import run_stream_pipeline
 from jerrythomas.pipelines.stream.stages import build_transform_stages
-from jerrythomas.runtime import Runtime
+from jerrythomas.runtime import Runtime, SourceRuntimeStream
 from jerrythomas.services.dataset import validate_dataset_streams
 from jerrythomas.services.project_definition import load_project_definition
 from jerrythomas.services.runtime_compiler import compile_runtime
 from jerrythomas.services.streams.validation import validate_stream_configs
 from jerrythomas.transforms.scoped import PartitionScopedTransform
+from jerrythomas.transforms.utils import clone_record
 
 
 def test_custom_transform_config_defaults() -> None:
@@ -105,6 +122,89 @@ def test_custom_transform_stage_scopes_state_per_partition(monkeypatch) -> None:
     )
 
     assert [row.total for row in rows] == [1.0, 3.0, 10.0, 30.0]
+
+
+def test_custom_transform_clone_keeps_placeholders_out_of_training_domain(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    @dataclass
+    class PriceRecord(TemporalRecord):
+        entity: str
+        value: float | None
+
+    class Prices:
+        def stream(self) -> Iterator[PriceRecord]:
+            for entity, hour, value in (
+                ("BASE", 1, 10.0),
+                ("BASE", 3, 30.0),
+                ("HOLDOUT", 0, 1.0),
+                ("HOLDOUT", 3, 3.0),
+            ):
+                yield PriceRecord(datetime(2024, 1, 1, hour, tzinfo=UTC), entity, value)
+
+    class DoubleValues(PartitionScopedTransform):
+        def process_partition(self, records):
+            for record in records:
+                value = None if record.value is None else record.value * 2
+                yield clone_record(record, value=value)
+
+    monkeypatch.setattr(
+        "jerrythomas.pipelines.stream.stages.load_entrypoint",
+        lambda group, name: DoubleValues,
+    )
+    runtime = Runtime(
+        project_yaml=tmp_path / "project.yaml",
+        artifacts_root=tmp_path,
+        dataset=DatasetConfig(
+            sample=SampleConfig(cadence="1h", keys=["entity"]),
+            features=[SeriesConfig(id="price", stream="prices", field="value")],
+            split=TimeSplitConfig(
+                intervals=[
+                    TimeInterval(id="train", until="2024-01-01T03:00:00Z"),
+                    TimeInterval(id="validation"),
+                ],
+                folds=[
+                    DatasetFold(id="fold", train=["train"], validation=["validation"])
+                ],
+            ),
+        ),
+    )
+    runtime.streams["prices"] = SourceRuntimeStream(
+        source=Prices(),
+        mapper=lambda records: records,
+        preprocess=(),
+        partition_by=("entity",),
+        presorted=True,
+        transforms=(
+            EnsureCadenceConfig(cadence="1h"),
+            WhereConfig(field="time", operator="ge", comparand="2024-01-01T01:00:00Z"),
+            CustomTransformConfig(entrypoint="double_values", writes=("value",)),
+        ),
+    )
+
+    series_task = SeriesTask()
+    result = build_series_artifact(runtime, series_task)
+    runtime.artifacts.register(SERIES, series_task.output, meta=result.meta)
+    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+
+    payload = json.loads((tmp_path / "metadata.json").read_text())
+    fold = payload["layout"]["folds"][0]
+    training = next(output for output in fold["outputs"] if output["role"] == "train")
+    assert training["sample"]["domain"] == [
+        {
+            "key": ["BASE"],
+            "start": "2024-01-01T01:00:00Z",
+            "end": "2024-01-01T02:00:00Z",
+        }
+    ]
+    validation = next(
+        output for output in fold["outputs"] if output["role"] == "validation"
+    )
+    assert [entry["key"] for entry in validation["sample"]["domain"]] == [
+        ["BASE"],
+        ["HOLDOUT"],
+    ]
 
 
 def test_custom_transform_stage_resolves_interpolated_args(monkeypatch) -> None:

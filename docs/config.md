@@ -267,6 +267,16 @@ mode: AUTO # AUTO | FORCE | "OFF"
 - Profile-level setting precedence is CLI > concrete profile >
   `<kind>.defaults.yaml` > built-ins. Command-wide `artifact_mode` precedence is
   CLI > `<command>.defaults.yaml` > `AUTO`.
+- A concrete profile's `output` block replaces the defaults' complete output
+  block. To inherit it, omit `output`; to replace it, provide a valid complete
+  block, including `transport`, `format`, and a filesystem `directory` where
+  required. `output: {format: csv}` alone is not a partial profile override.
+- `observability` and its nested `logging` mapping merge by field; lists such as
+  logging `outputs` are replaced. CLI `--output-*` flags override individual
+  output fields after profile defaults are applied. An omitted encoding stays
+  unspecified through that merge; filesystem text output then defaults to
+  UTF-8. An explicitly configured encoding remains subject to the selected
+  format's validation.
 
 Sorting is an execution policy, not part of a stream definition.
 Configure its buffer once in each command's defaults file:
@@ -331,8 +341,11 @@ options: {}
   implementations directly. A custom runtime operation's `entrypoint` must
   resolve in the `jerrythomas.operations.runtime` entry-point group.
 - `requires` declares additional prerequisite artifact operation IDs for custom or
-  built-in operations. Each referenced artifact and its dependency chain must
+  built-in runtime operations. Each referenced artifact and its dependency chain must
   have available producer operations.
+- Custom artifact operations accept `kind`, `entrypoint`, and `output`, with
+  their ID supplied by the filename. They do not accept `options` or `requires`;
+  their cache hashes conservatively cover the complete dataset and stream catalog.
 - Built-in runtime operation options are entrypoint-specific:
   - The `dataset` operation uses `core.runtime.dataset` internally and accepts
     no operation options. Limit, preview, throttle, output, and visuals can be
@@ -709,8 +722,8 @@ features:
 
 Notes:
 
-- `from.align` contains at least two canonical stream ids. List order defines
-  positional combine arguments.
+- `from.stream` names the first combine input; `join.streams` supplies at least
+  one more input. Their declared order defines positional combine arguments.
 - `combine` is required and cannot be replaced by the iterator-level `map`.
 - `combine.entrypoint` resolves from the `jerrythomas.combiners` plugin group.
 - Jerry normalizes timezone-aware combiner output timestamps to UTC.

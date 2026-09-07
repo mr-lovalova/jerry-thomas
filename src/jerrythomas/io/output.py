@@ -180,12 +180,15 @@ def resolve_output_target(
     else:
         filename = f"dataset{suffix}"
     dest_path = (base_dest_dir / filename).resolve()
+    encoding = config.encoding
+    if encoding is None and config.format in {"jsonl", "csv", "txt"}:
+        encoding = "utf-8"
 
     return OutputTarget(
         transport="fs",
         format=config.format,
         view=_resolve_view(config.format, config.view),
-        encoding=config.encoding,
+        encoding=encoding,
         destination=dest_path,
         compression=config.compression,
         run=run_paths,

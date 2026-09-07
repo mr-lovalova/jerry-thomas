@@ -119,13 +119,14 @@ def _compile_combined_stream(
 
 
 def compile_runtime(definition: ProjectDefinition) -> Runtime:
-    stream_configs = definition.streams.streams
+    streams = definition.streams.model_copy(deep=True)
+    stream_configs = streams.streams
     runtime_streams: dict[str, RuntimeStream] = {}
     for stream_id, config in stream_configs.items():
         if isinstance(config, SourceStreamConfig):
             runtime_streams[stream_id] = _compile_source_stream(
                 config,
-                definition.streams.sources[config.from_.source],
+                streams.sources[config.from_.source],
                 definition.project.path,
             )
         elif isinstance(config, DerivedStreamConfig):

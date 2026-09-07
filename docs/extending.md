@@ -14,23 +14,27 @@ Register custom components in your plugin’s `pyproject.toml`:
 
 ```toml
 [project.entry-points."jerrythomas.loaders"]
-demo.csv_loader = "my_datapipeline.loaders.csv:CsvLoader"
+"demo.csv_loader" = "my_datapipeline.loaders.csv:CsvLoader"
 
 [project.entry-points."jerrythomas.parsers"]
-demo.weather_parser = "my_datapipeline.parsers.weather:WeatherParser"
+"demo.weather_parser" = "my_datapipeline.parsers.weather:WeatherParser"
 
 [project.entry-points."jerrythomas.mappers"]
-time.ticks = "my_datapipeline.mappers.synthetic.ticks:map"
+"time.ticks" = "my_datapipeline.mappers.synthetic.ticks:map"
 
 [project.entry-points."jerrythomas.combiners"]
 air_density = "my_datapipeline.combiners.air_density:combine_air_density"
 
 [project.entry-points."jerrythomas.transforms"]
-issuer_states = "my_datapipeline.transforms:IssuerStatesTransform"
+previous_value = "my_datapipeline.transforms:PreviousValueTransform"
 
 [project.entry-points."jerrythomas.operations.runtime"]
-demo.report = "my_datapipeline.operations:run_report"
+"demo.report" = "my_datapipeline.operations:run_report"
 ```
+
+YAML `entrypoint` values name a registered entry in the corresponding group,
+such as `previous_value`. The `module:object` target belongs in `pyproject.toml`.
+Quote entry names containing dots so TOML treats each as one key.
 
 Each extension follows the contract of its entry-point group. A stream `map`
 receives an iterator and returns an iterable. An aligned stream `combine`
@@ -73,6 +77,13 @@ Jerry 10 removes result-owned `target`/`targets` fields and custom
 that used those Python APIs must return one `RuntimeOutput`; built-in dataset
 fanout remains available through dataset profiles.
 
+Custom artifact operations use the `jerrythomas.operations.build` group. Their
+configuration accepts `kind: artifact`, `entrypoint`, and `output`; the filename
+supplies the operation ID. They do not accept `options` or `requires`. Their
+cache hashes cover the complete dataset and stream catalog. Runtime plugins
+can declare prerequisite artifacts with `requires` and plugin settings with
+`options`; those capabilities do not extend to custom artifact operations.
+
 ### Custom Stream Transforms
 
 The `{operation: custom}` transform runs plugin code on one stream. The
@@ -84,23 +95,39 @@ partitions:
 
 ```python
 from jerrythomas.transforms.scoped import PartitionScopedTransform
+from jerrythomas.transforms.utils import clone_record
 
 
-class IssuerStatesTransform(PartitionScopedTransform):
+class PreviousValueTransform(PartitionScopedTransform):
     def process_partition(self, records):
-        state = None
+        previous = None
         for record in records:
-            ...
-            yield enriched
+            yield clone_record(record, previous_value=previous)
+            previous = record.value
 ```
 
 ```yaml
 transforms:
   - operation: custom
-    entrypoint: my_datapipeline.transforms:IssuerStatesTransform
-    args: {window: 5d}
-    writes: [ocf_ratio] # optional; declares outputs for validation
+    entrypoint: previous_value
+    args: {}
+    writes: [previous_value] # declares the added field for validation
 ```
+
+Use `clone_record(record, **updates)` to copy or enrich an existing record. It
+preserves the record class, dynamically added fields, and the provenance that
+distinguishes genuine observations from generated cadence placeholders. It is
+a shallow copy: unchanged nested values remain shared. Returning an unchanged
+input record is also valid. Cloning does not rerun a custom constructor or
+subclass validation; a `time` update does run Jerry's UTC timestamp validation.
+
+`dataclasses.replace()` drops dynamic fields and resets Jerry's private
+provenance field; constructing a new domain object from an existing record also
+loses that provenance. Neither is suitable for copying records inside a custom
+transform. Domain classes with custom constructors remain supported by
+`clone_record`; transform authors do not need to manipulate private metadata.
+When correcting an existing plugin to use this copying contract, increment
+`project.yaml:artifact_revision` and rebuild its artifacts.
 
 Custom transforms are stateful across time within a partition, so datasets
 using hash splits reject streams that contain them. Declare every field the

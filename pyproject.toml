@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jerry-thomas"
-version = "10.0.1"
+version = "10.0.2"
 description = "A stream-first temporal data pipeline runtime"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"

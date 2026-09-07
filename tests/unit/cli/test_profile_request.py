@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from jerrythomas.cli.commands.profile_runner import handle_serve
+from jerrythomas.cli.parser_builder import build_parser
 from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.execution.settings import CommandObservability, LogOutputTarget
 from jerrythomas.profiles.errors import ProfileCommandError
@@ -38,6 +40,43 @@ def _write_project(tmp_path: Path) -> Path:
     for directory in ("streams", "sources", "operations"):
         (tmp_path / directory).mkdir(parents=True, exist_ok=True)
     return project_yaml
+
+
+@pytest.mark.parametrize("output_file", ["serve.dataset.yaml", "serve.defaults.yaml"])
+def test_cli_format_override_resolves_real_request_without_text_encoding(
+    tmp_path: Path, monkeypatch, output_file: str
+) -> None:
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir()
+    (profiles / "serve.dataset.yaml").write_text(
+        "operation: dataset\n", encoding="utf-8"
+    )
+    with (profiles / output_file).open("a", encoding="utf-8") as profile_file:
+        profile_file.write(
+            "output:\n  transport: fs\n  format: jsonl\n  directory: out\n"
+        )
+    requests = []
+    monkeypatch.setattr(
+        "jerrythomas.cli.commands.profile_runner.execute_profile_request",
+        requests.append,
+    )
+    monkeypatch.setattr(
+        "jerrythomas.cli.commands.profile_runner.configure_profile_logging",
+        lambda *_args: None,
+    )
+    args = build_parser().parse_args(
+        ["serve", "--project", str(project_yaml), "--output-format", "parquet"]
+    )
+
+    handle_serve(args, workspace=None, cli_log_level=None, cli_log_outputs=[])
+
+    assert len(requests) == 1
+    output = requests[0].jobs[0].output
+    assert output.format == "parquet"
+    assert output.encoding is None
+    assert output.destination.name == "dataset.parquet"
+    assert output.destination.is_relative_to(tmp_path / "out")
 
 
 def test_build_request_requires_declared_build_profiles(tmp_path: Path):

@@ -86,9 +86,10 @@ orphaned, missing, altered, stale, and incomplete chains are left unavailable.
 Commands targeting the same artifacts root cannot overlap; a second command
 fails before reading or mutating managed artifacts.
 
-Jerry 10.0.1 advances the core artifact-cache revision for corrected numerical
-calculations. `AUTO` rebuilds required artifacts created under the previous
-revision. Project schemas and stored artifact formats remain unchanged.
+Jerry 10.0.2 advances the core artifact-cache revision to isolate mutable plugin
+configuration between runtimes. It includes the numerical corrections from
+10.0.1. `AUTO` rebuilds required artifacts created under the previous revision.
+Project schemas and stored artifact formats remain unchanged.
 
 Jerry 8 uses `schedule` consistently for the expected-timestamp artifact:
 

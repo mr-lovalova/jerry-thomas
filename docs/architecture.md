@@ -8,6 +8,9 @@ picked up by the next command. Its per-artifact hashes cover each producer's
 typed dependency and source closure plus the project's artifact revision.
 Mutable `Runtime`
 instances are compiled from the definition without reading configuration files.
+Each runtime owns a deep copy of the dataset and source/stream configuration,
+including nested plugin arguments. Runtime changes cannot alter the definition
+or another compiled runtime.
 
 ## Runtime streams
 
@@ -140,8 +143,9 @@ transforms:
 
 Pydantic validates operation-specific fields and rejects extras before the pipeline
 is built. Pipeline construction uses explicit type dispatch to create the transform.
-There is no generic transform engine, signature inspection, arbitrary keyword
-injection, transform plugin lookup, or debug transform registry.
+Built-in transforms use their explicit typed constructors. The `custom` branch
+resolves a registered transform factory with the fixed `(args, partition_by)`
+contract; it does not inspect signatures or inject arbitrary keywords.
 
 Sequence construction remains a series-pipeline stage rather than preprocess
 or an ordered stream transform. Scaling is applied later, after a dataset fold

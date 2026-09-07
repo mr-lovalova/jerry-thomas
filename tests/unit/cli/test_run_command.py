@@ -122,7 +122,7 @@ def test_merge_output_overrides_directory_only_inherits_profile_leaves() -> None
     assert merged is not None
     assert merged.transport == "fs"
     assert merged.format == "jsonl"
-    assert merged.encoding == "utf-8"
+    assert merged.encoding is None
     assert merged.directory == Path("elsewhere")
 
 
@@ -135,6 +135,28 @@ def test_merge_output_overrides_gzip_alone_applies_to_jsonl_profile() -> None:
 
     assert merged is not None
     assert merged.compression == "gzip"
+
+
+@pytest.mark.parametrize("format_", ["parquet", "pickle", "html"])
+def test_format_override_does_not_inherit_default_text_encoding(format_) -> None:
+    base = ServeOutputConfig(transport="fs", format="jsonl", directory=Path("out"))
+
+    merged = merge_output_overrides(base, {"format": format_})
+
+    assert merged is not None
+    assert merged.format == format_
+    assert merged.encoding is None
+    assert merged.directory == Path("out")
+
+
+@pytest.mark.parametrize("format_", ["parquet", "pickle", "html"])
+def test_format_override_still_rejects_explicit_text_encoding(format_) -> None:
+    base = ServeOutputConfig(
+        transport="fs", format="jsonl", directory=Path("out"), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match=f"{format_} output does not support encoding"):
+        merge_output_overrides(base, {"format": format_})
 
 
 def test_merge_output_overrides_rejects_invalid_combinations() -> None:

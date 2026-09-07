@@ -10,8 +10,8 @@ jerry.yaml: default_dataset
   -> datasets.<alias> = <path/to/project.yaml>
     -> project.yaml: paths.sources / paths.streams / paths.dataset
       -> sources/*.yaml: id
-        -> streams/*.yaml: from.source|from.stream|from.broadcast|
-                           from.as_of|from.broadcast_as_of|from.align, id
+        -> streams/*.yaml: id, from.source|from.stream
+                           optional join.kind and partner stream references
           -> dataset.yaml: stream: <streams.id>, field: <record_field>
             -> jerry serve
               -> runs/<run_id>/dataset/<profile>.jsonl|csv|parquet|...

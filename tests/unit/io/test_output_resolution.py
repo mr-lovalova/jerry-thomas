@@ -312,12 +312,24 @@ def test_resolve_output_target_honors_view(tmp_path):
     assert target.view == "flat"
 
 
-def test_resolve_output_target_honors_encoding(tmp_path):
+@pytest.mark.parametrize("format_", ["jsonl", "csv", "txt"])
+def test_resolve_output_target_defaults_text_encoding_after_config(tmp_path, format_):
+    config = ServeOutputConfig(transport="fs", format=format_, directory=tmp_path)
+
+    target = resolve_output_target(cli_output=None, config_output=config)
+
+    assert config.encoding is None
+    assert "encoding" not in config.model_fields_set
+    assert target.encoding == "utf-8"
+
+
+@pytest.mark.parametrize("format_", ["jsonl", "csv", "txt"])
+def test_resolve_output_target_honors_encoding(tmp_path, format_):
     out_dir = tmp_path / "outputs"
     out_dir.mkdir()
     cfg = ServeOutputConfig(
         transport="fs",
-        format="jsonl",
+        format=format_,
         encoding="utf-8-sig",
         directory=out_dir,
     )

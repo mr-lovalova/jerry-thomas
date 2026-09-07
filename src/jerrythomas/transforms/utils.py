@@ -90,7 +90,7 @@ def set_record_domain_anchor(record: object, establishes_domain: bool) -> None:
 
 
 def clone_record(record: TRecord, **updates: Any) -> TRecord:
-    """Return a shallow clone of record with updated fields."""
+    """Shallow-copy a record, preserving dynamic fields and domain provenance."""
     cloned = copy.copy(record)
     for key, value in updates.items():
         setattr(cloned, key, value)

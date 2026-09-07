@@ -1,15 +1,73 @@
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
 
+from jerrythomas.domain.record import TemporalRecord, public_record_fields
 from jerrythomas.transforms.utils import (
     adjacent_partitions,
+    clone_record,
     finite_number,
     finite_number_or_none,
     get_field,
     partition_key,
+    record_establishes_domain,
+    set_record_domain_anchor,
 )
 from tests.unit.transforms.helpers import make_time_record
+
+
+def test_clone_record_preserves_custom_constructor_and_dynamic_fields() -> None:
+    constructor_calls = 0
+
+    @dataclass(init=False)
+    class PluginRecord(TemporalRecord):
+        value: float
+
+        def __init__(self, time: datetime, value: float) -> None:
+            nonlocal constructor_calls
+            constructor_calls += 1
+            super().__init__(time)
+            self.value = value
+
+    time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    record = PluginRecord(time, 1.0)
+    record.history = [3.0, 4.0]
+    set_record_domain_anchor(record, False)
+
+    cloned = clone_record(record, value=2.0)
+
+    assert type(cloned) is PluginRecord
+    assert cloned is not record
+    assert constructor_calls == 1
+    assert record.value == 1.0
+    assert cloned.value == 2.0
+    assert cloned.history is record.history
+    assert not record_establishes_domain(cloned)
+    assert public_record_fields(cloned) == {
+        "time": time,
+        "value": 2.0,
+        "history": [3.0, 4.0],
+    }
+    assert "_establishes_domain" not in repr(cloned)
+
+
+def test_clone_record_normalizes_time_updates_without_mutating_input() -> None:
+    original_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    record = TemporalRecord(original_time)
+    set_record_domain_anchor(record, False)
+    updated_time = datetime(2024, 1, 2, tzinfo=timezone(timedelta(hours=2)))
+
+    cloned = clone_record(record, time=updated_time)
+
+    assert record.time == original_time
+    assert cloned.time == datetime(2024, 1, 1, 22, tzinfo=timezone.utc)
+    assert cloned.time.tzinfo is timezone.utc
+    assert not record_establishes_domain(cloned)
+    with pytest.raises(ValueError, match="time must be timezone-aware"):
+        clone_record(record, time=updated_time.replace(tzinfo=None))
+    assert record.time == original_time
 
 
 def test_adjacent_partitions_preserves_stream_group_boundaries() -> None:

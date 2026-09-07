@@ -1,8 +1,9 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from math import log, log1p
 
 import pytest
 
+from jerrythomas.artifacts.fingerprints import calculate_artifact_hashes
 from jerrythomas.config.cross_section import OlsResidualConfig, RankScoreConfig
 from jerrythomas.config.transforms import DedupeConfig
 from jerrythomas.domain.record import TemporalRecord
@@ -13,7 +14,7 @@ from jerrythomas.pipelines.stream.pipeline import (
     run_stream_preview_pipeline,
     run_stream_pipeline,
 )
-from jerrythomas.plugins import COMBINERS_EP
+from jerrythomas.plugins import COMBINERS_EP, LOADERS_EP, MAPPERS_EP, PARSERS_EP
 from jerrythomas.runtime import (
     AsOfRuntimeStream,
     BroadcastAsOfRuntimeStream,
@@ -24,6 +25,8 @@ from jerrythomas.runtime import (
 )
 from jerrythomas.services.project_definition import load_project_definition
 from jerrythomas.services.runtime_compiler import compile_runtime
+from jerrythomas.sources.loader import BaseDataLoader
+from jerrythomas.sources.parser import DataParser
 from jerrythomas.sources.source import Source
 
 
@@ -102,6 +105,210 @@ map:
     assert left.source is not right.source
     assert left.source.loader is not right.source.loader
     assert left.source.parser is not right.source.parser
+
+
+def test_compiled_runtimes_isolate_mutable_transform_configuration(tmp_path) -> None:
+    project_yaml, sources_dir, streams_dir, data_dir = _write_test_project(tmp_path)
+    (tmp_path / "dataset.yaml").write_text(
+        "sample: {cadence: 1h}\n"
+        "features: [{id: price, stream: selected, field: value}]\n",
+        encoding="utf-8",
+    )
+    (sources_dir / "prices.yaml").write_text(
+        "id: prices\n"
+        "parser: {entrypoint: core.temporal_record}\n"
+        "loader:\n"
+        "  transport: fs\n"
+        "  path: data/prices.jsonl\n"
+        "  reader: {format: jsonl}\n",
+        encoding="utf-8",
+    )
+    (streams_dir / "prices.yaml").write_text(
+        "id: prices\n"
+        "from: {source: prices}\n"
+        "map: {entrypoint: identity}\n"
+        "preprocess:\n"
+        "  - {operation: where, field: value, operator: in, comparand: [1, 2]}\n"
+        "transforms:\n"
+        "  - {operation: where, field: value, operator: in, comparand: [1]}\n",
+        encoding="utf-8",
+    )
+    (streams_dir / "selected.yaml").write_text(
+        "id: selected\n"
+        "from: {stream: prices}\n"
+        "transforms:\n"
+        "  - {operation: where, field: value, operator: in, comparand: [1, 2]}\n",
+        encoding="utf-8",
+    )
+    (data_dir / "prices.jsonl").write_text(
+        '{"time":"2024-01-01T00:00:00Z","value":1}\n'
+        '{"time":"2024-01-01T01:00:00Z","value":2}\n'
+        '{"time":"2024-01-01T02:00:00Z","value":3}\n',
+        encoding="utf-8",
+    )
+    definition = load_project_definition(project_yaml)
+    snapshot = definition.streams.model_dump(mode="json")
+    first = compile_runtime(definition)
+    second = compile_runtime(definition)
+    assert [record.value for record in run_stream_pipeline(second, "selected")] == [1]
+
+    first.streams["prices"].preprocess[0].comparand.append(3)
+    first.streams["prices"].transforms[0].comparand.extend([2, 3])
+    first.streams["selected"].transforms[0].comparand.append(3)
+
+    assert [record.value for record in run_stream_pipeline(first, "selected")] == [
+        1,
+        2,
+        3,
+    ]
+    assert [record.value for record in run_stream_pipeline(second, "selected")] == [1]
+    assert definition.streams.model_dump(mode="json") == snapshot
+    assert (
+        calculate_artifact_hashes(
+            definition.project,
+            definition.dataset,
+            definition.streams,
+            definition.artifact_graph,
+        )
+        == definition.artifact_hashes
+    )
+
+
+def test_compiled_runtimes_isolate_nested_plugin_arguments(
+    tmp_path, monkeypatch
+) -> None:
+    project_yaml, sources_dir, streams_dir, data_dir = _write_test_project(tmp_path)
+    (tmp_path / "dataset.yaml").write_text(
+        "sample: {cadence: 1h}\n"
+        "features: [{id: total, stream: combined, field: value}]\n",
+        encoding="utf-8",
+    )
+    (sources_dir / "numbers.yaml").write_text(
+        "id: numbers\n"
+        "freshness: opaque\n"
+        "loader:\n"
+        "  entrypoint: numbers\n"
+        "  args: {settings: {values: [1]}}\n"
+        "parser:\n"
+        "  entrypoint: price\n"
+        "  args: {settings: {offsets: []}}\n",
+        encoding="utf-8",
+    )
+    (sources_dir / "lookup.yaml").write_text(
+        "id: lookup\n"
+        "parser: {entrypoint: core.temporal_record}\n"
+        "loader:\n"
+        "  transport: fs\n"
+        "  path: data/lookup.jsonl\n"
+        "  reader: {format: jsonl}\n",
+        encoding="utf-8",
+    )
+    (streams_dir / "prices.yaml").write_text(
+        "id: prices\n"
+        "from: {source: numbers}\n"
+        "map:\n"
+        "  entrypoint: offset_prices\n"
+        "  args: {settings: {offsets: []}}\n",
+        encoding="utf-8",
+    )
+    (streams_dir / "lookup.yaml").write_text(
+        "id: lookup\nfrom: {source: lookup}\nmap: {entrypoint: identity}\n",
+        encoding="utf-8",
+    )
+    (streams_dir / "combined.yaml").write_text(
+        "id: combined\n"
+        "from: {stream: prices}\n"
+        "join: {kind: align, streams: [lookup]}\n"
+        "combine:\n"
+        "  entrypoint: add_prices\n"
+        "  args: {settings: {offsets: []}}\n",
+        encoding="utf-8",
+    )
+    (data_dir / "lookup.jsonl").write_text(
+        '{"time":"2024-01-01T00:00:00Z","value":3}\n'
+        '{"time":"2024-01-01T01:00:00Z","value":4}\n',
+        encoding="utf-8",
+    )
+
+    class NumbersLoader(BaseDataLoader):
+        def __init__(self, settings):
+            settings["values"].append(2)
+            self.values = settings["values"]
+
+        def load(self):
+            for hour, value in enumerate(self.values):
+                yield datetime(2024, 1, 1, hour, tzinfo=timezone.utc), value
+
+    class PriceParser(DataParser):
+        def __init__(self, settings):
+            settings["offsets"].append(10)
+            self.offsets = settings["offsets"]
+
+        def parse(self, raw):
+            time, value = raw
+            record = TemporalRecord(time=time)
+            record.value = value + sum(self.offsets)
+            return record
+
+    def offset_prices(records, settings):
+        settings["offsets"].append(20)
+        for record in records:
+            record.value += sum(settings["offsets"])
+            yield record
+
+    def add_prices(price, lookup, settings):
+        settings["offsets"].append(30)
+        record = TemporalRecord(time=price.time)
+        record.value = price.value + lookup.value + sum(settings["offsets"])
+        return record
+
+    from jerrythomas.services.streams import source as source_factories
+
+    load_entrypoint = source_factories.load_entrypoint
+    plugins = {
+        (LOADERS_EP, "numbers"): NumbersLoader,
+        (PARSERS_EP, "price"): PriceParser,
+        (MAPPERS_EP, "offset_prices"): offset_prices,
+        (COMBINERS_EP, "add_prices"): add_prices,
+    }
+
+    def source_plugin(group, entrypoint):
+        plugin = plugins.get((group, entrypoint))
+        return plugin if plugin is not None else load_entrypoint(group, entrypoint)
+
+    monkeypatch.setattr(source_factories, "load_entrypoint", source_plugin)
+    monkeypatch.setattr(
+        "jerrythomas.services.streams.combine.load_entrypoint",
+        lambda group, entrypoint: plugins[group, entrypoint],
+    )
+    definition = load_project_definition(project_yaml)
+    snapshot = definition.streams.model_dump(mode="json")
+
+    first = compile_runtime(definition)
+    assert definition.streams.model_dump(mode="json") == snapshot
+    second = compile_runtime(definition)
+    assert definition.streams.model_dump(mode="json") == snapshot
+    expected = [
+        (datetime(2024, 1, 1, 0, tzinfo=timezone.utc), 64),
+        (datetime(2024, 1, 1, 1, tzinfo=timezone.utc), 96),
+    ]
+    assert [
+        (record.time, record.value) for record in run_stream_pipeline(first, "combined")
+    ] == expected
+    assert [
+        (record.time, record.value)
+        for record in run_stream_pipeline(second, "combined")
+    ] == expected
+    assert definition.streams.model_dump(mode="json") == snapshot
+    assert (
+        calculate_artifact_hashes(
+            definition.project,
+            definition.dataset,
+            definition.streams,
+            definition.artifact_graph,
+        )
+        == definition.artifact_hashes
+    )
 
 
 def test_yaml_derived_stream_runs_with_inherited_partition(tmp_path) -> None:

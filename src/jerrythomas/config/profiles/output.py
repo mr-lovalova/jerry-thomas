@@ -122,9 +122,7 @@ class ServeOutputConfig(BaseModel):
             if self.format in {"parquet", "pickle", "html"}:
                 if self.encoding is not None:
                     raise ValueError(f"{self.format} output does not support encoding")
-            elif self.format in {"jsonl", "csv", "txt"}:
-                if self.encoding is None:
-                    self.encoding = "utf-8"
+            elif self.encoding is not None:
                 try:
                     codecs.lookup(self.encoding)
                 except LookupError as exc:
