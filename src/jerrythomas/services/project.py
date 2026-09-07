@@ -1,6 +1,7 @@
 from pathlib import Path
 from types import MappingProxyType
 
+from jerrythomas.config.interpolation import coalesce_missing_interpolation
 from jerrythomas.config.project import PROJECT_SCHEMA_VERSION, ProjectConfig
 from jerrythomas.services.config_refs import (
     interpolate_config_vars,
@@ -39,6 +40,11 @@ def load_project(project_yaml: Path) -> ProjectManifest:
     environment = merged_project_env(path)
     data = resolve_config_refs(document.data, project_yaml=path, env=environment)
     variables = project_vars_from_data(data)
+    raw_globals = data.get("globals")
+    if isinstance(raw_globals, dict):
+        for bound in ("start_time", "end_time"):
+            if isinstance(raw_globals.get(bound), str):
+                raw_globals[bound] = coalesce_missing_interpolation(variables[bound])
     raw_paths = data.get("paths")
     if isinstance(raw_paths, dict):
         data["paths"] = interpolate_config_vars(raw_paths, variables)

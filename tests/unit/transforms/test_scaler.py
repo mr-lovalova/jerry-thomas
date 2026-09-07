@@ -1,5 +1,6 @@
 import json
 from math import isclose
+from statistics import mean, pstdev
 
 import pytest
 from pydantic import ValidationError
@@ -56,6 +57,50 @@ def test_accumulator_uses_epsilon_for_constant_values() -> None:
     accumulator.observe("x", 4.0)
 
     assert accumulator.artifact().statistics["x"].std == 0.25
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        [1e16, 1e16 + 2.0],
+        [1e12 + index * 0.001 for index in range(1000)],
+        [1e16, -1e16, 1.0, 1.0],
+        [1e16, -1e16, 1.0, 1e16, -1e16],
+        [0.25, 0.125, 0.5],
+    ],
+)
+def test_accumulator_preserves_spread_at_large_offsets(values: list[float]) -> None:
+    accumulator = ScalerAccumulator()
+    for value in values:
+        accumulator.observe("x", value)
+
+    statistics = accumulator.artifact().statistics["x"]
+
+    assert statistics.mean == mean(values)
+    assert statistics.std == pytest.approx(pstdev(values), rel=1e-12)
+
+
+def test_accumulator_preserves_spread_in_list_positions_at_large_offsets() -> None:
+    accumulator = ScalerAccumulator()
+    accumulator.observe("x", [1e16, None])
+    accumulator.observe("x", [1e16 + 2.0, 1e16])
+    accumulator.observe("x", [None, 1e16 + 2.0])
+
+    statistics = accumulator.artifact().statistics["x"]
+
+    assert isinstance(statistics, PositionalScalerStatistics)
+    assert [position.std for position in statistics.positions] == [1.0, 1.0]
+    assert [position.count for position in statistics.positions] == [2, 2]
+
+
+def test_accumulator_fits_large_constant_values_without_sum_overflow() -> None:
+    accumulator = ScalerAccumulator()
+    for _ in range(10):
+        accumulator.observe("x", 1e308)
+
+    assert accumulator.artifact().statistics["x"] == ScalerStatistics(
+        mean=1e308, std=1e-12, count=10
+    )
 
 
 def test_accumulator_ignores_none() -> None:

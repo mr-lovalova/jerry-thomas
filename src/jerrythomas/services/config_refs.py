@@ -255,6 +255,16 @@ def _parse_dotenv_line(line: str) -> tuple[str, str] | None:
         return key, ""
 
     quote = value[0]
+    if quote in {"'", '"'}:
+        index = 1
+        while index < len(value):
+            if quote == '"' and value[index] == "\\":
+                index += 2
+                continue
+            if value[index] == quote and value[index + 1 :].lstrip().startswith("#"):
+                value = value[: index + 1]
+                break
+            index += 1
     if quote in {"'", '"'} and value.endswith(quote):
         inner = value[1:-1]
         if quote == '"':

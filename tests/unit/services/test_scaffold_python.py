@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from tomlkit.exceptions import ParseError
 
-from jerrythomas.plugins import LOADERS_EP
+from jerrythomas.plugins import LOADERS_EP, MAPPERS_EP
 from jerrythomas.services.scaffold.entrypoints import read_entry_points
 from jerrythomas.services.scaffold.loader import create_loader
 from jerrythomas.services.scaffold.mapper import create_mapper
@@ -67,6 +67,46 @@ def test_mapper_validates_pyproject_before_creating_files(tmp_path: Path) -> Non
         )
 
     assert not (plugin / "src" / "plugin" / "mappers").exists()
+
+
+@pytest.mark.parametrize("name", ["Class", "Import", "Return"])
+def test_mapper_rejects_names_that_normalize_to_python_keywords(
+    tmp_path: Path,
+    name: str,
+) -> None:
+    plugin = _valid_plugin(tmp_path)
+    pyproject = plugin / "pyproject.toml"
+    original = pyproject.read_bytes()
+
+    with pytest.raises(ValueError, match="valid Python identifier"):
+        create_mapper(
+            name=name,
+            input_class="Any",
+            input_module="typing",
+            domain="weather",
+            root=plugin,
+        )
+
+    assert not (plugin / "src" / "plugin" / "mappers").exists()
+    assert pyproject.read_bytes() == original
+
+
+def test_mapper_generates_a_valid_normalized_function(tmp_path: Path) -> None:
+    plugin = _valid_plugin(tmp_path)
+
+    entry_point = create_mapper(
+        name="MapWeather",
+        input_class="Any",
+        input_module="typing",
+        domain="weather",
+        root=plugin,
+    )
+
+    source_path = plugin / "src" / "plugin" / "mappers" / "map_weather.py"
+    compile(source_path.read_text(encoding="utf-8"), str(source_path), "exec")
+    assert read_entry_points(plugin / "pyproject.toml", MAPPERS_EP) == {
+        entry_point: "plugin.mappers.map_weather:map_weather"
+    }
 
 
 def test_loader_rejects_python_keyword_name(tmp_path: Path) -> None:

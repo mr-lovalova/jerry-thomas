@@ -68,18 +68,18 @@ def _observe_values(
         entry.observe(value, observed_at)
 
 
-def _same_vector_schema(
-    complete: VectorMetadataStats,
+def _training_covers_vector_schema(
     training: VectorMetadataStats,
+    selected: VectorMetadataStats,
 ) -> bool:
-    if complete.kind != training.kind:
+    if selected.kind != training.kind:
         return False
-    if complete.kind == "list":
+    if selected.kind == "list":
         return (
-            complete.list_length == training.list_length
-            and complete.element_types - {"null"} == training.element_types - {"null"}
+            selected.list_length == training.list_length
+            and selected.element_types - {"null"} <= training.element_types
         )
-    return complete.scalar_types == training.scalar_types
+    return selected.scalar_types <= training.scalar_types
 
 
 def _incompatible_series_ids(
@@ -89,9 +89,9 @@ def _incompatible_series_ids(
     incompatible = []
     for series_id, selected_stats in selected.items():
         training_stats = training.get(series_id)
-        if training_stats is None or not _same_vector_schema(
-            selected_stats,
+        if training_stats is None or not _training_covers_vector_schema(
             training_stats,
+            selected_stats,
         ):
             incompatible.append(series_id)
     return sorted(incompatible)

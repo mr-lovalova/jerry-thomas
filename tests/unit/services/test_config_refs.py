@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -180,12 +181,16 @@ _DOTENV_ESCAPE_CASES = [
     ('BACKSLASH_BEFORE_QUOTE="abc\\\\"', "abc\\"),
     ('UNKNOWN_ESCAPE="\\q"', "\\q"),
     ("SINGLE_QUOTED='a\\nb'", "a\\nb"),
+    ('DOUBLE_QUOTED_HASH="a # b"', "a # b"),
+    ("SINGLE_QUOTED_HASH='a # b'", "a # b"),
 ]
 
 
+@pytest.mark.parametrize("comment", ["", ' # local "comment"'])
 def test_project_dotenv_decodes_escapes_left_to_right(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    comment: str,
 ) -> None:
     keys = [line.split("=", 1)[0] for line, _ in _DOTENV_ESCAPE_CASES]
     for key in keys:
@@ -194,7 +199,7 @@ def test_project_dotenv_decodes_escapes_left_to_right(
     project_root.mkdir(parents=True)
     _write_project_files(project_root)
     (project_root / ".env").write_text(
-        "".join(f"{line}\n" for line, _ in _DOTENV_ESCAPE_CASES),
+        "".join(f"{line}{comment}\n" for line, _ in _DOTENV_ESCAPE_CASES),
         encoding="utf-8",
     )
     project_yaml = _write_project_yaml(
@@ -296,6 +301,78 @@ def test_globals_can_reference_other_globals(tmp_path: Path) -> None:
     globals_ = _project_variables(project_yaml)
 
     assert globals_["canonical_equity_interim_dir"] == ("data/canonical/equity/interim")
+
+
+@pytest.mark.parametrize("field", ["start_time", "end_time"])
+def test_project_time_bounds_resolve_global_aliases(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    project_yaml = _write_project_yaml(
+        tmp_path,
+        globals_lines=[
+            "data_boundary: 2024-01-01T00:00:00Z",
+            f"{field}: ${{data_boundary}}",
+        ],
+    )
+
+    project = load_project(project_yaml)
+
+    assert getattr(project.config.globals, field) == datetime(
+        2024, 1, 1, tzinfo=timezone.utc
+    )
+    assert project.variables[field] == "2024-01-01T00:00:00Z"
+
+
+@pytest.mark.parametrize("field", ["start_time", "end_time"])
+def test_project_time_bounds_accept_aliases_to_null(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    project_yaml = _write_project_yaml(
+        tmp_path,
+        globals_lines=["optional_boundary:", f"{field}: ${{optional_boundary}}"],
+    )
+
+    project = load_project(project_yaml)
+
+    assert getattr(project.config.globals, field) is None
+    assert is_missing_interpolation(project.variables[field])
+
+
+def test_project_time_range_validates_resolved_aliases(tmp_path: Path) -> None:
+    project_yaml = _write_project_yaml(
+        tmp_path,
+        globals_lines=[
+            "data_start: 2024-01-02T00:00:00Z",
+            "data_end: 2024-01-01T00:00:00Z",
+            "start_time: ${data_start}",
+            "end_time: ${data_end}",
+        ],
+    )
+
+    with pytest.raises(ValueError, match="start_time must not be after"):
+        load_project(project_yaml)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["2024-01-01T00:00:00.123456Z", '"2024-01-01T00:00:00.123456Z"'],
+)
+def test_project_preserves_literal_time_bound_precision(
+    tmp_path: Path,
+    value: str,
+) -> None:
+    project_yaml = _write_project_yaml(
+        tmp_path,
+        globals_lines=[f"start_time: {value}"],
+    )
+
+    project = load_project(project_yaml)
+
+    assert project.config.globals.start_time == datetime(
+        2024, 1, 1, microsecond=123456, tzinfo=timezone.utc
+    )
 
 
 def test_load_sources_resolve_nested_globals_before_fs_path_normalization(

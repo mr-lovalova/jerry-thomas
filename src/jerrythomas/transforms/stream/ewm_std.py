@@ -10,22 +10,14 @@ from jerrythomas.transforms.utils import (
 )
 
 
-_REBASE_INTERVAL = 1024
-
-
 class EwmStdTransform:
     """Compute a recursive exponentially weighted standard deviation.
 
     Weights decay geometrically by ``1 - alpha`` per real observation; the
-    newest observation carries weight 1. The variance recursion tracks
-    deviations from a shifting origin so accuracy does not degrade when the
-    series level is far from zero, and the origin is periodically rebased to
-    the current weighted mean. Missing values freeze the state entirely and
-    do not advance the decay.
-
-    The accumulators hold unnormalized weight sums, so both decay by
-    ``1 - alpha`` per observation; normalizing by the tracked total weight
-    happens only when the variance is read.
+    newest observation carries weight 1. Track central squared deviations and
+    the mean's offset from the newest observation to preserve small spreads
+    at large levels. Missing values freeze the state and do not advance decay.
+    Normalize the squared deviations by total weight when reading variance.
     """
 
     def __init__(
@@ -72,8 +64,8 @@ def _roll_partition(
     sample_count = 0
     origin = 0.0
     weight = 0.0
-    offset_sum = 0.0
-    squared_offset_sum = 0.0
+    mean_offset = 0.0
+    squared_deviations = 0.0
 
     for record in records:
         value = finite_number_or_none(get_field(record, field), field)
@@ -82,30 +74,21 @@ def _roll_partition(
             if sample_count == 1 or alpha == 1.0:
                 origin = value
                 weight = 1.0
-                offset_sum = 0.0
-                squared_offset_sum = 0.0
+                mean_offset = 0.0
+                squared_deviations = 0.0
             else:
-                weight = beta * weight + 1.0
-                offset_sum *= beta
-                squared_offset_sum *= beta
-                offset = value - origin
-                offset_sum += offset
-                squared_offset_sum += offset * offset
-                mean = origin + offset_sum / weight
-                if (sample_count - 1) % _REBASE_INTERVAL == 0:
-                    delta_origin = mean - origin
-                    if delta_origin != 0.0:
-                        squared_offset_sum += (
-                            -2.0 * delta_origin * offset_sum
-                            + delta_origin * delta_origin * weight
-                        )
-                        offset_sum -= delta_origin * weight
-                        origin = mean
+                previous_weight = beta * weight
+                weight = previous_weight + 1.0
+                previous_fraction = previous_weight / weight
+                delta = (value - origin) - mean_offset
+                squared_deviations = (
+                    beta * squared_deviations + previous_fraction * delta * delta
+                )
+                mean_offset = -previous_fraction * delta
+                origin = value
 
         if sample_count >= min_samples and sample_count > 1 and alpha != 1.0:
-            variance = (
-                squared_offset_sum - offset_sum * offset_sum / weight
-            ) / weight
+            variance = squared_deviations / weight
             if not isfinite(variance):
                 raise OverflowError(
                     f"EWM std field {field!r} exceeds the supported "

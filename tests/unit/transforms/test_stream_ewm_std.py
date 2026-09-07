@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from fractions import Fraction
 from math import sqrt
 
 import pytest
@@ -98,15 +99,33 @@ def test_ewm_std_survives_large_level_offsets() -> None:
     assert 0.0005 < actual[-1] < 0.002
 
 
-def test_ewm_std_rebasing_stays_exact(monkeypatch) -> None:
-    import jerrythomas.transforms.stream.ewm_std as module
+def test_ewm_std_matches_reference_across_large_level_changes() -> None:
     from random import Random
 
-    monkeypatch.setattr(module, "_REBASE_INTERVAL", 5)
     rng = Random(11)
     values = [rng.uniform(-1e6, 1e6) + rng.gauss(0.0, 1.0) for _ in range(60)]
 
     _assert_matches_reference(values, alpha=0.15)
+
+
+@pytest.mark.parametrize("sample_count", [100, 2100])
+def test_ewm_std_preserves_spread_after_a_level_change(sample_count: int) -> None:
+    values = [0.0] + [1e8 + index % 2 for index in range(sample_count)]
+    weights = [Fraction(1, 2) ** age for age in reversed(range(len(values)))]
+    weight_sum = sum(weights)
+    mean = (
+        sum(weight * Fraction(value) for weight, value in zip(weights, values))
+        / weight_sum
+    )
+    variance = (
+        sum(
+            weight * (Fraction(value) - mean) ** 2
+            for weight, value in zip(weights, values)
+        )
+        / weight_sum
+    )
+
+    assert _actual(values, alpha=0.5)[-1] == pytest.approx(sqrt(variance), rel=1e-12)
 
 
 def test_ewm_std_freezes_state_across_missing_values() -> None:
@@ -173,6 +192,15 @@ def test_ewm_std_min_samples_gates_output() -> None:
     assert all(value is not None for value in outputs[3:])
 
 
+def test_ewm_std_requires_two_observations_when_min_samples_is_one() -> None:
+    assert _actual([None, 1.0, None, 3.0], alpha=0.5, min_samples=1) == [
+        None,
+        None,
+        None,
+        pytest.approx(sqrt(8 / 9)),
+    ]
+
+
 def test_ewm_std_config_rejects_invalid_alpha() -> None:
     with pytest.raises(ValidationError, match="alpha"):
         EwmStdConfig(field="value", alpha=0.0)
@@ -187,9 +215,7 @@ def test_hash_splits_reject_ewm_std() -> None:
             "from": {"source": "raw"},
             "map": {"entrypoint": "identity"},
             "partition_by": ["ticker"],
-            "transforms": [
-                {"operation": "ewm_std", "field": "close", "alpha": 0.3}
-            ],
+            "transforms": [{"operation": "ewm_std", "field": "close", "alpha": 0.3}],
         }
     )
     dataset = DatasetConfig(

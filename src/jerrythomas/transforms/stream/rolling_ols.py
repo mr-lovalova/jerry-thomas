@@ -53,8 +53,14 @@ class _RollingOlsWindow:
         np = self._np
         try:
             with np.errstate(over="raise", invalid="raise"):
-                predictors = self._predictors - self._predictors.mean(axis=0)
-                response = self._response - self._response.mean()
+                predictor_origin = (
+                    self._predictors.min(axis=0) / 2 + self._predictors.max(axis=0) / 2
+                )
+                predictors = self._predictors - predictor_origin
+                predictors -= predictors.mean(axis=0)
+                response_origin = self._response.min() / 2 + self._response.max() / 2
+                response = self._response - response_origin
+                response -= response.mean()
                 coefficients, _, rank, _ = np.linalg.lstsq(
                     predictors,
                     response,

@@ -1,6 +1,7 @@
 import math
 from collections.abc import Collection, Iterator
 from dataclasses import dataclass, replace
+from fractions import Fraction
 from numbers import Real
 
 from jerrythomas.artifacts.scaler import (
@@ -15,21 +16,36 @@ from jerrythomas.domain.vector import Vector
 
 @dataclass(slots=True)
 class _RunningStatistics:
+    """Keep exact binary moments until fitting population statistics."""
+
     count: int = 0
-    mean: float = 0.0
-    squared_deviations: float = 0.0
+    total: int = 0
+    squared_total: int = 0
+    denominator: int = 1
 
     def observe(self, value: float) -> None:
+        numerator, denominator = value.as_integer_ratio()
+        # Float denominators are powers of two, so integer rescaling is exact.
+        if denominator > self.denominator:
+            scale = denominator // self.denominator
+            self.total *= scale
+            self.squared_total *= scale * scale
+            self.denominator = denominator
+        else:
+            numerator *= self.denominator // denominator
         self.count += 1
-        delta = value - self.mean
-        self.mean += delta / self.count
-        self.squared_deviations += delta * (value - self.mean)
+        self.total += numerator
+        self.squared_total += numerator * numerator
 
     def finish(self, epsilon: float) -> ScalerStatistics:
-        variance = self.squared_deviations / self.count
+        denominator = self.denominator * self.count
+        variance = Fraction(
+            self.squared_total * self.count - self.total * self.total,
+            denominator * denominator,
+        )
         return ScalerStatistics(
-            mean=self.mean,
-            std=max(math.sqrt(max(variance, 0.0)), epsilon),
+            mean=float(Fraction(self.total, denominator)),
+            std=max(math.sqrt(variance), epsilon),
             count=self.count,
         )
 

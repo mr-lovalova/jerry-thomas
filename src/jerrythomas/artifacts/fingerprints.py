@@ -28,7 +28,7 @@ from jerrythomas.services.definitions import ArtifactHashes, ProjectManifest
 from jerrythomas.services.streams.validation import stream_dependency_closure
 
 # Increment when Jerry's core artifact semantics change without a config change.
-ARTIFACT_CACHE_VERSION = 9
+ARTIFACT_CACHE_VERSION = 10
 
 
 def _normalized_label(path: Path, base_dir: Path) -> str:

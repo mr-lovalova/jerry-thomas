@@ -180,6 +180,48 @@ def test_rolling_ols_reports_floating_point_overflow() -> None:
         )
 
 
+def test_rolling_ols_preserves_coefficients_with_a_rounded_predictor_mean() -> None:
+    # stock = 1 + 3 * market + (credit - 1e16), with an exact coefficient of 1.
+    rows = [
+        (0.0, 1e16, 1.0),
+        (1.0, 1e16, 4.0),
+        (0.0, 1e16 + 2.0, 3.0),
+    ]
+
+    assert _coefficients(rows, window=3)[-1] == pytest.approx(1.0, rel=1e-12, abs=1e-12)
+
+
+def test_rolling_ols_preserves_finite_fits_across_large_ranges() -> None:
+    rows = [
+        (-1e308, 0.0, -1.0),
+        (1e308, 0.0, 1.0),
+        (0.0, -1e308, -2.0),
+        (0.0, 1e308, 2.0),
+    ]
+
+    assert _coefficients(rows, window=4)[-1] == pytest.approx(
+        2e-308, rel=1e-12, abs=0.0
+    )
+
+
+def test_rolling_ols_preserves_finite_fits_across_large_response_ranges() -> None:
+    rows = [
+        (-1.0, 0.0, -1.7e308),
+        (1.0, 0.0, 1.7e308),
+        (0.0, -1.0, -1.7e308),
+        (0.0, 1.0, 1.7e308),
+    ]
+
+    assert _coefficients(rows, window=4)[-1] == pytest.approx(1.7e308, rel=1e-12)
+
+
+def test_rolling_ols_preserves_coefficients_at_large_response_levels() -> None:
+    # stock = 1e16 + 2 * market + 2 * credit.
+    rows = [(0.0, 0.0, 1e16), (1.0, 0.0, 1e16 + 2), (0.0, 1.0, 1e16 + 2)]
+
+    assert _coefficients(rows, window=3)[-1] == pytest.approx(2.0, rel=1e-12)
+
+
 def test_rolling_ols_rejects_rank_deficient_windows() -> None:
     with pytest.raises(ValueError, match="rank deficient"):
         _coefficients(

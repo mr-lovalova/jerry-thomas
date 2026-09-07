@@ -148,8 +148,14 @@ class OlsResidualTransform:
         )
         try:
             with np.errstate(over="raise", invalid="raise"):
-                centered_predictors = predictors - predictors.mean(axis=0)
-                centered_response = response - response.mean()
+                predictor_origin = (
+                    predictors.min(axis=0) / 2 + predictors.max(axis=0) / 2
+                )
+                centered_predictors = predictors - predictor_origin
+                centered_predictors -= centered_predictors.mean(axis=0)
+                response_origin = response.min() / 2 + response.max() / 2
+                centered_response = response - response_origin
+                centered_response -= centered_response.mean()
                 coefficients, _, rank, _ = np.linalg.lstsq(
                     centered_predictors,
                     centered_response,

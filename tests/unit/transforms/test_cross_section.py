@@ -1,4 +1,5 @@
 import builtins
+import warnings
 from datetime import datetime, timezone
 
 import pytest
@@ -140,6 +141,93 @@ def test_ols_residual_matches_an_exact_linear_model_with_an_intercept() -> None:
     assert [record.residual for record in output] == pytest.approx(
         [0.0, 0.0, 0.0, 0.0],
         abs=1e-12,
+    )
+
+
+@pytest.mark.parametrize(
+    ("predictor_offset", "response_offset"),
+    [(1e16, 0.0), (0.0, 1e16)],
+)
+def test_ols_residual_preserves_exact_fits_with_rounded_means(
+    predictor_offset: float,
+    response_offset: float,
+) -> None:
+    records = [
+        _record(
+            0.0,
+            market=predictor_offset + market,
+            size=size,
+            stock=response_offset + market,
+        )
+        for market, size in [(0.0, 0.0), (0.0, 1.0), (2.0, 0.0)]
+    ]
+
+    output = OlsResidualTransform(
+        "stock", ("market", "size"), "residual", min_samples=3
+    ).apply(records)
+
+    assert [record.residual for record in output] == pytest.approx(
+        [0.0, 0.0, 0.0], abs=1e-12
+    )
+
+
+def test_ols_residual_preserves_finite_fits_across_large_ranges() -> None:
+    records = [
+        _record(0.0, market=market, stock=stock)
+        for market, stock in [(-1e308, -1.0), (1e308, 1.0), (0.0, 0.0)]
+    ]
+
+    output = OlsResidualTransform(
+        "stock", ("market",), "residual", min_samples=2
+    ).apply(records)
+
+    assert [record.residual for record in output] == pytest.approx(
+        [0.0, 0.0, 0.0], abs=1e-12
+    )
+
+
+def test_ols_residual_reports_nonfinite_fits_from_finite_inputs() -> None:
+    records = [
+        _record(0.0, market=market, stock=stock)
+        for market, stock in [(-1e-308, -1e308), (0.0, 0.0), (1e-308, 1e308)]
+    ]
+    transform = OlsResidualTransform("stock", ("market",), "residual", min_samples=2)
+
+    with (
+        warnings.catch_warnings(),
+        pytest.raises(OverflowError, match="floating-point range"),
+    ):
+        warnings.simplefilter("error")
+        transform.apply(records)
+
+
+def test_ols_residual_preserves_each_predictors_spread_at_different_levels() -> None:
+    records = [
+        _record(0.0, market=1e16 + market, size=size, stock=2 * market + 0.5 * size)
+        for market, size in [(0.0, 0.0), (2.0, 0.25), (4.0, 0.25), (6.0, 0.0)]
+    ]
+
+    output = OlsResidualTransform(
+        "stock", ("market", "size"), "residual", min_samples=3
+    ).apply(records)
+
+    assert [record.residual for record in output] == pytest.approx(
+        [0.0, 0.0, 0.0, 0.0], abs=1e-12
+    )
+
+
+def test_ols_residual_preserves_nonzero_residuals_at_large_response_levels() -> None:
+    records = [
+        _record(0.0, market=market, stock=stock)
+        for market, stock in [(0.0, 1e16), (1.0, 1e16 + 2), (0.0, 1e16 + 4)]
+    ]
+
+    output = OlsResidualTransform(
+        "stock", ("market",), "residual", min_samples=2
+    ).apply(records)
+
+    assert [record.residual for record in output] == pytest.approx(
+        [-2.0, 0.0, 2.0], abs=1e-12
     )
 
 

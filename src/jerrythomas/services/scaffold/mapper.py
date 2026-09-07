@@ -41,6 +41,11 @@ def mapper_scaffold_paths(name: str, root: Path | None) -> tuple[Path, ...]:
 def validate_mapper_creation(name: str, root: Path | None) -> None:
     if not is_python_identifier(name):
         raise ValueError("Mapper name must be a valid Python identifier")
+    if not is_python_identifier(to_snake(name)):
+        raise ValueError(
+            "Mapper name must produce a valid Python identifier after "
+            "snake_case normalization"
+        )
     _, _, pyproject = pkg_root(root)
     entrypoint = ep_key_from_name(name)
     if entrypoint in read_entry_points(pyproject, MAPPERS_EP):
