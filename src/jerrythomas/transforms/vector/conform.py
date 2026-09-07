@@ -30,22 +30,18 @@ class _VectorConformer:
         for entry in self.entries:
             value = values.get(entry.id)
             if is_missing(value):
-                conformed[entry.id] = (
-                    None if entry.kind == "scalar" else [None] * entry.length
-                )
-                continue
-            if entry.kind == "scalar":
+                value = None if entry.kind == "scalar" else [None] * entry.length
+            elif entry.kind == "scalar":
                 if isinstance(value, list):
                     raise TypeError(f"Vector id {entry.id!r} must contain a scalar.")
-                conformed[entry.id] = value
-                continue
-            if not isinstance(value, list):
-                raise TypeError(f"Vector id {entry.id!r} must contain a list.")
-            if len(value) != entry.length:
-                raise ValueError(
-                    f"Vector id {entry.id!r} requires {entry.length} values; "
-                    f"got {len(value)}."
-                )
+            else:
+                if not isinstance(value, list):
+                    raise TypeError(f"Vector id {entry.id!r} must contain a list.")
+                if len(value) != entry.length:
+                    raise ValueError(
+                        f"Vector id {entry.id!r} requires {entry.length} values; "
+                        f"got {len(value)}."
+                    )
             conformed[entry.id] = value
         return conformed
 

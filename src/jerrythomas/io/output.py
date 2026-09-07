@@ -45,13 +45,6 @@ def _resolve_view(fmt: Format, configured_view: View | None) -> View:
     return configured_view or _default_view_for_format(fmt)
 
 
-def _default_filename_for_format(
-    fmt: Format,
-    compression: Compression | None,
-) -> str:
-    return f"dataset{_output_suffix(fmt, compression)}"
-
-
 @dataclass(frozen=True)
 class OutputTarget:
     """Resolved writer target describing how and where to emit records."""
@@ -185,7 +178,7 @@ def resolve_output_target(
                 )
         filename = f"{filename_stem}{suffix}"
     else:
-        filename = _default_filename_for_format(config.format, config.compression)
+        filename = f"dataset{suffix}"
     dest_path = (base_dest_dir / filename).resolve()
 
     return OutputTarget(

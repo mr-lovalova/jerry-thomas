@@ -223,31 +223,20 @@ def _serve_fold_outputs(
         plans,
     )
     rows = throttle_items(samples, throttle_ms)
-    tables = (
-        {
-            output_id: _served_dataset_table(
-                runtime,
-                plan.schema,
-            )
-            for plan in plans
-            for output_id in plan.outputs
-        }
-        if output_format == "parquet"
-        else None
-    )
-    output = (
-        RoutedDatasetTableOutput(
+    if output_format == "parquet":
+        return RoutedDatasetTableOutput(
             rows=rows,
-            tables=tables,
+            tables={
+                output_id: _served_dataset_table(runtime, plan.schema)
+                for plan in plans
+                for output_id in plan.outputs
+            },
             limit_per_output=limit,
         )
-        if tables is not None
-        else RoutedRuntimeOutput(
-            rows=rows,
-            limit_per_output=limit,
-        )
+    return RoutedRuntimeOutput(
+        rows=rows,
+        limit_per_output=limit,
     )
-    return output
 
 
 def _served_dataset_table(

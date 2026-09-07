@@ -23,8 +23,13 @@ def source_progress(
     transport = loader.transport if isinstance(loader, DataLoader) else None
     resources_by_id: dict[str, ProgressResource] = {}
     resource: ProgressResource | None = None
-    if isinstance(loader, ParquetLoader) and loader.is_glob:
-        files = loader.files
+    files: tuple[str, ...] | None = None
+    if isinstance(loader, ParquetLoader):
+        if loader.is_glob:
+            files = loader.files
+    elif isinstance(transport, FsGlobTransport):
+        files = transport.files
+    if files is not None:
         total = len(files)
         root = _glob_root(files)
         resources_by_id = {
@@ -39,19 +44,6 @@ def source_progress(
     elif isinstance(loader, ParquetLoader):
         name = Path(loader.path).name or loader.path
         resource = ProgressResource(1, 1, f'"{name}"')
-    elif isinstance(transport, FsGlobTransport):
-        files = transport.files
-        total = len(files)
-        root = _glob_root(files)
-        resources_by_id = {
-            path: ProgressResource(
-                index,
-                total,
-                f'"{_relative_label(path, root)}"',
-            )
-            for index, path in enumerate(files, start=1)
-        }
-        resource = resources_by_id[files[0]]
     elif isinstance(transport, FsFileTransport):
         name = Path(transport.path).name or transport.path
         resource = ProgressResource(1, 1, f'"{name}"')

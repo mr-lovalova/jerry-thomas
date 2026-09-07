@@ -33,20 +33,13 @@ class WhereTransform:
         self.comparand = comparand
 
     def apply(self, stream: Iterator[Any]) -> Iterator[Any]:
-        if self.operator == "in":
+        if self.operator in _MEMBERSHIP:
+            keep_matches = self.operator == "in"
             for record in stream:
                 value = get_field(record, self.field)
                 if self.field == "time":
                     value = _record_time(value)
-                if value in self.comparand:
-                    yield record
-            return
-        if self.operator == "not_in":
-            for record in stream:
-                value = get_field(record, self.field)
-                if self.field == "time":
-                    value = _record_time(value)
-                if value not in self.comparand:
+                if (value in self.comparand) == keep_matches:
                     yield record
             return
 

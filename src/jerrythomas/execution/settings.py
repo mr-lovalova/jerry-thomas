@@ -196,28 +196,19 @@ def _normalize_log_outputs(
                 raise ValueError(
                     "execution-scoped log path must stay inside the execution directory"
                 )
-            normalized.append(
-                LogOutputTarget(
-                    transport="fs",
-                    destination=destination,
-                    scope="execution",
-                )
-            )
-            continue
-
-        if transport == "fs":
+        elif transport == "fs":
             if destination is None:
                 raise ValueError("log transport 'fs' requires a log path")
-            normalized.append(
-                LogOutputTarget(
-                    transport="fs",
-                    destination=destination,
-                    scope="global",
-                )
-            )
-            continue
+        else:
+            destination = None
 
-        normalized.append(LogOutputTarget(transport=transport))
+        normalized.append(
+            LogOutputTarget(
+                transport=transport,
+                destination=destination,
+                scope=scope,
+            )
+        )
     return tuple(normalized)
 
 

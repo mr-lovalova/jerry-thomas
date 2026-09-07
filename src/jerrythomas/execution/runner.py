@@ -205,7 +205,6 @@ def _run_observed(
     status: RunStatus = "success"
     error_type: str | None = None
     error_message: str | None = None
-    stream: Iterable[Any] = ()
     iterator: Iterator[Any] = iter(())
     started = False
     heartbeat_interval = resolve_heartbeat_interval_seconds(heartbeat_interval_seconds)
@@ -231,17 +230,12 @@ def _run_observed(
         started = True
         if observe_nodes or heartbeat_interval > 0:
             progress.start()
-        stream = _build_stream(
+        iterator = _build_stream(
             pipeline,
             observer=observer if observe_nodes else None,
             progress=progress if observe_nodes else None,
         )
-        iterator = iter(stream)
-        while True:
-            try:
-                item = next(iterator)
-            except StopIteration:
-                break
+        for item in iterator:
             progress.output_items += 1
             yield item
     except GeneratorExit:
@@ -256,8 +250,6 @@ def _run_observed(
         close_error: BaseException | None = None
         try:
             _close_iterator(iterator)
-            if iterator is not stream:
-                _close_iterator(stream)
         except BaseException as exc:
             close_error = exc
             if not pipeline_failed:

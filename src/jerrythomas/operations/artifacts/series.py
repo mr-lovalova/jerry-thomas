@@ -157,13 +157,6 @@ def _stream_plans(
 ) -> tuple[_StreamPlan, ...]:
     feature_configs: dict[str, list[SeriesConfig]] = defaultdict(list)
     target_configs: dict[str, list[SeriesConfig]] = defaultdict(list)
-    stream_ids: list[str] = []
-    seen: set[str] = set()
-
-    for config in (*features, *targets):
-        if config.stream not in seen:
-            seen.add(config.stream)
-            stream_ids.append(config.stream)
     for config in features:
         feature_configs[config.stream].append(config)
     for config in targets:
@@ -175,7 +168,7 @@ def _stream_plans(
             features=tuple(feature_configs[stream_id]),
             targets=tuple(target_configs[stream_id]),
         )
-        for stream_id in stream_ids
+        for stream_id in dict.fromkeys((*feature_configs, *target_configs))
     )
 
 
