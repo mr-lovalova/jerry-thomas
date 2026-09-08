@@ -1,31 +1,26 @@
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import TypeAdapter, model_validator
+from pydantic_core import PydanticCustomError
 
 from .base import OperationProfile
 
-ArtifactMode = Literal["AUTO", "FORCE", "OFF"]
-ARTIFACT_MODES: tuple[ArtifactMode, ...] = ("AUTO", "FORCE", "OFF")
-
-
-def normalize_artifact_mode(value: object) -> ArtifactMode | None:
-    if value is None:
-        return None
-    name = str(value).strip().upper()
-    if name == "AUTO":
-        return "AUTO"
-    if name == "FORCE":
-        return "FORCE"
-    if name == "OFF":
-        return "OFF"
-    raise ValueError(f"artifact mode must be one of {', '.join(ARTIFACT_MODES)}")
+ArtifactMode = Literal["auto", "rebuild", "require_current"]
+ARTIFACT_MODES: tuple[ArtifactMode, ...] = ("auto", "rebuild", "require_current")
+ARTIFACT_MODE_ADAPTER: TypeAdapter[ArtifactMode] = TypeAdapter(ArtifactMode)
 
 
 class BuildProfile(OperationProfile):
     cmd: Literal["build"]
-    mode: ArtifactMode | None = Field(default=None)
+    artifact_mode: ArtifactMode | None = None
 
-    @field_validator("mode", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def _normalize_mode(cls, value: object) -> ArtifactMode | None:
-        return normalize_artifact_mode(value)
+    def reject_mode(cls, value: object) -> object:
+        if isinstance(value, dict) and "mode" in value:
+            raise PydanticCustomError(
+                "removed_build_mode",
+                "Build mode was renamed in v11; use artifact_mode with "
+                "auto, rebuild, or require_current",
+            )
+        return value

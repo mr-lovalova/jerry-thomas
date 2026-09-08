@@ -319,7 +319,7 @@ def test_materialize_request_uses_shared_resolution_snapshot(
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
     (profiles / "materialize.defaults.yaml").write_text(
-        "artifact_mode: FORCE\nexecution:\n  sort_buffer_mb: 32\n",
+        "artifact_mode: rebuild\nexecution:\n  sort_buffer_mb: 32\n",
         encoding="utf-8",
     )
     (profiles / "materialize.adv-20.yaml").write_text(
@@ -363,7 +363,7 @@ def test_materialize_request_uses_shared_resolution_snapshot(
     assert request.definition.artifact_hashes.values
     assert compiled_definitions == [request.definition]
     assert request.execution.sort_buffer_mb == 32
-    assert request.artifact_settings.mode == "FORCE"
+    assert request.artifact_settings.mode == "rebuild"
     assert request.runtime is runtime
     assert request.jobs[0].name == "adv-20"
     assert request.jobs[0].stream == "adv.20"

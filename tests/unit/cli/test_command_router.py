@@ -118,10 +118,10 @@ def test_common_options_survive_before_or_after_command(argv) -> None:
 @pytest.mark.parametrize("command", ["serve", "build", "inspect", "materialize"])
 def test_execution_commands_accept_observability_flags(command) -> None:
     args = build_parser().parse_args(
-        [command, "--visuals", "off", "--heartbeat-interval", "5"]
+        [command, "--no-visuals", "--heartbeat-interval", "5"]
     )
 
-    assert args.visuals == "off"
+    assert args.visuals is False
     assert args.heartbeat_interval_seconds == 5
 
 
@@ -291,3 +291,19 @@ def test_plugin_discovery_lists_use_configured_root(
     list_command.handle(subcmd, plugin_root=plugin_root)
 
     assert seen == [plugin_root]
+
+
+@pytest.mark.parametrize("command", ["serve", "inspect", "materialize"])
+@pytest.mark.parametrize("value", ["AUTO", "FORCE", "OFF", "force", "off"])
+def test_artifact_mode_cli_rejects_legacy_values(command, value) -> None:
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args([command, "--artifact-mode", value])
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("command", ["serve", "inspect", "materialize", "build"])
+@pytest.mark.parametrize("value", ["on", "off"])
+def test_visuals_cli_rejects_legacy_value_arguments(command, value) -> None:
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args([command, "--visuals", value])
+    assert exc.value.code == 2

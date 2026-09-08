@@ -11,5 +11,4 @@ class BuildSettings:
 
     def __post_init__(self) -> None:
         if self.mode not in ARTIFACT_MODES:
-            mode = str(self.mode).upper()
-            raise ValueError(f"Unknown artifact mode {mode!r}.")
+            raise ValueError(f"Unknown artifact mode {self.mode!r}.")

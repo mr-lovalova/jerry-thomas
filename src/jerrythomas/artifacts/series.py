@@ -191,14 +191,14 @@ def load_series_manifest(path: Path) -> SeriesManifest:
     if type(version) is not int or version != SERIES_MANIFEST_VERSION:
         raise ValueError(
             f"Unsupported series manifest version {version!r} in '{path}'. "
-            "Rebuild series and dependent artifacts in FORCE mode."
+            "Rebuild series and dependent artifacts in rebuild mode."
         )
     try:
         manifest = SeriesManifest.model_validate(payload)
     except ValidationError as exc:
         raise ValueError(
             f"Invalid series manifest '{path}'. Rebuild series and "
-            "dependent artifacts in FORCE mode."
+            "dependent artifacts in rebuild mode."
         ) from exc
 
     root = path.parent.resolve()

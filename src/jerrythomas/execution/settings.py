@@ -28,16 +28,14 @@ def _normalize_upper(value: str | None) -> str | None:
 
 
 def resolve_visuals(
-    cli_visuals: str | None,
-    config_visuals: str | None,
-    default_visuals: str = "on",
-) -> str:
-    cli_value = _normalize_lower(cli_visuals)
-    if cli_value is not None:
-        return cli_value
-    config_value = _normalize_lower(config_visuals)
-    if config_value is not None:
-        return config_value
+    cli_visuals: bool | None,
+    config_visuals: bool | None,
+    default_visuals: bool = True,
+) -> bool:
+    if cli_visuals is not None:
+        return cli_visuals
+    if config_visuals is not None:
+        return config_visuals
     return default_visuals
 
 
@@ -93,7 +91,7 @@ class LogOutputTarget:
 
 @dataclass(frozen=True)
 class CommandObservability:
-    visuals: str | None = None
+    visuals: bool | None = None
     heartbeat_interval_seconds: float | None = None
     log_level: str | None = None
     log_outputs: tuple[LogOutputTarget, ...] = ()
@@ -106,7 +104,7 @@ class LogOutputSettings:
 
 @dataclass(frozen=True)
 class ObservabilitySettings:
-    visuals: str
+    visuals: bool
     heartbeat_interval_seconds: float
     log_decision: LogLevelDecision
     log_output: LogOutputSettings

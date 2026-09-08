@@ -29,7 +29,7 @@ def test_source_stream_has_explicit_pipeline_phases() -> None:
                 }
             ],
             "partition_by": ["ticker"],
-            "ordered_by": ["ticker", "time"],
+            "presorted": True,
             "transforms": [
                 {
                     "operation": "rolling",
@@ -42,7 +42,7 @@ def test_source_stream_has_explicit_pipeline_phases() -> None:
 
     assert stream.from_.source == "vendor.prices"
     assert stream.partition_by == ("ticker",)
-    assert stream.ordered_by == ("ticker", "time")
+    assert stream.presorted is True
     assert len(stream.preprocess) == 1
     assert len(stream.transforms) == 1
 
@@ -51,6 +51,33 @@ def test_source_stream_requires_mapper() -> None:
     with pytest.raises(ValueError, match="map"):
         SourceStreamConfig.model_validate(
             {"id": "prices", "from": {"source": "vendor.prices"}}
+        )
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true", "false", "ON", ["time"]])
+def test_presorted_requires_a_boolean(value) -> None:
+    with pytest.raises(ValidationError, match="valid boolean"):
+        SourceStreamConfig.model_validate(
+            {
+                "id": "prices",
+                "from": {"source": "vendor.prices"},
+                "map": {"entrypoint": "identity"},
+                "presorted": value,
+            }
+        )
+
+
+@pytest.mark.parametrize("presorted", [False, True])
+def test_ordered_by_is_rejected_even_with_presorted(presorted) -> None:
+    with pytest.raises(ValidationError, match="ordered_by was removed in v11"):
+        SourceStreamConfig.model_validate(
+            {
+                "id": "prices",
+                "from": {"source": "vendor.prices"},
+                "map": {"entrypoint": "identity"},
+                "ordered_by": ["time"],
+                "presorted": presorted,
+            }
         )
 
 
@@ -92,7 +119,7 @@ def test_derived_stream_requires_a_transform() -> None:
         ("map", {"entrypoint": "identity"}),
         ("preprocess", []),
         ("partition_by", ["ticker"]),
-        ("ordered_by", ["ticker", "time"]),
+        ("presorted", True),
     ],
 )
 def test_derived_stream_rejects_source_fields(
@@ -273,7 +300,7 @@ def test_as_of_streams_require_an_explicit_boolean_match_policy(
         )
 
 
-@pytest.mark.parametrize("field", ["map", "preprocess", "partition_by", "ordered_by"])
+@pytest.mark.parametrize("field", ["map", "preprocess", "partition_by", "presorted"])
 def test_broadcast_stream_rejects_other_stream_contracts(field: str) -> None:
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         CombinedStreamConfig.model_validate(
@@ -321,7 +348,7 @@ def test_aligned_stream_rejects_duplicate_inputs() -> None:
         )
 
 
-@pytest.mark.parametrize("field", ["map", "partition_by", "ordered_by"])
+@pytest.mark.parametrize("field", ["map", "partition_by", "presorted"])
 def test_aligned_stream_rejects_other_stream_contracts(field: str) -> None:
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         CombinedStreamConfig.model_validate(

@@ -19,7 +19,7 @@ _RAW_INPUTS = (
 
 def _serve_dataset(
     project_root: Path,
-    artifact_mode: Literal["AUTO", "FORCE"],
+    artifact_mode: Literal["auto", "rebuild"],
 ) -> bytes:
     request = serve_dataset(project_root, artifact_mode)
     dataset_path = request.serve_run_plans[0].paths.dataset_dir / "dataset.jsonl"
@@ -59,7 +59,7 @@ def test_persisted_dataset_is_independent_of_raw_input_order_and_file_layout(
 ) -> None:
     project_root = copy_fixture("regression_project")
     data_dir = project_root / "data"
-    expected = _serve_dataset(project_root, "FORCE")
+    expected = _serve_dataset(project_root, "rebuild")
 
     for input_index, filename in enumerate(_RAW_INPUTS):
         path = data_dir / filename
@@ -74,7 +74,7 @@ def test_persisted_dataset_is_independent_of_raw_input_order_and_file_layout(
             for order, reordered_lines in variants.items():
                 assert reordered_lines != lines
                 _write_jsonl_lines(path, reordered_lines)
-                actual = _serve_dataset(project_root, "FORCE")
+                actual = _serve_dataset(project_root, "rebuild")
                 assert actual == expected, f"{filename} changed output when {order}"
         finally:
             path.write_text(original, encoding="utf-8")
@@ -97,24 +97,24 @@ def test_persisted_dataset_is_independent_of_raw_input_order_and_file_layout(
         encoding="utf-8",
     )
 
-    assert _serve_dataset(project_root, "FORCE") == expected
+    assert _serve_dataset(project_root, "rebuild") == expected
 
 
 def test_auto_reuses_current_artifacts_and_force_rebuilds_them(copy_fixture) -> None:
     project_root = copy_fixture("regression_project")
 
-    first_force_output = _serve_dataset(project_root, "FORCE")
+    first_force_output = _serve_dataset(project_root, "rebuild")
     first_force_artifacts = _artifact_snapshot(project_root)
     state_path = project_root / "build" / "_system" / "build" / "state.json"
     first_force_state = state_path.read_bytes()
     assert first_force_artifacts
 
-    auto_output = _serve_dataset(project_root, "AUTO")
+    auto_output = _serve_dataset(project_root, "auto")
     assert auto_output == first_force_output
     assert _artifact_snapshot(project_root) == first_force_artifacts
     assert state_path.read_bytes() == first_force_state
 
-    second_force_output = _serve_dataset(project_root, "FORCE")
+    second_force_output = _serve_dataset(project_root, "rebuild")
     assert second_force_output == first_force_output
     assert _artifact_snapshot(project_root) != first_force_artifacts
     assert state_path.read_bytes() != first_force_state
@@ -122,7 +122,7 @@ def test_auto_reuses_current_artifacts_and_force_rebuilds_them(copy_fixture) -> 
 
 def test_auto_rebuilds_after_source_and_config_changes(copy_fixture) -> None:
     project_root = copy_fixture("regression_project")
-    original_output = _serve_dataset(project_root, "FORCE")
+    original_output = _serve_dataset(project_root, "rebuild")
     original_artifacts = _artifact_snapshot(project_root)
 
     source_path = project_root / "data" / "linear_hourly.jsonl"
@@ -133,7 +133,7 @@ def test_auto_rebuilds_after_source_and_config_changes(copy_fixture) -> None:
         encoding="utf-8",
     )
 
-    changed_source_output = _serve_dataset(project_root, "AUTO")
+    changed_source_output = _serve_dataset(project_root, "auto")
     changed_source_artifacts = _artifact_snapshot(project_root)
     assert changed_source_output != original_output
     assert changed_source_artifacts != original_artifacts
@@ -146,7 +146,7 @@ def test_auto_rebuilds_after_source_and_config_changes(copy_fixture) -> None:
         encoding="utf-8",
     )
 
-    changed_config_output = _serve_dataset(project_root, "AUTO")
+    changed_config_output = _serve_dataset(project_root, "auto")
     assert changed_config_output != changed_source_output
     assert _artifact_snapshot(project_root) != changed_source_artifacts
 
@@ -156,7 +156,7 @@ def test_external_sort_spilling_preserves_the_persisted_dataset(
     monkeypatch,
 ) -> None:
     project_root = copy_fixture("regression_project")
-    expected = _serve_dataset(project_root, "FORCE")
+    expected = _serve_dataset(project_root, "rebuild")
 
     linear_path = project_root / "data" / "linear_hourly.jsonl"
     records = [
@@ -192,5 +192,5 @@ def test_external_sort_spilling_preserves_the_persisted_dataset(
 
     monkeypatch.setattr(sort_module, "_write_serialized_run", count_spill_runs)
 
-    assert _serve_dataset(project_root, "FORCE") == expected
+    assert _serve_dataset(project_root, "rebuild") == expected
     assert spill_runs >= 2

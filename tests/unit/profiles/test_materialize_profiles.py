@@ -21,7 +21,7 @@ from jerrythomas.services.materialize import resolve_materialize_output
 
 def _observability() -> ObservabilitySettings:
     return ObservabilitySettings(
-        visuals="off",
+        visuals=False,
         heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
         log_decision=LogLevelDecision(name="INFO", value=logging.INFO),
         log_output=LogOutputSettings(outputs=()),

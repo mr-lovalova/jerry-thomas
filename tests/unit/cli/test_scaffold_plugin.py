@@ -182,7 +182,7 @@ def test_scaffold_plugin_normalizes_hyphenated_name(tmp_path: Path) -> None:
 
     pyproject = (plugin_root / "pyproject.toml").read_text()
     assert 'name = "test-datapipeline"' in pyproject
-    assert '"jerry-thomas>=10.0.2"' in pyproject
+    assert '"jerry-thomas>=11.0.0"' in pyproject
     assert '[project.entry-points."jerrythomas.combiners"]' in pyproject
 
     readme = (plugin_root / "README.md").read_text()

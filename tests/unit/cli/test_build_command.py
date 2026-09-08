@@ -196,11 +196,11 @@ def _patch_stable_artifact_inputs(monkeypatch) -> None:
     )
 
 
-def _build_settings(mode: str = "AUTO") -> BuildSettings:
+def _build_settings(mode: str = "auto") -> BuildSettings:
     return BuildSettings(
         mode=mode,
         observability=ObservabilitySettings(
-            visuals="on",
+            visuals=True,
             heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
             log_decision=LogLevelDecision(name="INFO", value=logging.INFO),
             log_output=LogOutputSettings(
@@ -239,7 +239,7 @@ def test_report_artifact_plan_logs_current_roots(monkeypatch) -> None:
             reason="up_to_date",
             artifacts=(SERIES, VECTOR_METADATA),
         ),
-        mode="AUTO",
+        mode="auto",
         requested_artifacts={VECTOR_METADATA},
     )
 
@@ -250,7 +250,7 @@ def test_report_artifact_plan_logs_current_roots(monkeypatch) -> None:
     assert json.loads(message.removeprefix("Artifact plan:\n")) == {
         "action": "skip",
         "reason": "up_to_date",
-        "mode": "AUTO",
+        "mode": "auto",
         "requested": [VECTOR_METADATA],
         "required": [SERIES, VECTOR_METADATA],
         "jobs": [],
@@ -268,7 +268,7 @@ def test_report_artifact_plan_logs_not_required(monkeypatch) -> None:
 
     build_exec._report_artifact_plan(
         build_exec.SkippedBuild(reason="not_required", artifacts=()),
-        mode="AUTO",
+        mode="auto",
         requested_artifacts={SCALER_STATISTICS},
     )
 
@@ -279,7 +279,7 @@ def test_report_artifact_plan_logs_not_required(monkeypatch) -> None:
     assert json.loads(message.removeprefix("Artifact plan:\n")) == {
         "action": "skip",
         "reason": "not_required",
-        "mode": "AUTO",
+        "mode": "auto",
         "requested": [SCALER_STATISTICS],
         "required": [],
         "jobs": [],
@@ -303,7 +303,7 @@ def test_report_artifact_plan_keeps_run_details_at_debug(monkeypatch) -> None:
             jobs=(build_exec.ArtifactBuildJob(task, (VECTOR_METADATA,)),),
             previous_state=None,
         ),
-        mode="FORCE",
+        mode="rebuild",
         requested_artifacts={VECTOR_METADATA},
     )
 
@@ -314,7 +314,7 @@ def test_report_artifact_plan_keeps_run_details_at_debug(monkeypatch) -> None:
     assert json.loads(message.removeprefix("Artifact plan:\n")) == {
         "action": "run",
         "reason": "force",
-        "mode": "FORCE",
+        "mode": "rebuild",
         "requested": [VECTOR_METADATA],
         "required": [SERIES, VECTOR_METADATA],
         "jobs": [VECTOR_METADATA],
@@ -332,7 +332,7 @@ def test_plan_skips_scaler_when_dataset_has_no_scaled_features(
     plan = build_exec._plan_build(
         definition=definition,
         required_artifacts={SCALER_STATISTICS},
-        mode="AUTO",
+        mode="auto",
     )
 
     assert plan == build_exec.SkippedBuild(reason="not_required", artifacts=())
@@ -362,7 +362,7 @@ def test_plan_builds_only_requested_generic_artifact(
     plan = build_exec._plan_build(
         definition=definition,
         required_artifacts={task.id},
-        mode="FORCE",
+        mode="rebuild",
     )
 
     assert isinstance(plan, build_exec.BuildPlan)
@@ -379,7 +379,7 @@ def test_plan_expands_metadata_dependencies(tmp_path: Path) -> None:
     plan = build_exec._plan_build(
         definition=definition,
         required_artifacts={VECTOR_METADATA},
-        mode="FORCE",
+        mode="rebuild",
     )
 
     assert isinstance(plan, build_exec.BuildPlan)
@@ -412,7 +412,7 @@ def test_v5_vector_inputs_state_is_not_reused(tmp_path: Path) -> None:
     plan = build_exec._plan_build(
         definition=definition,
         required_artifacts={VECTOR_METADATA},
-        mode="AUTO",
+        mode="auto",
     )
 
     assert isinstance(plan, build_exec.BuildPlan)
@@ -441,7 +441,7 @@ def test_plan_skips_current_dependency(tmp_path: Path) -> None:
     plan = build_exec._plan_build(
         definition=definition,
         required_artifacts={VECTOR_METADATA},
-        mode="AUTO",
+        mode="auto",
     )
 
     assert isinstance(plan, build_exec.BuildPlan)
@@ -484,7 +484,7 @@ def test_runtime_operation_change_keeps_artifact_plan_current(
     plan = build_exec._plan_build(
         definition=second,
         required_artifacts={task.id},
-        mode="AUTO",
+        mode="auto",
     )
 
     assert second.runtime_operations != first.runtime_operations
@@ -528,7 +528,7 @@ def test_plan_rejects_resolved_artifact_that_became_stale(
         build_exec._plan_build(
             definition=definition,
             required_artifacts={second.id},
-            mode="FORCE",
+            mode="rebuild",
             resolved_artifacts={first.id},
         )
 
@@ -547,7 +547,7 @@ def test_plan_rejects_missing_dependency_producer(
         build_exec._plan_build(
             definition=definition,
             required_artifacts={VECTOR_METADATA},
-            mode="AUTO",
+            mode="auto",
         )
 
 
@@ -566,7 +566,7 @@ def test_plan_rejects_unknown_artifact(tmp_path: Path) -> None:
         build_exec._plan_build(
             definition=definition,
             required_artifacts={"unknown"},
-            mode="AUTO",
+            mode="auto",
         )
 
 
@@ -596,7 +596,7 @@ def test_stale_dependency_rebuilds_current_dependent(
     plan = build_exec._plan_build(
         definition=definition,
         required_artifacts={VECTOR_METADATA},
-        mode="AUTO",
+        mode="auto",
     )
 
     assert isinstance(plan, build_exec.BuildPlan)
@@ -628,14 +628,14 @@ def test_mode_off_rejects_missing_artifact(tmp_path: Path) -> None:
     with pytest.raises(
         ArtifactResolutionError,
         match=(
-            "Artifact mode is OFF, but required artifacts are missing or stale: "
+            "Artifact mode is require_current, but required artifacts are missing or stale: "
             "snapshot"
         ),
     ):
         build_exec._plan_build(
             definition=definition,
             required_artifacts={task.id},
-            mode="OFF",
+            mode="require_current",
         )
 
 
@@ -867,7 +867,7 @@ def test_execute_build_rejects_symlink_escape_before_calling_runner(
             definition,
             runtime=_runtime(artifacts_root),
             plan=plan,
-            settings=_build_settings("FORCE"),
+            settings=_build_settings("rebuild"),
         )
 
     assert runner_calls == []
@@ -926,7 +926,7 @@ def test_execute_build_preflights_every_output_before_running_any_job(
             definition,
             runtime=_runtime(artifacts_root),
             plan=plan,
-            settings=_build_settings("FORCE"),
+            settings=_build_settings("rebuild"),
         )
 
     assert runner_calls == []
@@ -998,7 +998,7 @@ def test_execute_build_job_invalidates_only_graph_descendants(
         definition,
         runtime=runtime,
         plan=plan,
-        settings=_build_settings("FORCE"),
+        settings=_build_settings("rebuild"),
     )
 
     assert set(state.artifacts) == {SCALER_STATISTICS, SERIES, custom.id}
@@ -1010,9 +1010,9 @@ def test_execute_build_job_invalidates_only_graph_descendants(
     assert message.startswith("Config:\n")
     config = json.loads(message[8:])
     assert config["operation"]["entrypoint"] == "core.artifact.series"
-    assert config["mode"] == "FORCE"
+    assert config["mode"] == "rebuild"
     assert config["execution"] == {"sort_buffer_mb": 128}
-    assert config["observability"]["visuals"] == "on"
+    assert config["observability"]["visuals"] is True
 
 
 @pytest.mark.parametrize(
@@ -1039,7 +1039,7 @@ def test_build_rejects_source_drift_before_starting_runner(
         build_exec.run_build_if_needed(
             definition,
             required_artifacts={SERIES},
-            settings=_build_settings("FORCE"),
+            settings=_build_settings("rebuild"),
             runtime=_runtime(definition.project.artifacts_root),
         )
 
@@ -1075,7 +1075,7 @@ def test_build_rejects_source_drift_before_registering_result(
         build_exec.run_build_if_needed(
             definition,
             required_artifacts={SERIES},
-            settings=_build_settings("FORCE"),
+            settings=_build_settings("rebuild"),
             runtime=runtime,
         )
 
@@ -1091,7 +1091,7 @@ def test_build_accepts_unchanged_local_sources(monkeypatch, tmp_path: Path) -> N
     assert build_exec.run_build_if_needed(
         definition,
         required_artifacts={SERIES},
-        settings=_build_settings("FORCE"),
+        settings=_build_settings("rebuild"),
         runtime=runtime,
     )
 
@@ -1183,7 +1183,7 @@ def test_force_build_preserves_artifacts_resolved_by_previous_profile(
     assert build_exec.run_build_if_needed(
         definition,
         required_artifacts={COVERAGE_STATS},
-        settings=_build_settings("FORCE"),
+        settings=_build_settings("rebuild"),
         runtime=runtime,
         resolved_artifacts=resolved,
     )
@@ -1245,7 +1245,7 @@ def test_run_build_rejects_unknown_mode(tmp_path: Path) -> None:
         _definition(tmp_path),
         artifact_graph=build_artifact_graph([]),
     )
-    with pytest.raises(ValueError, match="Unknown artifact mode 'SOMETIMES'"):
+    with pytest.raises(ValueError, match="Unknown artifact mode 'sometimes'"):
         build_exec.run_build_if_needed(
             definition,
             required_artifacts=set(),

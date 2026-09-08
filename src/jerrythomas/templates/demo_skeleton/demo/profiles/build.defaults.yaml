@@ -1,8 +1,8 @@
 # Defaults for the build command and its build.<name>.yaml profiles.
 # precedence: CLI > build.<name>.yaml > build.defaults.yaml > built-ins
-# mode: AUTO
+# artifact_mode: auto
 observability:
-  visuals: ON
+  visuals: true
   heartbeat_interval_seconds: 60
   logging:
     level: INFO

@@ -16,7 +16,7 @@ def handle(
     output: str | None,
     overwrite: bool | None,
     artifact_mode: str | None,
-    visuals: str | None,
+    visuals: bool | None,
     heartbeat_interval_seconds: float | None,
     cli_log_level: str | None,
     cli_log_outputs: list[LogOutputTarget],

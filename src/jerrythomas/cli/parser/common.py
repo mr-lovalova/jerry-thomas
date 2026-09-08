@@ -1,7 +1,6 @@
 import argparse
 import math
 
-from jerrythomas.config.options import VISUAL_CHOICES
 from jerrythomas.config.profiles.build import ARTIFACT_MODES
 
 
@@ -50,18 +49,17 @@ def add_artifact_mode_flag(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--artifact-mode",
         choices=ARTIFACT_MODES,
-        type=str.upper,
         default=None,
-        help="prerequisite artifact policy: AUTO | FORCE | OFF",
+        help="prerequisite artifact policy: auto | rebuild | require_current",
     )
 
 
 def add_execution_observability_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--visuals",
-        choices=VISUAL_CHOICES,
+        action=argparse.BooleanOptionalAction,
         default=None,
-        help="visuals mode: on (default) or off",
+        help="enable terminal visuals (default: enabled)",
     )
     parser.add_argument(
         "--heartbeat-interval",

@@ -28,7 +28,7 @@ with the same rules that govern profile files.
 `observability.logging.outputs` list; omit the flags to use the configured
 outputs unchanged.
 
-With `--visuals on` in an interactive terminal, runtime commands show one live
+With `--visuals` in an interactive terminal, runtime commands show one live
 pipeline row with the active input or stage. `--log-level DEBUG` expands that view
 to one row per active input or stage. File-backed sources include the current file
 and position (`2/17`). Determinate bars appear only when the item total is known; otherwise
@@ -37,9 +37,46 @@ filtering.
 The final command summary uses the same Rich styling when any selected command
 phase has visuals enabled.
 
+### Completed Run Results
+
+```bash
+jerry serve --project project.yaml --profile dataset --result-json
+```
+
+`--result-json` writes one JSON object to stdout after execution and publication
+succeed. Data outputs must use filesystem transport and logs must use stderr or
+filesystem transport. Conflicts are rejected before execution. Normal terminal
+progress remains on stderr.
+
+```json
+{
+  "schema_version": 1,
+  "runs": [
+    {
+      "run_id": "2026-09-09T10-00-00-000000Z",
+      "directory": "/research/output/runs/2026-09-09T10-00-00-000000Z",
+      "preview": null,
+      "outputs": [
+        "/research/output/runs/2026-09-09T10-00-00-000000Z/dataset.fold_0.train.jsonl"
+      ]
+    }
+  ]
+}
+```
+
+Paths are absolute. Profiles sharing a run directory contribute to one entry;
+separate run directories produce separate entries in plan order. `outputs`
+contains files actually written, including empty files. No enabled profiles
+produces `{"schema_version": 1, "runs": []}`. Execution or publication failure
+exits unsuccessfully without emitting a result object; callers must check the
+exit code. This result describes the completed invocation and does not change
+`run.json` or provide a saved-run reader.
+
+Python callers can use [the run result API](research.md#consume-completed-runs-from-python).
+
 ### Preview Stages
 
-- `jerry serve --project <project.yaml> --preview <stage> --limit N [--log-level LEVEL] [--visuals on|off] [--heartbeat-interval SECONDS]`
+- `jerry serve --project <project.yaml> --preview <stage> --limit N [--log-level LEVEL] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
   - `input`: values entering the selected stream: parsed source values,
     completed upstream records, broadcast input pairs, or aligned input tuples.
   - `canonical`: domain records after source mapping or fan-in combining;
@@ -59,7 +96,7 @@ phase has visuals enabled.
   - Before runtime execution, Jerry combines the artifact requirements of all
     selected profiles and prepares that union once. The artifact graph orders
     those internal jobs; it never changes profile order.
-- `jerry serve --project <project.yaml> --output-transport <stdout|fs> --output-format <jsonl|csv|parquet|pickle> [--output-view flat|raw] [--output-encoding <codec>] [--output-compression gzip] --limit N [--artifact-mode AUTO|FORCE|OFF] [--log-level LEVEL] [--visuals on|off] [--heartbeat-interval SECONDS] [--profile name]`
+- `jerry serve --project <project.yaml> --output-transport <stdout|fs> --output-format <jsonl|csv|parquet|pickle> [--output-view flat|raw] [--output-encoding <codec>] [--output-compression gzip] --limit N [--artifact-mode auto|rebuild|require_current] [--log-level LEVEL] [--visuals | --no-visuals] [--heartbeat-interval SECONDS] [--profile name]`
   - Conforms samples to the declared schema and applies configured row filters before emitting. A configured dataset split routes a full dataset serve to one fs output per fold role, named `<profile-or-filename>.<fold-id>.<role>.<ext>`; profile `include_outputs` can narrow the set using IDs such as `fold_0.train`. Record previews emit once per unique referenced stream, `series` once per configured feature or target, and sample previews once for the combined stage. Preview cannot be combined with explicit `include_outputs`. `--limit` applies separately to each output.
   - Use `--output-transport fs --output-format jsonl --output-directory build/serve` (or `csv`, `parquet`, `pickle`) to write outputs under `<output-directory>/runs/<run_id>/dataset/`.
   - `--output-view` controls payload shape:
@@ -81,18 +118,18 @@ phase has visuals enabled.
   - When multiple serve profiles exist, add `--profile <name>` to select a
     single profile; otherwise every enabled profile is executed in its exact
     configured order.
-  - `artifact_mode` controls the command-level prerequisite phase: `AUTO`
-    builds missing or stale artifacts, `FORCE` rebuilds the required closure,
-    and `OFF` only accepts artifacts that are already current. The CLI
+  - `artifact_mode` controls the command-level prerequisite phase: `auto`
+    builds missing or stale artifacts, `rebuild` rebuilds the required closure,
+    and `require_current` only accepts artifacts that are already current. The CLI
     `--artifact-mode` override applies to the whole command.
   - Artifact mode precedence is CLI `--artifact-mode`, then
-    `serve.defaults.yaml`, then the built-in `AUTO`. It is command-wide and is
+    `serve.defaults.yaml`, then the built-in `auto`. It is command-wide and is
     not configured on individual serve profiles.
   - Argument precedence follows the order described under _Configuration & Resolution Order_.
 
 ### Build & Quality
 
-- `jerry inspect --project <project.yaml> [--profile <name>] [--artifact-mode AUTO|FORCE|OFF] [--visuals on|off] [--heartbeat-interval SECONDS]`
+- `jerry inspect --project <project.yaml> [--profile <name>] [--artifact-mode auto|rebuild|require_current] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
   - Runs inspect profiles declared as `profiles/inspect.<name>.yaml`.
   - Without `--profile`, executes all enabled inspect profiles.
   - Use `--profile coverage` or `--profile matrix` to execute one profile.
@@ -105,7 +142,7 @@ phase has visuals enabled.
   - `--output-compression gzip` is available for filesystem JSONL and CSV
     inspection outputs.
   - Artifact mode precedence is CLI `--artifact-mode`, then
-    `inspect.defaults.yaml`, then the built-in `AUTO`. It is command-wide and
+    `inspect.defaults.yaml`, then the built-in `auto`. It is command-wide and
     is not configured on individual inspect profiles.
 - `jerry inspect --project <project.yaml> --profile matrix`
   - Typical matrix profile run. Matrix output format/path is controlled by the
@@ -113,7 +150,7 @@ phase has visuals enabled.
     `max_cells` option and can inspect assembled or postprocessed samples.
     `--limit N` caps samples after that stage; `max_cells` remains the separate
     bound on scalar cells and individual list elements.
-- `jerry build --project <project.yaml> [--profile <name>] [--force] [--visuals on|off] [--heartbeat-interval SECONDS]`
+- `jerry build --project <project.yaml> [--profile <name>] [--force] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
   - Regenerates core or custom artifacts when that artifact's hash changes.
   - If build profiles are defined, enabled profiles run by default; use
     `--profile` to select one profile.
@@ -123,13 +160,13 @@ phase has visuals enabled.
     profile order. The graph orders only the internal dependency jobs needed by
     each root; it never reorders the profiles. A selected dependency profile
     must be ordered before a selected dependent profile.
-- `jerry materialize [--profile <name>] [--output <path.jsonl|path.jsonl.gz>] [--overwrite|--no-overwrite] [--artifact-mode AUTO|FORCE|OFF] [--visuals on|off] [--heartbeat-interval SECONDS]`
+- `jerry materialize [--profile <name>] [--output <path.jsonl|path.jsonl.gz>] [--overwrite|--no-overwrite] [--artifact-mode auto|rebuild|require_current] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
   - Runs every enabled `profiles/materialize.<name>.yaml` file in configured
     order, or one profile selected by `--profile`.
   - Checks every selected output before the first profile starts writing.
   - Collects the selected streams' artifact requirements and prepares their
     union once. `--artifact-mode` overrides `materialize.defaults.yaml`; the
-    built-in mode is `AUTO`.
+    built-in mode is `auto`.
   - Shared prerequisite visuals and logs use CLI settings, then
     `materialize.defaults.yaml`; concrete profile overrides begin afterward.
   - A CLI overwrite choice applies to every selected profile. Without it, each

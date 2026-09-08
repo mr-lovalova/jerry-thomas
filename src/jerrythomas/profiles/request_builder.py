@@ -9,8 +9,8 @@ from jerrythomas.artifacts.settings import BuildSettings
 from jerrythomas.config.preview import PreviewStage
 from jerrythomas.config.profiles.base import Profile, ProfileCommand
 from jerrythomas.config.profiles.build import (
+    ARTIFACT_MODE_ADAPTER,
     BuildProfile,
-    normalize_artifact_mode,
 )
 from jerrythomas.config.profiles.defaults import (
     BuildProfileDefaults,
@@ -191,7 +191,7 @@ def build_build_run_request(
             BuildJob(
                 task=artifact_tasks_by_id[profile.operation].model_copy(deep=True),
                 settings=BuildSettings(
-                    mode="FORCE" if force else profile.mode or "AUTO",
+                    mode="rebuild" if force else profile.artifact_mode or "auto",
                     observability=replace(
                         observability,
                         log_output=resolve_execution_log_outputs(
@@ -283,7 +283,9 @@ def build_runtime_run_request(
 
     try:
         resolved_artifact_mode = (
-            normalize_artifact_mode(artifact_mode) or defaults.artifact_mode or "AUTO"
+            ARTIFACT_MODE_ADAPTER.validate_python(artifact_mode)
+            if artifact_mode is not None
+            else defaults.artifact_mode or "auto"
         )
     except ValueError as exc:
         raise ProfileCommandError(f"Invalid artifact mode: {exc}") from exc
@@ -418,7 +420,9 @@ def build_materialize_run_request(
             command_observability=command_observability,
         )
         resolved_artifact_mode = (
-            normalize_artifact_mode(artifact_mode) or defaults.artifact_mode or "AUTO"
+            ARTIFACT_MODE_ADAPTER.validate_python(artifact_mode)
+            if artifact_mode is not None
+            else defaults.artifact_mode or "auto"
         )
         artifact_observability = resolve_observability_settings(
             project_path,

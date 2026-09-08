@@ -140,11 +140,11 @@ def _plan_build(
             f"the command completed: {artifacts}. Rerun the build."
         )
     selected_outdated = freshness.outdated & selected_keys
-    if mode == "OFF":
+    if mode == "require_current":
         if selected_outdated:
             artifacts = ", ".join(graph.topological_order(selected_outdated))
             raise ArtifactResolutionError(
-                "Artifact mode is OFF, but required artifacts are missing or stale: "
+                "Artifact mode is require_current, but required artifacts are missing or stale: "
                 f"{artifacts}."
             )
         return SkippedBuild(
@@ -152,7 +152,7 @@ def _plan_build(
             artifacts=expanded_artifacts,
         )
 
-    force = mode == "FORCE"
+    force = mode == "rebuild"
     if not force and not selected_outdated:
         return SkippedBuild(
             reason="up_to_date",

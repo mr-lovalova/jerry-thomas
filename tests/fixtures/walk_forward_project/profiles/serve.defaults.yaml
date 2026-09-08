@@ -1,10 +1,10 @@
-artifact_mode: FORCE
+artifact_mode: rebuild
 output:
   transport: fs
   format: jsonl
   directory: output
 observability:
-  visuals: OFF
+  visuals: false
   heartbeat_interval_seconds: 0
   logging:
     level: CRITICAL

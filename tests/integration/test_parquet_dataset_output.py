@@ -44,7 +44,7 @@ def _assert_parquet_matches_jsonl(
 
     parquet_request = serve_dataset(
         project_root,
-        "AUTO",
+        "auto",
         ServeOutputConfig(
             transport="fs",
             format="parquet",
@@ -78,7 +78,7 @@ def test_parquet_dataset_matches_scaled_walk_forward_folds(copy_fixture) -> None
 
     parquet_request = serve_dataset(
         project_root,
-        "AUTO",
+        "auto",
         ServeOutputConfig(
             transport="fs",
             format="parquet",

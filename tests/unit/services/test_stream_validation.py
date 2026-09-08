@@ -28,7 +28,7 @@ def _source(source_id: str = "source.alias") -> SourceConfig:
 def _source_stream(
     stream_id: str,
     partition_by: list[str] | None = None,
-    ordered_by: list[str] | None = None,
+    presorted: bool = False,
     transforms: list[dict[str, object]] | None = None,
 ) -> SourceStreamConfig:
     return SourceStreamConfig.model_validate(
@@ -37,7 +37,7 @@ def _source_stream(
             "from": {"source": "source.alias"},
             "map": {"entrypoint": "identity"},
             "partition_by": [] if partition_by is None else partition_by,
-            "ordered_by": ordered_by,
+            "presorted": presorted,
             "transforms": [] if transforms is None else transforms,
         }
     )
@@ -402,27 +402,11 @@ def test_validation_accepts_declared_canonical_order() -> None:
         "prices": _source_stream(
             "prices",
             partition_by=["ticker"],
-            ordered_by=["ticker", "time"],
+            presorted=True,
         )
     }
 
     validate_stream_configs({"source.alias": _source()}, streams)
-
-
-def test_validation_rejects_noncanonical_declared_order() -> None:
-    streams: dict[str, StreamConfig] = {
-        "prices": _source_stream(
-            "prices",
-            partition_by=["ticker"],
-            ordered_by=["time"],
-        )
-    }
-
-    with pytest.raises(
-        ValueError,
-        match=r"ordered_by must be \['ticker', 'time'\]",
-    ):
-        validate_stream_configs({"source.alias": _source()}, streams)
 
 
 @pytest.mark.parametrize(

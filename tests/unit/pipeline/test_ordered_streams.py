@@ -52,7 +52,7 @@ def test_validate_record_order_rejects_false_presorted_declaration(rows) -> None
     records = [
         _Record(time=_ts(day), security_id=security_id) for day, security_id in rows
     ]
-    with pytest.raises(ValueError, match="violates declared ordered_by|finite floats"):
+    with pytest.raises(ValueError, match="violates presorted order|finite floats"):
         list(
             validate_record_order(
                 ("security_id",),
@@ -69,7 +69,7 @@ def test_validate_record_order_error_uses_config_list_syntax() -> None:
 
     with pytest.raises(
         ValueError,
-        match=r"declared ordered_by \['security_id', 'time'\]",
+        match=r"presorted order \['security_id', 'time'\]",
     ):
         list(
             validate_record_order(

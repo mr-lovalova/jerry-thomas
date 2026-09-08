@@ -288,7 +288,7 @@ def test_walk_forward_serve_opens_series_once(
 
     monkeypatch.setattr(sample_input, "open_series", count_open_series)
 
-    serve_dataset(project_root, "AUTO")
+    serve_dataset(project_root, "auto")
 
     assert calls == 1
 
@@ -318,7 +318,7 @@ def test_shared_fold_scan_matches_separate_output_serves(
             profile + f"include_outputs: [{output_id}]\n",
             encoding="utf-8",
         )
-        request = serve_dataset(separate_root, "AUTO")
+        request = serve_dataset(separate_root, "auto")
         separate_output = request.serve_run_plans[0].paths.dataset_dir
         filename = f"dataset.{output_id}.jsonl"
 

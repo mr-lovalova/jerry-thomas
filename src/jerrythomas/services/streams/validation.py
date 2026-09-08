@@ -31,7 +31,6 @@ from jerrythomas.config.transforms import (
     RollingOlsConfig,
     RollingSlopeConfig,
 )
-from jerrythomas.domain.stream import canonical_record_order
 
 
 def validate_stream_configs(
@@ -61,14 +60,6 @@ def validate_stream_configs(
 
     for stream_id, stream in streams.items():
         partition_by = stream_partition_by(streams, stream_id)
-        if isinstance(stream, SourceStreamConfig) and stream.ordered_by is not None:
-            canonical_order = canonical_record_order(partition_by)
-            if stream.ordered_by != canonical_order:
-                raise ValueError(
-                    f"Stream '{stream_id}' ordered_by must be "
-                    f"{list(canonical_order)!r}; got {list(stream.ordered_by)!r}"
-                )
-
         canonical_fields = {"time", *partition_by}
         for operation in stream.transforms:
             output_fields: tuple[str, ...]

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal, Sequence
 
 from jerrythomas.artifacts.settings import BuildSettings
@@ -18,6 +19,15 @@ from jerrythomas.services.definitions import ProjectDefinition
 class ServeRunPlan:
     paths: RunPaths
     preview: PreviewStage | None
+
+
+@dataclass(frozen=True)
+class ServeRunResult:
+    """A successfully published serve run and its completed output files."""
+
+    paths: RunPaths
+    preview: PreviewStage | None
+    outputs: tuple[Path, ...]
 
 
 @dataclass(frozen=True)

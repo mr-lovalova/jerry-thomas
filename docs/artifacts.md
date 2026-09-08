@@ -88,7 +88,7 @@ fails before reading or mutating managed artifacts.
 
 Jerry 10.0.2 advances the core artifact-cache revision to isolate mutable plugin
 configuration between runtimes. It includes the numerical corrections from
-10.0.1. `AUTO` rebuilds required artifacts created under the previous revision.
+10.0.1. `auto` rebuilds required artifacts created under the previous revision.
 Project schemas and stored artifact formats remain unchanged.
 
 Jerry 8 uses `schedule` consistently for the expected-timestamp artifact:
@@ -123,19 +123,19 @@ Jerry 8 series manifests use format version 11. Version 9 introduced source
 record versus cadence-placeholder provenance; version 10 replaced implicit
 scalar-to-list aggregation with explicit fixed-size `collect`; version 11
 enforces scalar or non-empty flat-list values. The series format version
-participates in artifact fingerprints, so `AUTO` rebuilds series, metadata, and
+participates in artifact fingerprints, so `auto` rebuilds series, metadata, and
 dependent coverage artifacts from earlier versions. Projects that relied on
 multiple scalar values in one sample bucket must declare `collect: N` or use a
 finer `sample.cadence`. Structured values must be projected into explicit
 scalar or flat-list series. Otherwise the rebuild fails instead of silently
-changing shape. `OFF` requires those artifacts to be rebuilt first. Scaler
+changing shape. `require_current` requires those artifacts to be rebuilt first. Scaler
 artifacts remain current because collection shapes already-fitted scalar
 observations.
 
 Metadata format version 4 stores the global catalog plus the explicit unsplit
 or folded layout. The artifact cache generation is also incremented for the new
-folded-scaler semantics and UTC record canonicalization. `AUTO` therefore
-rebuilds stale v7 and pre-canonicalization artifacts; `OFF` requires a v8 build
+folded-scaler semantics and UTC record canonicalization. `auto` therefore
+rebuilds stale v7 and pre-canonicalization artifacts; `require_current` requires a v8 build
 first.
 
 Jerry 7 renames the v6 `variable_records` artifact to `series`:
@@ -151,14 +151,14 @@ Jerry 7 renames the v6 `variable_records` artifact to `series`:
 - Python imports replace `VariableRecordsTask` with `SeriesTask`.
 
 The old build-state entry and `build/variable_records/` directory are ignored;
-`AUTO` builds the new artifact and its dependents. They may be deleted manually
+`auto` builds the new artifact and its dependents. They may be deleted manually
 after the migration. Reinstall an editable checkout after upgrading so its
 entry-point metadata exposes the renamed core artifacts.
 
 Jerry 7 beta series manifests used one gzip file per configured series. Jerry 7
 manifests use format version 8 and one grouped companion, avoiding an
 open-file-per-series limit and repeated key parsing. The artifact fingerprint
-includes the format version, so `AUTO` rebuilds beta series, metadata, and
+includes the format version, so `auto` rebuilds beta series, metadata, and
 coverage artifacts. YAML configuration and final dataset output are unchanged.
 
 Jerry 7 metadata supports the three distinct window modes `union`,
@@ -166,7 +166,7 @@ Jerry 7 metadata supports the three distinct window modes `union`,
 `union`. Project schema 5 moves this policy from metadata operation overrides
 to `dataset.yaml:sample.window_mode`; use `union` when migrating a former
 `relaxed` value. Metadata format version 3 records the narrower contract, so
-`AUTO` rebuilds older metadata and dependent coverage artifacts.
+`auto` rebuilds older metadata and dependent coverage artifacts.
 
 Jerry 7 also renames the raw availability-counter artifact from `stats` to
 `coverage_stats`:
@@ -183,8 +183,8 @@ Python integrations likewise use `CoverageStatsTask`,
 names are removed.
 
 The runtime `coverage` operation and `inspect.coverage.yaml` profiles are
-unchanged. The old build-state entry and `build/stats.json` are ignored; `AUTO`
-builds the renamed artifact, while `OFF` requires it to exist first. The old
+unchanged. The old build-state entry and `build/stats.json` are ignored; `auto`
+builds the renamed artifact, while `require_current` requires it to exist first. The old
 file may be deleted manually after the migration.
 
 Jerry 6 also removes the separate `schema` artifact because `metadata` now owns
@@ -207,11 +207,11 @@ unchanged; the internal artifact rows are grouped by sample key.
 
 Serve, inspect, and materialize use one command-wide `artifact_mode` for their
 prerequisite phase. Its precedence is CLI `--artifact-mode`, then the matching
-`<command>.defaults.yaml`, then the built-in `AUTO`:
+`<command>.defaults.yaml`, then the built-in `auto`:
 
-- `AUTO`: build missing/stale requirements and reuse current dependencies.
-- `FORCE`: rebuild the selected dependency closure.
-- `OFF`: do not build; fail if a selected runtime requirement is unavailable.
+- `auto`: build missing/stale requirements and reuse current dependencies.
+- `rebuild`: rebuild the selected dependency closure.
+- `require_current`: do not build; fail if a selected runtime requirement is unavailable.
 
 Before any selected serve or inspect profile runs, Jerry unions their artifact
 requirements and prepares that union once. The graph orders internal artifact

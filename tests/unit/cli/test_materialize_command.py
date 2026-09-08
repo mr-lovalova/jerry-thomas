@@ -30,9 +30,8 @@ def test_materialize_parser_accepts_profile_overrides() -> None:
             "adv-20.jsonl.gz",
             "--overwrite",
             "--artifact-mode",
-            "force",
-            "--visuals",
-            "off",
+            "rebuild",
+            "--no-visuals",
             "--heartbeat-interval",
             "10",
         ]
@@ -42,8 +41,8 @@ def test_materialize_parser_accepts_profile_overrides() -> None:
     assert args.profile == "adv-20"
     assert args.output == "adv-20.jsonl.gz"
     assert args.overwrite is True
-    assert args.artifact_mode == "FORCE"
-    assert args.visuals == "off"
+    assert args.artifact_mode == "rebuild"
+    assert args.visuals is False
     assert args.heartbeat_interval_seconds == 10
 
 
@@ -74,7 +73,7 @@ def test_materialize_dispatches_one_profile_execution_path(monkeypatch) -> None:
         "profile_name": "adv-20",
         "output": "adv-20.jsonl",
         "overwrite": False,
-        "artifact_mode": "AUTO",
+        "artifact_mode": "auto",
         "visuals": None,
         "heartbeat_interval_seconds": None,
         "cli_log_level": "DEBUG",
@@ -123,14 +122,14 @@ def test_materialize_resolves_profile_output_from_workspace(
             "--output",
             "outputs/adv-20.jsonl",
             "--artifact-mode",
-            "off",
+            "require_current",
         ]
     )
 
     _execute(args, workspace)
     assert captured["output"] == (tmp_path / "outputs/adv-20.jsonl").resolve()
     assert captured["profile_name"] == "adv-20"
-    assert captured["artifact_mode"] == "OFF"
+    assert captured["artifact_mode"] == "require_current"
     assert executed == [request]
 
 
@@ -179,8 +178,7 @@ def test_materialize_allows_global_overrides_without_profile(monkeypatch) -> Non
             "--project",
             "project.yaml",
             "--overwrite",
-            "--visuals",
-            "off",
+            "--no-visuals",
         ]
     )
 
@@ -189,7 +187,7 @@ def test_materialize_allows_global_overrides_without_profile(monkeypatch) -> Non
     assert captured["output"] is None
     assert captured["overwrite"] is True
     assert captured["command_observability"] == CommandObservability(
-        visuals="off",
+        visuals=False,
         log_level="DEBUG",
     )
 

@@ -113,7 +113,7 @@ def _read_coverage_stats(path: Path) -> CoverageStatsArtifact:
     if version != 3:
         raise ValueError(
             f"Unsupported coverage stats schema version {version!r}. "
-            "Rebuild coverage_stats in FORCE mode."
+            "Rebuild coverage_stats in rebuild mode."
         )
     return CoverageStatsArtifact.model_validate(payload)
 

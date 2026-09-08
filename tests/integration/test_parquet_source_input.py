@@ -36,7 +36,7 @@ def test_parquet_source_matches_jsonl_source_through_dataset_pipeline(
         encoding="utf-8",
     )
 
-    parquet_request = serve_dataset(project_root, "FORCE")
+    parquet_request = serve_dataset(project_root, "rebuild")
     result_path = parquet_request.serve_run_plans[0].paths.dataset_dir / "dataset.jsonl"
     assert read_jsonl(result_path) == expected
 
@@ -45,7 +45,7 @@ def test_samples_parquet_can_be_derived_and_reingested(copy_fixture) -> None:
     project_root = copy_fixture("identity_alignment_project")
     export_request = serve_dataset(
         project_root,
-        "FORCE",
+        "rebuild",
         ServeOutputConfig(
             transport="fs",
             format="parquet",
@@ -119,7 +119,7 @@ features:
         encoding="utf-8",
     )
 
-    result_request = serve_dataset(project_root, "FORCE")
+    result_request = serve_dataset(project_root, "rebuild")
     result_path = result_request.serve_run_plans[0].paths.dataset_dir / "dataset.jsonl"
     rows = read_jsonl(result_path)
 

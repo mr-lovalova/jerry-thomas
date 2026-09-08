@@ -864,7 +864,7 @@ def test_as_of_pipeline_validates_lookup_tail_after_primary_finishes(
         ),
     }
 
-    with pytest.raises(ValueError, match="violates declared ordered_by"):
+    with pytest.raises(ValueError, match="violates presorted order"):
         list(run_stream_pipeline(runtime, "enriched"))
 
     assert primary.closes == 1

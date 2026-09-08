@@ -42,7 +42,7 @@ missing from that contract.
 | Scaling | Standard and folded feature/target statistics and values are golden |
 | Leakage | Changing validation/test values cannot change fitted train statistics or introduce training columns |
 | Walk-forward splits | Fold membership, purge exclusions, routing, and row order are golden |
-| Artifact caching | Unchanged AUTO runs reuse artifacts; source/config changes rebuild stale artifacts |
+| Artifact caching | Unchanged auto runs reuse artifacts; source/config changes rebuild stale artifacts |
 | Persistence | Real serve profiles publish exact JSONL outputs and successful run metadata |
 
 The integration fixtures live under `tests/fixtures/`. Their tests should call

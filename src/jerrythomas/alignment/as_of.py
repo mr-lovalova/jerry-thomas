@@ -28,8 +28,7 @@ def as_of_stream(
     with closing_alignment_inputs((primary, lookup)):
         if type(direction) is not str or direction not in {"backward", "forward"}:
             raise ValueError(
-                "As-of direction must be 'backward' or 'forward', got "
-                f"{direction!r}"
+                f"As-of direction must be 'backward' or 'forward', got {direction!r}"
             )
         if max_age is not None and not isinstance(max_age, timedelta):
             raise TypeError("As-of max_age must be a timedelta or None")

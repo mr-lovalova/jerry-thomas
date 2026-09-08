@@ -41,7 +41,7 @@ def _compile_source_stream(
         mapper=build_mapper(config.map),
         preprocess=tuple(config.preprocess),
         partition_by=config.partition_by,
-        presorted=config.ordered_by is not None,
+        presorted=config.presorted,
         transforms=tuple(config.transforms),
     )
 

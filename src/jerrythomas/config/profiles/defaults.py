@@ -1,12 +1,20 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    field_validator,
+    model_validator,
+)
+from pydantic_core import PydanticCustomError
 
 from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.config.observability import ObservabilityConfig
 from jerrythomas.config.preview import PreviewStage
 
-from .build import ArtifactMode, normalize_artifact_mode
+from .build import ArtifactMode
 from .output import ServeOutputConfig
 from .serve import normalize_include_outputs
 
@@ -28,11 +36,6 @@ class ServeProfileDefaults(ProfileDefaults):
     preview: PreviewStage | None = None
     throttle_ms: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
 
-    @field_validator("artifact_mode", mode="before")
-    @classmethod
-    def _normalize_artifact_mode(cls, value: object) -> ArtifactMode | None:
-        return normalize_artifact_mode(value)
-
     @field_validator("include_outputs", mode="before")
     @classmethod
     def _normalize_include_outputs(cls, value: object) -> list[str] | None:
@@ -41,12 +44,18 @@ class ServeProfileDefaults(ProfileDefaults):
 
 class BuildProfileDefaults(ProfileDefaults):
     cmd: Literal["build"]
-    mode: ArtifactMode | None = Field(default=None)
+    artifact_mode: ArtifactMode | None = Field(default=None)
 
-    @field_validator("mode", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def _normalize_mode(cls, value: object) -> ArtifactMode | None:
-        return normalize_artifact_mode(value)
+    def reject_mode(cls, value: object) -> object:
+        if isinstance(value, dict) and "mode" in value:
+            raise PydanticCustomError(
+                "removed_build_mode",
+                "Build mode was renamed in v11; use artifact_mode with "
+                "auto, rebuild, or require_current",
+            )
+        return value
 
 
 class InspectProfileDefaults(ProfileDefaults):
@@ -54,18 +63,8 @@ class InspectProfileDefaults(ProfileDefaults):
     output: ServeOutputConfig | None = None
     artifact_mode: ArtifactMode | None = Field(default=None)
 
-    @field_validator("artifact_mode", mode="before")
-    @classmethod
-    def _normalize_artifact_mode(cls, value: object) -> ArtifactMode | None:
-        return normalize_artifact_mode(value)
-
 
 class MaterializeProfileDefaults(ProfileDefaults):
     cmd: Literal["materialize"]
     artifact_mode: ArtifactMode | None = Field(default=None)
     overwrite: StrictBool | None = None
-
-    @field_validator("artifact_mode", mode="before")
-    @classmethod
-    def _normalize_artifact_mode(cls, value: object) -> ArtifactMode | None:
-        return normalize_artifact_mode(value)

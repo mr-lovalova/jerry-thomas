@@ -64,7 +64,7 @@ Profile sequencing:
   reference runtime operations through `operation`. Core operations are
   available without YAML declarations.
 - Before selected serve or inspect profiles run, their artifact requirements are
-  combined and prepared once according to `artifact_mode: AUTO|FORCE|OFF`.
+  combined and prepared once according to `artifact_mode: auto|rebuild|require_current`.
 - The dependency graph orders only internal artifact jobs. It never changes
   profile order; build profiles remain explicit artifact roots.
 - Selected build profiles must reference distinct operations.

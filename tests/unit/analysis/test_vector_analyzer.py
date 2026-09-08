@@ -128,7 +128,7 @@ def test_coverage_stats_loader_rejects_v2_with_rebuild_message(tmp_path) -> None
     path = tmp_path / "coverage_stats.json"
     path.write_text('{"schema_version": 2}', encoding="utf-8")
 
-    with pytest.raises(ValueError, match="Rebuild coverage_stats in FORCE mode"):
+    with pytest.raises(ValueError, match="Rebuild coverage_stats in rebuild mode"):
         COVERAGE_STATS_SPEC.loader(path)
 
 

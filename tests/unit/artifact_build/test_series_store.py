@@ -408,7 +408,7 @@ def test_series_manifest_rejects_incompatible_version(
     payload = {} if version is None else {"version": version}
     manifest.write_text(json.dumps(payload), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="FORCE mode"):
+    with pytest.raises(ValueError, match="rebuild mode"):
         load_series_manifest(manifest)
 
 

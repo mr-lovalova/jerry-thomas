@@ -73,7 +73,7 @@ def test_execution_scope_configures_logging_and_runs_inside_visuals(monkeypatch)
     with execution_scope(
         runtime,
         ObservabilitySettings(
-            visuals="on",
+            visuals=True,
             heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
             log_decision=LogLevelDecision(name="INFO", value=20),
             log_output=log_output,
@@ -98,7 +98,7 @@ def test_execution_scope_routes_messages_to_file(tmp_path: Path) -> None:
     with execution_scope(
         _runtime(),
         ObservabilitySettings(
-            visuals="off",
+            visuals=False,
             heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
             log_decision=LogLevelDecision(name="DEBUG", value=logging.DEBUG),
             log_output=LogOutputSettings(
@@ -113,7 +113,7 @@ def test_execution_scope_routes_messages_to_file(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("visuals", "rich_supported"),
-    [("off", True), ("on", False)],
+    [(False, True), (True, False)],
 )
 def test_execution_scope_uses_plain_context_when_visuals_are_unavailable(
     monkeypatch,
@@ -165,7 +165,7 @@ def test_execution_scope_observes_nodes_for_debug_logging(monkeypatch) -> None:
     with execution_scope(
         runtime,
         ObservabilitySettings(
-            visuals="off",
+            visuals=False,
             heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
             log_decision=LogLevelDecision(name="DEBUG", value=10),
             log_output=_log_output(),
@@ -189,7 +189,7 @@ def test_execution_scope_restores_observation_after_failure(monkeypatch) -> None
         with execution_scope(
             runtime,
             ObservabilitySettings(
-                visuals="off",
+                visuals=False,
                 heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
                 log_decision=LogLevelDecision(name="INFO", value=20),
                 log_output=_log_output(),
@@ -259,7 +259,7 @@ def test_execution_scope_restores_outer_state_after_visual_cleanup_failure(
         with execution_scope(
             runtime,
             ObservabilitySettings(
-                visuals="on",
+                visuals=True,
                 heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
                 log_decision=LogLevelDecision(name="INFO", value=20),
                 log_output=_log_output(),
@@ -306,7 +306,7 @@ def test_execution_scope_restores_outer_execution_observer(monkeypatch) -> None:
         with execution_scope(
             runtime,
             ObservabilitySettings(
-                visuals="on",
+                visuals=True,
                 heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
                 log_decision=LogLevelDecision(name="INFO", value=20),
                 log_output=_log_output(),

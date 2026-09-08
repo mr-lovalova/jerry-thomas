@@ -1,11 +1,11 @@
 # Defaults for the inspect command and its inspect.<name>.yaml profiles.
 # precedence: CLI > inspect.<name>.yaml > inspect.defaults.yaml > built-ins
-# artifact_mode: AUTO
+# artifact_mode: auto
 # output:
 #   transport: stdout
 #   format: txt
 observability:
-  visuals: ON
+  visuals: true
   heartbeat_interval_seconds: 60
   logging:
     level: INFO

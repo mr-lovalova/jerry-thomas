@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import time
 
@@ -11,7 +12,11 @@ from jerrythomas.execution.events import RunStatus
 from jerrythomas.execution.observability import CommandFinished
 from jerrythomas.execution.settings import CommandObservability, LogOutputTarget
 from jerrythomas.profiles.errors import ProfileCommandError
-from jerrythomas.profiles.models import BuildRunRequest, ProfileRunRequest
+from jerrythomas.profiles.models import (
+    BuildRunRequest,
+    ProfileRunRequest,
+    ServeRunResult,
+)
 from jerrythomas.profiles.orchestration import run_profiles
 from jerrythomas.profiles.request_builder import (
     build_build_run_request,
@@ -23,18 +28,18 @@ logger = logging.getLogger(__name__)
 
 def _command_uses_visuals(request: ProfileRunRequest) -> bool:
     if isinstance(request, BuildRunRequest):
-        return any(job.settings.observability.visuals == "on" for job in request.jobs)
-    return request.artifact_settings.observability.visuals == "on" or any(
-        job.observability.visuals == "on" for job in request.jobs
+        return any(job.settings.observability.visuals is True for job in request.jobs)
+    return request.artifact_settings.observability.visuals is True or any(
+        job.observability.visuals is True for job in request.jobs
     )
 
 
-def execute_profile_request(request: ProfileRunRequest) -> None:
+def execute_profile_request(request: ProfileRunRequest) -> tuple[ServeRunResult, ...]:
     started_at = time.perf_counter()
     status: RunStatus = "error"
     command_error: BaseException | None = None
     try:
-        run_profiles(request)
+        results = run_profiles(request)
     except ProfileCommandError as exc:
         command_error = exc
         logger.error("%s", exc)
@@ -75,6 +80,7 @@ def execute_profile_request(request: ProfileRunRequest) -> None:
                 (ProfileCommandError, KeyboardInterrupt, SystemExit),
             ):
                 logger.error("%s", message)
+    return results
 
 
 def handle_build(
@@ -132,10 +138,47 @@ def handle_serve(
         ),
     )
     if request is None:
-        logger.info("No enabled serve profiles; skipping serve.")
+        if args.result_json:
+            print(json.dumps({"schema_version": 1, "runs": []}))
+        else:
+            logger.info("No enabled serve profiles; skipping serve.")
         return
+    if args.result_json:
+        if any(job.output.transport == "stdout" for job in request.jobs):
+            raise ProfileCommandError(
+                "--result-json requires filesystem data outputs; stdout is reserved for run results."
+            )
+        log_outputs = (
+            request.artifact_settings.observability.log_output,
+            *(job.observability.log_output for job in request.jobs),
+        )
+        if any(
+            target.transport == "stdout"
+            for output in log_outputs
+            for target in output.outputs
+        ):
+            raise ProfileCommandError(
+                "--result-json cannot use stdout logging; select stderr or filesystem logs."
+            )
     configure_profile_logging(cli_log_level, cli_log_outputs)
-    execute_profile_request(request)
+    results = execute_profile_request(request)
+    if args.result_json:
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "runs": [
+                        {
+                            "run_id": result.paths.run_id,
+                            "directory": str(result.paths.run_root),
+                            "preview": result.preview,
+                            "outputs": [str(path) for path in result.outputs],
+                        }
+                        for result in results
+                    ],
+                }
+            )
+        )
 
 
 def handle_inspect(

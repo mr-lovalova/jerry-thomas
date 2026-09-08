@@ -20,7 +20,7 @@ def execution_scope(
 ) -> Iterator[None]:
     level = observability.log_decision.value
     with root_logging_scope(level, observability.log_output):
-        visuals_active = observability.visuals == "on" and rich_visuals_supported()
+        visuals_active = observability.visuals is True and rich_visuals_supported()
         visuals = visual_execution(level) if visuals_active else nullcontext()
         observer = make_execution_observer(logging.getLogger("jerrythomas.execution"))
 

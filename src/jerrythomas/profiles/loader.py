@@ -177,7 +177,9 @@ def apply_profile_defaults(
     defaults_payload = defaults.model_dump(
         exclude_unset=True,
         exclude_none=True,
-        exclude={"execution", "artifact_mode"},
+        exclude={"execution"}
+        if profile.cmd == "build"
+        else {"execution", "artifact_mode"},
     )
     profile_payload = profile.model_dump(exclude_unset=True)
     merged_payload = {**defaults_payload, **profile_payload}

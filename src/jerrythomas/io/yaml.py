@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,15 @@ from yaml.nodes import MappingNode
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
+    yaml_implicit_resolvers = {
+        initial: [
+            (tag, pattern)
+            for tag, pattern in resolvers
+            if tag != "tag:yaml.org,2002:bool"
+        ]
+        for initial, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+    }
+
     def construct_mapping(
         self, node: MappingNode, deep: bool = False
     ) -> dict[Any, Any]:
@@ -43,6 +53,13 @@ class _UniqueKeyLoader(yaml.SafeLoader):
                 )
             keys.add(key)
         return super().construct_mapping(node, deep=deep)
+
+
+_UniqueKeyLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:bool",
+    re.compile(r"^(?:true|false)$", re.IGNORECASE),
+    list("tTfF"),
+)
 
 
 @dataclass(frozen=True, slots=True)

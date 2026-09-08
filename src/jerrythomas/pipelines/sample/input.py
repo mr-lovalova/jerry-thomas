@@ -76,7 +76,7 @@ def _require_series(
         raise RuntimeError(
             "Series artifact is required before sample assembly. "
             "Run `jerry build --profile series` or use "
-            "`--artifact-mode AUTO|FORCE`."
+            "`--artifact-mode auto|rebuild`."
         )
 
     manifest_path = artifact.resolve(runtime.artifacts.root)

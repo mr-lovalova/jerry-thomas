@@ -1,13 +1,13 @@
 # Defaults for the serve command and its serve.<name>.yaml profiles.
 # precedence: CLI > serve.<name>.yaml > serve.defaults.yaml > built-ins
-# artifact_mode: AUTO
+# artifact_mode: auto
 output:
   transport: fs
   format: jsonl
   # compression: gzip
   directory: ./output
 observability:
-  visuals: ON
+  visuals: true
   heartbeat_interval_seconds: 60
   logging:
     level: INFO

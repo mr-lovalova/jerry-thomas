@@ -3,7 +3,14 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from jerrythomas.config.options import OUTPUT_STDOUT_FORMATS, OUTPUT_VIEWS
 from jerrythomas.io.compression import Compression

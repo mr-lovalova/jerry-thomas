@@ -22,6 +22,11 @@ def add_serve_command(sub, common: argparse.ArgumentParser) -> None:
     add_dataset_flag(parser)
     add_project_flag(parser)
     parser.add_argument(
+        "--result-json",
+        action="store_true",
+        help="write completed run results as JSON to stdout; requires filesystem data outputs",
+    )
+    parser.add_argument(
         "--limit",
         "-n",
         type=positive_integer,

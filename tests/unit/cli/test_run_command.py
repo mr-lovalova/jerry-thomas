@@ -23,6 +23,7 @@ from jerrythomas.profiles.models import BuildRunRequest
 def _serve_args() -> SimpleNamespace:
     return SimpleNamespace(
         cmd="serve",
+        result_json=False,
         project="project.yaml",
         limit=None,
         profile=None,
@@ -34,7 +35,7 @@ def _serve_args() -> SimpleNamespace:
         output_compression=None,
         output_view=None,
         artifact_mode=None,
-        visuals="on",
+        visuals=True,
         heartbeat_interval_seconds=None,
     )
 
@@ -52,12 +53,12 @@ def _inspect_args() -> SimpleNamespace:
         output_compression=None,
         output_view=None,
         artifact_mode=None,
-        visuals="on",
+        visuals=True,
         heartbeat_interval_seconds=None,
     )
 
 
-def _runtime_request(visuals: str = "off") -> SimpleNamespace:
+def _runtime_request(visuals: bool = False) -> SimpleNamespace:
     return SimpleNamespace(
         command="serve",
         artifact_settings=SimpleNamespace(
@@ -67,7 +68,7 @@ def _runtime_request(visuals: str = "off") -> SimpleNamespace:
     )
 
 
-def _build_run_request(visuals: str = "off") -> BuildRunRequest:
+def _build_run_request(visuals: bool = False) -> BuildRunRequest:
     job = SimpleNamespace(
         settings=SimpleNamespace(
             observability=SimpleNamespace(visuals=visuals),
@@ -163,7 +164,9 @@ def test_merge_output_overrides_rejects_invalid_combinations() -> None:
     with pytest.raises(ValueError, match="fs outputs require a directory"):
         merge_output_overrides(None, {"transport": "fs", "format": "jsonl"})
 
-    stdout_jsonl = ServeOutputConfig.model_validate({"transport": "stdout", "format": "jsonl"})
+    stdout_jsonl = ServeOutputConfig.model_validate(
+        {"transport": "stdout", "format": "jsonl"}
+    )
     with pytest.raises(ValueError, match="stdout cannot define a directory"):
         merge_output_overrides(stdout_jsonl, {"directory": "out"})
 
@@ -237,7 +240,7 @@ def test_execute_serve_runs_request_from_builder(monkeypatch) -> None:
     )
 
     args = _serve_args()
-    args.artifact_mode = "FORCE"
+    args.artifact_mode = "rebuild"
     result = execute_command(
         args=args,
         plugin_root=None,
@@ -249,8 +252,8 @@ def test_execute_serve_runs_request_from_builder(monkeypatch) -> None:
     assert result is None
     assert seen["request"] is sentinel_request
     assert captured["command"] == "serve"
-    assert captured["artifact_mode"] == "FORCE"
-    assert captured["command_observability"] == CommandObservability(visuals="on")
+    assert captured["artifact_mode"] == "rebuild"
+    assert captured["command_observability"] == CommandObservability(visuals=True)
 
 
 @pytest.mark.parametrize("command", ["serve", "inspect"])
@@ -346,7 +349,7 @@ def test_execute_build_passes_profile_and_force(monkeypatch) -> None:
         project="project.yaml",
         profile="nightly",
         force=True,
-        visuals="off",
+        visuals=False,
         heartbeat_interval_seconds=None,
     )
     result = execute_command(
@@ -361,7 +364,7 @@ def test_execute_build_passes_profile_and_force(monkeypatch) -> None:
     assert captured["profile_name"] == "nightly"
     assert captured["force"] is True
     assert captured["command_observability"] == CommandObservability(
-        visuals="off",
+        visuals=False,
         log_level="DEBUG",
     )
 
@@ -396,7 +399,7 @@ def test_execute_inspect_passes_command_and_profile(monkeypatch) -> None:
     assert captured["command"] == "inspect"
     assert captured["profile_name"] == "report"
     assert captured["command_observability"] == CommandObservability(
-        visuals="on",
+        visuals=True,
         log_level="INFO",
     )
 
@@ -598,7 +601,7 @@ def test_profile_request_preserves_process_control_exceptions(
 
 @pytest.mark.parametrize(
     "profile_request",
-    (_runtime_request(visuals="on"), _build_run_request(visuals="on")),
+    (_runtime_request(visuals=True), _build_run_request(visuals=True)),
     ids=("runtime", "build"),
 )
 def test_profile_request_routes_summary_inside_enabled_visuals(
@@ -640,3 +643,118 @@ def test_profile_request_routes_summary_inside_enabled_visuals(
         CommandFinished(profile_request.command, "success", 1.0),
         ("exit", True),
     ]
+
+
+def test_serve_result_json_serializes_completed_runs(monkeypatch, tmp_path, capsys):
+    import json
+
+    from jerrythomas.io.runs import get_run_paths
+    from jerrythomas.profiles.models import ServeRunResult
+
+    request = _runtime_request()
+    request.jobs = []
+    request.artifact_settings.observability.log_output = SimpleNamespace(outputs=())
+    paths = get_run_paths(tmp_path / "served", "run-1")
+    results = (
+        ServeRunResult(paths, None, (paths.dataset_dir / "dataset.train.jsonl",)),
+        ServeRunResult(get_run_paths(tmp_path / "other", "run-2"), "samples", ()),
+    )
+    monkeypatch.setattr(
+        "jerrythomas.cli.commands.profile_runner.build_runtime_run_request",
+        lambda **_kwargs: request,
+    )
+    monkeypatch.setattr(
+        "jerrythomas.cli.commands.profile_runner.execute_profile_request",
+        lambda received: (
+            results if received is request else pytest.fail("wrong request")
+        ),
+    )
+    args = _serve_args()
+    args.result_json = True
+    execute_command(args, None, None, None, [])
+    assert json.loads(capsys.readouterr().out) == {
+        "schema_version": 1,
+        "runs": [
+            {
+                "run_id": "run-1",
+                "directory": str(paths.run_root),
+                "preview": None,
+                "outputs": [str(paths.dataset_dir / "dataset.train.jsonl")],
+            },
+            {
+                "run_id": "run-2",
+                "directory": str(tmp_path / "other/runs/run-2"),
+                "preview": "samples",
+                "outputs": [],
+            },
+        ],
+    }
+
+
+@pytest.mark.parametrize("stdout_use", ["data", "logs"])
+def test_serve_result_json_rejects_stdout_conflicts_before_execution(
+    monkeypatch, stdout_use
+):
+    request = _runtime_request()
+    request.jobs = [
+        SimpleNamespace(
+            output=SimpleNamespace(
+                transport="stdout" if stdout_use == "data" else "fs"
+            ),
+            observability=SimpleNamespace(log_output=SimpleNamespace(outputs=())),
+        )
+    ]
+    request.artifact_settings.observability.log_output = SimpleNamespace(
+        outputs=(
+            SimpleNamespace(transport="stdout" if stdout_use == "logs" else "stderr"),
+        )
+    )
+    monkeypatch.setattr(
+        "jerrythomas.cli.commands.profile_runner.build_runtime_run_request",
+        lambda **_kwargs: request,
+    )
+    monkeypatch.setattr(
+        "jerrythomas.cli.commands.profile_runner.execute_profile_request",
+        lambda _request: pytest.fail("must fail before execution"),
+    )
+    args = _serve_args()
+    args.result_json = True
+    with pytest.raises(ProfileCommandError, match="--result-json"):
+        execute_command(args, None, None, None, [])
+
+
+def test_serve_result_json_returns_empty_list_when_no_profiles_enabled(
+    monkeypatch, capsys
+):
+    import json
+
+    monkeypatch.setattr(
+        "jerrythomas.cli.commands.profile_runner.build_runtime_run_request",
+        lambda **_kwargs: None,
+    )
+    args = _serve_args()
+    args.result_json = True
+    execute_command(args, None, None, None, [])
+    assert json.loads(capsys.readouterr().out) == {"schema_version": 1, "runs": []}
+
+
+def test_serve_result_json_is_not_emitted_when_execution_fails(monkeypatch, capsys):
+    request = _runtime_request()
+    request.jobs = []
+    request.artifact_settings.observability.log_output = SimpleNamespace(outputs=())
+    monkeypatch.setattr(
+        "jerrythomas.cli.commands.profile_runner.build_runtime_run_request",
+        lambda **_kwargs: request,
+    )
+
+    def fail(_request):
+        raise OSError("publication failed")
+
+    monkeypatch.setattr(
+        "jerrythomas.cli.commands.profile_runner.execute_profile_request", fail
+    )
+    args = _serve_args()
+    args.result_json = True
+    with pytest.raises(OSError, match="publication failed"):
+        execute_command(args, None, None, None, [])
+    assert capsys.readouterr().out == ""

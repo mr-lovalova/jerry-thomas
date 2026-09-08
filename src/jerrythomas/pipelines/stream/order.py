@@ -34,7 +34,7 @@ def validate_record_order(
     partition_by: tuple[str, ...],
     records: Iterator[Any],
 ) -> Iterator[Any]:
-    ordered_by = list(canonical_record_order(partition_by))
+    required_order = list(canonical_record_order(partition_by))
     expected_types: dict[str, type] = {}
     previous_key = None
     for position, record in enumerate(records, start=1):
@@ -48,7 +48,7 @@ def validate_record_order(
         current_key = partition, record.time
         if previous_key is not None and not previous_key <= current_key:
             raise ValueError(
-                f"Record {position} violates declared ordered_by {ordered_by!r}: "
+                f"Record {position} violates presorted order {required_order!r}: "
                 f"key {current_key!r} follows {previous_key!r}."
             )
         previous_key = current_key

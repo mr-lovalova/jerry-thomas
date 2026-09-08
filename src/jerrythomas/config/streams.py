@@ -9,6 +9,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 from jerrythomas.config.constraints import DottedIdentifier, NonEmptyString
 from jerrythomas.config.cross_section import CrossSectionOperation
@@ -120,7 +121,18 @@ class SourceStreamConfig(_StreamConfig):
     map: EntryPointConfig
     preprocess: list[PreprocessConfig] = Field(default_factory=list)
     partition_by: tuple[_FieldName, ...] = ()
-    ordered_by: tuple[_FieldName, ...] | None = None
+    presorted: bool = Field(default=False, strict=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_ordered_by(cls, value: object) -> object:
+        if isinstance(value, dict) and "ordered_by" in value:
+            raise PydanticCustomError(
+                "removed_ordered_by",
+                "ordered_by was removed in v11; use presorted: true to assert "
+                "records are ordered by partition_by fields, then time",
+            )
+        return value
 
     @field_validator("partition_by")
     @classmethod

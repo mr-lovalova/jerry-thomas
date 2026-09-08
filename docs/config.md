@@ -1,5 +1,7 @@
 # Configuration
 
+For upgrades from v10, see [Migrating to v11](migrations/v11.md).
+
 ### Dataset Project (YAML Config)
 
 These live under the dataset “project root” directory (the folder containing `project.yaml`):
@@ -113,7 +115,7 @@ limit: 100 # cap samples per output
 throttle_ms: null # milliseconds to sleep between emitted samples
 # Optional overrides:
 # observability:
-#   visuals: ON      # ON | OFF
+#   visuals: true      # true | false
 #   heartbeat_interval_seconds: 60 # 0 disables heartbeat log records
 #   logging:
 #     level: INFO    # CRITICAL | ERROR | WARNING | INFO | DEBUG
@@ -165,12 +167,12 @@ throttle_ms: null # milliseconds to sleep between emitted samples
   explicit `include_outputs` with preview.
 - Before any selected serve profile runs, Jerry unions their artifact
   requirements and prepares the union once according to `artifact_mode`.
-  `AUTO` builds missing or stale artifacts, `FORCE` rebuilds the required
-  closure, and `OFF` requires every artifact to be current. The mode is
+  `auto` builds missing or stale artifacts, `rebuild` rebuilds the required
+  closure, and `require_current` requires every artifact to be current. The mode is
   command-wide and belongs in `serve.defaults.yaml`, not an individual profile.
   Its precedence is CLI `--artifact-mode`, then `serve.defaults.yaml`, then
-  `AUTO`. Quote `"OFF"` in YAML so it is read as text rather than a boolean.
-- Visuals: set `observability.visuals: ON|OFF` in the profile or use `--visuals on|off`.
+  `auto`.
+- Visuals: set `observability.visuals: true/false` in the profile or use `--visuals` / `--no-visuals`. Strings such as `ON` and `OFF` are rejected.
 - Pipeline heartbeat: set `observability.heartbeat_interval_seconds` or use
   `--heartbeat-interval`; `0` disables logged heartbeats, not live
   progress when visuals are enabled. The built-in interval is 60 seconds.
@@ -194,7 +196,7 @@ stream: adv.20
 output: ${data_root}/features/liquidity/adv/20.jsonl
 overwrite: true
 # observability:
-#   visuals: ON
+#   visuals: true
 #   heartbeat_interval_seconds: 60
 ```
 
@@ -216,20 +218,20 @@ overwrite: true
 - Output paths must be outside `project.paths.artifacts`; that directory is
   reserved for managed artifacts and build state.
 - `artifact_mode` is command-wide and belongs only in
-  `profiles/materialize.defaults.yaml`. `AUTO` prepares missing or stale stream
-  prerequisites, `FORCE` rebuilds them, and `OFF` requires them to be current.
-  CLI `--artifact-mode` takes precedence; the built-in mode is `AUTO`.
+  `profiles/materialize.defaults.yaml`. `auto` prepares missing or stale stream
+  prerequisites, `rebuild` rebuilds them, and `require_current` requires them to be current.
+  CLI `--artifact-mode` takes precedence; the built-in mode is `auto`.
 
 ### Build Profiles (`profiles/build.<name>.yaml`)
 
 ```yaml
 # profiles/build.metadata.yaml
 operation: metadata # required; artifact operation ID to execute
-mode: AUTO # AUTO | FORCE | "OFF"
+artifact_mode: auto # auto | rebuild | require_current
 # enabled: true # optional; profile-level switch
 # Optional overrides:
 # observability:
-#   visuals: OFF
+#   visuals: false
 #   heartbeat_interval_seconds: 60 # 0 disables heartbeat log records
 #   logging:
 #     level: INFO
@@ -266,7 +268,7 @@ mode: AUTO # AUTO | FORCE | "OFF"
   only to that profile.
 - Profile-level setting precedence is CLI > concrete profile >
   `<kind>.defaults.yaml` > built-ins. Command-wide `artifact_mode` precedence is
-  CLI > `<command>.defaults.yaml` > `AUTO`.
+  CLI > `<command>.defaults.yaml` > `auto`.
 - A concrete profile's `output` block replaces the defaults' complete output
   block. To inherit it, omit `output`; to replace it, provide a valid complete
   block, including `transport`, `format`, and a filesystem `directory` where
@@ -283,7 +285,7 @@ Configure its buffer once in each command's defaults file:
 
 ```yaml
 # profiles/materialize.defaults.yaml
-artifact_mode: AUTO
+artifact_mode: auto
 execution:
   sort_buffer_mb: 128
 ```
@@ -446,7 +448,7 @@ loader:
   float range instead of silently changing the data.
 - Local freshness snapshots include glob membership, file paths, sizes, and
   filesystem modification metadata. HTTP response bodies and headers are not
-  fingerprinted: use `--artifact-mode FORCE` when a stable URL can return new
+  fingerprinted: use `--artifact-mode rebuild` when a stable URL can return new
   data, and increment `artifact_revision` when that change must invalidate
   other workspaces. The same rule applies to sources marked
   `freshness: opaque` and to other source changes that cannot be declared
@@ -459,7 +461,7 @@ loader:
 A source-backed stream loads parsed source values, maps them to domain records,
 preprocesses individual records, establishes canonical order, and then applies
 ordered transforms. It is the only stream kind that declares `map`,
-`preprocess`, `partition_by`, or `ordered_by`.
+`preprocess`, `partition_by`, or `presorted`.
 
 ```yaml
 # <project_root>/streams/equity.ohlcv.yaml
@@ -512,18 +514,19 @@ transforms:
   invalid values are rejected. See [Transforms](transforms/index.md).
 - Ordered transforms cannot write `time` or a `partition_by` field. Mapping
   runs before canonical ordering; combines and ordered transforms preserve it.
-- `partition_by` and `ordered_by` are source-backed stream fields and must be
-  YAML lists when present. Scalar shorthand is not accepted; blank and
-  duplicate fields are rejected.
+- `partition_by` is a source-backed stream field and must be a YAML list when
+  present. Scalar shorthand is not accepted; blank and duplicate fields are
+  rejected.
 - `partition_by`: complete identity of an independent record series, used by
   ordering and history-based transforms. The runtime appends the reserved
   `time` field to the canonical sort key, so it must not appear here. Derived
   and cross-sectional streams inherit it from their input; fan-in streams
   inherit it from their partitioned input.
-- `ordered_by`: optional assertion that records entering the ordering stage use
-  `[*partition_by, time]` order. When present, it must equal that canonical
-  order and is validated while streaming. When absent, mapped records are
-  externally sorted. Derived streams reuse upstream canonical order.
+- `presorted`: source-backed stream boolean, default `false`. With `true`,
+  records entering the ordering stage must already follow `[*partition_by, time]`
+  order (or just `time` when unpartitioned). Jerry validates that order while
+  streaming and fails on a violation. With `false`, mapped and preprocessed
+  records are externally sorted. Derived streams reuse upstream canonical order.
 - Series identity is derived at the dataset boundary. Every `sample.keys`
   field must occur in the resolved `partition_by` of every referenced stream.
   Partition fields absent from `sample.keys` suffix the configured feature or
@@ -607,7 +610,7 @@ Notes:
 - The primary input must contain at most one record per `(partition, time)`
   key. The broadcast input must contain at most one record per timestamp.
   Source-backed streams establish canonical order before broadcasting;
-  duplicate keys or a violated `ordered_by` assertion still fail.
+  duplicate keys or a violated `presorted` assertion still fail.
 - Every primary timestamp must have a broadcast record. A missing match fails
   the stream; broadcast timestamps unused by the primary are ignored.
 - Jerry fully indexes the finite broadcast input before reading the primary.
@@ -985,7 +988,7 @@ epsilon: 1.0e-12
   not inspect Python plugin source. Increment `project.yaml`'s
   `artifact_revision` when parser, mapper, combine, transform, or custom
   artifact code changes artifact semantics without changing config.
-- `--artifact-mode FORCE` rebuilds artifacts only in the current workspace. It
+- `--artifact-mode rebuild` rebuilds artifacts only in the current workspace. It
   is useful for a local refresh, but it does not communicate a semantic change
   to other workspaces; commit an incremented `artifact_revision` for that.
 - `jerry serve` selects profiles by name and is reproducible when inputs and config are unchanged.

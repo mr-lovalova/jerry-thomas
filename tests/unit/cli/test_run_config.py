@@ -59,7 +59,7 @@ def test_serve_request_resolves_named_profile(tmp_path: Path):
     assert job.task.id == "coverage"
     assert job.limit == 5
     assert request.artifact_settings is not None
-    assert request.artifact_settings.mode == "AUTO"
+    assert request.artifact_settings.mode == "auto"
 
 
 def test_inspect_request_defaults_to_enabled_profiles(tmp_path: Path):
@@ -510,9 +510,9 @@ def test_cli_artifact_mode_overrides_serve_defaults(tmp_path: Path):
     profiles.mkdir(parents=True, exist_ok=True)
     (profiles / "serve.defaults.yaml").write_text(
         (
-            'artifact_mode: "OFF"\n'
+            'artifact_mode: "require_current"\n'
             "observability:\n"
-            "  visuals: off\n"
+            "  visuals: false\n"
             "  heartbeat_interval_seconds: 30\n"
             "  logging:\n"
             "    level: warning\n"
@@ -535,9 +535,9 @@ def test_cli_artifact_mode_overrides_serve_defaults(tmp_path: Path):
     request = build_runtime_run_request(
         command="serve",
         project=str(project_yaml),
-        artifact_mode="force",
+        artifact_mode="rebuild",
         command_observability=CommandObservability(
-            visuals="on",
+            visuals=True,
             heartbeat_interval_seconds=0,
             log_level="debug",
         ),
@@ -546,9 +546,9 @@ def test_cli_artifact_mode_overrides_serve_defaults(tmp_path: Path):
     assert request is not None
     settings = request.artifact_settings
     assert settings is not None
-    assert settings.mode == "FORCE"
+    assert settings.mode == "rebuild"
     assert settings.observability.heartbeat_interval_seconds == 0
-    assert settings.observability.visuals == "on"
+    assert settings.observability.visuals is True
     assert settings.observability.log_decision.name == "DEBUG"
     assert [
         (
@@ -580,7 +580,7 @@ def test_serve_defaults_control_artifact_mode_for_all_profiles(tmp_path: Path):
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
     (profiles / "serve.defaults.yaml").write_text(
-        'artifact_mode: "OFF"\n',
+        'artifact_mode: "require_current"\n',
         encoding="utf-8",
     )
     (profiles / "serve.first.yaml").write_text(
@@ -597,7 +597,7 @@ def test_serve_defaults_control_artifact_mode_for_all_profiles(tmp_path: Path):
         project=str(project_yaml),
     )
     assert request is not None
-    assert request.artifact_settings.mode == "OFF"
+    assert request.artifact_settings.mode == "require_current"
 
 
 def test_serve_defaults_apply_when_profile_omits_fields(tmp_path: Path):
@@ -691,10 +691,7 @@ def test_cli_directory_override_inherits_profile_transport_and_format(
     assert job.output.format == "jsonl"
     assert job.output.run is not None
     assert job.output.run.dataset_dir == (
-        (tmp_path / "elsewhere").resolve()
-        / "runs"
-        / job.output.run.run_id
-        / "dataset"
+        (tmp_path / "elsewhere").resolve() / "runs" / job.output.run.run_id / "dataset"
     )
     assert job.output.destination == job.output.run.dataset_dir / "train.jsonl"
 
@@ -777,11 +774,11 @@ def test_build_defaults_apply_to_build_profiles(tmp_path: Path):
     profiles.mkdir(parents=True, exist_ok=True)
     (profiles / "build.defaults.yaml").write_text(
         (
-            "mode: force\n"
+            "artifact_mode: rebuild\n"
             "execution:\n"
             "  sort_buffer_mb: 256\n"
             "observability:\n"
-            "  visuals: off\n"
+            "  visuals: false\n"
             "  logging:\n"
             "    level: debug\n"
         ),
@@ -800,6 +797,6 @@ def test_build_defaults_apply_to_build_profiles(tmp_path: Path):
     assert request.definition.artifact_hashes.values
     assert request.execution.sort_buffer_mb == 256
     job = request.jobs[0]
-    assert job.settings.mode == "FORCE"
-    assert job.settings.observability.visuals == "off"
+    assert job.settings.mode == "rebuild"
+    assert job.settings.observability.visuals is False
     assert job.settings.observability.log_decision.name == "DEBUG"

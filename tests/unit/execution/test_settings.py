@@ -20,9 +20,9 @@ from jerrythomas.execution.settings import (
 
 
 def test_resolve_visuals_applies_cli_config_default_precedence():
-    assert resolve_visuals("OFF", "ON") == "off"
-    assert resolve_visuals(None, "OFF") == "off"
-    assert resolve_visuals(None, None) == "on"
+    assert resolve_visuals(False, True) is False
+    assert resolve_visuals(None, False) is False
+    assert resolve_visuals(None, None) is True
 
 
 def test_resolve_heartbeat_interval_applies_default():

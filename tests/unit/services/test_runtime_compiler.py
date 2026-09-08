@@ -1150,3 +1150,42 @@ combine:
         (2, 500),
         (4, 500),
     ]
+
+
+@pytest.mark.parametrize("presorted", [None, False, True])
+@pytest.mark.parametrize("partition_by", [[], ["ticker"], ["venue", "ticker"]])
+def test_source_ordering_declaration_reaches_runtime(
+    tmp_path, presorted, partition_by
+) -> None:
+    import json
+
+    project_yaml, sources_dir, streams_dir, data_dir = _write_test_project(tmp_path)
+    (sources_dir / "prices.yaml").write_text(
+        "id: prices\n"
+        "parser: {entrypoint: core.temporal_record}\n"
+        "loader:\n"
+        "  transport: fs\n"
+        "  path: data/prices.jsonl\n"
+        "  reader: {format: jsonl}\n",
+        encoding="utf-8",
+    )
+    declaration = "" if presorted is None else f"presorted: {str(presorted).lower()}\n"
+    (streams_dir / "prices.yaml").write_text(
+        "id: prices\n"
+        "from: {source: prices}\n"
+        "map: {entrypoint: identity}\n"
+        f"partition_by: {json.dumps(partition_by)}\n" + declaration,
+        encoding="utf-8",
+    )
+    (data_dir / "prices.jsonl").write_text(
+        '{"time":"2024-01-02T00:00:00Z","venue":"X","ticker":"A","value":2}\n'
+        '{"time":"2024-01-01T00:00:00Z","venue":"X","ticker":"A","value":1}\n',
+        encoding="utf-8",
+    )
+    runtime = compile_runtime(load_project_definition(project_yaml))
+    records = run_stream_pipeline(runtime, "prices")
+    if presorted:
+        with pytest.raises(ValueError, match="violates presorted order"):
+            list(records)
+    else:
+        assert [record.value for record in records] == [1, 2]

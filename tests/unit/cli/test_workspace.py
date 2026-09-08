@@ -19,7 +19,7 @@ def test_workspace_rejects_shared_block(tmp_path):
         """
         shared:
           observability:
-            visuals: OFF
+            visuals: false
         """,
     )
 
@@ -45,7 +45,7 @@ def test_workspace_rejects_build_defaults_block(tmp_path):
         tmp_path,
         """
         build:
-          mode: AUTO
+          artifact_mode: auto
         """,
     )
 

@@ -668,7 +668,7 @@ def test_run_profiles_use_builtin_visuals_defaults(tmp_path):
 
     resolved = _resolve_serve(tmp_path, [profile])[0]
 
-    assert resolved.observability.visuals == "on"
+    assert resolved.observability.visuals is True
 
 
 def test_run_profiles_run_visuals_override_defaults(tmp_path):
@@ -677,13 +677,13 @@ def test_run_profiles_run_visuals_override_defaults(tmp_path):
             "cmd": "serve",
             "name": "demo",
             "operation": "serve",
-            "observability": {"visuals": "ON"},
+            "observability": {"visuals": True},
         }
     )
 
     resolved = _resolve_serve(tmp_path, [profile])[0]
 
-    assert resolved.observability.visuals == "on"
+    assert resolved.observability.visuals is True
 
 
 def test_run_profiles_resolve_log_output_precedence(tmp_path):

@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 from jerrythomas.artifacts.errors import ArtifactResolutionError
 from jerrythomas.artifacts.executor import run_build_if_needed
@@ -9,6 +10,7 @@ from jerrythomas.artifacts.planning import (
 from jerrythomas.artifacts.series import prune_series_cache
 from jerrythomas.config.tasks.series import SeriesTask
 from jerrythomas.io.runs import (
+    RunPaths,
     finish_run_failed,
     finish_run_success,
     set_latest_run,
@@ -40,20 +42,29 @@ from .models import (
     ProfileRunRequest,
     RuntimeRunRequest,
     ServeRunPlan,
+    ServeRunResult,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def run_profiles(request: ProfileRunRequest) -> None:
+def run_profiles(request: ProfileRunRequest) -> tuple[ServeRunResult, ...]:
+    """Execute profiles and return completed managed serve runs in plan order.
+
+    Build, materialize, and outputs without managed run directories return an
+    empty tuple. Execution or publication failures raise; no results are returned.
+    """
+    results: tuple[ServeRunResult, ...]
     try:
         with project_execution_lock(request.definition.project.artifacts_root):
             if isinstance(request, BuildRunRequest):
                 _run_build_profiles(request)
+                results = ()
             elif isinstance(request, RuntimeRunRequest):
-                _run_runtime_profiles(request)
+                results = _run_runtime_profiles(request)
             elif isinstance(request, MaterializeRunRequest):
                 _run_materialize_profiles(request)
+                results = ()
             else:
                 raise TypeError(
                     f"Unsupported profile request: {type(request).__name__}"
@@ -66,6 +77,7 @@ def run_profiles(request: ProfileRunRequest) -> None:
                     request.definition.project.artifacts_root,
                     exc,
                 )
+            return results
     except (ArtifactResolutionError, ProjectExecutionBusyError) as exc:
         error = ProfileCommandError(str(exc))
         for note in getattr(exc, "__notes__", ()):
@@ -106,16 +118,19 @@ def _run_build_profiles(request: BuildRunRequest) -> None:
             )
 
 
-def _run_runtime_profiles(request: RuntimeRunRequest) -> None:
+def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[ServeRunResult, ...]:
     jobs = list(request.jobs)
     if not jobs:
-        return
+        return ()
     try:
         plans = [plan_runtime_job(job, request.definition) for job in jobs]
     except ValueError as exc:
         raise ProfileCommandError(str(exc)) from exc
 
     started_runs: list[ServeRunPlan] = []
+    output_files: dict[RunPaths, list[Path]] = {
+        plan.paths: [] for plan in request.serve_run_plans
+    }
     try:
         _prepare_runtime_artifacts(request, plans)
         for run_plan in request.serve_run_plans:
@@ -129,16 +144,22 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> None:
                 job.observability.heartbeat_interval_seconds
             )
             with execution_scope(job.runtime, job.observability):
-                execute_runtime_job(
+                completed_files = execute_runtime_job(
                     request.command,
                     request.definition,
                     plan,
                 )
+            if job.output.run is not None:
+                output_files[job.output.run].extend(completed_files)
     except BaseException as exc:
         _mark_serve_runs_failed(started_runs, exc)
         raise
     else:
         _publish_serve_runs(started_runs)
+    return tuple(
+        ServeRunResult(plan.paths, plan.preview, tuple(output_files[plan.paths]))
+        for plan in started_runs
+    )
 
 
 def _run_materialize_profiles(request: MaterializeRunRequest) -> None:

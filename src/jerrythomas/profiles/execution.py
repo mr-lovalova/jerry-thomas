@@ -1,6 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from jerrythomas.artifacts.errors import ArtifactResolutionError
@@ -103,7 +104,7 @@ def execute_runtime_job(
     command: Literal["serve", "inspect"],
     definition: ProjectDefinition,
     plan: RuntimeJobPlan,
-) -> None:
+) -> tuple[Path, ...]:
     job = plan.job
     current_artifacts = set(
         hydrate_runtime_artifacts_for_pipeline(
@@ -154,7 +155,7 @@ def execute_runtime_job(
             level=logging.DEBUG,
         )
         result = run_runtime_operation(job)
-        persist_runtime_result(
+        return persist_runtime_result(
             result,
             job.output,
             job.output_ids,

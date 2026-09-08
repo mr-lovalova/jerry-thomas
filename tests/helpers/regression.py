@@ -12,7 +12,7 @@ from jerrythomas.profiles.request_builder import build_runtime_run_request
 
 def serve_dataset(
     project_root: Path,
-    artifact_mode: Literal["AUTO", "FORCE"] = "FORCE",
+    artifact_mode: Literal["auto", "rebuild"] = "rebuild",
     cli_output: ServeOutputConfig | None = None,
     preview: PreviewStage | None = None,
     limit: int | None = None,
@@ -26,7 +26,7 @@ def serve_dataset(
         preview=preview,
         cli_output=cli_output,
         command_observability=CommandObservability(
-            visuals="off",
+            visuals=False,
             log_level="CRITICAL",
         ),
     )

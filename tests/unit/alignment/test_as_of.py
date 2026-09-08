@@ -570,8 +570,7 @@ def test_as_of_stream_forward_treats_max_age_as_inclusive_ahead() -> None:
         )
     )
     assert [
-        (primary.value, lookup.value if lookup else None)
-        for primary, lookup in within
+        (primary.value, lookup.value if lookup else None) for primary, lookup in within
     ] == [("primary", "lookup")]
 
     dropped = list(
@@ -585,8 +584,7 @@ def test_as_of_stream_forward_treats_max_age_as_inclusive_ahead() -> None:
         )
     )
     assert [
-        (primary.value, lookup.value if lookup else None)
-        for primary, lookup in dropped
+        (primary.value, lookup.value if lookup else None) for primary, lookup in dropped
     ] == [("primary", None)]
 
 

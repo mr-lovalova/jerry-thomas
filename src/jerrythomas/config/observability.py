@@ -5,7 +5,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from jerrythomas.config.options import LOG_SCOPE_CHOICES, LOG_TRANSPORT_CHOICES
 
 VALID_LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
-VALID_VISUAL_PROVIDERS = ("ON", "OFF")
 VALID_LOG_TRANSPORTS = tuple(value.upper() for value in LOG_TRANSPORT_CHOICES)
 VALID_LOG_SCOPES = tuple(value.upper() for value in LOG_SCOPE_CHOICES)
 
@@ -95,9 +94,10 @@ class LoggingConfig(BaseModel):
 class ObservabilityConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    visuals: str | None = Field(
+    visuals: bool | None = Field(
         default=None,
-        description="Visuals mode: ON or OFF.",
+        strict=True,
+        description="Enable terminal visuals.",
     )
     heartbeat_interval_seconds: float | None = Field(
         default=None,
@@ -109,17 +109,3 @@ class ObservabilityConfig(BaseModel):
         default=None,
         description="Logging settings.",
     )
-
-    @field_validator("visuals", mode="before")
-    @classmethod
-    def _validate_visuals(cls, value):
-        if value is None:
-            return None
-        if isinstance(value, bool):
-            return "OFF" if value is False else "ON"
-        name = str(value).upper()
-        if name not in VALID_VISUAL_PROVIDERS:
-            raise ValueError(
-                f"visuals must be one of {', '.join(VALID_VISUAL_PROVIDERS)}"
-            )
-        return name

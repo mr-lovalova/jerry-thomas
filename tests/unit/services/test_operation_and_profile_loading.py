@@ -436,7 +436,7 @@ def test_serve_artifact_mode_is_defaults_only(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
     (profiles_dir / "serve.dataset.yaml").write_text(
-        "operation: dataset\nartifact_mode: AUTO\n",
+        "operation: dataset\nartifact_mode: auto\n",
         encoding="utf-8",
     )
 
@@ -448,7 +448,7 @@ def test_inspect_artifact_mode_is_defaults_only(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
     (profiles_dir / "inspect.coverage.yaml").write_text(
-        "operation: coverage\nartifact_mode: AUTO\n",
+        "operation: coverage\nartifact_mode: auto\n",
         encoding="utf-8",
     )
 
@@ -460,7 +460,7 @@ def test_serve_defaults_keep_command_wide_artifact_mode_out_of_profile(tmp_path)
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
     (profiles_dir / "serve.defaults.yaml").write_text(
-        "artifact_mode: FORCE\n",
+        "artifact_mode: rebuild\n",
         encoding="utf-8",
     )
     (profiles_dir / "serve.dataset.yaml").write_text(
@@ -472,7 +472,7 @@ def test_serve_defaults_keep_command_wide_artifact_mode_out_of_profile(tmp_path)
     defaults = _serve_defaults(project_yaml)
     merged = apply_profile_defaults(profile, defaults)
 
-    assert defaults.artifact_mode == "FORCE"
+    assert defaults.artifact_mode == "rebuild"
     assert not hasattr(merged, "artifact_mode")
 
 
@@ -660,11 +660,11 @@ def test_build_profiles_load_and_respect_enabled(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _profile_kind_dir(project_yaml)
     (config_dir / "build.fast.yaml").write_text(
-        "enabled: true\nmode: auto\noperation: metadata\n",
+        "enabled: true\nartifact_mode: auto\noperation: metadata\n",
         encoding="utf-8",
     )
     (config_dir / "build.full.yaml").write_text(
-        "enabled: false\nmode: force\noperation: coverage_stats\n",
+        "enabled: false\nartifact_mode: rebuild\noperation: coverage_stats\n",
         encoding="utf-8",
     )
 
@@ -704,7 +704,7 @@ def test_materialize_profiles_load_and_normalize_fields(tmp_path):
             "output: ' data/features/adv/20.jsonl '\n"
             "overwrite: true\n"
             "observability:\n"
-            "  visuals: on\n"
+            "  visuals: true\n"
         ),
         encoding="utf-8",
     )
@@ -718,7 +718,7 @@ def test_materialize_profiles_load_and_normalize_fields(tmp_path):
     assert profile.output == Path("data/features/adv/20.jsonl")
     assert profile.overwrite is True
     assert profile.observability is not None
-    assert profile.observability.visuals == "ON"
+    assert profile.observability.visuals is True
 
 
 def test_materialize_profile_accepts_gzip_output(tmp_path):
@@ -790,7 +790,7 @@ def test_materialize_defaults_apply_overwrite_and_observability(tmp_path):
     profiles_dir = _profile_kind_dir(project_yaml)
     (profiles_dir / "materialize.defaults.yaml").write_text(
         (
-            "artifact_mode: force\n"
+            "artifact_mode: rebuild\n"
             "overwrite: true\n"
             "observability:\n"
             "  heartbeat_interval_seconds: 30\n"
@@ -802,7 +802,7 @@ def test_materialize_defaults_apply_overwrite_and_observability(tmp_path):
             "stream: adv.20\n"
             "output: data/features/adv/20.jsonl\n"
             "observability:\n"
-            "  visuals: off\n"
+            "  visuals: false\n"
         ),
         encoding="utf-8",
     )
@@ -811,12 +811,12 @@ def test_materialize_defaults_apply_overwrite_and_observability(tmp_path):
     defaults = _materialize_defaults(project_yaml)
     merged = apply_profile_defaults(profile, defaults)
 
-    assert defaults.artifact_mode == "FORCE"
+    assert defaults.artifact_mode == "rebuild"
     assert isinstance(merged, MaterializeProfile)
     assert not hasattr(merged, "artifact_mode")
     assert merged.overwrite is True
     assert merged.observability is not None
-    assert merged.observability.visuals == "OFF"
+    assert merged.observability.visuals is False
     assert merged.observability.heartbeat_interval_seconds == 30
 
 
@@ -836,7 +836,7 @@ def test_materialize_artifact_mode_is_defaults_only(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
     (profiles_dir / "materialize.adv-20.yaml").write_text(
-        ("stream: adv.20\noutput: data/features/adv/20.jsonl\nartifact_mode: AUTO\n"),
+        ("stream: adv.20\noutput: data/features/adv/20.jsonl\nartifact_mode: auto\n"),
         encoding="utf-8",
     )
 
@@ -852,7 +852,9 @@ def test_materialize_defaults_reject_unknown_artifact_mode(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="artifact mode must be one of"):
+    with pytest.raises(
+        ValueError, match="Input should be.*auto.*rebuild.*require_current"
+    ):
         _materialize_defaults(project_yaml)
 
 

@@ -42,6 +42,46 @@ rows, but postprocess filtering, split routing, and fold-specific scaling have
 not run. Use `--preview postprocess` when the research input should include the
 configured postprocess policy.
 
+### Consume completed runs from Python
+
+In v11, `run_profiles()` returns a tuple of `ServeRunResult` objects after
+execution and publication succeed:
+
+```python
+from jerrythomas.profiles.orchestration import run_profiles
+from jerrythomas.profiles.request_builder import build_runtime_run_request
+
+request = build_runtime_run_request(
+    "serve",
+    "path/to/project.yaml",
+    profile_name="dataset",
+)
+results = () if request is None else run_profiles(request)
+for result in results:
+    print(result.paths.run_id, result.paths.run_root)
+    for output_path in result.outputs:
+        print(output_path)
+```
+
+`ServeRunResult` is an immutable dataclass in `jerrythomas.profiles.models`:
+
+- `paths` is the existing `RunPaths` object, including the run ID, run root,
+  dataset directory, and metadata path.
+- `outputs` is a tuple of filesystem paths actually written, in profile order
+  and then output order. A completed empty file is included; an operation that
+  returns no output contributes no files.
+- `preview` records the preview stage, or `None` for a full run.
+
+Profiles sharing a managed output directory contribute to one result. Separate
+run directories produce separate results in plan order. Preview runs return
+results without updating `latest`. Build, materialize, inspect, and stdout-only
+execution return an empty tuple because they do not create managed serve runs.
+Execution and publication failures raise instead of returning partial results.
+
+For subprocess callers, use `jerry serve --result-json`; see
+[completed run results](cli.md#completed-run-results). This avoids discovering
+runs by comparing directories or selecting the newest timestamp.
+
 ## 2. Derive a series with Polars
 
 This example ranks `adv_20` across tickers at each timestamp and writes one
@@ -109,7 +149,7 @@ from:
 map:
   entrypoint: identity
 partition_by: [ticker]
-ordered_by: [ticker, time]
+presorted: true
 ```
 
 Then reference the field from `dataset.yaml`:
@@ -121,10 +161,10 @@ features:
     field: value
 ```
 
-The Polars script sorts by the stream's canonical order, so `ordered_by` lets
+The Polars script sorts by the stream's canonical order, so `presorted: true` lets
 Jerry validate that order in one pass and skip external sorting. If the producer
-cannot guarantee canonical order, omit `ordered_by`; Jerry will sort the stream.
-Never declare `ordered_by` based only on an assumption.
+cannot guarantee canonical order, omit `presorted` or set it to `false`; Jerry will sort the stream.
+Never declare `presorted: true` based only on an assumption.
 
 The research producer remains responsible for feature semantics and leakage.
 Jerry still validates timestamps, stream ordering, sample identity, metadata,

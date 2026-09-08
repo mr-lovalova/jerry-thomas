@@ -271,7 +271,7 @@ def _persist_routed_output(
     output_ids: Sequence[str],
     heartbeat_interval_seconds: float | None,
     logger: logging.Logger,
-) -> None:
+) -> tuple[Path, ...]:
     writers: dict[str, Writer] = {}
     try:
         with _runtime_rows(result.rows, logger) as rows:
@@ -320,6 +320,7 @@ def _persist_routed_output(
     for output_id, _target, destination in planned:
         emit_rows_written(output_id, counts[output_id])
         emit_file_result(output_id, destination)
+    return tuple(destination for _output_id, _target, destination in planned)
 
 
 def _close_pending_runtime_outputs(
@@ -342,7 +343,7 @@ def _persist_runtime_outputs(
     outputs: Sequence[tuple[RuntimeOutput, OutputTarget]],
     heartbeat_interval_seconds: float | None,
     logger: logging.Logger,
-) -> None:
+) -> tuple[Path, ...]:
     attempted = 0
     try:
         validate_output_destinations([target for _output, target in outputs])
@@ -360,6 +361,11 @@ def _persist_runtime_outputs(
             logger,
         )
         raise
+    return tuple(
+        target.destination
+        for _output, target in outputs
+        if target.destination is not None
+    )
 
 
 def persist_runtime_result(
@@ -369,9 +375,10 @@ def persist_runtime_result(
     heartbeat_interval_seconds: float | None = None,
     *,
     logger: logging.Logger,
-) -> None:
+) -> tuple[Path, ...]:
+    """Persist an operation result and return its completed filesystem outputs."""
     if result is None:
-        return
+        return ()
     if isinstance(result, RuntimeOutputBatch):
         if set(result.outputs) != set(output_ids) or len(result.outputs) != len(
             output_ids
@@ -381,7 +388,7 @@ def persist_runtime_result(
                 "Runtime output batch IDs do not match the planned output IDs: "
                 f"expected {tuple(output_ids)!r}, got {tuple(result.outputs)!r}."
             )
-        _persist_runtime_outputs(
+        return _persist_runtime_outputs(
             [
                 (result.outputs[output_id], target.for_output(output_id))
                 for output_id in output_ids
@@ -389,16 +396,14 @@ def persist_runtime_result(
             heartbeat_interval_seconds,
             logger,
         )
-        return
     if isinstance(result, RoutedOutput):
-        _persist_routed_output(
+        return _persist_routed_output(
             result,
             target,
             output_ids,
             heartbeat_interval_seconds,
             logger,
         )
-        return
     if output_ids and isinstance(result, RuntimeOutputItem):
         _close_pending_runtime_outputs((result,), logger)
         raise ValueError("Single runtime output cannot use planned output IDs.")
@@ -409,7 +414,7 @@ def persist_runtime_result(
             heartbeat_interval_seconds,
             logger,
         )
-        return
+        return (target.destination,) if target.destination is not None else ()
     if isinstance(result, RuntimeOutput):
         _persist_runtime_output(
             result,
@@ -417,5 +422,5 @@ def persist_runtime_result(
             heartbeat_interval_seconds,
             logger,
         )
-        return
+        return (target.destination,) if target.destination is not None else ()
     raise TypeError("Runtime operation returned an unsupported output type.")

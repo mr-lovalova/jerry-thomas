@@ -89,9 +89,9 @@ def _passthrough_execution_scope(_runtime, _observability):
 
 
 def _artifact_settings(
-    mode: str = "AUTO",
+    mode: str = "auto",
     heartbeat_interval_seconds: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
-    visuals: str = "off",
+    visuals: bool = False,
 ) -> BuildSettings:
     return BuildSettings(
         mode=mode,
@@ -101,7 +101,7 @@ def _artifact_settings(
 
 def _observability(
     heartbeat_interval_seconds: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
-    visuals: str = "off",
+    visuals: bool = False,
 ) -> ObservabilitySettings:
     return ObservabilitySettings(
         visuals=visuals,
@@ -364,7 +364,7 @@ def test_build_jobs_keep_order_and_share_resolved_artifacts(
         [
             BuildJob(series, _artifact_settings()),
             BuildJob(metadata, _artifact_settings()),
-            BuildJob(coverage_stats, _artifact_settings("FORCE")),
+            BuildJob(coverage_stats, _artifact_settings("rebuild")),
         ],
         execution,
     )
@@ -406,7 +406,7 @@ def test_build_jobs_keep_order_and_share_resolved_artifacts(
         "metadata-runtime",
         "coverage-stats-runtime",
     ]
-    assert [call["settings"].mode for call in calls] == ["AUTO", "AUTO", "FORCE"]
+    assert [call["settings"].mode for call in calls] == ["auto", "auto", "rebuild"]
     assert calls[0]["resolved_artifacts"] is calls[2]["resolved_artifacts"]
     assert calls[2]["resolved_artifacts"] == {
         SERIES,
@@ -434,7 +434,7 @@ def test_runtime_artifact_union_is_prepared_once_before_jobs(
     second_runtime = _runtime(tmp_path, "second-job")
     canonical_runtime = _runtime(tmp_path, "canonical-build")
     execution = ExecutionConfig(sort_buffer_mb=32)
-    artifact_settings = _artifact_settings("FORCE", 0)
+    artifact_settings = _artifact_settings("rebuild", 0)
     request = _runtime_request(
         tmp_path,
         command="serve",
@@ -1489,7 +1489,7 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
     assert materialized == [("adv-20", 10), ("adv-63", 20)]
 
 
-@pytest.mark.parametrize("mode", ["AUTO", "OFF"])
+@pytest.mark.parametrize("mode", ["auto", "require_current"])
 def test_materialize_hydrates_current_schedule_when_build_skips(
     monkeypatch,
     tmp_path: Path,

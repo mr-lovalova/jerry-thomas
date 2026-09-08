@@ -459,7 +459,7 @@ def test_runtime_payload_emits_output_path(monkeypatch, tmp_path) -> None:
         lambda label, path: results.append((label, path)),
     )
 
-    persist_runtime_result(
+    completed = persist_runtime_result(
         RuntimeOutput(payload={"covered": True}),
         target=OutputTarget(
             transport="fs",
@@ -472,12 +472,13 @@ def test_runtime_payload_emits_output_path(monkeypatch, tmp_path) -> None:
     )
 
     assert results == [("Output", destination)]
+    assert completed == (destination,)
 
 
 def test_runtime_persistence_reports_stdout(capsys, caplog) -> None:
     logger = logging.getLogger("jerrythomas.tests.persistence.stdout")
     with caplog.at_level(logging.INFO, logger=logger.name):
-        persist_runtime_result(
+        completed = persist_runtime_result(
             RuntimeOutput(rows=({"value": 1},)),
             target=OutputTarget(
                 transport="stdout",
@@ -491,6 +492,7 @@ def test_runtime_persistence_reports_stdout(capsys, caplog) -> None:
 
     assert capsys.readouterr().out == '{"value": 1}\n'
     assert [record.getMessage() for record in caplog.records] == ["Output: stdout"]
+    assert completed == ()
 
 
 def test_runtime_persistence_reports_html_path(monkeypatch, tmp_path) -> None:
@@ -502,7 +504,7 @@ def test_runtime_persistence_reports_html_path(monkeypatch, tmp_path) -> None:
         lambda label, path: results.append((label, path)),
     )
 
-    persist_runtime_result(
+    completed = persist_runtime_result(
         RuntimeOutput(render_html=lambda: "<html></html>"),
         target=OutputTarget(
             transport="fs",
@@ -516,6 +518,7 @@ def test_runtime_persistence_reports_html_path(monkeypatch, tmp_path) -> None:
 
     assert destination.read_text(encoding="utf-8") == "<html></html>"
     assert results == [("Output", destination)]
+    assert completed == (destination,)
 
 
 def test_html_output_cleanup_failure_prevents_commit(tmp_path) -> None:
@@ -959,3 +962,30 @@ def test_dataset_table_projection_failure_preserves_destination(tmp_path) -> Non
 
     assert destination.read_bytes() == b"previous"
     assert list(tmp_path.iterdir()) == [destination]
+
+
+def test_runtime_batch_returns_written_files_in_planned_order(tmp_path) -> None:
+    target = OutputTarget(
+        transport="fs",
+        format="jsonl",
+        view="raw",
+        encoding="utf-8",
+        destination=tmp_path / "dataset.jsonl",
+    )
+    files = persist_runtime_result(
+        RuntimeOutputBatch(
+            {
+                "second": RuntimeOutput(rows=()),
+                "first": RuntimeOutput(rows=({"value": 1},)),
+            }
+        ),
+        target,
+        output_ids=("first", "second"),
+        logger=logging.getLogger(__name__),
+    )
+    assert files == (
+        tmp_path / "dataset.first.jsonl",
+        tmp_path / "dataset.second.jsonl",
+    )
+    assert files[0].read_text() == '{"value": 1}\n'
+    assert files[1].read_text() == ""
