@@ -69,8 +69,9 @@ separate run directories produce separate entries in plan order. `outputs`
 contains files actually written, including empty files. No enabled profiles
 produces `{"schema_version": 1, "runs": []}`. Execution or publication failure
 exits unsuccessfully without emitting a result object; callers must check the
-exit code. This result describes the completed invocation and does not change
-`run.json` or provide a saved-run reader.
+exit code. This result describes the completed invocation. Each saved run also
+contains a versioned `run.json` manifest with output metadata; see
+[reading saved runs](research.md#read-a-saved-run).
 
 Python callers can use [the run result API](research.md#consume-completed-runs-from-python).
 

@@ -1,3 +1,5 @@
+import json
+
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,7 +40,7 @@ def test_finish_run_rejects_non_object_metadata(tmp_path: Path) -> None:
     paths.run_root.mkdir(parents=True)
     paths.metadata_path.write_text("[]", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="Expected JSON object"):
+    with pytest.raises(ValueError, match="Input should be an object"):
         runs.finish_run_success(paths)
 
 
@@ -183,3 +185,124 @@ def test_latest_run_refuses_to_delete_a_real_directory(tmp_path: Path) -> None:
 
     assert marker.read_text(encoding="utf-8") == "user data"
     assert not (paths.serve_root / ".latest-run").exists()
+
+
+@pytest.mark.parametrize("version", [None, 0, 2, "1", True, 1.0])
+def test_saved_run_rejects_missing_or_unsupported_version(tmp_path, version):
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths)
+    runs.finish_run_success(paths)
+    data = json.loads(paths.metadata_path.read_text())
+    if version is None:
+        del data["schema_version"]
+    else:
+        data["schema_version"] = version
+    paths.metadata_path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="schema_version"):
+        runs.load_run(paths.run_root)
+
+
+@pytest.mark.parametrize("status", ["running", "failed"])
+def test_saved_run_rejects_unfinished_or_failed_run(tmp_path, status):
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths)
+    if status == "failed":
+        runs.finish_run_failed(paths)
+    with pytest.raises(ValueError, match="successfully finished"):
+        runs.load_run(paths.run_root)
+
+
+@pytest.fixture
+def saved_output():
+    return runs.RunOutput(
+        profile="dataset",
+        operation="dataset",
+        output_id=None,
+        path="dataset/records.jsonl",
+        format="jsonl",
+        view="raw",
+        encoding="utf-8",
+        compression=None,
+        row_count=0,
+        fold=None,
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../outside",
+        "/outside",
+        "C:/outside",
+        "dataset/../../outside",
+        "dataset\\outside",
+        ".",
+        "",
+        "dataset//records",
+    ],
+)
+def test_saved_run_rejects_invalid_output_path(tmp_path, saved_output, path):
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths)
+    runs.finish_run_success(paths, outputs=(saved_output,))
+    data = json.loads(paths.metadata_path.read_text())
+    data["outputs"][0]["path"] = path
+    paths.metadata_path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="relative POSIX file path"):
+        runs.load_run(paths.run_root)
+
+
+@pytest.mark.parametrize("row_count", [-1, True, "3", 1.5])
+def test_saved_run_rejects_invalid_row_count(tmp_path, saved_output, row_count):
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths)
+    runs.finish_run_success(paths, outputs=(saved_output,))
+    data = json.loads(paths.metadata_path.read_text())
+    data["outputs"][0]["row_count"] = row_count
+    paths.metadata_path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="row_count"):
+        runs.load_run(paths.run_root)
+
+
+def test_saved_run_rejects_ambiguous_outputs(tmp_path, saved_output):
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths)
+    with pytest.raises(ValueError, match="unique profile/output_id"):
+        runs.finish_run_success(paths, outputs=(saved_output, saved_output))
+    assert json.loads(paths.metadata_path.read_text())["status"] == "running"
+
+
+def test_saved_run_checks_only_selected_file(tmp_path, saved_output):
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths)
+    runs.finish_run_success(paths, outputs=(saved_output,))
+    saved = runs.load_run(paths.run_root)
+    assert saved.output("dataset") == saved_output
+    with pytest.raises(KeyError, match="Run has no output"):
+        saved.output("another")
+    with pytest.raises(FileNotFoundError):
+        saved.output_path("dataset")
+    destination = paths.run_root / saved_output.path
+    destination.mkdir()
+    with pytest.raises(ValueError, match="not a file"):
+        saved.output_path("dataset")
+    destination.rmdir()
+    outside = tmp_path / "outside.jsonl"
+    outside.touch()
+    destination.symlink_to(outside)
+    with pytest.raises(ValueError, match="outside the run directory"):
+        saved.output_path("dataset")
+
+
+def test_saved_run_pins_latest_at_load_time(tmp_path, saved_output):
+    first = runs.get_run_paths(tmp_path, "first")
+    second = runs.get_run_paths(tmp_path, "second")
+    for paths in (first, second):
+        runs.start_run(paths)
+        (paths.run_root / saved_output.path).touch()
+        runs.finish_run_success(paths, outputs=(saved_output,))
+    runs.set_latest_run(first)
+    saved = runs.load_run(tmp_path / "latest")
+    runs.set_latest_run(second)
+    assert saved.directory == first.run_root
+    assert saved.output_path("dataset") == first.run_root / saved_output.path

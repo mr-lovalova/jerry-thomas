@@ -472,7 +472,7 @@ def test_runtime_payload_emits_output_path(monkeypatch, tmp_path) -> None:
     )
 
     assert results == [("Output", destination)]
-    assert completed == (destination,)
+    assert completed == (persistence.WrittenOutput(destination, None, 1),)
 
 
 def test_runtime_persistence_reports_stdout(capsys, caplog) -> None:
@@ -518,7 +518,7 @@ def test_runtime_persistence_reports_html_path(monkeypatch, tmp_path) -> None:
 
     assert destination.read_text(encoding="utf-8") == "<html></html>"
     assert results == [("Output", destination)]
-    assert completed == (destination,)
+    assert completed == (persistence.WrittenOutput(destination, None, None),)
 
 
 def test_html_output_cleanup_failure_prevents_commit(tmp_path) -> None:
@@ -984,8 +984,8 @@ def test_runtime_batch_returns_written_files_in_planned_order(tmp_path) -> None:
         logger=logging.getLogger(__name__),
     )
     assert files == (
-        tmp_path / "dataset.first.jsonl",
-        tmp_path / "dataset.second.jsonl",
+        persistence.WrittenOutput(tmp_path / "dataset.first.jsonl", "first", 1),
+        persistence.WrittenOutput(tmp_path / "dataset.second.jsonl", "second", 0),
     )
-    assert files[0].read_text() == '{"value": 1}\n'
-    assert files[1].read_text() == ""
+    assert files[0].path.read_text() == '{"value": 1}\n'
+    assert files[1].path.read_text() == ""

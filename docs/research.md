@@ -82,6 +82,49 @@ For subprocess callers, use `jerry serve --result-json`; see
 [completed run results](cli.md#completed-run-results). This avoids discovering
 runs by comparing directories or selecting the newest timestamp.
 
+### Read a saved run
+
+`load_run()` reads a completed run without loading `project.yaml`, resolving
+artifacts, or executing a pipeline:
+
+```python
+from jerrythomas.io.runs import load_run
+
+saved = load_run("research/output/latest")  # or a concrete run directory
+train = saved.output("dataset", "fold_0.train")
+train_path = saved.output_path("dataset", "fold_0.train")
+print(train.format, train.row_count, train.fold.labels)
+```
+
+Selection uses the original profile name and exact output ID, independently of
+filename sanitization. For an unsplit output, use `saved.output_path("dataset")`.
+Omitting the ID never guesses a fold or selects all roles. Missing selections
+raise `KeyError`.
+
+`saved.metadata.outputs` contains all output descriptors in execution order.
+Each records the profile, operation, output ID, relative POSIX path, format,
+view, encoding, compression, actual row count, and optional fold identity
+(`id`, `role`, and configured split labels). Row counts include only records
+written after limits and filtering: empty files have zero rows, a payload has
+one record, and HTML has `null` because it is a rendered document. Preview
+outputs have no fold identity; `saved.metadata.preview` records their stage.
+
+The `run.json` manifest uses `schema_version: 1`, independently of the package
+and project schema versions. It retains run ID, timestamps, status, notes, and
+preview, and lists completed files under `outputs`. Output descriptors are
+written atomically with successful completion, before publishing `latest`.
+Failed runs are not readable through `load_run()`.
+
+Loading reads only the manifest. `output_path()` checks that the selected file
+exists within the run directory; it does not open data or check unselected files.
+This permits selecting training data without opening holdout data. A loaded
+`latest` is pinned to that concrete run even if another run later replaces the
+symlink. Relative paths let you copy a run directory and read it after the
+original project has changed or been removed.
+
+Unversioned manifests and unknown schema versions are rejected. Produce a new
+run with v11 to use this reader; there is no legacy filename discovery fallback.
+
 ## 2. Derive a series with Polars
 
 This example ranks `adv_20` across tickers at each timestamp and writes one

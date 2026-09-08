@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 
 from jerrythomas.artifacts.errors import ArtifactResolutionError
 from jerrythomas.artifacts.executor import run_build_if_needed
@@ -8,8 +7,11 @@ from jerrythomas.artifacts.planning import (
     required_schedule_artifacts,
 )
 from jerrythomas.artifacts.series import prune_series_cache
+from jerrythomas.config.dataset.split import resolve_fold_output
 from jerrythomas.config.tasks.series import SeriesTask
 from jerrythomas.io.runs import (
+    RunFoldOutput,
+    RunOutput,
     RunPaths,
     finish_run_failed,
     finish_run_success,
@@ -128,7 +130,7 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[ServeRunResult, .
         raise ProfileCommandError(str(exc)) from exc
 
     started_runs: list[ServeRunPlan] = []
-    output_files: dict[RunPaths, list[Path]] = {
+    run_outputs: dict[RunPaths, list[RunOutput]] = {
         plan.paths: [] for plan in request.serve_run_plans
     }
     try:
@@ -144,20 +146,57 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[ServeRunResult, .
                 job.observability.heartbeat_interval_seconds
             )
             with execution_scope(job.runtime, job.observability):
-                completed_files = execute_runtime_job(
+                written_outputs = execute_runtime_job(
                     request.command,
                     request.definition,
                     plan,
                 )
             if job.output.run is not None:
-                output_files[job.output.run].extend(completed_files)
+                for written in written_outputs:
+                    fold_output = None
+                    split = request.definition.dataset.split
+                    if (
+                        job.preview is None
+                        and split is not None
+                        and written.output_id is not None
+                    ):
+                        fold, role, labels = resolve_fold_output(
+                            split, written.output_id
+                        )
+                        fold_output = RunFoldOutput(
+                            id=fold.id, role=role, labels=labels
+                        )
+                    run_outputs[job.output.run].append(
+                        RunOutput(
+                            profile=job.name,
+                            operation=job.task.id,
+                            output_id=written.output_id,
+                            path=written.path.relative_to(
+                                job.output.run.run_root
+                            ).as_posix(),
+                            format=job.output.format,
+                            view=job.output.view
+                            if job.output.format not in {"txt", "html"}
+                            else None,
+                            encoding=job.output.encoding,
+                            compression=job.output.compression,
+                            row_count=written.row_count,
+                            fold=fold_output,
+                        )
+                    )
     except BaseException as exc:
         _mark_serve_runs_failed(started_runs, exc)
         raise
     else:
-        _publish_serve_runs(started_runs)
+        _publish_serve_runs(started_runs, run_outputs)
     return tuple(
-        ServeRunResult(plan.paths, plan.preview, tuple(output_files[plan.paths]))
+        ServeRunResult(
+            plan.paths,
+            plan.preview,
+            tuple(
+                plan.paths.run_root / output.path for output in run_outputs[plan.paths]
+            ),
+        )
         for plan in started_runs
     )
 
@@ -218,11 +257,14 @@ def _mark_serve_runs_failed(
             )
 
 
-def _publish_serve_runs(plans: list[ServeRunPlan]) -> None:
+def _publish_serve_runs(
+    plans: list[ServeRunPlan],
+    run_outputs: dict[RunPaths, list[RunOutput]],
+) -> None:
     first_error: Exception | None = None
     for plan in plans:
         try:
-            finish_run_success(plan.paths)
+            finish_run_success(plan.paths, outputs=tuple(run_outputs[plan.paths]))
             if plan.preview is None:
                 set_latest_run(plan.paths)
         except Exception as exc:

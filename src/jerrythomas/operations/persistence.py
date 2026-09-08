@@ -23,6 +23,15 @@ from jerrythomas.io.writers.parquet import DEFAULT_ROW_GROUP_ROWS
 
 
 @dataclass(frozen=True)
+class WrittenOutput:
+    """A file committed by a writer, with its actual record count."""
+
+    path: Path
+    output_id: str | None
+    row_count: int | None
+
+
+@dataclass(frozen=True)
 class RuntimeOutput:
     rows: Iterable[Any] | None = None
     payload: Mapping[str, Any] | None = None
@@ -138,7 +147,8 @@ def _persist_runtime_output(
     target: OutputTarget,
     heartbeat_interval_seconds: float | None,
     logger: logging.Logger,
-) -> None:
+) -> int | None:
+    row_count = 0
     supplied_rows = result.rows
     owned_rows = supplied_rows if supplied_rows is not None else ()
     writer = None
@@ -155,11 +165,12 @@ def _persist_runtime_output(
                 )
                 for row in rows:
                     writer.write(row)
+                    row_count += 1
                     progress.advance()
 
         if target.format == "html":
             _write_html_output(result, target, logger)
-            return
+            return None
 
         assert writer is not None
         writer.close()
@@ -175,6 +186,7 @@ def _persist_runtime_output(
         emit_file_result("Output", target.destination)
     elif target.transport == "stdout":
         logger.info("Output: stdout")
+    return row_count
 
 
 def _persist_dataset_table_output(
@@ -182,7 +194,8 @@ def _persist_dataset_table_output(
     target: OutputTarget,
     heartbeat_interval_seconds: float | None,
     logger: logging.Logger,
-) -> None:
+) -> int:
+    row_count = 0
     writer = None
     try:
         with _runtime_rows(result.rows, logger) as rows:
@@ -194,6 +207,7 @@ def _persist_dataset_table_output(
             )
             for row in rows:
                 writer.write(row)
+                row_count += 1
                 progress.advance()
         writer.close()
     except BaseException:
@@ -206,6 +220,7 @@ def _persist_dataset_table_output(
 
     if target.destination is not None:
         emit_file_result("Output", target.destination)
+    return row_count
 
 
 def _planned_routed_targets(
@@ -271,7 +286,7 @@ def _persist_routed_output(
     output_ids: Sequence[str],
     heartbeat_interval_seconds: float | None,
     logger: logging.Logger,
-) -> tuple[Path, ...]:
+) -> tuple[WrittenOutput, ...]:
     writers: dict[str, Writer] = {}
     try:
         with _runtime_rows(result.rows, logger) as rows:
@@ -320,7 +335,10 @@ def _persist_routed_output(
     for output_id, _target, destination in planned:
         emit_rows_written(output_id, counts[output_id])
         emit_file_result(output_id, destination)
-    return tuple(destination for _output_id, _target, destination in planned)
+    return tuple(
+        WrittenOutput(destination, output_id, counts[output_id])
+        for output_id, _target, destination in planned
+    )
 
 
 def _close_pending_runtime_outputs(
@@ -340,32 +358,35 @@ def _close_pending_runtime_outputs(
 
 
 def _persist_runtime_outputs(
-    outputs: Sequence[tuple[RuntimeOutput, OutputTarget]],
+    outputs: Sequence[tuple[str, RuntimeOutput, OutputTarget]],
     heartbeat_interval_seconds: float | None,
     logger: logging.Logger,
-) -> tuple[Path, ...]:
+) -> tuple[WrittenOutput, ...]:
     attempted = 0
+    completed: list[WrittenOutput] = []
     try:
-        validate_output_destinations([target for _output, target in outputs])
-        for output, target in outputs:
+        validate_output_destinations(
+            [target for _output_id, _output, target in outputs]
+        )
+        for output_id, output, target in outputs:
             attempted += 1
-            _persist_runtime_output(
+            row_count = _persist_runtime_output(
                 output,
                 target,
                 heartbeat_interval_seconds,
                 logger,
             )
+            if target.destination is not None:
+                completed.append(
+                    WrittenOutput(target.destination, output_id, row_count)
+                )
     except BaseException:
         _close_pending_runtime_outputs(
-            (output for output, _target in outputs[attempted:]),
+            (output for _output_id, output, _target in outputs[attempted:]),
             logger,
         )
         raise
-    return tuple(
-        target.destination
-        for _output, target in outputs
-        if target.destination is not None
-    )
+    return tuple(completed)
 
 
 def persist_runtime_result(
@@ -375,8 +396,9 @@ def persist_runtime_result(
     heartbeat_interval_seconds: float | None = None,
     *,
     logger: logging.Logger,
-) -> tuple[Path, ...]:
+) -> tuple[WrittenOutput, ...]:
     """Persist an operation result and return its completed filesystem outputs."""
+    row_count: int | None
     if result is None:
         return ()
     if isinstance(result, RuntimeOutputBatch):
@@ -390,7 +412,7 @@ def persist_runtime_result(
             )
         return _persist_runtime_outputs(
             [
-                (result.outputs[output_id], target.for_output(output_id))
+                (output_id, result.outputs[output_id], target.for_output(output_id))
                 for output_id in output_ids
             ],
             heartbeat_interval_seconds,
@@ -408,19 +430,21 @@ def persist_runtime_result(
         _close_pending_runtime_outputs((result,), logger)
         raise ValueError("Single runtime output cannot use planned output IDs.")
     if isinstance(result, DatasetTableOutput):
-        _persist_dataset_table_output(
+        row_count = _persist_dataset_table_output(
             result,
             target,
             heartbeat_interval_seconds,
             logger,
         )
-        return (target.destination,) if target.destination is not None else ()
-    if isinstance(result, RuntimeOutput):
-        _persist_runtime_output(
+    elif isinstance(result, RuntimeOutput):
+        row_count = _persist_runtime_output(
             result,
             target,
             heartbeat_interval_seconds,
             logger,
         )
-        return (target.destination,) if target.destination is not None else ()
-    raise TypeError("Runtime operation returned an unsupported output type.")
+    else:
+        raise TypeError("Runtime operation returned an unsupported output type.")
+    if target.destination is None:
+        return ()
+    return (WrittenOutput(target.destination, None, row_count),)
