@@ -5,7 +5,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from jerrythomas.config.dataset.split import FoldRole
+from jerrythomas.config.dataset.split import FoldRole, SplitConfig, resolve_fold_output
 from jerrythomas.config.preview import PreviewStage
 from jerrythomas.config.profiles.output import Format, View
 from jerrythomas.io.compression import Compression
@@ -93,6 +93,7 @@ class RunMetadata(BaseModel):
     status: RunStatus
     notes: str | None = None
     preview: PreviewStage | None = None
+    split: SplitConfig | None
     outputs: tuple[RunOutput, ...]
 
     @field_validator("schema_version", mode="before")
@@ -110,6 +111,29 @@ class RunMetadata(BaseModel):
         paths = [output.path for output in self.outputs]
         if len(paths) != len(set(paths)):
             raise ValueError("run outputs must have unique paths")
+        for output in self.outputs:
+            if self.preview is not None:
+                if output.fold is not None:
+                    raise ValueError("preview outputs must not declare a fold")
+                continue
+            if self.split is None:
+                if output.fold is not None:
+                    raise ValueError("fold outputs require a saved split configuration")
+                continue
+            if output.output_id is None:
+                if output.fold is not None:
+                    raise ValueError("fold outputs require an output_id")
+                continue
+            try:
+                fold, role, labels = resolve_fold_output(self.split, output.output_id)
+            except KeyError as exc:
+                raise ValueError(
+                    f"output_id {output.output_id!r} is not defined by the saved split"
+                ) from exc
+            if output.fold != RunFoldOutput(id=fold.id, role=role, labels=labels):
+                raise ValueError(
+                    f"fold metadata for {output.output_id!r} does not match the saved split"
+                )
         return self
 
 
@@ -194,6 +218,7 @@ def start_run(
     paths: RunPaths,
     *,
     preview: PreviewStage | None = None,
+    split: SplitConfig | None = None,
 ) -> RunMetadata:
     """Initialise a previously planned run."""
 
@@ -207,6 +232,7 @@ def start_run(
         status="running",
         notes=None,
         preview=preview,
+        split=split.model_copy(deep=True) if split is not None else None,
         outputs=(),
     )
     _write_run_metadata(meta, paths.metadata_path)
@@ -230,6 +256,7 @@ def finish_run(
         status=status,
         notes=notes if notes is not None else meta.notes,
         preview=meta.preview,
+        split=meta.split,
         outputs=outputs,
     )
 

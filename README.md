@@ -36,6 +36,10 @@ for custom loaders, parsers, mappers, and stream combiners.
 
 ## Quick Start
 
+Upgrading from v10? Read the [v11 migration guide](docs/migrations/v11.md)
+before upgrading. v11 removes the previous ordering, artifact-mode, and visual
+configuration syntax without compatibility aliases.
+
 From zero to a served dataset:
 
 ![Jerry demo](docs/assets/demo.gif)
@@ -112,6 +116,10 @@ Use `jerry <command> --help` for current flags and the
   `<output-directory>/runs/<run_id>/dataset/`. Normal profiles write
   `<profile>.<ext>`; split profiles write
   `<profile>.<fold-id>.<role>.<ext>`.
+- Each completed run includes a versioned `run.json` with output formats,
+  row counts, and fold identities. Use `jerry serve --result-json` for completed
+  run paths or [read a saved run](docs/research.md#read-a-saved-run) from Python
+  without loading the current project configuration.
 - Versioning: tag the project config + plugin code in Git and pair with a data
   versioning tool like DVC for raw sources. With those inputs pinned, interim
   datasets and artifacts can be regenerated instead of stored.

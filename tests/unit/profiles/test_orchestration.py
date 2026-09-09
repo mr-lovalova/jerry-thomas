@@ -1398,7 +1398,7 @@ def test_later_run_start_failure_fails_only_started_run(
     starts: list[RunPaths] = []
     failed: list[RunPaths] = []
 
-    def start(paths, *, preview):
+    def start(paths, *, preview, split):
         starts.append(paths)
         if paths == second:
             raise RuntimeError("cannot start second run")

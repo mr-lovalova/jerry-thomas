@@ -59,6 +59,7 @@ def test_run_results_identify_committed_files(
     assert all(path.is_file() for path in result.outputs)
     saved = load_run(result.paths.run_root)
     assert saved.metadata.schema_version == 1
+    assert saved.metadata.split == request.definition.dataset.split
     assert len(saved.metadata.outputs) == len(result.outputs)
     for output, path in zip(saved.metadata.outputs, result.outputs):
         assert output.profile == "dataset"
@@ -213,6 +214,7 @@ def test_saved_stream_previews_have_output_ids_without_fold_identity(copy_fixtur
     (result,) = run_profiles(request)
     saved = load_run(result.paths.run_root)
     assert saved.metadata.preview == "records"
+    assert saved.metadata.split == request.definition.dataset.split
     assert (
         tuple(output.output_id for output in saved.metadata.outputs)
         == request.jobs[0].output_ids
@@ -222,6 +224,45 @@ def test_saved_stream_previews_have_output_ids_without_fold_identity(copy_fixtur
         assert output.fold is None
         assert output.row_count == 1
         assert saved.output_path("dataset", output.output_id).is_file()
+
+
+def test_saved_split_uses_execution_rules_after_project_changes(
+    copy_fixture, monkeypatch
+):
+    from jerrythomas.pipelines.dataset.split import build_labeler
+    from jerrythomas.profiles import orchestration
+    from jerrythomas.services.project_definition import load_project_definition
+
+    root = copy_fixture("walk_forward_project")
+    project_path = root / "project.yaml"
+    request = build_runtime_run_request(
+        "serve",
+        str(project_path),
+        profile_name="dataset",
+        command_observability=CommandObservability(visuals=False),
+    )
+    original_split = request.definition.dataset.split.model_dump(mode="json")
+    execute = orchestration.execute_runtime_job
+
+    def check_started_manifest(command, definition, plan):
+        manifest = json.loads(plan.job.output.run.metadata_path.read_text())
+        assert manifest["status"] == "running"
+        assert manifest["split"] == original_split
+        assert manifest["outputs"] == []
+        return execute(command, definition, plan)
+
+    monkeypatch.setattr(orchestration, "execute_runtime_job", check_started_manifest)
+    (result,) = run_profiles(request)
+    dataset_path = root / "dataset.yaml"
+    dataset_path.write_text(
+        dataset_path.read_text().replace("2024-01-03", "2024-01-02")
+    )
+    changed_split = load_project_definition(project_path).dataset.split
+    saved = load_run(result.paths.run_root)
+    assert saved.metadata.split.model_dump(mode="json") == original_split
+    key = "2024-01-02T12:00:00Z"
+    assert build_labeler(saved.metadata.split).label(key) == "train_0"
+    assert build_labeler(changed_split).label(key) == "purge_0"
 
 
 @pytest.mark.parametrize(

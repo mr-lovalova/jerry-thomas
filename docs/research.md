@@ -109,6 +109,35 @@ written after limits and filtering: empty files have zero rows, a payload has
 one record, and HTML has `null` because it is a rendered document. Preview
 outputs have no fold identity; `saved.metadata.preview` records their stage.
 
+`saved.metadata.split` contains the resolved `SplitConfig` captured before
+execution: time intervals and folds, or hash ratios, seed, and folds. It is
+`None` for an unsplit project. Fold output IDs, roles, and labels must agree
+with these saved rules; inconsistent manifests are rejected. A preview retains
+the project's split configuration, but its outputs do not claim fold membership.
+
+For a time split, use the saved rules to label a JSONL sample without reopening
+project configuration:
+
+```python
+from jerrythomas.config.dataset.split import TimeSplitConfig
+from jerrythomas.pipelines.dataset.split import build_labeler
+
+assert isinstance(saved.metadata.split, TimeSplitConfig)
+labeler = build_labeler(saved.metadata.split)
+label = labeler.label(sample["key"])
+```
+
+Hash labeling requires the original typed sample key: its hash input is the
+key's Python representation. JSON converts tuples to lists and timestamps to
+strings, so passing a JSON-decoded key directly can assign a different label.
+The saved hash configuration preserves the rules; it does not reconstruct key
+types from output files.
+
+Changing a project's boundaries or hash seed does not alter an existing run's
+saved rules. These rules describe label assignment and fold membership; they
+do not capture the full dataset configuration, including target horizons and
+postprocess policies.
+
 The `run.json` manifest uses `schema_version: 1`, independently of the package
 and project schema versions. It retains run ID, timestamps, status, notes, and
 preview, and lists completed files under `outputs`. Output descriptors are
@@ -122,8 +151,10 @@ This permits selecting training data without opening holdout data. A loaded
 symlink. Relative paths let you copy a run directory and read it after the
 original project has changed or been removed.
 
-Unversioned manifests and unknown schema versions are rejected. Produce a new
-run with v11 to use this reader; there is no legacy filename discovery fallback.
+The `split` field is required even when its value is `null`. Unversioned
+manifests, manifests missing `split`, and unknown schema versions are rejected.
+Produce a new run with v11 to use this reader; there is no legacy filename
+discovery fallback.
 
 ## 2. Derive a series with Polars
 

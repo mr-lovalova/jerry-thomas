@@ -133,10 +133,12 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[ServeRunResult, .
     run_outputs: dict[RunPaths, list[RunOutput]] = {
         plan.paths: [] for plan in request.serve_run_plans
     }
+    split = request.definition.dataset.split
+    split_snapshot = split.model_copy(deep=True) if split is not None else None
     try:
         _prepare_runtime_artifacts(request, plans)
         for run_plan in request.serve_run_plans:
-            start_run(run_plan.paths, preview=run_plan.preview)
+            start_run(run_plan.paths, preview=run_plan.preview, split=split_snapshot)
             started_runs.append(run_plan)
 
         for plan in plans:
@@ -154,14 +156,13 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[ServeRunResult, .
             if job.output.run is not None:
                 for written in written_outputs:
                     fold_output = None
-                    split = request.definition.dataset.split
                     if (
                         job.preview is None
-                        and split is not None
+                        and split_snapshot is not None
                         and written.output_id is not None
                     ):
                         fold, role, labels = resolve_fold_output(
-                            split, written.output_id
+                            split_snapshot, written.output_id
                         )
                         fold_output = RunFoldOutput(
                             id=fold.id, role=role, labels=labels

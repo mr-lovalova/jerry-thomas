@@ -306,3 +306,140 @@ def test_saved_run_pins_latest_at_load_time(tmp_path, saved_output):
     runs.set_latest_run(second)
     assert saved.directory == first.run_root
     assert saved.output_path("dataset") == first.run_root / saved_output.path
+
+
+@pytest.fixture
+def saved_time_split():
+    from jerrythomas.config.dataset.split import TimeSplitConfig
+
+    return TimeSplitConfig.model_validate(
+        {
+            "mode": "time",
+            "intervals": [
+                {"id": "development", "until": "2024-01-01T00:00:00Z"},
+                {"id": "holdout", "until": None},
+            ],
+            "folds": [
+                {"id": "evaluation", "train": ["development"], "test": ["holdout"]}
+            ],
+        }
+    )
+
+
+@pytest.fixture
+def saved_fold_output(saved_output):
+    return saved_output.model_copy(
+        update={
+            "output_id": "evaluation.train",
+            "fold": runs.RunFoldOutput(
+                id="evaluation", role="train", labels=("development",)
+            ),
+        }
+    )
+
+
+def test_saved_run_requires_explicit_split_field(tmp_path):
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths)
+    runs.finish_run_success(paths)
+    data = json.loads(paths.metadata_path.read_text())
+    assert data.pop("split") is None
+    paths.metadata_path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="split"):
+        runs.load_run(paths.run_root)
+
+
+@pytest.mark.parametrize("status", ["success", "failed"])
+def test_finishing_run_preserves_original_split(tmp_path, saved_time_split, status):
+    from jerrythomas.config.dataset.split import TimeInterval
+
+    paths = runs.get_run_paths(tmp_path, "run")
+    started = runs.start_run(paths, split=saved_time_split)
+    saved_time_split.intervals[0] = TimeInterval(
+        id="development", until="2025-01-01T00:00:00Z"
+    )
+    saved_time_split.folds[0].train.append("changed")
+    assert started.split.intervals[0].until == "2024-01-01T00:00:00Z"
+    assert started.split.folds[0].train == ["development"]
+    finished = runs.finish_run(paths, status)
+    assert finished.split == started.split
+    manifest = json.loads(paths.metadata_path.read_text())
+    assert manifest["split"] == started.split.model_dump(mode="json")
+
+
+def test_saved_hash_split_preserves_ratios_and_seed(tmp_path, saved_fold_output):
+    from jerrythomas.config.dataset.split import HashSplitConfig
+    from jerrythomas.pipelines.dataset.split import build_labeler
+
+    split = HashSplitConfig.model_validate(
+        {
+            "mode": "hash",
+            "ratios": {"development": 0.8, "holdout": 0.2},
+            "seed": 91,
+            "folds": [
+                {"id": "evaluation", "train": ["development"], "test": ["holdout"]}
+            ],
+        }
+    )
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths, split=split)
+    runs.finish_run_success(paths, outputs=(saved_fold_output,))
+    saved = runs.load_run(paths.run_root)
+    assert saved.metadata.split == split
+    original = build_labeler(split)
+    restored = build_labeler(saved.metadata.split)
+    assert [restored.label(key) for key in range(100)] == [
+        original.label(key) for key in range(100)
+    ]
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        {"output_id": "missing.train"},
+        {"fold": None},
+        {"fold": {"id": "different", "role": "train", "labels": ["development"]}},
+        {"fold": {"id": "evaluation", "role": "test", "labels": ["development"]}},
+        {"fold": {"id": "evaluation", "role": "train", "labels": ["holdout"]}},
+    ],
+)
+def test_saved_run_rejects_fold_metadata_disagreeing_with_split(
+    tmp_path, saved_time_split, saved_fold_output, changed
+):
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths, split=saved_time_split)
+    runs.finish_run_success(paths, outputs=(saved_fold_output,))
+    data = json.loads(paths.metadata_path.read_text())
+    data["outputs"][0].update(changed)
+    paths.metadata_path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="saved split"):
+        runs.load_run(paths.run_root)
+
+
+def test_fold_output_requires_saved_split(tmp_path, saved_fold_output):
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths)
+    with pytest.raises(ValueError, match="require a saved split"):
+        runs.finish_run_success(paths, outputs=(saved_fold_output,))
+
+
+def test_fold_output_requires_output_id(tmp_path, saved_time_split, saved_fold_output):
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths, split=saved_time_split)
+    missing_id = saved_fold_output.model_copy(update={"output_id": None})
+    with pytest.raises(ValueError, match="require an output_id"):
+        runs.finish_run_success(paths, outputs=(missing_id,))
+
+
+def test_split_preview_records_rules_without_claiming_fold_output(
+    tmp_path, saved_time_split, saved_output, saved_fold_output
+):
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths, preview="records", split=saved_time_split)
+    with pytest.raises(ValueError, match="preview outputs must not declare a fold"):
+        runs.finish_run_success(paths, outputs=(saved_fold_output,))
+    stream_output = saved_output.model_copy(update={"output_id": "stream.records"})
+    runs.finish_run_success(paths, outputs=(stream_output,))
+    saved = runs.load_run(paths.run_root)
+    assert saved.metadata.split == saved_time_split
+    assert saved.output("dataset", "stream.records").fold is None
