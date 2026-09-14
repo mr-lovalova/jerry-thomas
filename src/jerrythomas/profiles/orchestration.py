@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 
 from jerrythomas.artifacts.errors import ArtifactResolutionError
 from jerrythomas.artifacts.executor import run_build_if_needed
@@ -17,6 +18,7 @@ from jerrythomas.io.runs import (
     finish_run_success,
     set_latest_run,
     start_run,
+    make_run_id,
 )
 from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.profiles.executor import execution_scope
@@ -41,6 +43,9 @@ from .models import (
     BuildJob,
     BuildRunRequest,
     MaterializeRunRequest,
+    MaterializeRunResult,
+    MaterializedOutput,
+    ProfileRunResult,
     ProfileRunRequest,
     RuntimeRunRequest,
     ServeRunPlan,
@@ -50,13 +55,13 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
-def run_profiles(request: ProfileRunRequest) -> tuple[ServeRunResult, ...]:
-    """Execute profiles and return completed managed serve runs in plan order.
+def run_profiles(request: ProfileRunRequest) -> tuple[ProfileRunResult, ...]:
+    """Return completed serve runs or a completed materialize invocation.
 
-    Build, materialize, and outputs without managed run directories return an
-    empty tuple. Execution or publication failures raise; no results are returned.
+    Build, inspect, and unmanaged runtime outputs return an empty tuple.
+    Execution or publication failures raise; no results are returned.
     """
-    results: tuple[ServeRunResult, ...]
+    results: tuple[ProfileRunResult, ...]
     try:
         with project_execution_lock(request.definition.project.artifacts_root):
             if isinstance(request, BuildRunRequest):
@@ -65,8 +70,7 @@ def run_profiles(request: ProfileRunRequest) -> tuple[ServeRunResult, ...]:
             elif isinstance(request, RuntimeRunRequest):
                 results = _run_runtime_profiles(request)
             elif isinstance(request, MaterializeRunRequest):
-                _run_materialize_profiles(request)
-                results = ()
+                results = _run_materialize_profiles(request)
             else:
                 raise TypeError(
                     f"Unsupported profile request: {type(request).__name__}"
@@ -202,10 +206,14 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[ServeRunResult, .
     )
 
 
-def _run_materialize_profiles(request: MaterializeRunRequest) -> None:
+def _run_materialize_profiles(
+    request: MaterializeRunRequest,
+) -> tuple[MaterializeRunResult, ...]:
     jobs = list(request.jobs)
     if not jobs:
-        return
+        return ()
+    run_id = make_run_id()
+    started_at = datetime.now(timezone.utc).isoformat()
     request.runtime.execution = request.execution
     graph = request.definition.artifact_graph
     try:
@@ -221,12 +229,21 @@ def _run_materialize_profiles(request: MaterializeRunRequest) -> None:
         raise ProfileCommandError(str(exc)) from exc
 
     _build_prerequisites(request, required_artifacts, request.runtime)
+    outputs: list[MaterializedOutput] = []
     for job in jobs:
         request.runtime.heartbeat_interval_seconds = (
             job.observability.heartbeat_interval_seconds
         )
         with execution_scope(request.runtime, job.observability):
-            execute_materialize_job(job, request.runtime)
+            outputs.append(execute_materialize_job(job, request.runtime))
+    return (
+        MaterializeRunResult(
+            run_id=run_id,
+            started_at=started_at,
+            finished_at=datetime.now(timezone.utc).isoformat(),
+            outputs=tuple(outputs),
+        ),
+    )
 
 
 def _validate_build_order(jobs: list[BuildJob], graph: ArtifactGraph) -> None:

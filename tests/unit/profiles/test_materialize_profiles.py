@@ -14,6 +14,7 @@ from jerrythomas.execution.settings import (
     LogOutputSettings,
     ObservabilitySettings,
 )
+from jerrythomas.operations.persistence import WrittenOutput
 from jerrythomas.profiles import materialize
 from jerrythomas.profiles.models import MaterializeJob
 from jerrythomas.services.materialize import resolve_materialize_output
@@ -185,29 +186,23 @@ def test_preflight_rejects_managed_artifact_destination(tmp_path) -> None:
         )
 
 
-def test_execute_materialize_job_emits_config_and_files(
+def test_execute_materialize_job_emits_config_and_returns_output(
     monkeypatch,
     tmp_path,
 ) -> None:
     runtime = SimpleNamespace(execution=ExecutionConfig())
     job = _job("adv-20", "adv.20", tmp_path / "adv-20.jsonl")
     messages: list[tuple[str, int]] = []
-    files: list[tuple[str, Path]] = []
     calls: list[dict] = []
     monkeypatch.setattr(
         materialize,
         "emit_execution_message",
         lambda message, level: messages.append((message, level)),
     )
-    monkeypatch.setattr(
-        materialize,
-        "emit_file_result",
-        lambda label, path: files.append((label, path)),
-    )
 
     def materialize_stream(**kwargs):
         calls.append(kwargs)
-        return job.output.destination
+        return WrittenOutput(job.output.destination, None, 3)
 
     monkeypatch.setattr(
         materialize,
@@ -215,7 +210,7 @@ def test_execute_materialize_job_emits_config_and_files(
         materialize_stream,
     )
 
-    materialize.execute_materialize_job(job, runtime)
+    result = materialize.execute_materialize_job(job, runtime)
 
     assert calls == [
         {
@@ -228,4 +223,9 @@ def test_execute_materialize_job_emits_config_and_files(
     config = json.loads(messages[0][0].removeprefix("Config:\n"))
     assert messages[0][1] == logging.DEBUG
     assert config["stream"] == "adv.20"
-    assert files == [("Output", job.output.destination)]
+    assert result.profile == "adv-20"
+    assert result.stream == "adv.20"
+    assert result.path == job.output.destination
+    assert result.row_count == 3
+    assert result.format == "jsonl"
+    assert result.view == "raw"

@@ -205,7 +205,7 @@ def test_runtime_writer_open_failure_closes_rows(monkeypatch, tmp_path) -> None:
         destination=tmp_path / "out.jsonl",
     )
 
-    def fail_writer_open(_target):
+    def fail_writer_open(_target, *, overwrite=True):
         raise OSError("open failed")
 
     monkeypatch.setattr(persistence, "writer_factory", fail_writer_open)

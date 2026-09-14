@@ -119,6 +119,7 @@ def _write_html_output(
     result: RuntimeOutput,
     target: OutputTarget,
     logger: logging.Logger,
+    overwrite: bool,
 ) -> None:
     if result.render_html is None:
         raise ValueError("html output is not supported for this operation.")
@@ -129,6 +130,7 @@ def _write_html_output(
     sink = AtomicTextFileSink(
         destination,
         encoding=target.encoding or "utf-8",
+        overwrite=overwrite,
     )
     try:
         sink.write_text(result.render_html())
@@ -142,12 +144,14 @@ def _write_html_output(
     emit_file_result("Output", destination)
 
 
-def _persist_runtime_output(
+def persist_runtime_output(
     result: RuntimeOutput,
     target: OutputTarget,
     heartbeat_interval_seconds: float | None,
     logger: logging.Logger,
+    overwrite: bool = True,
 ) -> int | None:
+    """Write one runtime output, closing its rows before committing the file."""
     row_count = 0
     supplied_rows = result.rows
     owned_rows = supplied_rows if supplied_rows is not None else ()
@@ -157,7 +161,7 @@ def _persist_runtime_output(
             if target.format != "html":
                 if supplied_rows is None:
                     rows = _payload_rows(result, target)
-                writer = writer_factory(target)
+                writer = writer_factory(target, overwrite=overwrite)
                 progress = OperationProgressTracker(
                     "write_output",
                     "rows",
@@ -169,7 +173,7 @@ def _persist_runtime_output(
                     progress.advance()
 
         if target.format == "html":
-            _write_html_output(result, target, logger)
+            _write_html_output(result, target, logger, overwrite)
             return None
 
         assert writer is not None
@@ -370,7 +374,7 @@ def _persist_runtime_outputs(
         )
         for output_id, output, target in outputs:
             attempted += 1
-            row_count = _persist_runtime_output(
+            row_count = persist_runtime_output(
                 output,
                 target,
                 heartbeat_interval_seconds,
@@ -437,7 +441,7 @@ def persist_runtime_result(
             logger,
         )
     elif isinstance(result, RuntimeOutput):
-        row_count = _persist_runtime_output(
+        row_count = persist_runtime_output(
             result,
             target,
             heartbeat_interval_seconds,

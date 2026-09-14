@@ -71,6 +71,7 @@ def execute_command(
                 cli_log_level=cli_level_arg,
                 cli_log_outputs=cli_log_outputs,
                 workspace=workspace_context,
+                result_json=args.result_json,
             )
         case "source":
             handle_source(

@@ -1,9 +1,9 @@
 import argparse
-import json
 import logging
 import time
 
 from jerrythomas.cli.logging_setup import configure_profile_logging
+from jerrythomas.cli.run_results import validate_result_json_outputs, write_run_results
 from jerrythomas.cli.output_options import build_cli_output_config
 from jerrythomas.cli.visuals.execution import route_execution_event
 from jerrythomas.cli.visuals.rich.progress import visual_summary
@@ -15,7 +15,7 @@ from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.profiles.models import (
     BuildRunRequest,
     ProfileRunRequest,
-    ServeRunResult,
+    ProfileRunResult,
 )
 from jerrythomas.profiles.orchestration import run_profiles
 from jerrythomas.profiles.request_builder import (
@@ -34,7 +34,7 @@ def _command_uses_visuals(request: ProfileRunRequest) -> bool:
     )
 
 
-def execute_profile_request(request: ProfileRunRequest) -> tuple[ServeRunResult, ...]:
+def execute_profile_request(request: ProfileRunRequest) -> tuple[ProfileRunResult, ...]:
     started_at = time.perf_counter()
     status: RunStatus = "error"
     command_error: BaseException | None = None
@@ -139,46 +139,16 @@ def handle_serve(
     )
     if request is None:
         if args.result_json:
-            print(json.dumps({"schema_version": 1, "runs": []}))
+            write_run_results(())
         else:
             logger.info("No enabled serve profiles; skipping serve.")
         return
     if args.result_json:
-        if any(job.output.transport == "stdout" for job in request.jobs):
-            raise ProfileCommandError(
-                "--result-json requires filesystem data outputs; stdout is reserved for run results."
-            )
-        log_outputs = (
-            request.artifact_settings.observability.log_output,
-            *(job.observability.log_output for job in request.jobs),
-        )
-        if any(
-            target.transport == "stdout"
-            for output in log_outputs
-            for target in output.outputs
-        ):
-            raise ProfileCommandError(
-                "--result-json cannot use stdout logging; select stderr or filesystem logs."
-            )
+        validate_result_json_outputs(request)
     configure_profile_logging(cli_log_level, cli_log_outputs)
     results = execute_profile_request(request)
     if args.result_json:
-        print(
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "runs": [
-                        {
-                            "run_id": result.paths.run_id,
-                            "directory": str(result.paths.run_root),
-                            "preview": result.preview,
-                            "outputs": [str(path) for path in result.outputs],
-                        }
-                        for result in results
-                    ],
-                }
-            )
-        )
+        write_run_results(results)
 
 
 def handle_inspect(

@@ -5,6 +5,8 @@ from typing import Literal, Sequence
 from jerrythomas.artifacts.settings import BuildSettings
 from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.config.preview import PreviewStage
+from jerrythomas.config.profiles.output import Format, View
+from jerrythomas.io.compression import Compression
 from jerrythomas.config.tasks.base import ArtifactTask, RuntimeTask
 from jerrythomas.execution.settings import (
     ObservabilitySettings,
@@ -28,6 +30,33 @@ class ServeRunResult:
     paths: RunPaths
     preview: PreviewStage | None
     outputs: tuple[Path, ...]
+
+
+@dataclass(frozen=True)
+class MaterializedOutput:
+    """A completed stream export at its configured destination."""
+
+    profile: str
+    stream: str
+    path: Path
+    format: Format
+    view: View
+    encoding: str | None
+    compression: Compression | None
+    row_count: int
+
+
+@dataclass(frozen=True)
+class MaterializeRunResult:
+    """One successful materialize invocation, including all selected profiles."""
+
+    run_id: str
+    started_at: str
+    finished_at: str
+    outputs: tuple[MaterializedOutput, ...]
+
+
+ProfileRunResult = ServeRunResult | MaterializeRunResult
 
 
 @dataclass(frozen=True)

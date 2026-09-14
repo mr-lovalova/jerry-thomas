@@ -29,6 +29,7 @@ def test_materialize_parser_accepts_profile_overrides() -> None:
             "--output",
             "adv-20.jsonl.gz",
             "--overwrite",
+            "--result-json",
             "--artifact-mode",
             "rebuild",
             "--no-visuals",
@@ -37,6 +38,7 @@ def test_materialize_parser_accepts_profile_overrides() -> None:
         ]
     )
 
+    assert args.result_json is True
     assert args.cmd == "materialize"
     assert args.profile == "adv-20"
     assert args.output == "adv-20.jsonl.gz"
@@ -79,6 +81,7 @@ def test_materialize_dispatches_one_profile_execution_path(monkeypatch) -> None:
         "cli_log_level": "DEBUG",
         "cli_log_outputs": [],
         "workspace": None,
+        "result_json": False,
     }
 
 

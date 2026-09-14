@@ -161,7 +161,7 @@ Python callers can use [the run result API](research.md#consume-completed-runs-f
     profile order. The graph orders only the internal dependency jobs needed by
     each root; it never reorders the profiles. A selected dependency profile
     must be ordered before a selected dependent profile.
-- `jerry materialize [--profile <name>] [--output <path.jsonl|path.jsonl.gz>] [--overwrite|--no-overwrite] [--artifact-mode auto|rebuild|require_current] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
+- `jerry materialize [--result-json] [--profile <name>] [--output <path.jsonl|path.jsonl.gz>] [--overwrite|--no-overwrite] [--artifact-mode auto|rebuild|require_current] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
   - Runs every enabled `profiles/materialize.<name>.yaml` file in configured
     order, or one profile selected by `--profile`.
   - Checks every selected output before the first profile starts writing.
@@ -176,6 +176,13 @@ Python callers can use [the run result API](research.md#consume-completed-runs-f
     `--profile`.
   - The concrete output suffix selects compression: `.jsonl` writes plain
     JSONL and `.jsonl.gz` writes gzip JSONL.
+  - `--result-json` writes `{ "schema_version": 1, "runs": [...] }` to stdout
+    after all selected profiles succeed. Each invocation reports `command`,
+    `run_id`, `started_at`, `finished_at`, `status`, and ordered output descriptors
+    with profile, stream, absolute path, format, view, encoding, compression,
+    and row count. Stdout logging is rejected. No enabled profiles yields `runs: []`.
+    Files are committed individually; a later failure emits no success result
+    and does not roll back earlier files. No sidecar manifest is written.
 - `jerry clean [--yes] [--older-than <age>]`
   - Lists stale sort spill directories by default.
   - Add `--yes` to remove them.

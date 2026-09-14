@@ -31,5 +31,10 @@ def add_materialize_command(sub, common: argparse.ArgumentParser) -> None:
         default=None,
         help="overwrite existing materialized outputs",
     )
+    parser.add_argument(
+        "--result-json",
+        action="store_true",
+        help="write completed materialize results as JSON to stdout",
+    )
     add_artifact_mode_flag(parser)
     add_execution_observability_flags(parser)

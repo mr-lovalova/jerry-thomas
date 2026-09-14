@@ -95,7 +95,8 @@ def test_materialize_stream_writes_jsonl(tmp_path: Path) -> None:
         ("AAPL", 10.0),
         ("MSFT", 20.0),
     ]
-    assert result == output.resolve()
+    assert result.path == output.resolve()
+    assert result.row_count == len(payloads)
 
 
 def test_materialize_stream_writes_gzip_jsonl(tmp_path: Path) -> None:
@@ -114,7 +115,8 @@ def test_materialize_stream_writes_gzip_jsonl(tmp_path: Path) -> None:
     with gzip.open(output, "rt", encoding="utf-8") as stream:
         payloads = [json.loads(line) for line in stream]
     assert [(row["security_id"], row["close"]) for row in payloads] == [("AAPL", 10.0)]
-    assert result == output.resolve()
+    assert result.path == output.resolve()
+    assert result.row_count == len(payloads)
 
 
 def test_materialize_stream_normalizes_nan_as_null(tmp_path: Path) -> None:
@@ -249,3 +251,38 @@ def test_materialize_stream_closes_rows_after_writer_failure(
 
     assert rows_closed
     assert not output.exists()
+
+
+def test_materialize_stream_aborts_when_rows_fail_to_close(
+    tmp_path, monkeypatch, one_row_runtime
+):
+    class Rows:
+        def __iter__(self):
+            return iter([{"value": 1}])
+
+        def close(self):
+            raise OSError("input close failed")
+
+    monkeypatch.setattr(
+        "jerrythomas.services.materialize.run_stream_pipeline",
+        lambda _runtime, _stream_id: Rows(),
+    )
+    output = tmp_path / "prices.jsonl"
+    output.write_text("previous\n")
+
+    with pytest.raises(OSError, match="input close failed"):
+        materialize_stream(
+            one_row_runtime, "prices.raw", _output(output), overwrite=True
+        )
+
+    assert output.read_text() == "previous\n"
+    assert list(tmp_path.iterdir()) == [output]
+
+
+def test_materialize_stream_reports_committed_empty_file(tmp_path):
+    output = tmp_path / "empty.jsonl"
+    result = materialize_stream(_runtime(tmp_path, []), "prices.raw", _output(output))
+
+    assert result.path == output
+    assert result.row_count == 0
+    assert output.read_bytes() == b""

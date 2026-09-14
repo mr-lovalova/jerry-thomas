@@ -12,11 +12,10 @@ from jerrythomas.execution.settings import (
 )
 from jerrythomas.execution.observability import (
     emit_execution_message,
-    emit_file_result,
     operation_scope,
 )
 from jerrythomas.io.output import validate_output_destinations
-from jerrythomas.profiles.models import MaterializeJob
+from jerrythomas.profiles.models import MaterializeJob, MaterializedOutput
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.materialize import (
     check_materialize_destination,
@@ -102,7 +101,7 @@ def preflight_materialize_jobs(
 def execute_materialize_job(
     job: MaterializeJob,
     runtime: Runtime,
-) -> None:
+) -> MaterializedOutput:
     with operation_scope(f"materialize:{job.name}"):
         emit_execution_message(
             "Config:\n"
@@ -124,4 +123,14 @@ def execute_materialize_job(
             output=job.output,
             overwrite=job.overwrite,
         )
-        emit_file_result("Output", output)
+        assert output.row_count is not None
+        return MaterializedOutput(
+            profile=job.name,
+            stream=job.stream,
+            path=output.path,
+            format=job.output.format,
+            view=job.output.view,
+            encoding=job.output.encoding,
+            compression=job.output.compression,
+            row_count=output.row_count,
+        )

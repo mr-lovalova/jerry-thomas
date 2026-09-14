@@ -1,7 +1,12 @@
+import logging
 from pathlib import Path
 
 from jerrythomas.io.compression import Compression
-from jerrythomas.io.factory import writer_factory
+from jerrythomas.operations.persistence import (
+    RuntimeOutput,
+    WrittenOutput,
+    persist_runtime_output,
+)
 from jerrythomas.io.output import OutputTarget
 from jerrythomas.pipelines.stream.pipeline import run_stream_pipeline
 from jerrythomas.runtime import Runtime
@@ -24,7 +29,7 @@ def materialize_stream(
     stream_id: str,
     output: OutputTarget,
     overwrite: bool = False,
-) -> Path:
+) -> WrittenOutput:
     output_path = output.destination
     if (
         output.transport != "fs"
@@ -40,21 +45,15 @@ def materialize_stream(
         )
     check_materialize_destination(output_path, overwrite)
 
-    rows = run_stream_pipeline(runtime, stream_id)
-    try:
-        writer = writer_factory(output, overwrite=overwrite)
-        try:
-            for row in rows:
-                writer.write(row)
-            writer.close()
-        except BaseException:
-            writer.abort()
-            raise
-    finally:
-        close = getattr(rows, "close", None)
-        if callable(close):
-            close()
-    return output_path.resolve()
+    row_count = persist_runtime_output(
+        RuntimeOutput(rows=run_stream_pipeline(runtime, stream_id)),
+        output,
+        runtime.heartbeat_interval_seconds,
+        logging.getLogger(__name__),
+        overwrite=overwrite,
+    )
+    assert row_count is not None
+    return WrittenOutput(output_path.resolve(), None, row_count)
 
 
 def check_materialize_destination(

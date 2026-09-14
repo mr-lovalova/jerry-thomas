@@ -74,8 +74,12 @@ for result in results:
 
 Profiles sharing a managed output directory contribute to one result. Separate
 run directories produce separate results in plan order. Preview runs return
-results without updating `latest`. Build, materialize, inspect, and stdout-only
-execution return an empty tuple because they do not create managed serve runs.
+results without updating `latest`. Build, inspect, and stdout-only execution
+return an empty tuple because they do not create managed serve runs.
+Materialize returns one `MaterializeRunResult` per invocation, with `run_id`,
+`started_at`, `finished_at`, and ordered `MaterializedOutput` descriptors containing
+profile, stream, absolute path, format, view, encoding, compression, and row count.
+It writes directly to configured destinations without creating saved-run metadata.
 Execution and publication failures raise instead of returning partial results.
 
 For subprocess callers, use `jerry serve --result-json`; see
