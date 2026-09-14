@@ -72,6 +72,9 @@ globals:
   config root instead of silently skipping or following them.
 - `globals` provide values for `${var}` interpolation across YAML files. Datetime
   values are normalized to strict UTC `YYYY-MM-DDTHH:MM:SSZ`.
+- `${path:../shared/releases}` produces an absolute path relative to `project.yaml`,
+  including in custom-loader arguments. It is independent of the working directory,
+  accepts literal paths only, and does not require the destination to exist.
 - External references use `${env:NAME}`. Resolution checks the process
   environment first and then an optional project-root `.env` file.
 - New scaffolded dataset projects include a `.env.example` next to `project.yaml`.

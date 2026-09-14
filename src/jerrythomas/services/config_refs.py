@@ -10,7 +10,7 @@ from jerrythomas.config.interpolation import (
 )
 
 
-_CONFIG_REF_RE = re.compile(r"\$\{([A-Za-z_][\w-]*):([^}]+)\}")
+_CONFIG_REF_RE = re.compile(r"\$\{([A-Za-z_][\w-]*):([^}]*)\}")
 _INTERPOLATION_RE = re.compile(r"\$\{([^}]+)\}")
 _DOTENV_ESCAPES = {"n": "\n", "r": "\r", "t": "\t", '"': '"', "\\": "\\"}
 _DOTENV_ESCAPE_RE = re.compile(r"\\(.)")
@@ -192,20 +192,29 @@ def _resolve_string_refs(
 ) -> str:
     match = _CONFIG_REF_RE.fullmatch(text)
     if match:
-        return _resolve_env_ref(match, project_yaml, env)
+        return _resolve_config_ref(match, project_yaml, env)
 
     def repl(match: re.Match[str]) -> str:
-        return _resolve_env_ref(match, project_yaml, env)
+        return _resolve_config_ref(match, project_yaml, env)
 
     return _CONFIG_REF_RE.sub(repl, text)
 
 
-def _resolve_env_ref(
+def _resolve_config_ref(
     match: re.Match[str],
     project_yaml: Path,
     env: Mapping[str, str],
 ) -> str:
     scheme = match.group(1).strip().lower()
+    if scheme == "path":
+        relative_path = match.group(2)
+        if not relative_path.strip():
+            raise ConfigRefError("Config reference '${path:...}' must include a path.")
+        if "${" in relative_path:
+            raise ConfigRefError(
+                "Path references require a literal path, without nested references."
+            )
+        return str((project_yaml.parent / relative_path).resolve())
     if scheme != "env":
         raise ConfigRefError(
             f"Unsupported config reference scheme '{scheme}' in '{match.group(0)}'."

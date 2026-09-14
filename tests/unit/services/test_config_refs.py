@@ -171,6 +171,71 @@ def test_process_env_overrides_project_dotenv(
     assert _project_variables(project_yaml)["raw_root"] == "/runtime/raw"
 
 
+@pytest.mark.parametrize("working_directory", ["project", "elsewhere"])
+def test_project_path_refs_resolve_loader_arguments_and_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, working_directory: str
+) -> None:
+    project_root = tmp_path / "project"
+    _write_project_files(project_root)
+    (tmp_path / "elsewhere").mkdir()
+    project_yaml = _write_project_yaml(
+        project_root,
+        globals_lines=["raw_root: ${path:../shared data}"],
+    )
+    (project_root / "sources" / "prices.yaml").write_text(
+        "id: prices\n"
+        "parser: {entrypoint: identity}\n"
+        "loader:\n"
+        "  entrypoint: custom.prices\n"
+        "  args: {root: '${raw_root}'}\n"
+        "inputs:\n"
+        "  files: ['${raw_root}/prices.parquet']\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path / working_directory)
+
+    source = _sources(project_yaml)["prices"]
+    expected = str((tmp_path / "shared data").resolve())
+    assert source.loader.args == {"root": expected}
+    assert source.inputs.files == (expected + "/prices.parquet",)
+
+
+def test_config_refs_resolve_literal_paths_in_nested_values(tmp_path: Path) -> None:
+    project_yaml = tmp_path / "project" / "project.yaml"
+    absolute_path = tmp_path / "absolute"
+    resolved = resolve_config_refs(
+        {
+            "root": "${path:../shared data}",
+            "files": ["${path:../shared data}/rows.jsonl"],
+            "nested": {"absolute": f"${{path:{absolute_path}}}"},
+            "mixed": "${path:.}/${env:FILE}",
+            "ordinary": "../unchanged",
+        },
+        project_yaml=project_yaml,
+        env={"FILE": "rows.jsonl"},
+    )
+    assert resolved == {
+        "root": str(tmp_path / "shared data"),
+        "files": [str(tmp_path / "shared data" / "rows.jsonl")],
+        "nested": {"absolute": str(absolute_path)},
+        "mixed": str(project_yaml.parent / "rows.jsonl"),
+        "ordinary": "../unchanged",
+    }
+    assert not (tmp_path / "shared data").exists()
+
+
+@pytest.mark.parametrize("reference", ["${path:}", "${path:   }"])
+def test_path_refs_reject_empty_paths(tmp_path: Path, reference: str) -> None:
+    with pytest.raises(ValueError, match="must include a path"):
+        resolve_config_refs(reference, project_yaml=tmp_path / "project.yaml", env={})
+
+
+@pytest.mark.parametrize("reference", ["${path:${root}}", "${path:${env:ROOT}/data}"])
+def test_path_refs_reject_nested_references(tmp_path: Path, reference: str) -> None:
+    with pytest.raises(ValueError, match="literal path"):
+        resolve_config_refs(reference, project_yaml=tmp_path / "project.yaml", env={})
+
+
 _DOTENV_ESCAPE_CASES = [
     # (raw .env line, expected decoded value)
     ('ESCAPED_BACKSLASH="x\\\\ny"', "x\\ny"),
