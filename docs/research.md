@@ -44,47 +44,41 @@ configured postprocess policy.
 
 ### Consume completed runs from Python
 
-In v11, `run_profiles()` returns a tuple of `ServeRunResult` objects after
-execution and publication succeed:
+`run_profiles()` returns a tuple of `SavedRun` objects after execution and
+publication succeed, for both serve and materialize:
 
 ```python
 from jerrythomas.profiles.orchestration import run_profiles
 from jerrythomas.profiles.request_builder import build_runtime_run_request
 
 request = build_runtime_run_request(
-    "serve",
-    "path/to/project.yaml",
-    profile_name="dataset",
+    "serve", "path/to/project.yaml", profile_name="dataset",
 )
 results = () if request is None else run_profiles(request)
 for result in results:
-    print(result.paths.run_id, result.paths.run_root)
+    print(result.metadata.run_id, result.metadata_path)
     for output_path in result.outputs:
         print(output_path)
 ```
 
-`ServeRunResult` is an immutable dataclass in `jerrythomas.profiles.models`:
+`SavedRun` in `jerrythomas.io.runs` exposes `metadata_path`, `directory`, the
+shared `metadata` model, and absolute `outputs` paths. `output()` selects an
+output descriptor; `output_path()` validates and resolves its file.
 
-- `paths` is the existing `RunPaths` object, including the run ID, run root,
-  dataset directory, and metadata path.
-- `outputs` is a tuple of filesystem paths actually written, in profile order
-  and then output order. A completed empty file is included; an operation that
-  returns no output contributes no files.
-- `preview` records the preview stage, or `None` for a full run.
+Serve profiles sharing a run directory contribute to one result. Materialize
+returns one result per profile in execution order, with a shared invocation ID.
+It automatically saves `<output filename>.run.json` beside each output. Receipts
+record command, timestamps, status, profile, stream or operation, file format,
+compression, and row count. Preview and split metadata apply to serve.
 
-Profiles sharing a managed output directory contribute to one result. Separate
-run directories produce separate results in plan order. Preview runs return
-results without updating `latest`. Build, inspect, and stdout-only execution
-return an empty tuple because they do not create managed serve runs.
-Materialize returns one `MaterializeRunResult` per invocation, with `run_id`,
-`started_at`, `finished_at`, and ordered `MaterializedOutput` descriptors containing
-profile, stream, absolute path, format, view, encoding, compression, and row count.
-It writes directly to configured destinations without creating saved-run metadata.
-Execution and publication failures raise instead of returning partial results.
+Build, inspect, and stdout-only execution return an empty tuple. Execution or
+publication failures raise instead of returning partial results. Materialize
+profiles commit independently: earlier completed files and receipts remain valid
+if a later profile fails.
 
-For subprocess callers, use `jerry serve --result-json`; see
-[completed run results](cli.md#completed-run-results). This avoids discovering
-runs by comparing directories or selecting the newest timestamp.
+For subprocess callers, both commands accept `--result-json`; see
+[completed run results](cli.md#completed-run-results). Receipt persistence is
+automatic whether or not this flag is used.
 
 ### Read a saved run
 
@@ -142,10 +136,10 @@ saved rules. These rules describe label assignment and fold membership; they
 do not capture the full dataset configuration, including target horizons and
 postprocess policies.
 
-The `run.json` manifest uses `schema_version: 1`, independently of the package
-and project schema versions. It retains run ID, timestamps, status, notes, and
-preview, and lists completed files under `outputs`. Output descriptors are
-written atomically with successful completion, before publishing `latest`.
+Both receipt layouts use `schema_version: 2`, independently of the package
+and project schema versions. They retain run ID, timestamps, status, notes, and
+preview, and list completed files under `outputs`. Output descriptors are
+written atomically with successful completion; serve then publishes `latest`.
 Failed runs are not readable through `load_run()`.
 
 Loading reads only the manifest. `output_path()` checks that the selected file
@@ -159,6 +153,18 @@ The `split` field is required even when its value is `null`. Unversioned
 manifests, manifests missing `split`, and unknown schema versions are rejected.
 Produce a new run with v11 to use this reader; there is no legacy filename
 discovery fallback.
+
+For a materialized file, pass its receipt directly:
+
+```python
+saved = load_run("interim/volatility.jsonl.gz.run.json")
+path = saved.output_path("volatility")
+```
+
+Materialize destinations are mutable. `output_path()` rejects a loaded receipt
+if Jerry has since replaced it; reload it to select the current output. Data and
+receipt files can be copied together and loaded independently of the project.
+
 
 ## 2. Derive a series with Polars
 

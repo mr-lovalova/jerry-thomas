@@ -55,6 +55,7 @@ class RunOutput(BaseModel):
 
     profile: str
     operation: str
+    stream: str | None = None
     output_id: str | None
     path: str
     format: Format
@@ -86,7 +87,8 @@ class RunMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal[1]
+    schema_version: Literal[2]
+    command: Literal["serve", "materialize"]
     run_id: str
     started_at: str
     finished_at: str | None = None
@@ -99,12 +101,30 @@ class RunMetadata(BaseModel):
     @field_validator("schema_version", mode="before")
     @classmethod
     def validate_schema_version(cls, value: object) -> object:
-        if type(value) is not int or value != 1:
-            raise ValueError("unsupported run manifest schema_version; expected 1")
+        if type(value) is not int or value != 2:
+            raise ValueError("unsupported run manifest schema_version; expected 2")
         return value
 
     @model_validator(mode="after")
     def validate_outputs(self) -> Self:
+        if self.command == "materialize":
+            if self.preview is not None or self.split is not None:
+                raise ValueError(
+                    "materialize receipts must not declare preview or split"
+                )
+            if self.status == "success" and len(self.outputs) != 1:
+                raise ValueError("successful materialize receipts require one output")
+            for output in self.outputs:
+                if (
+                    output.operation != "materialize"
+                    or not output.stream
+                    or output.output_id is not None
+                    or output.fold is not None
+                    or PurePosixPath(output.path).name != output.path
+                ):
+                    raise ValueError(
+                        "materialize receipts require one adjacent stream output"
+                    )
         identities = [(output.profile, output.output_id) for output in self.outputs]
         if len(identities) != len(set(identities)):
             raise ValueError("run outputs must have unique profile/output_id pairs")
@@ -141,8 +161,16 @@ class RunMetadata(BaseModel):
 class SavedRun:
     """A manifest loaded independently of the current project configuration."""
 
-    directory: Path
+    metadata_path: Path
     metadata: RunMetadata
+
+    @property
+    def directory(self) -> Path:
+        return self.metadata_path.parent
+
+    @property
+    def outputs(self) -> tuple[Path, ...]:
+        return tuple(self.directory / output.path for output in self.metadata.outputs)
 
     def output(self, profile: str, output_id: str | None = None) -> RunOutput:
         """Select an exact profile/output ID; None selects an unsplit output."""
@@ -155,6 +183,9 @@ class SavedRun:
 
     def output_path(self, profile: str, output_id: str | None = None) -> Path:
         """Resolve a selected file without opening any output data."""
+        if self.metadata.command == "materialize":
+            if _load_run_metadata(self.metadata_path) != self.metadata:
+                raise ValueError("materialize receipt changed; reload the saved run")
         output = self.output(profile, output_id)
         path = (self.directory / output.path).resolve(strict=True)
         if not path.is_relative_to(self.directory):
@@ -164,17 +195,19 @@ class SavedRun:
         return path
 
 
-def load_run(directory: str | Path) -> SavedRun:
+def load_run(path: str | Path) -> SavedRun:
     """Load a successful saved run, pinning a latest symlink to its current run.
 
-    Only run.json is read. Output existence is checked when output_path is called.
+    Accepts a run directory or an explicit receipt file. Only metadata is read.
+    Output existence is checked when output_path is called.
     Unversioned manifests and unsupported schema versions are rejected.
     """
-    directory = Path(directory).resolve(strict=True)
-    metadata = _load_run_metadata(directory / "run.json")
+    path = Path(path).resolve(strict=True)
+    metadata_path = path / "run.json" if path.is_dir() else path
+    metadata = _load_run_metadata(metadata_path)
     if metadata.status != "success" or metadata.finished_at is None:
         raise ValueError("saved run must be successfully finished")
-    return SavedRun(directory, metadata)
+    return SavedRun(metadata_path, metadata)
 
 
 def _now_utc_iso() -> str:
@@ -206,8 +239,10 @@ def get_run_paths(serve_root: Path, run_id: str | None = None) -> RunPaths:
     )
 
 
-def _write_run_metadata(meta: RunMetadata, path: Path) -> None:
-    write_json_object(path, meta.model_dump(mode="json"))
+def _write_run_metadata(
+    meta: RunMetadata, path: Path, *, overwrite: bool = True
+) -> None:
+    write_json_object(path, meta.model_dump(mode="json"), overwrite=overwrite)
 
 
 def _load_run_metadata(path: Path) -> RunMetadata:
@@ -215,18 +250,27 @@ def _load_run_metadata(path: Path) -> RunMetadata:
 
 
 def start_run(
-    paths: RunPaths,
+    paths: RunPaths | Path,
     *,
+    run_id: str | None = None,
+    command: Literal["serve", "materialize"] = "serve",
+    overwrite: bool = True,
     preview: PreviewStage | None = None,
     split: SplitConfig | None = None,
 ) -> RunMetadata:
     """Initialise a previously planned run."""
 
-    paths.dataset_dir.mkdir(parents=True, exist_ok=True)
+    if isinstance(paths, RunPaths):
+        paths.dataset_dir.mkdir(parents=True, exist_ok=True)
+        run_id = paths.run_id
+        metadata_path = paths.metadata_path
+    else:
+        metadata_path = paths
 
     meta = RunMetadata(
-        schema_version=1,
-        run_id=paths.run_id,
+        schema_version=2,
+        command=command,
+        run_id=run_id or make_run_id(),
         started_at=_now_utc_iso(),
         finished_at=None,
         status="running",
@@ -235,21 +279,23 @@ def start_run(
         split=split.model_copy(deep=True) if split is not None else None,
         outputs=(),
     )
-    _write_run_metadata(meta, paths.metadata_path)
+    _write_run_metadata(meta, metadata_path, overwrite=overwrite)
     return meta
 
 
 def finish_run(
-    paths: RunPaths,
+    paths: RunPaths | Path,
     status: Literal["success", "failed"],
     notes: str | None = None,
     outputs: tuple[RunOutput, ...] = (),
 ) -> RunMetadata:
     """Mark an existing run as finished with the given status."""
-    meta = _load_run_metadata(paths.metadata_path)
+    metadata_path = paths.metadata_path if isinstance(paths, RunPaths) else paths
+    meta = _load_run_metadata(metadata_path)
 
     meta = RunMetadata(
         schema_version=meta.schema_version,
+        command=meta.command,
         run_id=meta.run_id,
         started_at=meta.started_at,
         finished_at=_now_utc_iso(),
@@ -260,12 +306,12 @@ def finish_run(
         outputs=outputs,
     )
 
-    _write_run_metadata(meta, paths.metadata_path)
+    _write_run_metadata(meta, metadata_path)
     return meta
 
 
 def finish_run_success(
-    paths: RunPaths,
+    paths: RunPaths | Path,
     notes: str | None = None,
     outputs: tuple[RunOutput, ...] = (),
 ) -> RunMetadata:
@@ -273,7 +319,7 @@ def finish_run_success(
     return finish_run(paths, status="success", notes=notes, outputs=outputs)
 
 
-def finish_run_failed(paths: RunPaths, notes: str | None = None) -> RunMetadata:
+def finish_run_failed(paths: RunPaths | Path, notes: str | None = None) -> RunMetadata:
     """Convenience wrapper to mark a run as failed."""
     return finish_run(paths, status="failed", notes=notes)
 
@@ -293,3 +339,7 @@ def set_latest_run(paths: RunPaths) -> None:
     finally:
         if pending_root.is_symlink():
             pending_root.unlink()
+
+
+def materialize_receipt_path(output: Path) -> Path:
+    return output.with_name(f"{output.name}.run.json")

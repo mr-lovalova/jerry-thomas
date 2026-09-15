@@ -187,7 +187,7 @@ def test_latest_run_refuses_to_delete_a_real_directory(tmp_path: Path) -> None:
     assert not (paths.serve_root / ".latest-run").exists()
 
 
-@pytest.mark.parametrize("version", [None, 0, 2, "1", True, 1.0])
+@pytest.mark.parametrize("version", [None, 0, 1, 3, "2", True, 2.0])
 def test_saved_run_rejects_missing_or_unsupported_version(tmp_path, version):
     paths = runs.get_run_paths(tmp_path, "run")
     runs.start_run(paths)

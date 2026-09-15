@@ -172,6 +172,22 @@ def test_preflight_checks_every_destination_before_execution(tmp_path) -> None:
         )
 
 
+@pytest.mark.parametrize("reserved", ["first.jsonl.run.json", ".first.jsonl.lock"])
+def test_preflight_rejects_output_nested_under_receipt_or_lock(tmp_path, reserved):
+    runtime = SimpleNamespace(
+        streams={"adv.20": object(), "adv.63": object()},
+        artifacts_root=tmp_path / "artifacts",
+    )
+    with pytest.raises(ValueError, match="overlaps data output"):
+        materialize.preflight_materialize_jobs(
+            runtime,
+            [
+                _job("first", "adv.20", tmp_path / "first.jsonl"),
+                _job("second", "adv.63", tmp_path / reserved / "second.jsonl"),
+            ],
+        )
+
+
 def test_preflight_rejects_managed_artifact_destination(tmp_path) -> None:
     artifacts = tmp_path / "artifacts"
     runtime = SimpleNamespace(
@@ -223,9 +239,10 @@ def test_execute_materialize_job_emits_config_and_returns_output(
     config = json.loads(messages[0][0].removeprefix("Config:\n"))
     assert messages[0][1] == logging.DEBUG
     assert config["stream"] == "adv.20"
-    assert result.profile == "adv-20"
-    assert result.stream == "adv.20"
-    assert result.path == job.output.destination
-    assert result.row_count == 3
-    assert result.format == "jsonl"
-    assert result.view == "raw"
+    output = result.output("adv-20")
+    assert output.profile == "adv-20"
+    assert output.stream == "adv.20"
+    assert result.outputs == (job.output.destination,)
+    assert output.row_count == 3
+    assert output.format == "jsonl"
+    assert output.view == "raw"

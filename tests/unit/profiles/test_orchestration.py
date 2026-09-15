@@ -999,9 +999,17 @@ def test_shared_serve_run_is_finalized_once(monkeypatch, tmp_path: Path) -> None
             function = "finish_run_success"
         elif name == "failed":
             function = "finish_run_failed"
+        from jerrythomas.io import runs
+
+        original = getattr(runs, function)
+
+        def counted(*args, key=name, action=original, **kwargs):
+            calls[key] += 1
+            return action(*args, **kwargs)
+
         monkeypatch.setattr(
             f"jerrythomas.profiles.orchestration.{function}",
-            lambda *_args, key=name, **_kwargs: calls.__setitem__(key, calls[key] + 1),
+            counted,
         )
 
     run_profiles(request)
@@ -1477,7 +1485,7 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
     )
     monkeypatch.setattr(
         "jerrythomas.profiles.orchestration.execute_materialize_job",
-        lambda job, active_runtime: materialized.append(
+        lambda job, active_runtime, **_kwargs: materialized.append(
             (job.name, active_runtime.heartbeat_interval_seconds)
         ),
     )
@@ -1552,7 +1560,9 @@ def test_materialize_hydrates_current_schedule_when_build_skips(
     )
     monkeypatch.setattr(
         "jerrythomas.profiles.orchestration.execute_materialize_job",
-        lambda job, active_runtime: active_runtime.artifacts.require("market_schedule"),
+        lambda job, active_runtime, **_kwargs: active_runtime.artifacts.require(
+            "market_schedule"
+        ),
     )
 
     run_profiles(request)

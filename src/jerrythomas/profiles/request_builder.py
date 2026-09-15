@@ -36,7 +36,10 @@ from jerrythomas.profiles.loader import (
     apply_profile_defaults,
     profile_specs_with_defaults,
 )
-from jerrythomas.profiles.materialize import resolve_materialize_jobs
+from jerrythomas.profiles.materialize import (
+    resolve_materialize_jobs,
+    materialize_reserved_paths,
+)
 from jerrythomas.profiles.models import (
     BuildJob,
     BuildRunRequest,
@@ -449,6 +452,7 @@ def build_materialize_run_request(
             [job.output for job in jobs],
             log_outputs,
             (),
+            reserved_paths=materialize_reserved_paths(jobs),
         )
         runtime = compile_runtime(definition)
     except (OSError, TypeError, ValueError) as exc:

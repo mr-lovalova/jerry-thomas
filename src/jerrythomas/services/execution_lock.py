@@ -76,3 +76,25 @@ def project_execution_lock(artifacts_root: Path) -> Iterator[None]:
             yield
         finally:
             release_file_lock(lock_file)
+
+
+def output_lock_path(output: Path) -> Path:
+    return output.with_name(f".{output.name}.lock")
+
+
+@contextmanager
+def output_execution_lock(output: Path) -> Iterator[None]:
+    """Serialize data/receipt publication even across different projects."""
+    path = output_lock_path(output)
+    if path.is_symlink():
+        raise ValueError(f"Output lock must not be a symbolic link: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as lock_file:
+        if not try_acquire_file_lock(lock_file):
+            raise ProjectExecutionBusyError(
+                f"Another Jerry command is writing '{output}'."
+            )
+        try:
+            yield
+        finally:
+            release_file_lock(lock_file)

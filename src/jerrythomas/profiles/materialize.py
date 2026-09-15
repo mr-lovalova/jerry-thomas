@@ -14,8 +14,18 @@ from jerrythomas.execution.observability import (
     emit_execution_message,
     operation_scope,
 )
-from jerrythomas.io.output import validate_output_destinations
-from jerrythomas.profiles.models import MaterializeJob, MaterializedOutput
+from jerrythomas.profiles.destinations import validate_command_destinations
+from jerrythomas.profiles.models import MaterializeJob
+from jerrythomas.io.runs import (
+    RunOutput,
+    SavedRun,
+    start_run,
+    finish_run_success,
+    finish_run_failed,
+    load_run,
+    materialize_receipt_path,
+)
+from jerrythomas.services.execution_lock import output_execution_lock, output_lock_path
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.materialize import (
     check_materialize_destination,
@@ -69,6 +79,18 @@ def resolve_materialize_jobs(
     return jobs
 
 
+def materialize_reserved_paths(jobs: Sequence[MaterializeJob]) -> tuple[Path, ...]:
+    return tuple(
+        path
+        for job in jobs
+        if job.output.destination is not None
+        for path in (
+            materialize_receipt_path(job.output.destination),
+            output_lock_path(job.output.destination),
+        )
+    )
+
+
 def preflight_materialize_jobs(
     runtime: Runtime,
     jobs: Sequence[MaterializeJob],
@@ -93,7 +115,13 @@ def preflight_materialize_jobs(
                 f"Materialize profile '{job.name}' writes inside the managed "
                 f"artifacts root: {path}"
             )
-    validate_output_destinations([job.output for job in jobs])
+    validate_command_destinations(
+        artifacts_root,
+        [job.output for job in jobs],
+        [job.observability.log_output for job in jobs],
+        (),
+        reserved_paths=materialize_reserved_paths(jobs),
+    )
     for job, path in destinations:
         check_materialize_destination(path, job.overwrite)
 
@@ -101,7 +129,9 @@ def preflight_materialize_jobs(
 def execute_materialize_job(
     job: MaterializeJob,
     runtime: Runtime,
-) -> MaterializedOutput:
+    *,
+    run_id: str | None = None,
+) -> SavedRun:
     with operation_scope(f"materialize:{job.name}"):
         emit_execution_message(
             "Config:\n"
@@ -117,20 +147,42 @@ def execute_materialize_job(
             ),
             level=logging.DEBUG,
         )
-        output = materialize_stream(
-            runtime=runtime,
-            stream_id=job.stream,
-            output=job.output,
-            overwrite=job.overwrite,
-        )
-        assert output.row_count is not None
-        return MaterializedOutput(
-            profile=job.name,
-            stream=job.stream,
-            path=output.path,
-            format=job.output.format,
-            view=job.output.view,
-            encoding=job.output.encoding,
-            compression=job.output.compression,
-            row_count=output.row_count,
-        )
+        destination = job.output.destination
+        assert destination is not None
+        receipt = materialize_receipt_path(destination)
+        with output_execution_lock(destination):
+            check_materialize_destination(destination, job.overwrite)
+            start_run(
+                receipt,
+                run_id=run_id,
+                command="materialize",
+                overwrite=job.overwrite,
+            )
+            try:
+                output = materialize_stream(
+                    runtime=runtime,
+                    stream_id=job.stream,
+                    output=job.output,
+                    overwrite=job.overwrite,
+                )
+                completed = RunOutput(
+                    profile=job.name,
+                    operation="materialize",
+                    stream=job.stream,
+                    output_id=None,
+                    path=output.path.name,
+                    format=job.output.format,
+                    view=job.output.view,
+                    encoding=job.output.encoding,
+                    compression=job.output.compression,
+                    row_count=output.row_count,
+                    fold=None,
+                )
+                finish_run_success(receipt, outputs=(completed,))
+            except BaseException as exc:
+                try:
+                    finish_run_failed(receipt)
+                except Exception as failure:
+                    exc.add_note(f"Failed to finalize receipt '{receipt}': {failure}")
+                raise
+            return load_run(receipt)

@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime, timezone
 
 from jerrythomas.artifacts.errors import ArtifactResolutionError
 from jerrythomas.artifacts.executor import run_build_if_needed
@@ -19,6 +18,8 @@ from jerrythomas.io.runs import (
     set_latest_run,
     start_run,
     make_run_id,
+    SavedRun,
+    load_run,
 )
 from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.profiles.executor import execution_scope
@@ -43,25 +44,21 @@ from .models import (
     BuildJob,
     BuildRunRequest,
     MaterializeRunRequest,
-    MaterializeRunResult,
-    MaterializedOutput,
-    ProfileRunResult,
     ProfileRunRequest,
     RuntimeRunRequest,
     ServeRunPlan,
-    ServeRunResult,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def run_profiles(request: ProfileRunRequest) -> tuple[ProfileRunResult, ...]:
+def run_profiles(request: ProfileRunRequest) -> tuple[SavedRun, ...]:
     """Return completed serve runs or a completed materialize invocation.
 
     Build, inspect, and unmanaged runtime outputs return an empty tuple.
     Execution or publication failures raise; no results are returned.
     """
-    results: tuple[ProfileRunResult, ...]
+    results: tuple[SavedRun, ...]
     try:
         with project_execution_lock(request.definition.project.artifacts_root):
             if isinstance(request, BuildRunRequest):
@@ -124,7 +121,7 @@ def _run_build_profiles(request: BuildRunRequest) -> None:
             )
 
 
-def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[ServeRunResult, ...]:
+def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[SavedRun, ...]:
     jobs = list(request.jobs)
     if not jobs:
         return ()
@@ -194,26 +191,16 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[ServeRunResult, .
         raise
     else:
         _publish_serve_runs(started_runs, run_outputs)
-    return tuple(
-        ServeRunResult(
-            plan.paths,
-            plan.preview,
-            tuple(
-                plan.paths.run_root / output.path for output in run_outputs[plan.paths]
-            ),
-        )
-        for plan in started_runs
-    )
+    return tuple(load_run(plan.paths.metadata_path) for plan in started_runs)
 
 
 def _run_materialize_profiles(
     request: MaterializeRunRequest,
-) -> tuple[MaterializeRunResult, ...]:
+) -> tuple[SavedRun, ...]:
     jobs = list(request.jobs)
     if not jobs:
         return ()
     run_id = make_run_id()
-    started_at = datetime.now(timezone.utc).isoformat()
     request.runtime.execution = request.execution
     graph = request.definition.artifact_graph
     try:
@@ -229,21 +216,14 @@ def _run_materialize_profiles(
         raise ProfileCommandError(str(exc)) from exc
 
     _build_prerequisites(request, required_artifacts, request.runtime)
-    outputs: list[MaterializedOutput] = []
+    results: list[SavedRun] = []
     for job in jobs:
         request.runtime.heartbeat_interval_seconds = (
             job.observability.heartbeat_interval_seconds
         )
         with execution_scope(request.runtime, job.observability):
-            outputs.append(execute_materialize_job(job, request.runtime))
-    return (
-        MaterializeRunResult(
-            run_id=run_id,
-            started_at=started_at,
-            finished_at=datetime.now(timezone.utc).isoformat(),
-            outputs=tuple(outputs),
-        ),
-    )
+            results.append(execute_materialize_job(job, request.runtime, run_id=run_id))
+    return tuple(results)
 
 
 def _validate_build_order(jobs: list[BuildJob], graph: ArtifactGraph) -> None:

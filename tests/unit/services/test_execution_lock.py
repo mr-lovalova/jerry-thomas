@@ -3,10 +3,16 @@ import sys
 from pathlib import Path
 from textwrap import dedent
 
-from jerrythomas.services.execution_lock import project_execution_lock
+import pytest
+
+from jerrythomas.services.execution_lock import (
+    project_execution_lock,
+    output_execution_lock,
+)
 
 
-def test_project_execution_lock_excludes_another_process(tmp_path: Path) -> None:
+@pytest.mark.parametrize("lock", [project_execution_lock, output_execution_lock])
+def test_execution_lock_excludes_another_process(tmp_path: Path, lock) -> None:
     artifacts_root = tmp_path / "artifacts"
     source_root = Path(__file__).parents[3] / "src"
     script = dedent(
@@ -19,10 +25,12 @@ def test_project_execution_lock_excludes_another_process(tmp_path: Path) -> None
         from jerrythomas.services.execution_lock import (
             ProjectExecutionBusyError,
             project_execution_lock,
+            output_execution_lock,
         )
 
+        lock = globals()[sys.argv[3]]
         try:
-            with project_execution_lock(Path(sys.argv[2])):
+            with lock(Path(sys.argv[2])):
                 pass
         except ProjectExecutionBusyError:
             print("busy")
@@ -36,9 +44,10 @@ def test_project_execution_lock_excludes_another_process(tmp_path: Path) -> None
         script,
         str(source_root),
         str(artifacts_root),
+        lock.__name__,
     ]
 
-    with project_execution_lock(artifacts_root):
+    with lock(artifacts_root):
         blocked = subprocess.run(
             command,
             capture_output=True,

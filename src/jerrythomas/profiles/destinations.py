@@ -91,6 +91,7 @@ def validate_command_destinations(
     outputs: Sequence[OutputTarget],
     log_outputs: Sequence[LogOutputSettings],
     serve_runs: Sequence[RunPaths],
+    reserved_paths: Sequence[Path] = (),
 ) -> None:
     validate_output_destinations(outputs)
 
@@ -105,6 +106,19 @@ def validate_command_destinations(
         for output in outputs
         if output.transport == "fs" and output.destination is not None
     )
+    for reserved in reserved_paths:
+        if output_paths_overlap(reserved, artifacts_root):
+            raise ValueError(
+                f"Receipt or lock path overlaps artifacts root: {reserved}"
+            )
+        if any(output_paths_overlap(reserved, data) for data in data_paths):
+            raise ValueError(f"Receipt or lock path overlaps data output: {reserved}")
+    for i, reserved in enumerate(reserved_paths):
+        if any(
+            output_paths_overlap(reserved, previous) for previous in reserved_paths[:i]
+        ):
+            raise ValueError(f"Receipt or lock paths overlap: {reserved}")
+    data_paths = (*data_paths, *reserved_paths)
     logs = _filesystem_logs(targets)
     _validate_global_logs(
         logs,

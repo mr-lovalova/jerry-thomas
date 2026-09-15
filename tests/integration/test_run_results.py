@@ -43,22 +43,22 @@ def test_run_results_identify_committed_files(
     results = run_profiles(request)
     assert len(results) == 1
     result = results[0]
-    assert result.paths == request.serve_run_plans[0].paths
-    assert result.preview is None
-    metadata = json.loads(result.paths.metadata_path.read_text())
-    assert metadata["run_id"] == result.paths.run_id
+    assert result.metadata_path == request.serve_run_plans[0].paths.metadata_path
+    assert result.metadata.preview is None
+    metadata = json.loads(result.metadata_path.read_text())
+    assert metadata["run_id"] == result.metadata.run_id
     assert metadata["status"] == "success"
-    assert (result.paths.serve_root / "latest").resolve() == result.paths.run_root
+    assert (result.directory.parent.parent / "latest").resolve() == result.directory
     expected_names = (
         [f"dataset.{output_id}{suffix}" for output_id in request.jobs[0].output_ids]
         if request.jobs[0].output_ids
         else [f"dataset{suffix}"]
     )
     assert [path.name for path in result.outputs] == expected_names
-    assert set(result.outputs) == set(result.paths.dataset_dir.iterdir())
+    assert set(result.outputs) == set((result.directory / "dataset").iterdir())
     assert all(path.is_file() for path in result.outputs)
-    saved = load_run(result.paths.run_root)
-    assert saved.metadata.schema_version == 1
+    saved = load_run(result.directory)
+    assert saved.metadata.schema_version == 2
     assert saved.metadata.split == request.definition.dataset.split
     assert len(saved.metadata.outputs) == len(result.outputs)
     for output, path in zip(saved.metadata.outputs, result.outputs):
@@ -111,8 +111,8 @@ def test_run_results_group_profiles_in_plan_order(copy_fixture, shared_directory
         command_observability=CommandObservability(visuals=False),
     )
     results = run_profiles(request)
-    assert [result.paths for result in results] == [
-        plan.paths for plan in request.serve_run_plans
+    assert [result.directory for result in results] == [
+        plan.paths.run_root for plan in request.serve_run_plans
     ]
     assert [tuple(path.name for path in result.outputs) for result in results] == (
         [("dataset.jsonl", "second.jsonl")]
@@ -121,7 +121,7 @@ def test_run_results_group_profiles_in_plan_order(copy_fixture, shared_directory
     )
     assert all(path.is_file() for result in results for path in result.outputs)
     for result in results:
-        saved = load_run(result.paths.run_root)
+        saved = load_run(result.directory)
         for output, path in zip(saved.metadata.outputs, result.outputs):
             assert saved.output_path(output.profile) == path
             assert output.profile == path.stem
@@ -138,8 +138,8 @@ def test_result_excludes_planned_files_when_operation_returns_no_output(
     results = run_profiles(request)
     assert len(results) == 1
     assert results[0].outputs == ()
-    assert list(results[0].paths.dataset_dir.iterdir()) == []
-    assert load_run(results[0].paths.run_root).metadata.outputs == ()
+    assert list((results[0].directory / "dataset").iterdir()) == []
+    assert load_run(results[0].directory).metadata.outputs == ()
 
 
 def test_stdout_has_no_managed_run_result(copy_fixture, capsys):
@@ -165,10 +165,10 @@ def test_preview_result_does_not_publish_latest(copy_fixture):
         command_observability=CommandObservability(visuals=False),
     )
     (result,) = run_profiles(request)
-    assert result.preview == "samples"
-    assert result.outputs == (result.paths.dataset_dir / "dataset.jsonl",)
-    assert not (result.paths.serve_root / "latest").exists()
-    saved = load_run(result.paths.run_root)
+    assert result.metadata.preview == "samples"
+    assert result.outputs == ((result.directory / "dataset") / "dataset.jsonl",)
+    assert not (result.directory.parent.parent / "latest").exists()
+    saved = load_run(result.directory)
     assert saved.metadata.preview == "samples"
     assert saved.output("dataset").row_count == 1
     assert saved.output("dataset").fold is None
@@ -184,7 +184,7 @@ def test_saved_fold_selection_survives_project_removal(copy_fixture, tmp_path):
     )
     (result,) = run_profiles(request)
     archive = tmp_path / "archive"
-    shutil.copytree(result.paths.run_root, archive)
+    shutil.copytree(result.directory, archive)
     manifest = json.loads((archive / "run.json").read_text())
     train = next(
         output for output in manifest["outputs"] if output["fold"]["role"] == "train"
@@ -212,7 +212,7 @@ def test_saved_stream_previews_have_output_ids_without_fold_identity(copy_fixtur
         command_observability=CommandObservability(visuals=False),
     )
     (result,) = run_profiles(request)
-    saved = load_run(result.paths.run_root)
+    saved = load_run(result.directory)
     assert saved.metadata.preview == "records"
     assert saved.metadata.split == request.definition.dataset.split
     assert (
@@ -258,7 +258,7 @@ def test_saved_split_uses_execution_rules_after_project_changes(
         dataset_path.read_text().replace("2024-01-03", "2024-01-02")
     )
     changed_split = load_project_definition(project_path).dataset.split
-    saved = load_run(result.paths.run_root)
+    saved = load_run(result.directory)
     assert saved.metadata.split.model_dump(mode="json") == original_split
     key = "2024-01-02T12:00:00Z"
     assert build_labeler(saved.metadata.split).label(key) == "train_0"
@@ -320,7 +320,7 @@ def test_failed_manifest_commit_preserves_previous_latest(copy_fixture, monkeypa
         run_profiles(request)
 
     latest = load_run(paths.serve_root / "latest")
-    assert latest.directory == previous.paths.run_root
+    assert latest.directory == previous.directory
     assert latest.output_path("dataset") == previous.outputs[0]
     with pytest.raises(ValueError, match="successfully finished"):
         load_run(paths.run_root)

@@ -48,32 +48,41 @@ succeed. Data outputs must use filesystem transport and logs must use stderr or
 filesystem transport. Conflicts are rejected before execution. Normal terminal
 progress remains on stderr.
 
+Both commands emit the same versioned structure:
+
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "runs": [
     {
-      "run_id": "2026-09-09T10-00-00-000000Z",
-      "directory": "/research/output/runs/2026-09-09T10-00-00-000000Z",
+      "receipt": "/research/interim/volatility.jsonl.gz.run.json",
+      "schema_version": 2,
+      "command": "materialize",
+      "run_id": "2026-09-15T10-00-00-000000Z",
+      "started_at": "2026-09-15T10:00:00+00:00",
+      "finished_at": "2026-09-15T10:01:00+00:00",
+      "status": "success",
+      "notes": null,
       "preview": null,
-      "outputs": [
-        "/research/output/runs/2026-09-09T10-00-00-000000Z/dataset.fold_0.train.jsonl"
-      ]
+      "split": null,
+      "outputs": [{
+        "profile": "volatility", "operation": "materialize",
+        "stream": "equity.volatility", "output_id": null,
+        "path": "volatility.jsonl.gz", "format": "jsonl", "view": "raw",
+        "encoding": "utf-8", "compression": "gzip", "row_count": 1000,
+        "fold": null
+      }]
     }
   ]
 }
 ```
 
-Paths are absolute. Profiles sharing a run directory contribute to one entry;
-separate run directories produce separate entries in plan order. `outputs`
-contains files actually written, including empty files. No enabled profiles
-produces `{"schema_version": 1, "runs": []}`. Execution or publication failure
-exits unsuccessfully without emitting a result object; callers must check the
-exit code. This result describes the completed invocation. Each saved run also
-contains a versioned `run.json` manifest with output metadata; see
-[reading saved runs](research.md#read-a-saved-run).
-
-Python callers can use [the run result API](research.md#consume-completed-runs-from-python).
+Each entry contains the saved receipt fields plus its absolute `receipt` path.
+Output paths are relative to the receipt's directory. Serve emits one entry per
+run directory; materialize emits one per output, in profile order. No enabled
+profiles produces `{"schema_version": 2, "runs": []}`. Failure emits no result
+object; callers must check the exit code. Saved receipts are automatic even
+without `--result-json`. See [saved runs](research.md#read-a-saved-run).
 
 ### Preview Stages
 
@@ -176,13 +185,16 @@ Python callers can use [the run result API](research.md#consume-completed-runs-f
     `--profile`.
   - The concrete output suffix selects compression: `.jsonl` writes plain
     JSONL and `.jsonl.gz` writes gzip JSONL.
-  - `--result-json` writes `{ "schema_version": 1, "runs": [...] }` to stdout
-    after all selected profiles succeed. Each invocation reports `command`,
-    `run_id`, `started_at`, `finished_at`, `status`, and ordered output descriptors
-    with profile, stream, absolute path, format, view, encoding, compression,
-    and row count. Stdout logging is rejected. No enabled profiles yields `runs: []`.
-    Files are committed individually; a later failure emits no success result
-    and does not roll back earlier files. No sidecar manifest is written.
+  - Every output gets a `<filename>.run.json` receipt automatically. A hidden
+    `.<filename>.lock` file coordinates publication across projects and stays
+    in place for reuse.
+  - `--result-json` prints the completed receipts described above. Stdout logging
+    is rejected. Profiles commit independently; later failures retain earlier
+    completed outputs and receipts.
+  - `--overwrite` replaces the receipt with a running state before changing data.
+    Failures leave an unreadable running/failed receipt, never an old successful
+    receipt describing replacement data. A failed overwrite may preserve the old
+    data file, but its receipt is invalidated.
 - `jerry clean [--yes] [--older-than <age>]`
   - Lists stale sort spill directories by default.
   - Add `--yes` to remove them.

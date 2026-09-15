@@ -648,17 +648,23 @@ def test_profile_request_routes_summary_inside_enabled_visuals(
 def test_serve_result_json_serializes_completed_runs(monkeypatch, tmp_path, capsys):
     import json
 
-    from jerrythomas.io.runs import get_run_paths
-    from jerrythomas.profiles.models import ServeRunResult
+    from jerrythomas.io.runs import (
+        get_run_paths,
+        start_run,
+        finish_run_success,
+        load_run,
+    )
 
     request = _runtime_request()
     request.jobs = []
     request.artifact_settings.observability.log_output = SimpleNamespace(outputs=())
     paths = get_run_paths(tmp_path / "served", "run-1")
-    results = (
-        ServeRunResult(paths, None, (paths.dataset_dir / "dataset.train.jsonl",)),
-        ServeRunResult(get_run_paths(tmp_path / "other", "run-2"), "samples", ()),
-    )
+    other = get_run_paths(tmp_path / "other", "run-2")
+    start_run(paths)
+    finish_run_success(paths)
+    start_run(other, preview="samples")
+    finish_run_success(other)
+    results = (load_run(paths.run_root), load_run(other.run_root))
     monkeypatch.setattr(
         "jerrythomas.cli.commands.profile_runner.build_runtime_run_request",
         lambda **_kwargs: request,
@@ -672,23 +678,13 @@ def test_serve_result_json_serializes_completed_runs(monkeypatch, tmp_path, caps
     args = _serve_args()
     args.result_json = True
     execute_command(args, None, None, None, [])
-    assert json.loads(capsys.readouterr().out) == {
-        "schema_version": 1,
-        "runs": [
-            {
-                "run_id": "run-1",
-                "directory": str(paths.run_root),
-                "preview": None,
-                "outputs": [str(paths.dataset_dir / "dataset.train.jsonl")],
-            },
-            {
-                "run_id": "run-2",
-                "directory": str(tmp_path / "other/runs/run-2"),
-                "preview": "samples",
-                "outputs": [],
-            },
-        ],
-    }
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == 2
+    assert [run["run_id"] for run in payload["runs"]] == ["run-1", "run-2"]
+    assert [run["preview"] for run in payload["runs"]] == [None, "samples"]
+    for run, result in zip(payload["runs"], results):
+        assert run.pop("receipt") == str(result.metadata_path)
+        assert run == result.metadata.model_dump(mode="json")
 
 
 @pytest.mark.parametrize("stdout_use", ["data", "logs"])
@@ -735,7 +731,7 @@ def test_serve_result_json_returns_empty_list_when_no_profiles_enabled(
     args = _serve_args()
     args.result_json = True
     execute_command(args, None, None, None, [])
-    assert json.loads(capsys.readouterr().out) == {"schema_version": 1, "runs": []}
+    assert json.loads(capsys.readouterr().out) == {"schema_version": 2, "runs": []}
 
 
 def test_serve_result_json_is_not_emitted_when_execution_fails(monkeypatch, capsys):

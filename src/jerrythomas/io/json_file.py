@@ -14,8 +14,10 @@ def read_json_object(path: Path) -> dict[str, Any]:
     return payload
 
 
-def write_json_object(path: Path, payload: Mapping[str, Any]) -> None:
-    sink = AtomicTextFileSink(path)
+def write_json_object(
+    path: Path, payload: Mapping[str, Any], *, overwrite: bool = True
+) -> None:
+    sink = AtomicTextFileSink(path, overwrite=overwrite)
     try:
         json.dump(payload, sink.fh, indent=2, sort_keys=True, allow_nan=False)
         sink.close()

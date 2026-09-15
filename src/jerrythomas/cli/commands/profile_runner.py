@@ -11,11 +11,11 @@ from jerrythomas.cli.workspace import WorkspaceContext
 from jerrythomas.execution.events import RunStatus
 from jerrythomas.execution.observability import CommandFinished
 from jerrythomas.execution.settings import CommandObservability, LogOutputTarget
+from jerrythomas.io.runs import SavedRun
 from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.profiles.models import (
     BuildRunRequest,
     ProfileRunRequest,
-    ProfileRunResult,
 )
 from jerrythomas.profiles.orchestration import run_profiles
 from jerrythomas.profiles.request_builder import (
@@ -34,7 +34,7 @@ def _command_uses_visuals(request: ProfileRunRequest) -> bool:
     )
 
 
-def execute_profile_request(request: ProfileRunRequest) -> tuple[ProfileRunResult, ...]:
+def execute_profile_request(request: ProfileRunRequest) -> tuple[SavedRun, ...]:
     started_at = time.perf_counter()
     status: RunStatus = "error"
     command_error: BaseException | None = None
