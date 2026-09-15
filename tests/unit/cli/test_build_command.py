@@ -210,7 +210,7 @@ def _build_settings(mode: str = "auto") -> BuildSettings:
     )
 
 
-@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6, 7])
+@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6, 7, 8])
 def test_load_build_state_invalidates_previous_cache_version(
     tmp_path: Path,
     version: int,
@@ -702,6 +702,7 @@ def test_execute_build_jobs_persists_completed_job_before_failure(
                 size=0,
                 mtime_ns=0,
                 ctime_ns=0,
+                sha256="0" * 64,
             ),
         ),
     )
@@ -781,6 +782,7 @@ def test_execute_build_failure_preserves_previous_persisted_state(
                 size=0,
                 mtime_ns=0,
                 ctime_ns=0,
+                sha256="0" * 64,
             ),
         ),
     )

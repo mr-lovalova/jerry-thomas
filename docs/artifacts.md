@@ -86,6 +86,14 @@ orphaned, missing, altered, stale, and incomplete chains are left unavailable.
 Commands targeting the same artifacts root cannot overlap; a second command
 fails before reading or mutating managed artifacts.
 
+Artifact fingerprints store size, modification time, change time, and SHA-256.
+When only change time (`ctime`) differs, Jerry checks the content checksum before
+invalidating the artifact. Permission and other metadata-only changes therefore
+do not invalidate unchanged bytes. Unchanged timestamps use the fast stat check;
+files with changed `ctime` are rehashed on each validation without updating state.
+Build-state version 9 requires one rebuild of older managed artifacts to record
+checksums; exported materializations are unaffected.
+
 Jerry 10.0.2 advances the core artifact-cache revision to isolate mutable plugin
 configuration between runtimes. It includes the numerical corrections from
 10.0.1. `auto` rebuilds required artifacts created under the previous revision.

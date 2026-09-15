@@ -151,6 +151,42 @@ def test_auto_rebuilds_after_source_and_config_changes(copy_fixture) -> None:
     assert _artifact_snapshot(project_root) != changed_source_artifacts
 
 
+def test_serve_accepts_metadata_changes_after_artifact_registration(
+    copy_fixture, monkeypatch
+) -> None:
+    from jerrythomas.artifacts import executor
+    from jerrythomas.execution.settings import CommandObservability
+    from jerrythomas.profiles.orchestration import run_profiles
+    from jerrythomas.profiles.request_builder import build_runtime_run_request
+
+    project_root = copy_fixture("regression_project")
+    expected = _serve_dataset(project_root, "rebuild")
+    save = executor.save_build_state
+
+    def save_then_change_metadata(state, artifacts_root):
+        save(state, artifacts_root)
+        for info in state.artifacts.values():
+            for fingerprint in info.files:
+                path = artifacts_root / fingerprint.relative_path
+                path.chmod(path.stat().st_mode ^ 0o100)
+
+    monkeypatch.setattr(executor, "save_build_state", save_then_change_metadata)
+    assert _serve_dataset(project_root, "rebuild") == expected
+    snapshot = _artifact_snapshot(project_root)
+
+    for mode in ("require_current", "auto"):
+        request = build_runtime_run_request(
+            "serve",
+            str(project_root / "project.yaml"),
+            profile_name="dataset",
+            artifact_mode=mode,
+            command_observability=CommandObservability(visuals=False),
+        )
+        (result,) = run_profiles(request)
+        assert result.outputs[0].read_bytes() == expected
+        assert _artifact_snapshot(project_root) == snapshot
+
+
 def test_external_sort_spilling_preserves_the_persisted_dataset(
     copy_fixture,
     monkeypatch,

@@ -557,6 +557,7 @@ def test_artifact_with_missing_file_is_not_current(tmp_path):
                 size=0,
                 mtime_ns=0,
                 ctime_ns=0,
+                sha256="0" * 64,
             ),
         ),
     )
@@ -640,6 +641,92 @@ def test_artifact_companion_changes_affect_freshness(tmp_path, change):
     expected = freshness.missing if change == "remove" else freshness.stale
     assert expected == {"bundle"}
     assert freshness.outdated == {"bundle"}
+
+
+@pytest.mark.parametrize("change", ["permissions", "hardlink"])
+def test_metadata_only_artifact_change_is_current(tmp_path, change):
+    graph = ArtifactGraph((ArtifactDefinition(key="result"),), {})
+    output = tmp_path / "result.json"
+    output.write_bytes(b"first")
+    fingerprint = ArtifactFileFingerprint.from_path("result.json", output)
+    state = BuildState()
+    state.register("result", artifact_hash="current", files=(fingerprint,))
+
+    if change == "permissions":
+        output.chmod(0o400)
+    else:
+        os.link(output, tmp_path / "alias.json")
+    changed = output.stat()
+    assert changed.st_size == fingerprint.size
+    assert changed.st_mtime_ns == fingerprint.mtime_ns
+    assert changed.st_ctime_ns != fingerprint.ctime_ns
+
+    freshness = graph.freshness(
+        keys={"result"},
+        state=state,
+        artifact_hashes=_current_hashes(graph),
+        artifacts_root=tmp_path,
+    )
+
+    assert not freshness.outdated
+
+
+def test_unchanged_artifact_uses_stat_without_reading_content(tmp_path, monkeypatch):
+    graph = ArtifactGraph((ArtifactDefinition(key="result"),), {})
+    output = tmp_path / "result.json"
+    output.write_bytes(b"first")
+    state = BuildState()
+    state.register(
+        "result",
+        artifact_hash="current",
+        files=(ArtifactFileFingerprint.from_path("result.json", output),),
+    )
+
+    def unexpected_read(_path):
+        pytest.fail("Unchanged artifact should not be hashed again")
+
+    monkeypatch.setattr(
+        ArtifactFileFingerprint, "content_digest", staticmethod(unexpected_read)
+    )
+    freshness = graph.freshness(
+        keys={"result"},
+        state=state,
+        artifact_hashes=_current_hashes(graph),
+        artifacts_root=tmp_path,
+    )
+    assert not freshness.outdated
+
+
+def test_artifact_changing_during_checksum_validation_is_rejected(
+    tmp_path, monkeypatch
+):
+    graph = ArtifactGraph((ArtifactDefinition(key="result"),), {})
+    output = tmp_path / "result.json"
+    output.write_bytes(b"first")
+    state = BuildState()
+    state.register(
+        "result",
+        artifact_hash="current",
+        files=(ArtifactFileFingerprint.from_path("result.json", output),),
+    )
+    os.link(output, tmp_path / "alias.json")
+    digest = ArtifactFileFingerprint.content_digest
+
+    def changing_digest(path):
+        result = digest(path)
+        path.write_bytes(b"changed content")
+        return result
+
+    monkeypatch.setattr(
+        ArtifactFileFingerprint, "content_digest", staticmethod(changing_digest)
+    )
+    with pytest.raises(RuntimeError, match="changed while fingerprinting"):
+        graph.freshness(
+            keys={"result"},
+            state=state,
+            artifact_hashes=_current_hashes(graph),
+            artifacts_root=tmp_path,
+        )
 
 
 def test_same_size_artifact_replacement_with_preserved_mtime_is_stale(tmp_path):

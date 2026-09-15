@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 
@@ -31,6 +32,27 @@ def test_build_state_derives_primary_path_from_first_file(tmp_path: Path) -> Non
     loaded = load_build_state(artifacts_root)
     assert loaded is not None
     assert loaded.artifacts["snapshot"].relative_path == "snapshot.json"
+    assert (
+        loaded.artifacts["snapshot"].files[0].sha256
+        == hashlib.sha256(b"{}").hexdigest()
+    )
+
+
+def test_fingerprint_rejects_content_change_during_hashing(tmp_path, monkeypatch):
+    path = tmp_path / "snapshot.json"
+    path.write_bytes(b"first")
+    digest = ArtifactFileFingerprint.content_digest
+
+    def changing_digest(path):
+        result = digest(path)
+        path.write_bytes(b"changed content")
+        return result
+
+    monkeypatch.setattr(
+        ArtifactFileFingerprint, "content_digest", staticmethod(changing_digest)
+    )
+    with pytest.raises(RuntimeError, match="changed while fingerprinting"):
+        ArtifactFileFingerprint.from_path("snapshot.json", path)
 
 
 def test_artifact_info_requires_at_least_one_file() -> None:
@@ -44,6 +66,7 @@ def test_artifact_info_rejects_duplicate_files() -> None:
         size=1,
         mtime_ns=1,
         ctime_ns=1,
+        sha256="0" * 64,
     )
 
     with pytest.raises(ValidationError, match="artifact file paths must be unique"):

@@ -14,7 +14,7 @@ from jerrythomas.artifacts.specs import (
     dataset_requires_scaler,
 )
 from jerrythomas.artifacts.series import series_cache_root
-from jerrythomas.artifacts.state import BuildState
+from jerrythomas.artifacts.state import ArtifactFileFingerprint, BuildState
 from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.preview import PREVIEW_STAGES, PreviewStage
 from jerrythomas.config.streams import StreamsConfig
@@ -315,10 +315,26 @@ class ArtifactGraph:
                 if (
                     file_stat.st_size != fingerprint.size
                     or file_stat.st_mtime_ns != fingerprint.mtime_ns
-                    or file_stat.st_ctime_ns != fingerprint.ctime_ns
                 ):
                     stale.add(key)
                     break
+                if file_stat.st_ctime_ns != fingerprint.ctime_ns:
+                    # Metadata changes also update ctime; verify bytes before
+                    # invalidating an otherwise unchanged artifact.
+                    try:
+                        verified = ArtifactFileFingerprint.from_path(
+                            fingerprint.relative_path, artifact_path
+                        )
+                    except FileNotFoundError:
+                        missing.add(key)
+                        break
+                    if (
+                        verified.size != fingerprint.size
+                        or verified.mtime_ns != fingerprint.mtime_ns
+                        or verified.sha256 != fingerprint.sha256
+                    ):
+                        stale.add(key)
+                        break
 
         outdated = missing | stale
         for key in self.topological_order(selected):

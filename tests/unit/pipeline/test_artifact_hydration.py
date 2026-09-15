@@ -89,6 +89,7 @@ def test_hydration_replaces_registry_with_dependency_current_artifacts(
                 size=0,
                 mtime_ns=0,
                 ctime_ns=0,
+                sha256="0" * 64,
             ),
         ),
     )

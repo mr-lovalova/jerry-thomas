@@ -1,5 +1,6 @@
 """Persisted artifact build state."""
 
+import hashlib
 import json
 from collections.abc import Mapping
 from pathlib import Path
@@ -10,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from jerrythomas.io.json_file import write_json_object
 from jerrythomas.services.path_policy import resolve_artifact_output_path
 
-BUILD_STATE_VERSION = 8
+BUILD_STATE_VERSION = 9
 _BUILD_STATE_PATH = Path("_system/build/state.json")
 
 
@@ -21,6 +22,7 @@ class ArtifactFileFingerprint(BaseModel):
     size: int = Field(strict=True, ge=0)
     mtime_ns: int = Field(strict=True, ge=0)
     ctime_ns: int = Field(strict=True, ge=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @field_validator("relative_path")
     @classmethod
@@ -33,12 +35,27 @@ class ArtifactFileFingerprint(BaseModel):
     @classmethod
     def from_path(cls, relative_path: str, path: Path) -> Self:
         stat = path.stat()
+        digest = cls.content_digest(path)
+        current = path.stat()
+        if (stat.st_size, stat.st_mtime_ns, stat.st_dev, stat.st_ino) != (
+            current.st_size,
+            current.st_mtime_ns,
+            current.st_dev,
+            current.st_ino,
+        ):
+            raise RuntimeError(f"Artifact changed while fingerprinting: {path}")
         return cls(
             relative_path=relative_path,
             size=stat.st_size,
             mtime_ns=stat.st_mtime_ns,
             ctime_ns=stat.st_ctime_ns,
+            sha256=digest,
         )
+
+    @staticmethod
+    def content_digest(path: Path) -> str:
+        with path.open("rb") as source:
+            return hashlib.file_digest(source, "sha256").hexdigest()
 
 
 class ArtifactInfo(BaseModel):
