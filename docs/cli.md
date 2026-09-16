@@ -52,11 +52,11 @@ Both commands emit the same versioned structure:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "runs": [
     {
       "receipt": "/research/interim/volatility.jsonl.gz.run.json",
-      "schema_version": 2,
+      "schema_version": 3,
       "command": "materialize",
       "run_id": "2026-09-15T10-00-00-000000Z",
       "started_at": "2026-09-15T10:00:00+00:00",
@@ -65,12 +65,14 @@ Both commands emit the same versioned structure:
       "notes": null,
       "preview": null,
       "split": null,
+      "recipe": {"path": "volatility.jsonl.gz.recipe.json", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
       "outputs": [{
         "profile": "volatility", "operation": "materialize",
         "stream": "equity.volatility", "output_id": null,
         "path": "volatility.jsonl.gz", "format": "jsonl", "view": "raw",
         "encoding": "utf-8", "compression": "gzip", "row_count": 1000,
-        "fold": null
+        "fold": null, "size_bytes": 12345,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
       }]
     }
   ]
@@ -80,7 +82,7 @@ Both commands emit the same versioned structure:
 Each entry contains the saved receipt fields plus its absolute `receipt` path.
 Output paths are relative to the receipt's directory. Serve emits one entry per
 run directory; materialize emits one per output, in profile order. No enabled
-profiles produces `{"schema_version": 2, "runs": []}`. Failure emits no result
+profiles produces `{"schema_version": 3, "runs": []}`. Failure emits no result
 object; callers must check the exit code. Saved receipts are automatic even
 without `--result-json`. See [saved runs](research.md#read-a-saved-run).
 

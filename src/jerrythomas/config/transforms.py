@@ -11,7 +11,7 @@ from pydantic import (
 )
 
 from jerrythomas.config.constraints import NonEmptyString
-from jerrythomas.config.interpolation import is_missing_interpolation
+from jerrythomas.config.interpolation import PluginArgs, is_missing_interpolation
 from jerrythomas.config.resample import ResampleConfig
 from jerrythomas.utils.time import parse_cadence, parse_datetime, parse_timecode
 
@@ -337,7 +337,7 @@ class CustomTransformConfig(_TransformConfig):
     operation: Literal["custom"] = "custom"
 
     entrypoint: NonEmptyString
-    args: dict[str, Any] = Field(default_factory=dict)
+    args: PluginArgs = Field(default_factory=dict)
     writes: tuple[NonEmptyString, ...] = Field(default_factory=tuple)
 
     @field_validator("writes", mode="before")

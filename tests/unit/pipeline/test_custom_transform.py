@@ -219,7 +219,9 @@ def test_custom_transform_stage_resolves_interpolated_args(monkeypatch) -> None:
             return iter(())
 
     def factory(args, partition_by):
-        return _Capturing(args, partition_by)
+        instance = _Capturing(args, partition_by)
+        args.clear()
+        return instance
 
     monkeypatch.setattr(
         "jerrythomas.pipelines.stream.stages.load_entrypoint",
@@ -234,6 +236,8 @@ def test_custom_transform_stage_resolves_interpolated_args(monkeypatch) -> None:
     build_transform_stages(_runtime(Path(".")), (config,), ("partition",))
 
     assert captured == {"field": None}
+    assert config.args == {"field": None}
+    assert config.model_dump(mode="json")["args"] == {"field": None}
 
 
 def test_custom_transform_stage_rejects_objects_without_apply(monkeypatch) -> None:

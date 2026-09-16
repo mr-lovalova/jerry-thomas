@@ -9,6 +9,7 @@ from jerrythomas.operations.persistence import (
 )
 from jerrythomas.io.output import OutputTarget
 from jerrythomas.io.runs import materialize_receipt_path
+from jerrythomas.io.recipes import recipe_path
 from jerrythomas.pipelines.stream.pipeline import run_stream_pipeline
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.execution_lock import output_lock_path
@@ -67,12 +68,15 @@ def check_materialize_destination(
     if lock.is_symlink() or (lock.exists() and not lock.is_file()):
         raise ValueError(f"Materialize lock must be a regular file: {lock}")
     receipt = materialize_receipt_path(path)
-    if receipt.is_symlink() or (receipt.exists() and not receipt.is_file()):
-        raise ValueError(f"Materialize receipt must be a regular file: {receipt}")
-    if not overwrite and receipt.exists():
-        raise FileExistsError(
-            f"{receipt} already exists; pass --overwrite to replace it"
-        )
+    for sidecar in (receipt, recipe_path(receipt)):
+        if sidecar.is_symlink() or (sidecar.exists() and not sidecar.is_file()):
+            raise ValueError(
+                f"Materialize receipt/recipe must be a regular file: {sidecar}"
+            )
+        if not overwrite and sidecar.exists():
+            raise FileExistsError(
+                f"{sidecar} already exists; pass --overwrite to replace it"
+            )
 
 
 def _check_data_destination(path: Path, overwrite: bool) -> None:

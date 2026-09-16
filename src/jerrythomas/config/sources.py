@@ -11,6 +11,7 @@ from pydantic import (
 )
 
 from jerrythomas.config.constraints import DottedIdentifier, NonEmptyString
+from jerrythomas.config.interpolation import PluginArgs
 from jerrythomas.io.compression import Compression
 
 
@@ -32,7 +33,7 @@ class EntryPointConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     entrypoint: _EntryPoint
-    args: dict[str, Any] = Field(default_factory=dict)
+    args: PluginArgs = Field(default_factory=dict)
 
 
 class _TextReaderBase(BaseModel):

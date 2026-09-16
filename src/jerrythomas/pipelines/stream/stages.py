@@ -9,7 +9,6 @@ from jerrythomas.artifacts.schedule import (
     read_schedule,
     schedule_partition_by_from_metadata,
 )
-from jerrythomas.config.interpolation import normalize_interpolated_args
 from jerrythomas.config.transforms import (
     AggregateSumConfig,
     CollapseConfig,
@@ -266,7 +265,7 @@ def build_transform_stages(
         elif isinstance(operation, CustomTransformConfig):
             factory = load_entrypoint(TRANSFORMS_EP, operation.entrypoint)
             instance = factory(
-                normalize_interpolated_args(operation.args),
+                dict(operation.args),
                 partition_by,
             )
             stage_op_candidate = getattr(instance, "apply", None)

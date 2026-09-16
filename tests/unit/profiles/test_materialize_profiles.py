@@ -18,6 +18,7 @@ from jerrythomas.operations.persistence import WrittenOutput
 from jerrythomas.profiles import materialize
 from jerrythomas.profiles.models import MaterializeJob
 from jerrythomas.services.materialize import resolve_materialize_output
+from tests.run_helpers import empty_recipe
 
 
 def _observability() -> ObservabilitySettings:
@@ -172,7 +173,9 @@ def test_preflight_checks_every_destination_before_execution(tmp_path) -> None:
         )
 
 
-@pytest.mark.parametrize("reserved", ["first.jsonl.run.json", ".first.jsonl.lock"])
+@pytest.mark.parametrize(
+    "reserved", ["first.jsonl.run.json", "first.jsonl.recipe.json", ".first.jsonl.lock"]
+)
 def test_preflight_rejects_output_nested_under_receipt_or_lock(tmp_path, reserved):
     runtime = SimpleNamespace(
         streams={"adv.20": object(), "adv.63": object()},
@@ -218,6 +221,7 @@ def test_execute_materialize_job_emits_config_and_returns_output(
 
     def materialize_stream(**kwargs):
         calls.append(kwargs)
+        job.output.destination.write_text("{}\n")
         return WrittenOutput(job.output.destination, None, 3)
 
     monkeypatch.setattr(
@@ -226,7 +230,9 @@ def test_execute_materialize_job_emits_config_and_returns_output(
         materialize_stream,
     )
 
-    result = materialize.execute_materialize_job(job, runtime)
+    result = materialize.execute_materialize_job(
+        job, runtime, recipe=empty_recipe("materialize"), definition=SimpleNamespace()
+    )
 
     assert calls == [
         {

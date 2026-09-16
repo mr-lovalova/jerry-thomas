@@ -78,6 +78,7 @@ from jerrythomas.profiles.orchestration import (
 )
 from jerrythomas.services.materialize import resolve_materialize_output
 from tests.unit.profiles.helpers import project_definition
+from tests.run_helpers import empty_recipe
 
 _LOG_DECISION = LogLevelDecision(name="INFO", value=logging.INFO)
 _LOG_OUTPUT = LogOutputSettings(outputs=())
@@ -1235,7 +1236,7 @@ def test_later_output_commit_failure_marks_run_failed_and_preserves_latest(
     serve_root = tmp_path / "served"
     previous_paths = _run_paths(serve_root, "previous")
     current_paths = _run_paths(serve_root, "current")
-    start_run(previous_paths)
+    start_run(previous_paths, recipe=empty_recipe())
     finish_run_success(previous_paths)
     set_latest_run(previous_paths)
 
@@ -1406,7 +1407,7 @@ def test_later_run_start_failure_fails_only_started_run(
     starts: list[RunPaths] = []
     failed: list[RunPaths] = []
 
-    def start(paths, *, preview, split):
+    def start(paths, *, preview, split, recipe):
         starts.append(paths)
         if paths == second:
             raise RuntimeError("cannot start second run")
@@ -1428,11 +1429,24 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
+    captured_dependencies: dict[str, set[str]] = {}
+
+    def capture(definition, command, jobs, execution, required_artifacts):
+        captured_dependencies[jobs[0].name] = set(required_artifacts)
+        return empty_recipe("materialize")
+
+    monkeypatch.setattr("jerrythomas.profiles.orchestration.capture_recipe", capture)
     schedule = ScheduleTask(
         id="market_schedule",
         stream="prices",
         partition_by=[],
         output="schedule.jsonl",
+    )
+    secondary_schedule = ScheduleTask(
+        id="secondary_schedule",
+        stream="prices",
+        partition_by=[],
+        output="secondary-schedule.jsonl",
     )
     execution = ExecutionConfig(sort_buffer_mb=32)
     runtime = SimpleNamespace(
@@ -1459,14 +1473,18 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
     ]
     request = _materialize_request(
         tmp_path,
-        [schedule],
+        [schedule, secondary_schedule],
         jobs,
         runtime,
         execution,
     )
     monkeypatch.setattr(
         "jerrythomas.artifacts.planning.stream_schedule_artifacts",
-        lambda stream, streams: {"market_schedule"},
+        lambda stream, streams: (
+            {"market_schedule", "secondary_schedule"}
+            if stream == "adv.63"
+            else {"market_schedule"}
+        ),
     )
     build_calls: list[dict] = []
     materialized: list[tuple[str, float | None]] = []
@@ -1493,7 +1511,14 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
     run_profiles(request)
 
     assert len(build_calls) == 1
-    assert build_calls[0]["required_artifacts"] == {"market_schedule"}
+    assert build_calls[0]["required_artifacts"] == {
+        "market_schedule",
+        "secondary_schedule",
+    }
+    assert captured_dependencies == {
+        "adv-20": {"market_schedule"},
+        "adv-63": {"market_schedule", "secondary_schedule"},
+    }
     assert materialized == [("adv-20", 10), ("adv-63", 20)]
 
 
@@ -1503,6 +1528,10 @@ def test_materialize_hydrates_current_schedule_when_build_skips(
     tmp_path: Path,
     mode: str,
 ) -> None:
+    monkeypatch.setattr(
+        "jerrythomas.profiles.orchestration.capture_recipe",
+        lambda *args: empty_recipe("materialize"),
+    )
     schedule = ScheduleTask(
         id="market_schedule",
         stream="prices",

@@ -5,6 +5,7 @@ from typing import Literal
 
 from jerrythomas.artifacts.errors import ArtifactResolutionError
 from jerrythomas.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
+from jerrythomas.artifacts.planning import required_schedule_artifacts
 from jerrythomas.artifacts.validation import validate_artifact_plan
 from jerrythomas.config.tasks.base import ArtifactTask, PluginRuntimeTask
 from jerrythomas.config.tasks.coverage import CoverageTask
@@ -25,7 +26,7 @@ from jerrythomas.operations.runtime.matrix import run_matrix_operation
 from jerrythomas.plugins import RUNTIME_OPERATIONS_EP, load_entrypoint
 from jerrythomas.services.definitions import ProjectDefinition
 
-from .models import RuntimeJob
+from .models import MaterializeJob, RuntimeJob
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,26 @@ logger = logging.getLogger(__name__)
 class RuntimeJobPlan:
     job: RuntimeJob
     required_artifacts: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class MaterializeJobPlan:
+    job: MaterializeJob
+    required_artifacts: tuple[str, ...]
+
+
+def plan_materialize_job(
+    job: MaterializeJob,
+    definition: ProjectDefinition,
+) -> MaterializeJobPlan:
+    graph = definition.artifact_graph
+    roots = required_schedule_artifacts(
+        (job.stream,), definition.streams, graph.tasks_by_id
+    )
+    return MaterializeJobPlan(
+        job=job,
+        required_artifacts=graph.dependency_closure(roots, definition.dataset),
+    )
 
 
 def validate_build_job(

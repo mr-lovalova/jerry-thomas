@@ -82,6 +82,7 @@ def test_materialize_returns_completed_invocation_in_profile_order(copy_fixture)
         for path in (
             result.outputs[0],
             result.metadata_path,
+            result.recipe_path,
             output_lock_path(result.outputs[0]),
         )
     }
@@ -93,7 +94,7 @@ def test_materialize_cli_result_json(copy_fixture, capsys):
     _execute(root)
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 3
     assert len(payload["runs"]) == 2
     for run in payload["runs"]:
         receipt = run.pop("receipt")
@@ -110,7 +111,7 @@ def test_materialize_cli_empty_selection(copy_fixture, capsys):
         "stream: metrics.linear\noutput: exports/disabled.jsonl\nenabled: false\n"
     )
     _execute(root)
-    assert json.loads(capsys.readouterr().out) == {"schema_version": 2, "runs": []}
+    assert json.loads(capsys.readouterr().out) == {"schema_version": 3, "runs": []}
 
 
 @pytest.mark.parametrize(
@@ -165,11 +166,13 @@ def test_materialize_saves_receipt_without_result_json(copy_fixture, capsys, tmp
     archive = tmp_path / "copied"
     archive.mkdir()
     shutil.copy(receipt, archive)
+    shutil.copy(saved.recipe_path, archive)
     shutil.copy(saved.outputs[0], archive)
     shutil.rmtree(root)
     copied = load_run(archive / receipt.name)
     assert copied.output_path("first").read_bytes()
     assert copied.metadata == saved.metadata
+    assert copied.load_recipe().command == "materialize"
 
 
 def test_materialize_empty_output_has_successful_zero_row_receipt(

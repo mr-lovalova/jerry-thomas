@@ -58,7 +58,7 @@ def test_run_results_identify_committed_files(
     assert set(result.outputs) == set((result.directory / "dataset").iterdir())
     assert all(path.is_file() for path in result.outputs)
     saved = load_run(result.directory)
-    assert saved.metadata.schema_version == 2
+    assert saved.metadata.schema_version == 3
     assert saved.metadata.split == request.definition.dataset.split
     assert len(saved.metadata.outputs) == len(result.outputs)
     for output, path in zip(saved.metadata.outputs, result.outputs):
@@ -327,4 +327,8 @@ def test_failed_manifest_commit_preserves_previous_latest(copy_fixture, monkeypa
     manifest = json.loads(paths.metadata_path.read_text(encoding="utf-8"))
     assert manifest["status"] == "running"
     assert manifest["outputs"] == []
-    assert set(paths.run_root.iterdir()) == {paths.dataset_dir, paths.metadata_path}
+    assert set(paths.run_root.iterdir()) == {
+        paths.dataset_dir,
+        paths.metadata_path,
+        paths.run_root / "recipe.json",
+    }

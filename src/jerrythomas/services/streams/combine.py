@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from jerrythomas.config.streams import AlignJoin, CombinedStreamConfig
-from jerrythomas.config.interpolation import normalize_interpolated_args
 from jerrythomas.plugins import COMBINERS_EP, load_entrypoint
 from jerrythomas.transforms.utils import (
     partition_key,
@@ -17,7 +16,7 @@ def build_combine_stage(
     partition_by: tuple[str, ...],
 ) -> Callable[[Iterator[tuple[Any, ...]]], Iterable[Any]]:
     combine = load_entrypoint(COMBINERS_EP, config.combine.entrypoint)
-    args = normalize_interpolated_args(config.combine.args)
+    args = config.combine.args
 
     def combine_records(rows: Iterator[tuple[Any, ...]]) -> Iterator[Any]:
         for records in rows:

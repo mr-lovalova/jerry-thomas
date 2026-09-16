@@ -86,7 +86,7 @@ def _project_source_path(project: ProjectManifest, raw_path: str) -> Path:
     return project.path.parent / path
 
 
-def _source_input_patterns(
+def source_input_patterns(
     source: SourceConfig,
     project: ProjectManifest,
 ) -> Iterable[tuple[Path, bool]]:
@@ -109,7 +109,7 @@ def _hash_source_inputs(
 ) -> None:
     for source_id in sorted(sources):
         source = sources[source_id]
-        for path, expands_glob in _source_input_patterns(source, project):
+        for path, expands_glob in source_input_patterns(source, project):
             _hash_source_pattern(hasher, path, expands_glob, base_dir)
 
 
@@ -137,7 +137,7 @@ def _stream_config_closure(
     return config, source_ids
 
 
-def _artifact_inputs(
+def artifact_inputs(
     task: ArtifactTask,
     dataset: DatasetConfig,
     streams: StreamsConfig,
@@ -308,7 +308,7 @@ def calculate_artifact_hashes(
             for dependency in graph.definition(key).dependencies
             if graph.definition(dependency).is_required_for(dataset)
         }
-        inputs, source_ids = _artifact_inputs(task, dataset, streams)
+        inputs, source_ids = artifact_inputs(task, dataset, streams)
         snapshots = {
             source_id: source_snapshot(source_id) for source_id in sorted(source_ids)
         }

@@ -18,6 +18,7 @@ from jerrythomas.execution.observability import CommandFinished
 from jerrythomas.execution.settings import CommandObservability
 from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.profiles.models import BuildRunRequest
+from tests.run_helpers import empty_recipe
 
 
 def _serve_args() -> SimpleNamespace:
@@ -660,9 +661,9 @@ def test_serve_result_json_serializes_completed_runs(monkeypatch, tmp_path, caps
     request.artifact_settings.observability.log_output = SimpleNamespace(outputs=())
     paths = get_run_paths(tmp_path / "served", "run-1")
     other = get_run_paths(tmp_path / "other", "run-2")
-    start_run(paths)
+    start_run(paths, recipe=empty_recipe())
     finish_run_success(paths)
-    start_run(other, preview="samples")
+    start_run(other, preview="samples", recipe=empty_recipe())
     finish_run_success(other)
     results = (load_run(paths.run_root), load_run(other.run_root))
     monkeypatch.setattr(
@@ -679,7 +680,7 @@ def test_serve_result_json_serializes_completed_runs(monkeypatch, tmp_path, caps
     args.result_json = True
     execute_command(args, None, None, None, [])
     payload = json.loads(capsys.readouterr().out)
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 3
     assert [run["run_id"] for run in payload["runs"]] == ["run-1", "run-2"]
     assert [run["preview"] for run in payload["runs"]] == [None, "samples"]
     for run, result in zip(payload["runs"], results):
@@ -731,7 +732,7 @@ def test_serve_result_json_returns_empty_list_when_no_profiles_enabled(
     args = _serve_args()
     args.result_json = True
     execute_command(args, None, None, None, [])
-    assert json.loads(capsys.readouterr().out) == {"schema_version": 2, "runs": []}
+    assert json.loads(capsys.readouterr().out) == {"schema_version": 3, "runs": []}
 
 
 def test_serve_result_json_is_not_emitted_when_execution_fails(monkeypatch, capsys):

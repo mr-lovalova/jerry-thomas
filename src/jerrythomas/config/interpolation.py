@@ -1,5 +1,7 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import AfterValidator
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,3 +38,6 @@ def normalize_interpolated_args(
         key: coalesce_missing_interpolation(value, default)
         for key, value in args.items()
     }
+
+
+PluginArgs = Annotated[dict[str, Any], AfterValidator(normalize_interpolated_args)]

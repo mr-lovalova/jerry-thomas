@@ -33,6 +33,9 @@ from jerrythomas.services.materialize import (
     resolve_materialize_output,
 )
 from jerrythomas.services.path_policy import sanitize_path_segment
+from jerrythomas.io.recipes import RunRecipe, recipe_path
+from jerrythomas.services.definitions import ProjectDefinition
+from jerrythomas.profiles.recipes import validate_recipe_inputs, output_identity
 
 
 def resolve_materialize_jobs(
@@ -86,6 +89,7 @@ def materialize_reserved_paths(jobs: Sequence[MaterializeJob]) -> tuple[Path, ..
         if job.output.destination is not None
         for path in (
             materialize_receipt_path(job.output.destination),
+            recipe_path(materialize_receipt_path(job.output.destination)),
             output_lock_path(job.output.destination),
         )
     )
@@ -130,6 +134,8 @@ def execute_materialize_job(
     job: MaterializeJob,
     runtime: Runtime,
     *,
+    recipe: RunRecipe,
+    definition: ProjectDefinition,
     run_id: str | None = None,
 ) -> SavedRun:
     with operation_scope(f"materialize:{job.name}"):
@@ -157,6 +163,7 @@ def execute_materialize_job(
                 run_id=run_id,
                 command="materialize",
                 overwrite=job.overwrite,
+                recipe=recipe,
             )
             try:
                 output = materialize_stream(
@@ -177,7 +184,9 @@ def execute_materialize_job(
                     compression=job.output.compression,
                     row_count=output.row_count,
                     fold=None,
+                    **output_identity(output.path),
                 )
+                validate_recipe_inputs(recipe, definition)
                 finish_run_success(receipt, outputs=(completed,))
             except BaseException as exc:
                 try:

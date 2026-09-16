@@ -8,7 +8,6 @@ from jerrythomas.config.sources import (
     HttpLoaderConfig,
     SourceConfig,
 )
-from jerrythomas.config.interpolation import normalize_interpolated_args
 from jerrythomas.plugins import (
     LOADERS_EP,
     MAPPERS_EP,
@@ -36,12 +35,10 @@ def build_source(config: SourceConfig, project_yaml: Path) -> Source:
         loader = build_builtin_loader(loader_config)
     else:
         loader_factory = load_entrypoint(LOADERS_EP, config.loader.entrypoint)
-        loader_args = normalize_interpolated_args(config.loader.args)
-        loader = loader_factory(**loader_args)
-    parser_args = normalize_interpolated_args(config.parser.args)
+        loader = loader_factory(**config.loader.args)
     return Source(
         loader=loader,
-        parser=parser_factory(**parser_args),
+        parser=parser_factory(**config.parser.args),
     )
 
 
@@ -49,7 +46,7 @@ def build_mapper(
     config: EntryPointConfig,
 ) -> Callable[[Iterator[Any]], Iterable[Any]]:
     mapper = load_entrypoint(MAPPERS_EP, config.entrypoint)
-    args = normalize_interpolated_args(config.args)
+    args = config.args
     if args:
         return lambda records: mapper(records, **args)
     return mapper

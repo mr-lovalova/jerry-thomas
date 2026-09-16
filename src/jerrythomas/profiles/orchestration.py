@@ -2,10 +2,7 @@ import logging
 
 from jerrythomas.artifacts.errors import ArtifactResolutionError
 from jerrythomas.artifacts.executor import run_build_if_needed
-from jerrythomas.artifacts.planning import (
-    ArtifactGraph,
-    required_schedule_artifacts,
-)
+from jerrythomas.artifacts.planning import ArtifactGraph
 from jerrythomas.artifacts.series import prune_series_cache
 from jerrythomas.config.dataset.split import resolve_fold_output
 from jerrythomas.config.tasks.series import SeriesTask
@@ -33,10 +30,17 @@ from jerrythomas.services.execution_lock import (
     project_execution_lock,
 )
 from jerrythomas.services.runtime_compiler import compile_runtime
+from jerrythomas.profiles.recipes import (
+    capture_recipe,
+    capture_artifacts,
+    validate_recipe_inputs,
+    output_identity,
+)
 
 from .execution import (
     RuntimeJobPlan,
     execute_runtime_job,
+    plan_materialize_job,
     plan_runtime_job,
     validate_build_job,
 )
@@ -136,10 +140,35 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[SavedRun, ...]:
     }
     split = request.definition.dataset.split
     split_snapshot = split.model_copy(deep=True) if split is not None else None
+    recipes = {
+        run.paths: capture_recipe(
+            request.definition,
+            "serve",
+            [plan.job for plan in plans if plan.job.output.run == run.paths],
+            request.execution,
+            tuple(
+                dict.fromkeys(
+                    key
+                    for plan in plans
+                    if plan.job.output.run == run.paths
+                    for key in plan.required_artifacts
+                )
+            ),
+        )
+        for run in request.serve_run_plans
+    }
     try:
         _prepare_runtime_artifacts(request, plans)
         for run_plan in request.serve_run_plans:
-            start_run(run_plan.paths, preview=run_plan.preview, split=split_snapshot)
+            recipes[run_plan.paths] = capture_artifacts(
+                recipes[run_plan.paths], request.definition
+            )
+            start_run(
+                run_plan.paths,
+                recipe=recipes[run_plan.paths],
+                preview=run_plan.preview,
+                split=split_snapshot,
+            )
             started_runs.append(run_plan)
 
         for plan in plans:
@@ -184,8 +213,11 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[SavedRun, ...]:
                             compression=job.output.compression,
                             row_count=written.row_count,
                             fold=fold_output,
+                            **output_identity(written.path),
                         )
                     )
+        for recipe in recipes.values():
+            validate_recipe_inputs(recipe, request.definition)
     except BaseException as exc:
         _mark_serve_runs_failed(started_runs, exc)
         raise
@@ -202,27 +234,40 @@ def _run_materialize_profiles(
         return ()
     run_id = make_run_id()
     request.runtime.execution = request.execution
-    graph = request.definition.artifact_graph
     try:
         preflight_materialize_jobs(request.runtime, jobs)
-        required_artifacts = set(
-            required_schedule_artifacts(
-                (job.stream for job in jobs),
-                request.definition.streams,
-                graph.tasks_by_id,
-            )
-        )
+        plans = [plan_materialize_job(job, request.definition) for job in jobs]
     except (OSError, ValueError) as exc:
         raise ProfileCommandError(str(exc)) from exc
 
+    required_artifacts = {
+        artifact for plan in plans for artifact in plan.required_artifacts
+    }
     _build_prerequisites(request, required_artifacts, request.runtime)
     results: list[SavedRun] = []
-    for job in jobs:
+    for plan in plans:
+        job = plan.job
         request.runtime.heartbeat_interval_seconds = (
             job.observability.heartbeat_interval_seconds
         )
         with execution_scope(request.runtime, job.observability):
-            results.append(execute_materialize_job(job, request.runtime, run_id=run_id))
+            recipe = capture_recipe(
+                request.definition,
+                "materialize",
+                [job],
+                request.execution,
+                plan.required_artifacts,
+            )
+            recipe = capture_artifacts(recipe, request.definition)
+            results.append(
+                execute_materialize_job(
+                    job,
+                    request.runtime,
+                    recipe=recipe,
+                    definition=request.definition,
+                    run_id=run_id,
+                )
+            )
     return tuple(results)
 
 

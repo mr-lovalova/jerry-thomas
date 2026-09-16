@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from jerrythomas.io import runs
+from tests.run_helpers import empty_recipe
 
 
 def test_run_ids_include_subsecond_precision(monkeypatch) -> None:
@@ -187,10 +188,10 @@ def test_latest_run_refuses_to_delete_a_real_directory(tmp_path: Path) -> None:
     assert not (paths.serve_root / ".latest-run").exists()
 
 
-@pytest.mark.parametrize("version", [None, 0, 1, 3, "2", True, 2.0])
+@pytest.mark.parametrize("version", [None, 0, 1, 2, "3", True, 3.0])
 def test_saved_run_rejects_missing_or_unsupported_version(tmp_path, version):
     paths = runs.get_run_paths(tmp_path, "run")
-    runs.start_run(paths)
+    runs.start_run(paths, recipe=empty_recipe())
     runs.finish_run_success(paths)
     data = json.loads(paths.metadata_path.read_text())
     if version is None:
@@ -205,7 +206,7 @@ def test_saved_run_rejects_missing_or_unsupported_version(tmp_path, version):
 @pytest.mark.parametrize("status", ["running", "failed"])
 def test_saved_run_rejects_unfinished_or_failed_run(tmp_path, status):
     paths = runs.get_run_paths(tmp_path, "run")
-    runs.start_run(paths)
+    runs.start_run(paths, recipe=empty_recipe())
     if status == "failed":
         runs.finish_run_failed(paths)
     with pytest.raises(ValueError, match="successfully finished"):
@@ -243,7 +244,7 @@ def saved_output():
 )
 def test_saved_run_rejects_invalid_output_path(tmp_path, saved_output, path):
     paths = runs.get_run_paths(tmp_path, "run")
-    runs.start_run(paths)
+    runs.start_run(paths, recipe=empty_recipe())
     runs.finish_run_success(paths, outputs=(saved_output,))
     data = json.loads(paths.metadata_path.read_text())
     data["outputs"][0]["path"] = path
@@ -255,7 +256,7 @@ def test_saved_run_rejects_invalid_output_path(tmp_path, saved_output, path):
 @pytest.mark.parametrize("row_count", [-1, True, "3", 1.5])
 def test_saved_run_rejects_invalid_row_count(tmp_path, saved_output, row_count):
     paths = runs.get_run_paths(tmp_path, "run")
-    runs.start_run(paths)
+    runs.start_run(paths, recipe=empty_recipe())
     runs.finish_run_success(paths, outputs=(saved_output,))
     data = json.loads(paths.metadata_path.read_text())
     data["outputs"][0]["row_count"] = row_count
@@ -266,7 +267,7 @@ def test_saved_run_rejects_invalid_row_count(tmp_path, saved_output, row_count):
 
 def test_saved_run_rejects_ambiguous_outputs(tmp_path, saved_output):
     paths = runs.get_run_paths(tmp_path, "run")
-    runs.start_run(paths)
+    runs.start_run(paths, recipe=empty_recipe())
     with pytest.raises(ValueError, match="unique profile/output_id"):
         runs.finish_run_success(paths, outputs=(saved_output, saved_output))
     assert json.loads(paths.metadata_path.read_text())["status"] == "running"
@@ -274,7 +275,7 @@ def test_saved_run_rejects_ambiguous_outputs(tmp_path, saved_output):
 
 def test_saved_run_checks_only_selected_file(tmp_path, saved_output):
     paths = runs.get_run_paths(tmp_path, "run")
-    runs.start_run(paths)
+    runs.start_run(paths, recipe=empty_recipe())
     runs.finish_run_success(paths, outputs=(saved_output,))
     saved = runs.load_run(paths.run_root)
     assert saved.output("dataset") == saved_output
@@ -298,7 +299,7 @@ def test_saved_run_pins_latest_at_load_time(tmp_path, saved_output):
     first = runs.get_run_paths(tmp_path, "first")
     second = runs.get_run_paths(tmp_path, "second")
     for paths in (first, second):
-        runs.start_run(paths)
+        runs.start_run(paths, recipe=empty_recipe())
         (paths.run_root / saved_output.path).touch()
         runs.finish_run_success(paths, outputs=(saved_output,))
     runs.set_latest_run(first)
@@ -340,7 +341,7 @@ def saved_fold_output(saved_output):
 
 def test_saved_run_requires_explicit_split_field(tmp_path):
     paths = runs.get_run_paths(tmp_path, "run")
-    runs.start_run(paths)
+    runs.start_run(paths, recipe=empty_recipe())
     runs.finish_run_success(paths)
     data = json.loads(paths.metadata_path.read_text())
     assert data.pop("split") is None
@@ -354,7 +355,7 @@ def test_finishing_run_preserves_original_split(tmp_path, saved_time_split, stat
     from jerrythomas.config.dataset.split import TimeInterval
 
     paths = runs.get_run_paths(tmp_path, "run")
-    started = runs.start_run(paths, split=saved_time_split)
+    started = runs.start_run(paths, split=saved_time_split, recipe=empty_recipe())
     saved_time_split.intervals[0] = TimeInterval(
         id="development", until="2025-01-01T00:00:00Z"
     )
@@ -382,7 +383,7 @@ def test_saved_hash_split_preserves_ratios_and_seed(tmp_path, saved_fold_output)
         }
     )
     paths = runs.get_run_paths(tmp_path, "run")
-    runs.start_run(paths, split=split)
+    runs.start_run(paths, split=split, recipe=empty_recipe())
     runs.finish_run_success(paths, outputs=(saved_fold_output,))
     saved = runs.load_run(paths.run_root)
     assert saved.metadata.split == split
@@ -407,7 +408,7 @@ def test_saved_run_rejects_fold_metadata_disagreeing_with_split(
     tmp_path, saved_time_split, saved_fold_output, changed
 ):
     paths = runs.get_run_paths(tmp_path, "run")
-    runs.start_run(paths, split=saved_time_split)
+    runs.start_run(paths, split=saved_time_split, recipe=empty_recipe())
     runs.finish_run_success(paths, outputs=(saved_fold_output,))
     data = json.loads(paths.metadata_path.read_text())
     data["outputs"][0].update(changed)
@@ -418,14 +419,14 @@ def test_saved_run_rejects_fold_metadata_disagreeing_with_split(
 
 def test_fold_output_requires_saved_split(tmp_path, saved_fold_output):
     paths = runs.get_run_paths(tmp_path, "run")
-    runs.start_run(paths)
+    runs.start_run(paths, recipe=empty_recipe())
     with pytest.raises(ValueError, match="require a saved split"):
         runs.finish_run_success(paths, outputs=(saved_fold_output,))
 
 
 def test_fold_output_requires_output_id(tmp_path, saved_time_split, saved_fold_output):
     paths = runs.get_run_paths(tmp_path, "run")
-    runs.start_run(paths, split=saved_time_split)
+    runs.start_run(paths, split=saved_time_split, recipe=empty_recipe())
     missing_id = saved_fold_output.model_copy(update={"output_id": None})
     with pytest.raises(ValueError, match="require an output_id"):
         runs.finish_run_success(paths, outputs=(missing_id,))
@@ -435,7 +436,9 @@ def test_split_preview_records_rules_without_claiming_fold_output(
     tmp_path, saved_time_split, saved_output, saved_fold_output
 ):
     paths = runs.get_run_paths(tmp_path, "run")
-    runs.start_run(paths, preview="records", split=saved_time_split)
+    runs.start_run(
+        paths, preview="records", split=saved_time_split, recipe=empty_recipe()
+    )
     with pytest.raises(ValueError, match="preview outputs must not declare a fold"):
         runs.finish_run_success(paths, outputs=(saved_fold_output,))
     stream_output = saved_output.model_copy(update={"output_id": "stream.records"})

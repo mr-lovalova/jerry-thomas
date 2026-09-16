@@ -36,7 +36,7 @@ def write_run_results(results: Sequence[SavedRun]) -> None:
     print(
         json.dumps(
             {
-                "schema_version": 2,
+                "schema_version": 3,
                 "runs": [
                     {
                         "receipt": str(result.metadata_path),

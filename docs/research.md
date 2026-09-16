@@ -133,10 +133,10 @@ types from output files.
 
 Changing a project's boundaries or hash seed does not alter an existing run's
 saved rules. These rules describe label assignment and fold membership; they
-do not capture the full dataset configuration, including target horizons and
-postprocess policies.
+are complemented by the saved recipe, which includes the resolved dataset
+configuration, target horizons, and postprocess policies.
 
-Both receipt layouts use `schema_version: 2`, independently of the package
+Both receipt layouts use `schema_version: 3`, independently of the package
 and project schema versions. They retain run ID, timestamps, status, notes, and
 preview, and list completed files under `outputs`. Output descriptors are
 written atomically with successful completion; serve then publishes `latest`.
@@ -163,8 +163,38 @@ path = saved.output_path("volatility")
 
 Materialize destinations are mutable. `output_path()` rejects a loaded receipt
 if Jerry has since replaced it; reload it to select the current output. Data and
-receipt files can be copied together and loaded independently of the project.
+receipt and recipe files can be copied together and loaded independently of the project.
 
+
+### Saved execution recipes
+
+Every managed serve run saves `recipe.json` beside `run.json`. Materialize saves
+`<output>.recipe.json` beside `<output>.run.json`. No flag is required:
+
+```python
+recipe = saved.load_recipe()  # verifies the receipt's recipe checksum
+configuration = recipe.configuration
+```
+
+The recipe uses the resolved execution request, including overrides and required
+source/stream configurations from any configured folder. Unused variables and
+streams are omitted. Plugin operations with unrestricted runtime access retain
+the full catalog. No configuration files are reread to capture the recipe.
+
+Recipes record Python and Jerry/plugin versions, optional Git commit/dirty state
+for the project and editable packages, local input filesystem fingerprints, and
+required artifact identities. Adjacent upstream materialize receipts are linked
+by path and checksum; this alone does not verify their output content. Cached
+artifacts with no producer recipe are explicitly marked as such. Completed output
+descriptors contain SHA-256 hashes and byte sizes. `output_path()` remains a
+lightweight path lookup; it does not recompute those hashes.
+
+Git is optional and never blocks execution. Recipes do not archive code, package
+environments, or input data, and do not guarantee a rebuild. Raw input fingerprints
+use size and timestamps, not content hashes; detected changes during execution
+prevent a successful receipt. Resolved configuration can contain credentials, so
+treat the recipe with the same access restrictions as the original configuration.
+Copy the recipe together with the receipt and output to preserve the run record.
 
 ## 2. Derive a series with Polars
 

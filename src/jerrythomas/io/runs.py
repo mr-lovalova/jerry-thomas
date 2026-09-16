@@ -10,6 +10,14 @@ from jerrythomas.config.preview import PreviewStage
 from jerrythomas.config.profiles.output import Format, View
 from jerrythomas.io.compression import Compression
 from jerrythomas.io.json_file import write_json_object
+from jerrythomas.io.recipes import (
+    RecipeReference,
+    RunRecipe,
+    load_recipe,
+    recipe_path,
+    recipe_reference,
+    save_recipe,
+)
 
 RunStatus = Literal["running", "success", "failed"]
 
@@ -64,6 +72,8 @@ class RunOutput(BaseModel):
     compression: Compression | None
     row_count: int | None = Field(ge=0)
     fold: RunFoldOutput | None
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int | None = Field(default=None, ge=0)
 
     @field_validator("path")
     @classmethod
@@ -87,7 +97,7 @@ class RunMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal[2]
+    schema_version: Literal[3]
     command: Literal["serve", "materialize"]
     run_id: str
     started_at: str
@@ -97,12 +107,13 @@ class RunMetadata(BaseModel):
     preview: PreviewStage | None = None
     split: SplitConfig | None
     outputs: tuple[RunOutput, ...]
+    recipe: RecipeReference
 
     @field_validator("schema_version", mode="before")
     @classmethod
     def validate_schema_version(cls, value: object) -> object:
-        if type(value) is not int or value != 2:
-            raise ValueError("unsupported run manifest schema_version; expected 2")
+        if type(value) is not int or value != 3:
+            raise ValueError("unsupported run manifest schema_version; expected 3")
         return value
 
     @model_validator(mode="after")
@@ -171,6 +182,17 @@ class SavedRun:
     @property
     def outputs(self) -> tuple[Path, ...]:
         return tuple(self.directory / output.path for output in self.metadata.outputs)
+
+    @property
+    def recipe_path(self) -> Path:
+        return self.directory / self.metadata.recipe.path
+
+    def load_recipe(self) -> RunRecipe:
+        """Read and verify the saved recipe without reopening project configuration."""
+        if self.metadata.command == "materialize":
+            if _load_run_metadata(self.metadata_path) != self.metadata:
+                raise ValueError("materialize receipt changed; reload the saved run")
+        return load_recipe(self.directory, self.metadata.recipe)
 
     def output(self, profile: str, output_id: str | None = None) -> RunOutput:
         """Select an exact profile/output ID; None selects an unsplit output."""
@@ -252,6 +274,7 @@ def _load_run_metadata(path: Path) -> RunMetadata:
 def start_run(
     paths: RunPaths | Path,
     *,
+    recipe: RunRecipe,
     run_id: str | None = None,
     command: Literal["serve", "materialize"] = "serve",
     overwrite: bool = True,
@@ -268,7 +291,7 @@ def start_run(
         metadata_path = paths
 
     meta = RunMetadata(
-        schema_version=2,
+        schema_version=3,
         command=command,
         run_id=run_id or make_run_id(),
         started_at=_now_utc_iso(),
@@ -278,8 +301,13 @@ def start_run(
         preview=preview,
         split=split.model_copy(deep=True) if split is not None else None,
         outputs=(),
+        recipe=recipe_reference(recipe_path(metadata_path), recipe),
     )
+    if recipe.command != command:
+        raise ValueError("Recipe command does not match the run")
+    # Invalidate any previous success before replacing its recipe or data.
     _write_run_metadata(meta, metadata_path, overwrite=overwrite)
+    save_recipe(recipe_path(metadata_path), recipe, overwrite=overwrite)
     return meta
 
 
@@ -293,6 +321,9 @@ def finish_run(
     metadata_path = paths.metadata_path if isinstance(paths, RunPaths) else paths
     meta = _load_run_metadata(metadata_path)
 
+    if status == "success":
+        load_recipe(metadata_path.parent, meta.recipe)
+
     meta = RunMetadata(
         schema_version=meta.schema_version,
         command=meta.command,
@@ -304,6 +335,7 @@ def finish_run(
         preview=meta.preview,
         split=meta.split,
         outputs=outputs,
+        recipe=meta.recipe,
     )
 
     _write_run_metadata(meta, metadata_path)
