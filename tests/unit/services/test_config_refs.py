@@ -68,7 +68,7 @@ def _write_project_files(project_root: Path) -> None:
     (project_root / "sources").mkdir(parents=True, exist_ok=True)
     (project_root / "operations").mkdir(parents=True, exist_ok=True)
     (project_root / "dataset.yaml").write_text(
-        "sample:\n  cadence: 1h\nfeatures: []\ntargets: []\n",
+        "sample:\n  rounding: ceil\n  cadence: 1h\nfeatures: []\ntargets: []\n",
         encoding="utf-8",
     )
 
@@ -79,7 +79,7 @@ def _use_source(project_root: Path, source_id: str) -> None:
         encoding="utf-8",
     )
     (project_root / "dataset.yaml").write_text(
-        "sample: {cadence: 1h}\n"
+        "sample: {rounding: ceil, cadence: 1h}\n"
         "features: [{id: value, stream: tracked, field: value}]\n"
         "targets: []\n",
         encoding="utf-8",

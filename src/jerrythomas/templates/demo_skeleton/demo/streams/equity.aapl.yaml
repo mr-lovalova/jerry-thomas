@@ -5,15 +5,27 @@ map:
   entrypoint: map_sandbox_ohlcv_dto_to_equity
   args: {}
 
+partition_by: [ticker]
+
 preprocess:
   - { operation: where, field: time, operator: ge, comparand: "${start_time}" }
-  - { operation: where, field: time, operator: le, comparand: "${end_time}" }
+  - { operation: where, field: time, operator: lt, comparand: "${end_time}" }
   - { operation: where, field: ticker, operator: eq, comparand: "AAPL" }
-  - { operation: floor_time, cadence: "${cadence}" }
 
 transforms:
   - operation: dedupe
-  - { operation: collapse, keep: first }
+  - operation: resample
+    period: { kind: fixed, every: "${cadence}" }
+    start: "${start_time}"
+    end: "${end_time}"
+    aggregations:
+      open: { field: open, statistic: first }
+      high: { field: high, statistic: max }
+      low: { field: low, statistic: min }
+      close: { field: close, statistic: last }
+      volume: { field: volume, statistic: sum }
+      dollar_volume: { field: dollar_volume, statistic: sum }
+  - { operation: derive, left: high, operator: sub, right_field: low, to: hl_range }
   - operation: rolling
     field: dollar_volume
     to: adv5

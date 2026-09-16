@@ -105,7 +105,7 @@ def _runtime(tmp_path: Path) -> Runtime:
     return Runtime(
         project_yaml=project_yaml,
         artifacts_root=artifacts_root,
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
     )
 
 

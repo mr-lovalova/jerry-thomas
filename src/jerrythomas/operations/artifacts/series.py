@@ -34,7 +34,7 @@ from jerrythomas.pipelines.stream.pipeline import build_stream_pipeline
 from jerrythomas.runtime import Runtime, require_runtime_stream
 from jerrythomas.services.path_policy import resolve_artifact_output_path
 from jerrythomas.transforms.utils import record_establishes_domain
-from jerrythomas.utils.time import floor_time_to_cadence, parse_cadence
+from jerrythomas.utils.time import round_time_to_cadence, parse_cadence
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +114,7 @@ def build_series_artifact(
         manifest = SeriesManifest(
             version=SERIES_MANIFEST_VERSION,
             cadence=dataset.sample.cadence,
+            rounding=dataset.sample.rounding,
             sample_keys=tuple(dataset.sample.keys),
             sample_key_types=sample_keys.types,
             path=str(relative_data_path),
@@ -239,7 +240,9 @@ def _project_stream(
             targets: list[_ProjectedValue] = []
             row_key: tuple[Any, ...] | None = None
             row_time: datetime | None = None
-            sample_time: datetime | None = None
+            sample_time = round_time_to_cadence(
+                record.time, cadence, runtime.dataset.sample.rounding
+            )
 
             for config, projected in zip(
                 configs,
@@ -251,8 +254,6 @@ def _project_stream(
                 if result is None:
                     continue
 
-                if sample_time is None:
-                    sample_time = floor_time_to_cadence(result.time, cadence)
                 key = (sample_time, *result.entity_key)
                 if row_key is None:
                     row_key = key

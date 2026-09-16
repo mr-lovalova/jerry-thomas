@@ -219,7 +219,7 @@ def test_hash_splits_reject_ewm_std() -> None:
         }
     )
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1d", keys=[]),
+        sample=SampleConfig(rounding="ceil", cadence="1d", keys=[]),
         features=[SeriesConfig(stream="prices", id="close", field="close")],
         split=HashSplitConfig(
             ratios={"train": 1.0},

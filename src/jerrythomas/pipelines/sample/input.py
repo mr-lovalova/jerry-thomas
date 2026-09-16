@@ -87,6 +87,11 @@ def _require_series(
             "Series artifact cadence does not match requested pipeline cadence: "
             f"{manifest.cadence!r} != {sample.cadence!r}."
         )
+    if manifest.rounding != sample.rounding:
+        raise RuntimeError(
+            "Series artifact rounding does not match requested pipeline rounding: "
+            f"{manifest.rounding!r} != {sample.rounding!r}. Rebuild the series artifact."
+        )
     if manifest.sample_keys != tuple(sample.keys):
         raise RuntimeError(
             "Series artifact sample keys do not match requested pipeline sample keys."

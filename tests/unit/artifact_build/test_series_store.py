@@ -45,6 +45,7 @@ def _valid_manifest() -> dict[str, Any]:
         "version": SERIES_MANIFEST_VERSION,
         "format": "jsonl.gz",
         "cadence": "1h",
+        "rounding": "ceil",
         "sample_keys": ["security_id"],
         "sample_key_types": ["string"],
         "path": "manifest.data/current/series.jsonl.gz",
@@ -71,6 +72,7 @@ def _write_manifest(
         "version": SERIES_MANIFEST_VERSION,
         "format": "jsonl.gz",
         "cadence": "1h",
+        "rounding": "ceil",
         "sample_keys": [] if sample_keys is None else sample_keys,
         "sample_key_types": ([] if sample_key_types is None else sample_key_types),
         "path": str(data_path.relative_to(root)),
@@ -398,7 +400,7 @@ def test_series_writer_removes_temp_file_on_interrupt(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "version",
-    [None, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 8.0, True],
+    [None, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13.0, True],
 )
 def test_series_manifest_rejects_incompatible_version(
     tmp_path: Path,

@@ -71,7 +71,7 @@ def _dataset(
         sequence=sequence,
     )
     return DatasetConfig(
-        sample=SampleConfig(cadence="1d", keys=sample_keys or []),
+        sample=SampleConfig(rounding="ceil", cadence="1d", keys=sample_keys or []),
         features=[feature],
         split=split,
     )
@@ -144,7 +144,7 @@ def test_dataset_rejects_sequences_with_hash_split() -> None:
 
     with pytest.raises(ValueError, match="hash splits cannot be used.*close"):
         DatasetConfig(
-            sample=SampleConfig(cadence="1d"),
+            sample=SampleConfig(rounding="ceil", cadence="1d"),
             features=[feature],
             split=HashSplitConfig(
                 ratios={"train": 1.0},
@@ -221,6 +221,12 @@ def test_hash_split_allows_unselected_cross_section_stream() -> None:
         transform_config.LeadConfig(field="close", periods=1),
         transform_config.ForwardSumConfig(field="close", window=2, to="forward_close"),
         transform_config.EnsureCadenceConfig(cadence="1d"),
+        transform_config.ResampleConfig.model_validate(
+            {
+                "period": {"kind": "calendar", "unit": "month", "timezone": "UTC"},
+                "aggregations": {"close": {"field": "close", "statistic": "last"}},
+            }
+        ),
         transform_config.EnsureScheduleConfig(schedule="schedule"),
         transform_config.FillConfig(field="close", window=2, statistic="mean"),
         transform_config.ForwardFillConfig(field="close"),

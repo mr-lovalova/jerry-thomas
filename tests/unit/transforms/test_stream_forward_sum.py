@@ -184,7 +184,7 @@ def test_pipeline_closes_source_when_forward_sum_output_is_closed(
     runtime = Runtime(
         project_yaml=project_yaml,
         artifacts_root=tmp_path / "artifacts",
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
     )
     transform = ForwardSumTransform("value", 2, (), "forward")
     pipeline = Pipeline(

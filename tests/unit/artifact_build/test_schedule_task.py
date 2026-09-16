@@ -61,7 +61,7 @@ def _runtime(tmp_path, rows=None, partition_by=()) -> Runtime:
     runtime = Runtime(
         project_yaml=project_yaml,
         artifacts_root=artifacts_root,
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
         execution=ExecutionConfig(),
     )
     runtime.streams["source.stream"] = SourceRuntimeStream(

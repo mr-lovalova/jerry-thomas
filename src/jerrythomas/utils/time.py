@@ -1,5 +1,9 @@
 import re
 from datetime import datetime, timedelta, timezone
+from typing import Literal
+
+
+TimeRounding = Literal["floor", "ceil", "exact"]
 
 
 CADENCE_PATTERN = r"^(0*[1-9]\d*)(min|m|h|d)$"
@@ -47,6 +51,35 @@ def floor_time_to_cadence(ts: datetime, cadence: timedelta) -> datetime:
     utc_timestamp = ts.astimezone(timezone.utc)
     floored = _UTC_EPOCH + ((utc_timestamp - _UTC_EPOCH) // cadence) * cadence
     return floored.astimezone(ts.tzinfo)
+
+
+def ceil_time_to_cadence(ts: datetime, cadence: timedelta) -> datetime:
+    """Return the first UTC-grid tick at or after an observation's time."""
+    instant = ts if ts.tzinfo is None else ts.astimezone(timezone.utc)
+    floored = floor_time_to_cadence(instant, cadence)
+    ceiled = floored if floored == instant else floored + cadence
+    return ceiled if ts.tzinfo is None else ceiled.astimezone(ts.tzinfo)
+
+
+def round_time_to_cadence(
+    ts: datetime, cadence: timedelta, rounding: TimeRounding
+) -> datetime:
+    """Assign a time to a UTC grid using an explicit rounding contract."""
+    if rounding == "ceil":
+        return ceil_time_to_cadence(ts, cadence)
+    floored = floor_time_to_cadence(ts, cadence)
+    if rounding == "floor":
+        return floored
+    if rounding != "exact":
+        raise ValueError(f"Unsupported time rounding: {rounding!r}")
+    instant = ts if ts.tzinfo is None else ts.astimezone(timezone.utc)
+    boundary = floored if floored.tzinfo is None else floored.astimezone(timezone.utc)
+    if instant != boundary:
+        raise ValueError(
+            f"Timestamp {ts.isoformat()} is not aligned to cadence {cadence} "
+            "with rounding='exact'; align upstream or explicitly choose floor or ceil."
+        )
+    return floored
 
 
 def count_cadence_buckets(

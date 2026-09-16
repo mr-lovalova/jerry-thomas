@@ -1,12 +1,74 @@
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from jerrythomas.utils.time import (
+    ceil_time_to_cadence,
     count_cadence_buckets,
     parse_cadence,
     parse_timecode,
+    round_time_to_cadence,
 )
+
+
+@pytest.mark.parametrize(
+    ("time", "cadence", "expected"),
+    [
+        ("2024-01-01T05:00:00+00:00", "1d", "2024-01-02T00:00:00+00:00"),
+        ("2024-01-01T00:00:00+00:00", "1d", "2024-01-01T00:00:00+00:00"),
+        ("2024-01-01T00:00:00.000001+00:00", "1d", "2024-01-02T00:00:00+00:00"),
+        ("2024-01-01T03:10:00+02:00", "90m", "2024-01-01T03:30:00+02:00"),
+        ("1969-12-31T23:59:00+00:00", "1h", "1970-01-01T00:00:00+00:00"),
+        ("2024-01-01T00:30:00", "1h", "2024-01-01T01:00:00"),
+    ],
+)
+def test_ceil_assigns_the_first_tick_at_or_after_time(
+    time: str, cadence: str, expected: str
+) -> None:
+    assert ceil_time_to_cadence(
+        datetime.fromisoformat(time), parse_cadence(cadence)
+    ) == datetime.fromisoformat(expected)
+
+
+@pytest.mark.parametrize(
+    ("time", "expected"),
+    [
+        ("2024-03-10T01:30:00-05:00", "2024-03-10T07:00:00+00:00"),
+        ("2024-11-03T01:30:00-04:00", "2024-11-03T06:00:00+00:00"),
+        ("2024-11-03T01:30:00-05:00", "2024-11-03T07:00:00+00:00"),
+    ],
+)
+def test_ceil_uses_elapsed_time_across_dst(time: str, expected: str) -> None:
+    local = datetime.fromisoformat(time).astimezone(ZoneInfo("America/New_York"))
+    result = ceil_time_to_cadence(local, timedelta(hours=1))
+    assert result.astimezone(timezone.utc) == datetime.fromisoformat(expected)
+
+
+@pytest.mark.parametrize(
+    ("cadence", "expected_hour", "expected_minute"), [("75m", 6, 15), ("5h", 10, 0)]
+)
+def test_ceil_does_not_confuse_repeated_local_clock_times(
+    cadence: str,
+    expected_hour: int,
+    expected_minute: int,
+) -> None:
+    local = datetime(2024, 11, 3, 1, tzinfo=ZoneInfo("America/New_York"), fold=1)
+    result = ceil_time_to_cadence(local, parse_cadence(cadence))
+    assert result.astimezone(timezone.utc) == datetime(
+        2024,
+        11,
+        3,
+        expected_hour,
+        expected_minute,
+        tzinfo=timezone.utc,
+    )
+
+
+def test_exact_rejects_a_different_instant_with_the_same_local_clock_time() -> None:
+    local = datetime(2024, 11, 3, 1, tzinfo=ZoneInfo("America/New_York"), fold=1)
+    with pytest.raises(ValueError, match="not aligned"):
+        round_time_to_cadence(local, parse_cadence("75m"), "exact")
 
 
 @pytest.mark.parametrize(

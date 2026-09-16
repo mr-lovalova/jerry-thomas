@@ -21,7 +21,7 @@ from jerrythomas.pipelines.stream.pipeline import run_stream_pipeline
 from jerrythomas.runtime import Runtime, require_runtime_stream
 from jerrythomas.transforms.vector.scaler import ScalerAccumulator
 from jerrythomas.transforms.utils import record_establishes_domain
-from jerrythomas.utils.time import floor_time_to_cadence, parse_cadence
+from jerrythomas.utils.time import round_time_to_cadence, parse_cadence
 
 
 @dataclass(frozen=True)
@@ -241,7 +241,9 @@ def _iter_scaler_inputs(
                 series_records = tuple(projector.project(record))
                 yield _ScalerInput(
                     group_key=(
-                        floor_time_to_cadence(record.time, cadence_step),
+                        round_time_to_cadence(
+                            record.time, cadence_step, runtime.dataset.sample.rounding
+                        ),
                         *series_records[0].entity_key,
                     ),
                     records=series_records,

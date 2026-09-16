@@ -131,7 +131,8 @@ entry names its built-in operation directly:
 
 ```yaml
 preprocess:
-  - operation: floor_time
+  - operation: round_time
+    direction: floor
     cadence: 1d
 
 transforms:

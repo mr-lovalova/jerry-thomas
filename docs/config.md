@@ -481,10 +481,14 @@ partition_by: [security_id]
 preprocess:
   - { operation: where, field: time, operator: ge, comparand: "${start_time}" }
   - { operation: where, field: time, operator: lt, comparand: "${end_time}" }
-  - { operation: floor_time, cadence: 10m }
 
 transforms:
-  - { operation: collapse, keep: last }
+  - operation: resample
+    period: { kind: fixed, every: 10m }
+    start: "${start_time}"
+    end: "${end_time}"
+    aggregations:
+      close: { field: close, statistic: last }
 ```
 
 The mapper receives the parsed source iterator and returns canonical domain
@@ -718,6 +722,7 @@ Dataset stays minimal — features only reference the aligned stream:
 ```yaml
 # dataset.yaml
 sample:
+  rounding: ceil
   cadence: 1h
   keys: [station_id]
 features:
@@ -751,6 +756,7 @@ Defines which canonical streams become features and targets and how samples are 
 
 ```yaml
 sample:
+  rounding: ceil
   cadence: 1d
   keys: [security_id]
   window_mode: intersection
@@ -793,6 +799,13 @@ postprocess:
 
 - `sample.cadence` controls the time bucket for samples (must match
   `^\\d+(m|min|h|d)$`, e.g. `10m`, `60min`, `1h`, `1d`).
+- `sample.rounding` is required: `floor`, `ceil`, or `exact`. On an hourly UTC
+  grid, `floor` assigns `[10:00, 11:00)` to sample 10:00; `ceil` assigns
+  `(10:00, 11:00]` to sample 11:00. `exact` rejects observations between grid
+  ticks, including sequence warmup records. Exact-grid timestamps stay unchanged
+  in every mode. Stream timestamps are preserved. Features, targets, collection,
+  sequence endpoint assignment, preview grouping, and scaler training share this
+  contract. No mode silently drops observations or fills later samples.
 - `sample.keys` optionally adds record fields to the sample key. For example,
   `keys: [security_id]` emits one sample per `(time, security_id)`. Every sample
   key must belong to the resolved `partition_by` of every referenced stream.
@@ -821,9 +834,13 @@ postprocess:
   time between the sample key and the latest observation used to compute that
   target. Use `0s` for a contemporaneous target. Jerry does not infer this
   contract from `lead`, `forward_sum`, or custom transforms.
-- Features do not accept a horizon: a feature must be observable at its sample
-  time. Use `lag` or a trailing `sequence` for historical feature context;
-  future-derived feature values are leakage.
+- Features do not accept a horizon: they must be observable by the intended
+  prediction cutoff. With `floor`, a sample timestamp can label a bucket that
+  completes one cadence later; it does not assert availability at the bucket
+  start. With `ceil` or `exact`, the sample tick can serve as the cutoff when
+  source timestamps represent availability. Align targets, their horizons, and
+  split boundaries to the chosen convention. Rounding alone does not establish
+  when source data or future-derived values actually became available.
 - `None` is the canonical missing series value. A floating `NaN` produced by
   a parser, mapper, or transform is converted to `None` when the field is
   projected; positive and negative infinity are rejected. Identity fields
@@ -846,8 +863,10 @@ postprocess:
   stream partition keeps every independent series in one contiguous ordered
   group. Sequence inputs must be scalar; Jerry does not implicitly create or
   flatten nested list values.
-- `collect` requires exactly `size` ordered scalar values in each populated
-  `sample.cadence` bucket. Zero values leave that series absent. `None` and
+- `collect` requires exactly `size` ordered scalar values assigned to each sample
+  by `sample.rounding`. For hourly samples, `floor` collects 10:00 and 10:30 into
+  10:00; `ceil` collects 10:30 and 11:00 into 11:00. With `exact`, records must
+  share an exact grid timestamp. Zero values leave that series absent. `None` and
   cadence placeholders count as positions; underfilled and overfilled buckets
   fail. Collection validates cardinality, not temporal spacing, so regularize
   the stream first when positions must follow a fixed grid.

@@ -41,9 +41,10 @@ from jerrythomas.config.transforms import (
     EwmMeanConfig,
     EnsureCadenceConfig,
     EnsureScheduleConfig,
-    FloorTimeConfig,
+    RoundTimeConfig,
     LagConfig,
     PreprocessConfig,
+    ResampleConfig,
     RollingQuantileConfig,
     TransformConfig,
 )
@@ -356,7 +357,7 @@ def _runtime_with_rows(
     runtime = Runtime(
         project_yaml=project_yaml,
         artifacts_root=artifacts_root,
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
         execution=ExecutionConfig(),
     )
 
@@ -503,6 +504,198 @@ def test_derived_stream_reuses_upstream_order_without_a_mapper(
         ("A", 2),
         ("B", 1),
     ]
+
+
+@pytest.mark.parametrize("derived", [False, True])
+@pytest.mark.parametrize("calendar_timezone", ["UTC", "America/New_York"])
+def test_monthly_resample_composes_with_lag_and_asof_without_lookahead(
+    tmp_path: Path,
+    derived: bool,
+    calendar_timezone: str,
+) -> None:
+    def date(value: str) -> datetime:
+        return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+
+    resample = ResampleConfig.model_validate(
+        {
+            "period": {
+                "kind": "calendar",
+                "unit": "month",
+                "timezone": calendar_timezone,
+            },
+            "start": "2024-01-01",
+            "end": "2024-04-02",
+            "aggregations": {"value": {"field": "value", "statistic": "last"}},
+        }
+    )
+    transforms = [resample, LagConfig(field="value", periods=1, to="previous")]
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": date("2024-03-31"), "symbol": "A", "value": 30},
+            {"time": date("2024-01-31"), "symbol": "A", "value": 10},
+        ],
+        partition_by=("symbol",),
+        transforms=[] if derived else transforms,
+    )
+    monthly_id = "stream"
+    if derived:
+        monthly_id = "monthly"
+        runtime.streams[monthly_id] = DerivedRuntimeStream(
+            input_stream="stream",
+            partition_by=("symbol",),
+            transforms=tuple(transforms),
+        )
+    monthly = list(run_stream_pipeline(runtime, monthly_id))
+    zone = ZoneInfo(calendar_timezone)
+
+    def month_end(day: str) -> datetime:
+        return datetime.fromisoformat(day).replace(tzinfo=zone).astimezone(timezone.utc)
+
+    assert [(r.time, r.value, r.previous) for r in monthly] == [
+        (month_end("2024-02-01"), 10, None),
+        (month_end("2024-03-01"), None, 10),
+        (month_end("2024-04-01"), 30, None),
+    ]
+
+    def attach_monthly(rows):
+        for observation, lookup in rows:
+            observation.monthly = lookup.value if lookup is not None else None
+            yield observation
+
+    runtime.streams["observations"] = SourceRuntimeStream(
+        source=_StubSource(
+            [
+                {"time": date(day), "symbol": "A"}
+                for day in (
+                    "2024-01-31",
+                    "2024-02-01",
+                    "2024-02-02",
+                    "2024-03-15",
+                    "2024-04-01",
+                    "2024-04-02",
+                )
+            ]
+        ),
+        mapper=_mapper,
+        preprocess=(),
+        partition_by=("symbol",),
+        presorted=True,
+        transforms=(),
+    )
+    runtime.streams["enriched"] = AsOfRuntimeStream(
+        input_stream="observations",
+        lookup_stream=monthly_id,
+        combine=attach_monthly,
+        partition_by=("symbol",),
+        max_age=None,
+        require_match=False,
+        transforms=(),
+    )
+    assert [r.monthly for r in run_stream_pipeline(runtime, "enriched")] == [
+        None,
+        10 if calendar_timezone == "UTC" else None,
+        10,
+        None,
+        30 if calendar_timezone == "UTC" else None,
+        30,
+    ]
+
+    # Direct projection also respects the exact calendar close; an as-of join
+    # remains useful for carrying a monthly value across daily observations.
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(rounding="ceil", cadence="1d", keys=["symbol"]),
+        features=[SeriesConfig(id="monthly", stream=monthly_id, field="value")],
+    )
+    task = SeriesTask()
+    result = build_series_artifact(runtime, task)
+    runtime.artifacts.register(SERIES, task.output, meta=result.meta)
+    delay = timedelta(days=0 if calendar_timezone == "UTC" else 1)
+    samples = _sample_payload(open_samples(runtime, ["monthly"]))
+    assert samples == [
+        ((date(day) + delay, "A"), {"monthly": value}, None)
+        for day, value in (("2024-02-01", 10), ("2024-03-01", None), ("2024-04-01", 30))
+    ]
+    metadata = MetadataTask(output="metadata.json")
+    build_metadata_artifact(runtime, metadata)
+    payload = json.loads((runtime.artifacts_root / metadata.output).read_text())
+    assert (
+        datetime.fromisoformat(payload["catalog"]["sample"]["domain"][0]["start"])
+        == date("2024-02-01") + delay
+    )
+    assert (
+        datetime.fromisoformat(payload["catalog"]["sample"]["domain"][0]["end"])
+        == date("2024-04-01") + delay
+    )
+
+
+@pytest.mark.parametrize(
+    "stream_id",
+    [
+        "equity.aapl",
+        "equity.msft",
+        "equity.ohlcv",
+        "time.ticks.linear",
+        "time.ticks.hour_sin",
+    ],
+)
+def test_demo_streams_preserve_period_and_instant_semantics(
+    tmp_path: Path, stream_id: str
+) -> None:
+    from jerrythomas.mappers.synthetic.time import encode
+    from jerrythomas.services.project import load_project
+    from jerrythomas.services.streams.loader import load_streams
+    from jerrythomas.sources.synthetic.time.loader import TimeTicksGenerator
+
+    root = Path(__file__).parents[3] / "src/jerrythomas/templates/demo_skeleton/demo"
+    config = load_streams(load_project(root / "project.yaml")).streams[stream_id]
+    start = datetime(2021, 1, 1, tzinfo=timezone.utc)
+    if stream_id.startswith("equity."):
+        rows = []
+        for path in sorted((root / "data").glob("*.jsonl")):
+            for line in path.read_text().splitlines():
+                row = json.loads(line)
+                row["time"] = datetime.fromisoformat(row["time"])
+                row["ticker"] = row.pop("symbol")
+                row["dollar_volume"] = row["close"] * row["volume"]
+                rows.append(row)
+    else:
+        rows = list(
+            TimeTicksGenerator(
+                start=start.isoformat(),
+                end="2021-02-01T00:00:00Z",
+                frequency="1d",
+            ).generate()
+        )
+    runtime = _runtime_with_rows(
+        tmp_path,
+        rows,
+        preprocess=config.preprocess,
+        transforms=config.transforms,
+        partition_by=config.partition_by,
+    )
+    if stream_id.startswith("time."):
+
+        def map_ticks(rows):
+            return encode(_mapper(rows), **config.map.args)
+
+        _set_source_mapper(runtime, map_ticks)
+    output = list(run_stream_pipeline(runtime, "stream"))
+    assert output
+    assert all(r.time.hour == 0 for r in output)
+    if stream_id.startswith("time."):
+        assert len(output) == 32
+        assert output[0].time == start
+        assert output[-1].time == start + timedelta(days=31)
+        assert [r.value for r in output] == [
+            r.time.timestamp() if stream_id.endswith("linear") else 0 for r in output
+        ]
+    elif stream_id == "equity.ohlcv":
+        first = next(r for r in output if r.ticker == "AAPL" and r.close is not None)
+        assert first.time == start + timedelta(days=4)
+        assert first.close == 126.15
+    else:
+        assert len(output) == 31
 
 
 def test_cross_section_groups_by_time_and_restores_canonical_order(
@@ -982,8 +1175,11 @@ def test_broadcast_record_previews_preserve_stage_boundaries(tmp_path: Path) -> 
     assert [record.time.hour for record in records] == [0, 1, 2]
 
 
+@pytest.mark.parametrize(("direction", "expected_hour"), [("floor", 0), ("ceil", 1)])
 def test_source_pipeline_runs_map_then_preprocess(
     tmp_path: Path,
+    direction: str,
+    expected_hour: int,
 ) -> None:
     rows = [
         {"time": _ts(0, 30), "value": 1.0},
@@ -992,7 +1188,7 @@ def test_source_pipeline_runs_map_then_preprocess(
     runtime = _runtime_with_rows(
         tmp_path,
         rows,
-        preprocess=[FloorTimeConfig(cadence="1h")],
+        preprocess=[RoundTimeConfig(cadence="1h", direction=direction)],
     )
     ctx = runtime
 
@@ -1004,7 +1200,11 @@ def test_source_pipeline_runs_map_then_preprocess(
     assert [record.time for record in mapped] == [rows[0]["time"], rows[1]["time"]]
 
     preprocessed = list(run_stream_preview_pipeline(ctx, "stream", "records"))
-    assert all(record.time.minute == 0 for record in preprocessed)
+    assert [record.time for record in preprocessed] == [
+        _ts(expected_hour),
+        _ts(expected_hour),
+    ]
+    assert [record.value for record in preprocessed] == [1.0, 2.0]
 
 
 @pytest.mark.parametrize(
@@ -1404,6 +1604,33 @@ def test_series_pipeline_wraps_record_values(tmp_path: Path) -> None:
     assert record.id == "price__@symbol:X"
 
 
+@pytest.mark.parametrize(
+    ("rounding", "expected_values"),
+    [("ceil", [1.0, 2.0, 3.0, 4.0]), ("floor", [1.0, 3.0, 2.0, 4.0])],
+)
+def test_series_preview_keeps_one_sample_bucket_contiguous_across_grid_boundary(
+    tmp_path: Path,
+    rounding,
+    expected_values,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0, 30), "symbol": "A", "value": 1.0},
+            {"time": _ts(1), "symbol": "A", "value": 2.0},
+            {"time": _ts(0, 45), "symbol": "B", "value": 3.0},
+            {"time": _ts(1), "symbol": "B", "value": 4.0},
+        ],
+        partition_by=("symbol",),
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(rounding=rounding, cadence="1h", keys=["symbol"])
+    )
+    config = SeriesConfig(id="price", stream="stream", field="value", collect=2)
+    records = list(run_series_pipeline(runtime, config))
+    assert [r.value for r in records] == expected_values
+
+
 def test_series_preview_keeps_collection_values_unassembled(
     tmp_path: Path,
 ) -> None:
@@ -1717,7 +1944,7 @@ def test_series_artifact_feeds_serve_pipeline(tmp_path: Path) -> None:
         ),
     ]
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h", keys=["id_"]),
+        sample=SampleConfig(rounding="ceil", cadence="1h", keys=["id_"]),
         features=configs,
     )
     source = runtime.streams["prices"].source
@@ -1791,7 +2018,7 @@ def test_metadata_rejects_projected_wide_id_outside_fold_training(
         partition_by=("bucket",),
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 id="metric",
@@ -1885,7 +2112,7 @@ def test_series_shared_stream_matches_independent_series_pipelines(
         horizon="0s",
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h", keys=["exchange"]),
+        sample=SampleConfig(rounding="ceil", cadence="1h", keys=["exchange"]),
         features=[price],
         targets=[volume],
     )
@@ -1910,8 +2137,8 @@ def test_series_shared_stream_matches_independent_series_pipelines(
     source.opens = 0
     source.closes = 0
     normal_batch_sort = series_operation.batch_sort
-    normal_floor_time = series_operation.floor_time_to_cadence
-    floor_calls = 0
+    normal_round_time = series_operation.round_time_to_cadence
+    round_calls = 0
 
     def spilling_batch_sort(items, buffer_bytes, key, progress=None):
         return normal_batch_sort(
@@ -1921,10 +2148,10 @@ def test_series_shared_stream_matches_independent_series_pipelines(
             progress=progress,
         )
 
-    def count_floor_time(timestamp, cadence):
-        nonlocal floor_calls
-        floor_calls += 1
-        return normal_floor_time(timestamp, cadence)
+    def count_round_time(timestamp, cadence, rounding):
+        nonlocal round_calls
+        round_calls += 1
+        return normal_round_time(timestamp, cadence, rounding)
 
     monkeypatch.setattr(
         series_operation,
@@ -1933,8 +2160,8 @@ def test_series_shared_stream_matches_independent_series_pipelines(
     )
     monkeypatch.setattr(
         series_operation,
-        "floor_time_to_cadence",
-        count_floor_time,
+        "round_time_to_cadence",
+        count_round_time,
     )
 
     task = SeriesTask()
@@ -1965,7 +2192,7 @@ def test_series_shared_stream_matches_independent_series_pipelines(
         assert row.targets == expected_targets.get(row.key, {})
     assert source.opens == 1
     assert source.closes == 1
-    assert floor_calls == len(rows)
+    assert round_calls == len(rows)
 
 
 def test_series_store_sequence_values_unscaled(
@@ -1986,7 +2213,7 @@ def test_series_store_sequence_values_unscaled(
         sequence=SequenceConfig(size=2),
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[config],
     )
     task = SeriesTask()
@@ -2012,7 +2239,7 @@ def test_series_artifact_rejects_multiple_sequences_in_one_sample_bucket(
         ],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 stream="stream",
@@ -2042,7 +2269,7 @@ def test_series_artifact_rejects_duplicate_scalars_within_sample_bucket(
         ],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 stream="stream",
@@ -2059,22 +2286,202 @@ def test_series_artifact_rejects_duplicate_scalars_within_sample_bucket(
         build_series_artifact(runtime, SeriesTask())
 
 
+@pytest.mark.parametrize("sequence", [None, SequenceConfig(size=2)])
+def test_series_artifact_never_backdates_scalar_or_sequence_values(
+    tmp_path: Path,
+    sequence: SequenceConfig | None,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0), "value": 10.0},
+            {"time": _ts(0, 30), "value": 11.0},
+            {"time": _ts(1, 30), "value": 12.0},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
+        features=[
+            SeriesConfig(id="price", stream="stream", field="value", sequence=sequence)
+        ],
+        targets=[
+            TargetSeriesConfig(
+                id="target", stream="stream", field="value", horizon="0s"
+            )
+        ],
+    )
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    rows = list(open_series(runtime.artifacts_root / task.output))
+    assert [r.time for r in rows] == [_ts(0), _ts(1), _ts(2)]
+    assert [r.features for r in rows] == (
+        [{"price": 10.0}, {"price": 11.0}, {"price": 12.0}]
+        if sequence is None
+        else [{}, {"price": [10.0, 11.0]}, {"price": [11.0, 12.0]}]
+    )
+    assert [r.targets for r in rows] == [
+        {"target": 10.0},
+        {"target": 11.0},
+        {"target": 12.0},
+    ]
+
+
+def test_series_artifact_does_not_silently_choose_colliding_off_grid_values(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0, 30), "value": 1.0},
+            {"time": _ts(1), "value": 2.0},
+        ],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
+        features=[SeriesConfig(id="price", stream="stream", field="value")],
+    )
+    with pytest.raises(ValueError, match="multiple values"):
+        build_series_artifact(runtime, SeriesTask())
+
+
+@pytest.mark.parametrize(
+    ("rounding", "sample_hour", "horizon"), [("floor", 10, "2h"), ("ceil", 11, "1h")]
+)
+def test_forecast_alignment_uses_explicit_bucket_convention(
+    tmp_path: Path,
+    rounding: str,
+    sample_hour: int,
+    horizon: str,
+) -> None:
+    # Both datasets issue the forecast at 11:00 for the 12:00 price. The floor
+    # convention labels the final completed hourly bucket 10:00; ceil labels
+    # the decision time 11:00. Target labels and horizons follow that choice.
+    runtime = _runtime_with_rows(
+        tmp_path, [{"time": _ts(hour, 30), "value": float(hour)} for hour in (8, 9, 10)]
+    )
+    runtime.streams["target"] = SourceRuntimeStream(
+        source=_StubSource([{"time": _ts(sample_hour), "price": 123.0}]),
+        mapper=_mapper,
+        preprocess=(),
+        partition_by=(),
+        presorted=True,
+        transforms=(),
+    )
+    target = TargetSeriesConfig(
+        id="price_at_12", stream="target", field="price", horizon=horizon
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h", rounding=rounding),
+        features=[
+            SeriesConfig(
+                id="history",
+                stream="stream",
+                field="value",
+                sequence=SequenceConfig(size=3),
+            )
+        ],
+        targets=[target],
+    )
+    task = SeriesTask()
+    result = build_series_artifact(runtime, task)
+    runtime.artifacts.register(SERIES, task.output, meta=result.meta)
+    assert _sample_payload(open_samples(runtime, ["history"], [target.id])) == [
+        ((_ts(sample_hour),), {"history": [8.0, 9.0, 10.0]}, {"price_at_12": 123.0})
+    ]
+    assert _ts(sample_hour) + target.horizon_duration == _ts(12)
+    assert [r.time for r in run_stream_pipeline(runtime, "stream")] == [
+        _ts(h, 30) for h in (8, 9, 10)
+    ]
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+@pytest.mark.parametrize("sequence", [None, SequenceConfig(size=3)])
+def test_exact_rejects_off_grid_records_in_artifacts_and_preview_including_warmup(
+    tmp_path: Path,
+    partitioned: bool,
+    sequence: SequenceConfig | None,
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [
+            {"time": _ts(0, 30), "value": 1.0, "symbol": "A"},
+            {"time": _ts(1), "value": 2.0, "symbol": "A"},
+        ],
+        partition_by=("symbol",) if partitioned else (),
+    )
+    config = SeriesConfig(id="price", stream="stream", field="value", sequence=sequence)
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h", rounding="exact"),
+        features=[config],
+    )
+    with pytest.raises(ValueError, match="not aligned.*rounding='exact'"):
+        build_series_artifact(runtime, SeriesTask())
+    with pytest.raises(ValueError, match="not aligned.*rounding='exact'"):
+        list(run_series_pipeline(runtime, config))
+
+
+@pytest.mark.parametrize("rounding", ["floor", "ceil", "exact"])
+def test_exact_grid_observations_keep_their_sample_times(
+    tmp_path: Path, rounding: str
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path, [{"time": _ts(h), "value": h} for h in (0, 1)]
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h", rounding=rounding),
+        features=[SeriesConfig(id="value", stream="stream", field="value")],
+    )
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    manifest = load_series_manifest(runtime.artifacts_root / task.output)
+    assert manifest.rounding == rounding
+    assert [
+        (r.time, r.features) for r in open_series(runtime.artifacts_root / task.output)
+    ] == [(_ts(h), {"value": h}) for h in (0, 1)]
+
+
+@pytest.mark.parametrize(
+    ("rounding", "times", "sample_hour"),
+    [
+        ("floor", [(10, 0), (10, 30)], 10),
+        ("ceil", [(10, 30), (11, 0)], 11),
+        ("exact", [(10, 0), (10, 0)], 10),
+    ],
+)
+def test_collection_honors_explicit_sample_boundaries(
+    tmp_path: Path, rounding, times, sample_hour
+) -> None:
+    runtime = _runtime_with_rows(
+        tmp_path,
+        [{"time": _ts(h, m), "value": value} for value, (h, m) in enumerate(times)],
+    )
+    runtime.dataset = DatasetConfig(
+        sample=SampleConfig(cadence="1h", rounding=rounding),
+        features=[SeriesConfig(id="values", stream="stream", field="value", collect=2)],
+    )
+    task = SeriesTask()
+    build_series_artifact(runtime, task)
+    [row] = open_series(runtime.artifacts_root / task.output)
+    assert row.time == _ts(sample_hour)
+    assert row.features == {"values": [0, 1]}
+
+
 def test_series_artifact_collects_an_explicit_fixed_size_bucket(
     tmp_path: Path,
 ) -> None:
     runtime = _runtime_with_rows(
         tmp_path,
         [
-            {"time": _ts(0, 30), "value": 3.0},
-            {"time": _ts(1, 15), "value": 5.0},
-            {"time": _ts(0, 0), "value": 1.0},
-            {"time": _ts(1, 30), "value": 6.0},
-            {"time": _ts(0, 15), "value": 2.0},
-            {"time": _ts(1, 0), "value": 4.0},
+            {"time": _ts(1, 0), "value": 3.0},
+            {"time": _ts(1, 45), "value": 5.0},
+            {"time": _ts(0, 30), "value": 1.0},
+            {"time": _ts(2, 0), "value": 6.0},
+            {"time": _ts(0, 45), "value": 2.0},
+            {"time": _ts(1, 30), "value": 4.0},
         ],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 stream="stream",
@@ -2092,8 +2499,8 @@ def test_series_artifact_collects_an_explicit_fixed_size_bucket(
     rows = list(open_series(manifest_path, manifest))
 
     assert [(row.time, row.features) for row in rows] == [
-        (_ts(0), {"price": [1.0, 2.0, 3.0]}),
-        (_ts(1), {"price": [4.0, 5.0, 6.0]}),
+        (_ts(1), {"price": [1.0, 2.0, 3.0]}),
+        (_ts(2), {"price": [4.0, 5.0, 6.0]}),
     ]
 
 
@@ -2105,7 +2512,7 @@ def test_series_artifact_collect_size_one_remains_a_list(
         [{"time": _ts(0), "value": None}],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 stream="stream",
@@ -2130,12 +2537,12 @@ def test_collected_series_produces_fixed_list_metadata(
     runtime = _runtime_with_rows(
         tmp_path,
         [
-            {"time": _ts(0), "value": 1.0},
-            {"time": _ts(0, 30), "value": 2.0},
+            {"time": _ts(0, 30), "value": 1.0},
+            {"time": _ts(1), "value": 2.0},
         ],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 stream="stream",
@@ -2169,10 +2576,13 @@ def test_series_artifact_requires_the_declared_collection_size(
 ) -> None:
     runtime = _runtime_with_rows(
         tmp_path,
-        [{"time": _ts(0, index * 10), "value": float(index)} for index in range(count)],
+        [
+            {"time": _ts(0, (index + 1) * 10), "value": float(index)}
+            for index in range(count)
+        ],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 stream="stream",
@@ -2198,7 +2608,7 @@ def test_series_artifact_preserves_a_list_valued_scalar(
         [{"time": _ts(0), "value": [1.0, 2.0]}],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 stream="stream",
@@ -2228,7 +2638,7 @@ def test_series_artifact_rejects_collecting_list_valued_records(
         ],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 stream="stream",
@@ -2249,15 +2659,15 @@ def test_series_artifact_collects_each_wide_series_independently(
     runtime = _runtime_with_rows(
         tmp_path,
         [
-            {"time": _ts(0), "symbol": "AAPL", "value": 1.0},
-            {"time": _ts(0), "symbol": "MSFT", "value": 10.0},
-            {"time": _ts(1), "symbol": "AAPL", "value": 2.0},
-            {"time": _ts(1), "symbol": "MSFT", "value": 20.0},
+            {"time": _ts(1), "symbol": "AAPL", "value": 1.0},
+            {"time": _ts(1), "symbol": "MSFT", "value": 10.0},
+            {"time": _ts(2), "symbol": "AAPL", "value": 2.0},
+            {"time": _ts(2), "symbol": "MSFT", "value": 20.0},
         ],
         partition_by=("symbol",),
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1d"),
+        sample=SampleConfig(rounding="ceil", cadence="1d"),
         features=[
             SeriesConfig(
                 stream="stream",
@@ -2285,12 +2695,12 @@ def test_series_artifact_collects_targets(
     runtime = _runtime_with_rows(
         tmp_path,
         [
-            {"time": _ts(0), "price": 10.0, "return": 0.1},
-            {"time": _ts(0, 30), "price": 11.0, "return": 0.2},
+            {"time": _ts(0, 30), "price": 10.0, "return": 0.1},
+            {"time": _ts(1), "price": 11.0, "return": 0.2},
         ],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 stream="stream",
@@ -2325,13 +2735,13 @@ def test_series_artifact_collect_counts_and_tracks_cadence_placeholders(
     runtime = _runtime_with_rows(
         tmp_path,
         [
-            {"time": _ts(0), "value": 1.0},
-            {"time": _ts(2, 30), "value": 2.0},
+            {"time": _ts(0, 30), "value": 1.0},
+            {"time": _ts(3), "value": 2.0},
         ],
         transforms=[EnsureCadenceConfig(cadence="30m")],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 stream="stream",
@@ -2370,7 +2780,7 @@ def test_series_manifest_counts_empty_series_from_a_shared_stream(
         ],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 stream="stream",
@@ -2408,7 +2818,7 @@ def test_series_record_sort_is_part_of_the_observed_stream_pipeline(
         [{"time": _ts(0), "value": 1.0}],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[SeriesConfig(stream="stream", id="value", field="value")],
     )
     observer = _PipelineStarts()
@@ -2446,7 +2856,7 @@ def test_series_closes_shared_stream_after_feature_error(
         [{"time": _ts(0), "value": 1.0}],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(stream="stream", id="value", field="value"),
             SeriesConfig(stream="stream", id="missing", field="missing"),
@@ -2476,7 +2886,7 @@ def test_failed_series_rebuild_preserves_previous_generation(
         stream_id="prices",
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(stream="prices", id="value", field="value"),
             SeriesConfig(stream="prices", id="other", field="other"),
@@ -2522,7 +2932,7 @@ def test_failed_series_manifest_commit_removes_new_generation(
         [{"time": _ts(0), "value": 1.0}],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[SeriesConfig(stream="stream", id="value", field="value")],
     )
     task = SeriesTask()
@@ -2557,7 +2967,7 @@ def test_identical_series_rebuild_publishes_a_new_generation(
         [{"time": _ts(0), "value": 1.0}],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[SeriesConfig(stream="stream", id="value", field="value")],
     )
     task = SeriesTask()
@@ -2584,7 +2994,7 @@ def test_changed_series_rebuild_retains_previous_generation(
         [{"time": _ts(0), "value": 1.0}],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[SeriesConfig(stream="stream", id="value", field="value")],
     )
     task = SeriesTask()
@@ -2623,7 +3033,7 @@ def test_series_rebuild_replaces_a_corrupt_generation(
         [{"time": _ts(0), "value": 1.0}],
     )
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[SeriesConfig(stream="stream", id="value", field="value")],
     )
     task = SeriesTask()
@@ -2656,7 +3066,7 @@ def test_series_rejects_symlinked_output_before_mutation(
     runtime = SimpleNamespace(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=artifacts_root,
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
         streams={},
     )
 
@@ -2708,6 +3118,26 @@ def test_cached_sample_input_rejects_manifest_cadence_mismatch(
                 [cfg.id],
             )
         )
+
+
+@pytest.mark.parametrize("consumer", ["samples", "metadata"])
+def test_cached_series_rejects_a_different_rounding_contract(
+    tmp_path: Path, consumer: str
+) -> None:
+    runtime = _runtime_with_rows(tmp_path, [{"time": _ts(0), "value": 1.0}])
+    config = SeriesConfig(id="value", stream="stream", field="value")
+    register_series(runtime, [config], "1h")
+    runtime.dataset = runtime.dataset.model_copy(
+        update={"sample": SampleConfig(cadence="1h", rounding="floor")}
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="rounding does not match|sample configuration does not match",
+    ):
+        if consumer == "samples":
+            list(open_samples(runtime, [config.id]))
+        else:
+            build_metadata_artifact(runtime, MetadataTask())
 
 
 def test_cached_sample_input_verifies_manifest_rows(

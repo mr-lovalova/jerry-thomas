@@ -113,7 +113,7 @@ def _observability(
 
 def _dataset(*, scale: bool = False) -> DatasetConfig:
     return DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 id="feature",

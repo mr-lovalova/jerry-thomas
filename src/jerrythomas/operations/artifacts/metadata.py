@@ -39,6 +39,7 @@ from jerrythomas.pipelines.dataset.split import TargetHorizonPolicy, build_label
 from jerrythomas.runtime import Runtime
 from jerrythomas.utils.time import (
     count_cadence_buckets,
+    ceil_time_to_cadence,
     floor_time_to_cadence,
     parse_cadence,
     parse_datetime,
@@ -501,11 +502,6 @@ def _window(
     )
 
 
-def _ceil_time_to_cadence(value: datetime, cadence: timedelta) -> datetime:
-    floored = floor_time_to_cadence(value, cadence)
-    return floored if floored == value else floored + cadence
-
-
 def _time_role_bounds(
     split: TimeSplitConfig,
     labels: Sequence[str],
@@ -527,7 +523,7 @@ def _time_role_bounds(
         assert previous.until is not None
         start = max(
             observed_start,
-            _ceil_time_to_cadence(
+            ceil_time_to_cadence(
                 parse_datetime(previous.until).astimezone(timezone.utc),
                 step,
             ),
@@ -638,8 +634,10 @@ def build_metadata_artifact(
         raise RuntimeError("Series artifact is required before metadata.")
     manifest_path = artifact.resolve(runtime.artifacts.root)
     manifest = load_series_manifest(manifest_path)
-    if manifest.cadence != dataset.sample.cadence or manifest.sample_keys != tuple(
-        dataset.sample.keys
+    if (
+        manifest.cadence != dataset.sample.cadence
+        or manifest.rounding != dataset.sample.rounding
+        or manifest.sample_keys != tuple(dataset.sample.keys)
     ):
         raise RuntimeError(
             "Series artifact sample configuration does not match the dataset."

@@ -36,7 +36,7 @@ def _definition(
     return project_definition(
         project_path,
         dataset=DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             split=split,
         ),
         runtime_operations=runtime_operations,
@@ -334,7 +334,7 @@ def test_dataset_preview_plans_every_output_id(
     definition = project_definition(
         tmp_path / "project.yaml",
         dataset=DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             features=[
                 SeriesConfig(id="close", stream="prices", field="close"),
                 SeriesConfig(id="open", stream="prices", field="open"),

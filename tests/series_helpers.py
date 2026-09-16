@@ -19,7 +19,9 @@ def register_series(
 ) -> None:
     current = runtime.dataset
     runtime.dataset = DatasetConfig(
-        sample=SampleConfig(cadence=cadence, keys=list(sample_keys)),
+        sample=SampleConfig(
+            rounding=current.sample.rounding, cadence=cadence, keys=list(sample_keys)
+        ),
         features=list(features),
         targets=list(targets),
         split=current.split,

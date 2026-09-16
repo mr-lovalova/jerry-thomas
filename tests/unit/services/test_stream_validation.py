@@ -430,6 +430,11 @@ def test_validation_accepts_declared_canonical_order() -> None:
         {"operation": "fill_missing", "field": "close", "value": 0, "to": "ticker"},
         {"operation": "aggregate_sum", "field": "ticker"},
         {
+            "operation": "resample",
+            "period": {"kind": "calendar", "unit": "month", "timezone": "UTC"},
+            "aggregations": {"ticker": {"field": "value", "statistic": "last"}},
+        },
+        {
             "operation": "aggregate_sum",
             "field": "value",
             "count_to": "ticker",

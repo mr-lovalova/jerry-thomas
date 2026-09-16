@@ -67,7 +67,7 @@ def _runtime(tmp_path) -> Runtime:
         project_yaml=project_yaml,
         artifacts_root=tmp_path / "artifacts",
         dataset=DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             features=[SeriesConfig(id="speed", stream="stream", field="value")],
             targets=[
                 TargetSeriesConfig(

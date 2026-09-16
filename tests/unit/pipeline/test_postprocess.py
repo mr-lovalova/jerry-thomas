@@ -22,7 +22,7 @@ def _runtime(
     project = tmp_path / "project.yaml"
     project.write_text("schema_version: 6\nartifact_revision: 1\n", encoding="utf-8")
     if dataset is None:
-        dataset = DatasetConfig(sample=SampleConfig(cadence="1h"))
+        dataset = DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h"))
     runtime = Runtime(
         project_yaml=project,
         artifacts_root=artifacts_root,
@@ -105,7 +105,7 @@ def test_postprocess_has_one_explicit_execution_order(tmp_path) -> None:
             "targets": [],
         },
         dataset=DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             postprocess=PostprocessConfig.model_validate(
                 {"features": {"threshold": 1.0, "ids": ["value"]}}
             ),
@@ -166,7 +166,7 @@ def test_postprocess_applies_explicit_target_policies(tmp_path) -> None:
         },
         dataset=DatasetConfig.model_validate(
             {
-                "sample": {"cadence": "1h"},
+                "sample": {"rounding": "ceil", "cadence": "1h"},
                 "features": [{"id": "feature", "stream": "features", "field": "value"}],
                 "targets": [
                     {

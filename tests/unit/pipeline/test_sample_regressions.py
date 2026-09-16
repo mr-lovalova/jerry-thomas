@@ -1,6 +1,6 @@
 import math
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from jerrythomas.artifacts.registry import SCALER_SPEC
@@ -68,7 +68,7 @@ def _runtime_with_streams(
     runtime = Runtime(
         project_yaml=project_yaml,
         artifacts_root=artifacts_root,
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
         execution=ExecutionConfig(),
     )
 
@@ -256,16 +256,16 @@ def test_samples_keep_entity_buckets_contiguous(tmp_path) -> None:
 
     streams = {
         "momentum_stream": [
-            _equity_record(0, "AAPL", 1.0),
-            _equity_record(0, "MSFT", 10.0),
-            _equity_record(1, "AAPL", 2.0),
-            _equity_record(1, "MSFT", 20.0),
+            _equity_record(1, "AAPL", 1.0),
+            _equity_record(1, "MSFT", 10.0),
+            _equity_record(2, "AAPL", 2.0),
+            _equity_record(2, "MSFT", 20.0),
         ],
         "volume_stream": [
-            _equity_record(0, "AAPL", 100.0),
-            _equity_record(0, "MSFT", 1000.0),
-            _equity_record(1, "AAPL", 200.0),
-            _equity_record(1, "MSFT", 2000.0),
+            _equity_record(1, "AAPL", 100.0),
+            _equity_record(1, "MSFT", 1000.0),
+            _equity_record(2, "AAPL", 200.0),
+            _equity_record(2, "MSFT", 2000.0),
         ],
     }
     runtime = _runtime_with_streams(tmp_path, streams)
@@ -303,8 +303,8 @@ def test_samples_keep_entity_buckets_contiguous(tmp_path) -> None:
     )
 
     assert [sample.key for sample in samples] == [
-        (_ts(0), "AAPL"),
-        (_ts(0), "MSFT"),
+        (_ts(0) + timedelta(days=1), "AAPL"),
+        (_ts(0) + timedelta(days=1), "MSFT"),
     ]
     assert [sample.features.values for sample in samples] == [
         {"momentum": [1.0, 2.0], "volume": [100.0, 200.0]},
@@ -535,24 +535,27 @@ def test_regression_scaled_shapes_airpressure_high_freq_and_windspeed_hourly(
         ).apply(raw)
     )
 
-    # Two hourly groups expected: 00:00 and 01:00
-    assert len(out) == 2
+    # Off-grid pressure values become available at the following hourly tick.
+    assert [sample.key for sample in out] == [(_ts(0),), (_ts(1),), (_ts(2),)]
 
     # Shapes: air_pressure -> lists (multiple per hour); wind_speed -> scalars (single per hour)
-    v0 = out[0].features.values
-    v1 = out[1].features.values
+    wind_only = out[0].features.values
+    v0 = out[1].features.values
+    v1 = out[2].features.values
 
     assert isinstance(v0["air_pressure"], list) and len(v0["air_pressure"]) == 3
     assert isinstance(v1["air_pressure"], list) and len(v1["air_pressure"]) == 3
+    assert "air_pressure" not in wind_only
+    assert "wind_speed" not in v1
+    assert not isinstance(wind_only["wind_speed"], list)
     assert not isinstance(v0["wind_speed"], list)
-    assert not isinstance(v1["wind_speed"], list)
 
     # Scaled values should have ~zero mean per feature across the whole stream
     ap_all = v0["air_pressure"] + v1["air_pressure"]
     ap_mean = sum(ap_all) / len(ap_all)
     assert abs(ap_mean) < 1e-6
 
-    ws_all = [v0["wind_speed"], v1["wind_speed"]]
+    ws_all = [wind_only["wind_speed"], v0["wind_speed"]]
     ws_mean = sum(ws_all) / len(ws_all)
     assert abs(ws_mean) < 1e-6
 
@@ -628,13 +631,14 @@ def test_regression_fill_then_scale_with_missing_values(tmp_path) -> None:
         ).apply(raw)
     )
 
-    # Two hour groups because fill made the second hour visible
-    assert len(out) == 2  # hours 00 and 01 due to wind_speed hour 1
+    assert [sample.key for sample in out] == [(_ts(0),), (_ts(1),)]
 
     v0 = out[0].features.values
+    v1 = out[1].features.values
+    assert "air_pressure" not in v0
     # air_pressure list length = 3 with middle filled (not None)
-    assert isinstance(v0["air_pressure"], list) and len(v0["air_pressure"]) == 3
-    assert all(isinstance(x, float) for x in v0["air_pressure"])  # filled and scaled
+    assert isinstance(v1["air_pressure"], list) and len(v1["air_pressure"]) == 3
+    assert all(isinstance(x, float) for x in v1["air_pressure"])  # filled and scaled
 
     # wind_speed hour 0 present and scaled; hour 1 present due to fill then scale
     v1 = out[1].features.values

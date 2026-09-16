@@ -29,7 +29,7 @@ def _runtime() -> Runtime:
     return Runtime(
         project_yaml=Path("."),
         artifacts_root=Path("."),
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
     )
 
 

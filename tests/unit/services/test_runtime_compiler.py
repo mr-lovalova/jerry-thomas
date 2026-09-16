@@ -61,7 +61,7 @@ paths:
         encoding="utf-8",
     )
     (tmp_path / "dataset.yaml").write_text(
-        "sample:\n  cadence: 1h\nfeatures: []\ntargets: []\n",
+        "sample:\n  rounding: ceil\n  cadence: 1h\nfeatures: []\ntargets: []\n",
         encoding="utf-8",
     )
     return project_yaml, sources_dir, streams_dir, data_dir
@@ -110,7 +110,7 @@ map:
 def test_compiled_runtimes_isolate_mutable_transform_configuration(tmp_path) -> None:
     project_yaml, sources_dir, streams_dir, data_dir = _write_test_project(tmp_path)
     (tmp_path / "dataset.yaml").write_text(
-        "sample: {cadence: 1h}\n"
+        "sample: {rounding: ceil, cadence: 1h}\n"
         "features: [{id: price, stream: selected, field: value}]\n",
         encoding="utf-8",
     )
@@ -179,7 +179,7 @@ def test_compiled_runtimes_isolate_nested_plugin_arguments(
 ) -> None:
     project_yaml, sources_dir, streams_dir, data_dir = _write_test_project(tmp_path)
     (tmp_path / "dataset.yaml").write_text(
-        "sample: {cadence: 1h}\n"
+        "sample: {rounding: ceil, cadence: 1h}\n"
         "features: [{id: total, stream: combined, field: value}]\n",
         encoding="utf-8",
     )

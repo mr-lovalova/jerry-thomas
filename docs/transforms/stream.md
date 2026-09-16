@@ -32,6 +32,8 @@ transforms:
 - `ensure_cadence`: insert placeholder records at a fixed duration within each
   partition.
 - `ensure_schedule`: complete records against a resolved schedule artifact.
+- `resample`: aggregate fixed-duration or calendar-month periods within each
+  partition, publishing completed periods at their end. See below.
 - `where`: filter ordered records using the record `where` operator language.
 - `lag` / `lead`: copy a prior or future field value into `to` by `periods`
   within each partition.
@@ -210,3 +212,55 @@ transforms:
   - { operation: ensure_schedule, schedule: schedule }
   - { operation: forward_fill, field: gross_margin }
 ```
+
+## Resampling
+
+Use the same operation for elapsed-time buckets and calendar months:
+
+```yaml
+transforms:
+  - operation: resample
+    period: { kind: calendar, unit: month, timezone: America/New_York }
+    start: "2024-01-01T00:00:00-05:00"
+    end: "2025-01-01T00:00:00-05:00"
+    aggregations:
+      close: { field: adjusted_close, statistic: last }
+      volume: { field: volume, statistic: sum }
+  - { operation: lag, field: close, periods: 1, to: previous_month_close }
+```
+
+For fixed durations, replace `period` with `{ kind: fixed, every: 1d }`.
+Fixed buckets align to the UTC epoch. Calendar months start at local midnight
+on the first, follow the named timezone's clock changes, and emit UTC timestamps.
+A calendar month is not a fixed number of days or observations.
+
+Buckets include their start and exclude their end. The output's `time` is the
+bucket end: January's close becomes available at February 1, not January 1.
+Each output contains only the partition keys and declared aggregate fields.
+Supported statistics are `first`, `last`, `sum`, `mean`, `min`, `max`, and `count`.
+`first` and `last` preserve missing endpoint values. Numeric statistics ignore
+`None` and `NaN` but reject other nonnumeric or infinite values. `count` counts
+nonmissing field values. Sums retain integer precision and use the same exact
+floating-point accumulation rules as `aggregate_sum`.
+
+Optional `start` and `end` declare input coverage, with `end` exclusive; records
+outside those bounds are excluded. Only fully covered buckets are emitted.
+Without `start`, coverage begins at the first record in each partition, so a
+first record inside a month leaves that month incomplete. Without `end`, a later
+record must reach the next boundary to complete a bucket; EOF alone does not
+complete it. Declaring coverage asserts that the source covers that interval;
+Jerry cannot detect omitted source observations.
+
+Empty covered buckets emit null aggregates (`count: 0`), keeping consecutive
+months visible to lags and rolling windows. They do not establish sample-domain
+coverage. Bounds also allow leading and trailing empty buckets for observed
+partitions; they do not create partitions absent from the input. Missing values
+are never filled implicitly. Dataset cadence and target horizons remain fixed
+durations; this operation changes the stream's observation frequency.
+
+Dataset projection uses the required `sample.rounding` contract. With `ceil`, a
+New York month ending at `05:00 UTC` enters the next midnight's daily sample;
+`floor` labels it with the preceding midnight and `exact` rejects that off-grid
+timestamp. Choose a convention consistent with the prediction cutoff. Projection
+does not carry values forward; use an as-of join when daily observations should
+reuse the latest completed month.

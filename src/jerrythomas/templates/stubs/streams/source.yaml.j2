@@ -12,7 +12,7 @@ map:
 
 # preprocess:
 #   - { operation: where, field: time, operator: ge, comparand: "2020-01-01T00:00:00Z" }
-#   - { operation: floor_time, cadence: 1h }
+#   - { operation: round_time, direction: floor, cadence: 1h }
 
 # transforms:
 #   - { operation: rolling, field: value, window: 24, statistic: mean }

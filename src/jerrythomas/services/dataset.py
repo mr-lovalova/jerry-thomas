@@ -28,6 +28,7 @@ _CROSS_TIMESTAMP_TRANSFORMS = (
     transform_config.ForwardSumConfig,
     transform_config.LagConfig,
     transform_config.LeadConfig,
+    transform_config.ResampleConfig,
     transform_config.RollingConfig,
     transform_config.RollingOlsConfig,
     transform_config.RollingQuantileConfig,

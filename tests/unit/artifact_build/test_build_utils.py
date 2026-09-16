@@ -114,6 +114,7 @@ def _mock_series_rows(monkeypatch, runtime: Runtime, rows) -> None:
     runtime.artifacts.register(SERIES, "series.json")
     manifest = SimpleNamespace(
         cadence=runtime.dataset.sample.cadence,
+        rounding=runtime.dataset.sample.rounding,
         sample_keys=tuple(runtime.dataset.sample.keys),
     )
     monkeypatch.setattr(
@@ -132,7 +133,7 @@ def test_pipeline_context_rejects_invalid_registered_metadata(tmp_path) -> None:
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
     )
     runtime.artifacts_root.mkdir()
     metadata_path = runtime.artifacts_root / "metadata.json"
@@ -175,6 +176,7 @@ def test_metadata_materialization_writes_keyed_sample_domain(
         "\n".join(
             [
                 "sample:",
+                "  rounding: ceil",
                 "  cadence: 1h",
                 "  keys: [security_id]",
                 "features:",
@@ -225,6 +227,7 @@ def test_unsplit_domain_starts_at_first_genuine_observation(
         "\n".join(
             [
                 "sample:",
+                "  rounding: ceil",
                 "  cadence: 1h",
                 "  keys: [security_id]",
                 "features:",
@@ -275,6 +278,7 @@ def test_metadata_materialization_preserves_one_timestamp_window(
         "\n".join(
             [
                 "sample:",
+                "  rounding: ceil",
                 "  cadence: 1h",
                 "features:",
                 "  - id: price",
@@ -320,6 +324,7 @@ def test_metadata_materialization_scans_features_and_targets_once(
         "\n".join(
             [
                 "sample:",
+                "  rounding: ceil",
                 "  cadence: 1h",
                 "features:",
                 "  - id: price",
@@ -384,7 +389,7 @@ def test_metadata_rejects_wide_feature_missing_from_fold_training(
     runtime = _runtime_with_stream_partitions(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             features=[
                 SeriesConfig(
                     id="metric",
@@ -434,7 +439,7 @@ def test_metadata_validates_wide_schema_for_each_fold(
     runtime = _runtime_with_stream_partitions(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             features=[
                 SeriesConfig(
                     id="metric",
@@ -511,7 +516,7 @@ def test_metadata_accepts_wide_feature_present_in_fold_training(
     runtime = _runtime_with_stream_partitions(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             features=[
                 SeriesConfig(
                     id="metric",
@@ -561,7 +566,7 @@ def test_metadata_rejects_wide_shape_not_established_by_fold_training(
     runtime = _runtime_with_stream_partitions(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             features=[
                 SeriesConfig(
                     id="metric",
@@ -608,7 +613,7 @@ def test_metadata_rejects_static_shape_not_established_by_fold_training(
     runtime = _runtime_with_config(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             features=[
                 SeriesConfig(
                     id="metric",
@@ -648,7 +653,7 @@ def test_hash_fold_domain_does_not_synthesize_holdout_entity_into_training(
     runtime = _runtime_with_config(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h", keys=["entity"]),
+            sample=SampleConfig(rounding="ceil", cadence="1h", keys=["entity"]),
             features=[
                 SeriesConfig(
                     id="price",
@@ -727,7 +732,7 @@ def test_schedule_placeholder_does_not_establish_training_membership(
     runtime = _runtime_with_config(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h", keys=["entity"]),
+            sample=SampleConfig(rounding="ceil", cadence="1h", keys=["entity"]),
             features=[
                 SeriesConfig(
                     id="price",
@@ -823,7 +828,7 @@ def test_fold_domain_starts_at_first_genuine_observation(
     runtime = _runtime_with_config(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h", keys=["entity"]),
+            sample=SampleConfig(rounding="ceil", cadence="1h", keys=["entity"]),
             features=[
                 SeriesConfig(
                     id="price",
@@ -897,7 +902,7 @@ def test_fold_domain_continues_after_training_observation(
     runtime = _runtime_with_config(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h", keys=["entity"]),
+            sample=SampleConfig(rounding="ceil", cadence="1h", keys=["entity"]),
             features=[
                 SeriesConfig(
                     id="price",
@@ -982,7 +987,7 @@ def test_fold_window_uses_feature_base_ranges(
     runtime = _runtime_with_config(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h", window_mode=window_mode),
+            sample=SampleConfig(rounding="ceil", cadence="1h", window_mode=window_mode),
             features=[
                 SeriesConfig(id="price", stream="market", field="price"),
                 SeriesConfig(id="volume", stream="market", field="volume"),
@@ -1032,7 +1037,7 @@ def test_fold_strict_window_uses_each_wide_series_id(
     runtime = _runtime_with_config(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h", window_mode="strict"),
+            sample=SampleConfig(rounding="ceil", cadence="1h", window_mode="strict"),
             features=[
                 SeriesConfig(id="metric", stream="market.metrics", field="value")
             ],
@@ -1091,7 +1096,7 @@ def test_hash_fold_validation_cannot_establish_training_domain(
     runtime = _runtime_with_config(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h", keys=["entity"]),
+            sample=SampleConfig(rounding="ceil", cadence="1h", keys=["entity"]),
             features=[
                 SeriesConfig(
                     id="price",
@@ -1154,7 +1159,7 @@ def test_fold_metadata_normalizes_interval_offsets_to_utc(
     runtime = _runtime_with_config(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             features=[
                 SeriesConfig(
                     id="price",
@@ -1230,7 +1235,7 @@ def test_metadata_excludes_target_horizon_boundary_from_wide_training_schema(
     runtime = _runtime_with_stream_partitions(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             features=[
                 SeriesConfig(
                     id="metric",
@@ -1295,7 +1300,7 @@ def test_metadata_rejects_wide_target_missing_from_fold_training(
     runtime = _runtime_with_stream_partitions(
         tmp_path,
         DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             features=[
                 SeriesConfig(
                     id="price",
@@ -1358,6 +1363,7 @@ def test_metadata_materialization_closes_rows_after_collection_error(
         "\n".join(
             [
                 "sample:",
+                "  rounding: ceil",
                 "  cadence: 1h",
                 "features:",
                 "  - id: history",

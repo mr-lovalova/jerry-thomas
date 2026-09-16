@@ -1,4 +1,5 @@
 sample:
+  rounding: ceil
   cadence: 1d
 
 features:

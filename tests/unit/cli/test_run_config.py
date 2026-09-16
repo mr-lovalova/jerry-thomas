@@ -28,7 +28,7 @@ def _write_project(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (tmp_path / "dataset.yaml").write_text(
-        "sample:\n  cadence: 1h\n",
+        "sample:\n  rounding: ceil\n  cadence: 1h\n",
         encoding="utf-8",
     )
     for directory in ("streams", "sources"):
@@ -226,7 +226,7 @@ def test_runtime_request_rejects_colliding_routed_output_ids(
     project_yaml = _write_project(tmp_path)
     (tmp_path / "dataset.yaml").write_text(
         (
-            "sample: {cadence: 1h}\n"
+            "sample: {rounding: ceil, cadence: 1h}\n"
             "split:\n"
             "  mode: hash\n"
             "  ratios: {train: 1.0}\n"
@@ -286,7 +286,7 @@ def test_runtime_request_rejects_colliding_preview_output_ids(
         )
     (tmp_path / "dataset.yaml").write_text(
         (
-            "sample: {cadence: 1h}\n"
+            "sample: {rounding: ceil, cadence: 1h}\n"
             "features:\n"
             '  - {id: "a/b", stream: first, field: value}\n'
             '  - {id: "a?b", stream: second, field: value}\n'

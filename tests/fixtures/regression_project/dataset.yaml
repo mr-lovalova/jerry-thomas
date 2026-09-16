@@ -1,4 +1,5 @@
 sample:
+  rounding: floor
   cadence: 1h
 
 features:

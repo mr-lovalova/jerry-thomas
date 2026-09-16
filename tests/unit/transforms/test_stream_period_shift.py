@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from jerrythomas.config.transforms import LagConfig, LeadConfig
 from jerrythomas.transforms.stream.lag import LagTransform
 from jerrythomas.transforms.stream.lead import LeadTransform
-from jerrythomas.transforms.time import FloorTimeTransform, ShiftTimeTransform
+from jerrythomas.transforms.time import RoundTimeTransform, ShiftTimeTransform
 from tests.unit.transforms.helpers import make_time_record
 
 
@@ -28,13 +28,59 @@ def test_shift_time_moves_record_timestamp() -> None:
     assert shifted.value == 10.0
 
 
-def test_floor_time_uses_a_continuous_utc_grid() -> None:
+@pytest.mark.parametrize(("direction", "expected_hour"), [("floor", 3), ("ceil", 6)])
+def test_round_time_uses_a_continuous_utc_grid(
+    direction: str, expected_hour: int
+) -> None:
     record = make_time_record(10.0, 5)
 
-    [floored] = FloorTimeTransform(cadence="3h").apply(iter([record]))
+    [rounded] = RoundTimeTransform(cadence="3h", direction=direction).apply(
+        iter([record])
+    )
 
-    assert floored.time.hour == 3
+    assert rounded.time.hour == expected_hour
     assert record.time.hour == 5
+
+
+@pytest.mark.parametrize(("direction", "expected_hour"), [("floor", 0), ("ceil", 3)])
+def test_round_time_preserves_records_sharing_a_bucket_and_their_provenance(
+    direction: str, expected_hour: int
+) -> None:
+    first = _record(10.0, 1, "A")
+    second = _record(20.0, 2, "A")
+    second._establishes_domain = False
+
+    output = list(
+        RoundTimeTransform(cadence="3h", direction=direction).apply(
+            iter([first, second])
+        )
+    )
+
+    assert [(r.time.hour, r.ticker, r.value) for r in output] == [
+        (expected_hour, "A", 10.0),
+        (expected_hour, "A", 20.0),
+    ]
+    assert [r._establishes_domain for r in output] == [True, False]
+    assert [first.time.hour, second.time.hour] == [1, 2]
+
+
+@pytest.mark.parametrize("direction", ["floor", "ceil"])
+def test_round_time_keeps_exact_grid_timestamps(direction: str) -> None:
+    record = make_time_record(10.0, 3)
+    [rounded] = RoundTimeTransform(cadence="90m", direction=direction).apply(
+        iter([record])
+    )
+    assert rounded.time == record.time
+    assert rounded.value == record.value
+
+
+def test_round_time_floor_uses_epoch_alignment_before_1970() -> None:
+    record = make_time_record(1.0, 0)
+    record.time = datetime(1969, 12, 31, 23, 59, tzinfo=timezone.utc)
+    [output] = RoundTimeTransform(cadence="90m", direction="floor").apply(
+        iter([record])
+    )
+    assert output.time == datetime(1969, 12, 31, 22, 30, tzinfo=timezone.utc)
 
 
 def test_stream_lag_copies_previous_partition_value() -> None:

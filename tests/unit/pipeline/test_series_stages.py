@@ -41,7 +41,7 @@ def _runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
         dataset=DatasetConfig(
-            sample=SampleConfig(cadence="1h", keys=list(sample_keys))
+            sample=SampleConfig(rounding="ceil", cadence="1h", keys=list(sample_keys))
         ),
     )
     runtime.streams["stream"] = SourceRuntimeStream(
@@ -241,6 +241,7 @@ def test_project_series_rejects_sample_key_type_drift() -> None:
                     SampleKeyContract(["security_id"]),
                     (config,),
                 ),
+                SampleConfig(cadence="1d", rounding="exact"),
                 iter([first, second]),
             )
         )

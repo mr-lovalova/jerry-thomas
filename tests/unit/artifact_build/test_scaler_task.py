@@ -71,7 +71,7 @@ def _runtime(
         "schema_version: 6\nartifact_revision: 1\n", encoding="utf-8"
     )
     if dataset is None:
-        dataset = DatasetConfig(sample=SampleConfig(cadence="1h"))
+        dataset = DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h"))
     runtime = Runtime(
         project_yaml=project_yaml,
         artifacts_root=artifacts_root,
@@ -97,7 +97,7 @@ def _dataset(
     split: HashSplitConfig | TimeSplitConfig | None = None,
 ) -> DatasetConfig:
     return DatasetConfig(
-        sample=SampleConfig(cadence=cadence, keys=list(sample_keys)),
+        sample=SampleConfig(rounding="ceil", cadence=cadence, keys=list(sample_keys)),
         features=[
             SeriesConfig(
                 id="x",
@@ -337,7 +337,7 @@ def test_scaler_fitting_observes_scalars_before_sequence(tmp_path) -> None:
 
 def test_target_horizon_trims_pre_sequence_feature_scaler_origins(tmp_path) -> None:
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1d"),
+        sample=SampleConfig(rounding="ceil", cadence="1d"),
         features=[
             SeriesConfig(
                 id="x",
@@ -451,13 +451,17 @@ def test_materialize_folded_scaler_uses_dataset_owned_expanding_train_roles(
     }
 
 
-def test_folded_scaler_assigns_records_by_floored_sample_time(tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("rounding", "mean", "count"),
+    [("floor", 5.5, 2), ("ceil", 1.0, 1), ("exact", None, None)],
+)
+def test_folded_scaler_honors_sample_rounding(tmp_path, rounding, mean, count) -> None:
     train_record = TemporalRecord(
-        time=datetime(2024, 1, 1, 13, tzinfo=timezone.utc),
+        time=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
     train_record.value = 1.0
     validation_record = TemporalRecord(
-        time=datetime(2024, 1, 2, 13, tzinfo=timezone.utc),
+        time=datetime(2024, 1, 1, 13, tzinfo=timezone.utc),
     )
     validation_record.value = 10.0
     runtime = _runtime(
@@ -469,7 +473,7 @@ def test_folded_scaler_assigns_records_by_floored_sample_time(tmp_path) -> None:
                 intervals=[
                     TimeInterval(
                         id="train",
-                        until="2024-01-01T12:00:00Z",
+                        until="2024-01-02T00:00:00Z",
                     ),
                     TimeInterval(id="validation"),
                 ],
@@ -486,18 +490,27 @@ def test_folded_scaler_assigns_records_by_floored_sample_time(tmp_path) -> None:
     )
 
     task = ScalerTask(output="scaler.json")
+    runtime.dataset = runtime.dataset.model_copy(
+        update={
+            "sample": SampleConfig(cadence="1d", rounding=rounding),
+        }
+    )
+    if rounding == "exact":
+        with pytest.raises(ValueError, match="not aligned.*rounding='exact'"):
+            build_scaler_artifact(runtime, task)
+        return
     build_scaler_artifact(runtime, task)
 
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
     scaler = artifact.for_fold("fold")
-    assert scaler.statistics["x"].mean == 1.0
-    assert scaler.observations == 1
+    assert scaler.statistics["x"].mean == mean
+    assert scaler.observations == count
 
 
 def test_scaler_opens_a_shared_stream_once_for_all_scaled_fields(tmp_path) -> None:
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 id="value",
@@ -535,7 +548,7 @@ def test_grouped_scaler_preserves_global_scalar_statistics_across_sample_keys(
     tmp_path,
 ) -> None:
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h", keys=["security_id"]),
+        sample=SampleConfig(rounding="ceil", cadence="1h", keys=["security_id"]),
         features=[
             SeriesConfig(
                 id="value",
@@ -572,7 +585,7 @@ def test_grouped_scaler_preserves_global_scalar_statistics_across_sample_keys(
 
 def test_scaler_validates_excluded_split_records_before_filtering(tmp_path) -> None:
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 id="other",

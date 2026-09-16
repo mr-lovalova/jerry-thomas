@@ -59,7 +59,7 @@ def test_target_horizon_policy_uses_the_next_nonempty_role() -> None:
 
 def test_dataset_max_target_horizon_uses_the_longest_target() -> None:
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1d"),
+        sample=SampleConfig(rounding="ceil", cadence="1d"),
         targets=[
             TargetSeriesConfig(
                 id="contemporaneous",

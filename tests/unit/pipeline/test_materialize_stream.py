@@ -43,7 +43,7 @@ def _runtime(
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
         execution=ExecutionConfig(),
     )
     runtime.streams["prices.raw"] = SourceRuntimeStream(

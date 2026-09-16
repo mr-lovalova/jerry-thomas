@@ -26,6 +26,7 @@ from jerrythomas.config.transforms import (
     LeadConfig,
     Log1pConfig,
     LogConfig,
+    ResampleConfig,
     RollingConfig,
     RollingQuantileConfig,
     RollingOlsConfig,
@@ -63,7 +64,9 @@ def validate_stream_configs(
         canonical_fields = {"time", *partition_by}
         for operation in stream.transforms:
             output_fields: tuple[str, ...]
-            if isinstance(operation, AggregateSumConfig):
+            if isinstance(operation, ResampleConfig):
+                output_fields = tuple(operation.aggregations)
+            elif isinstance(operation, AggregateSumConfig):
                 output_fields = (
                     (operation.field,)
                     if operation.count_to is None

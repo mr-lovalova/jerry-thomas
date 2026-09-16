@@ -164,6 +164,7 @@ def test_validation_availability_does_not_change_hybrid_wide_training_contract(
     changed_root = tmp_path / "identity_alignment_changed_validation"
     shutil.copytree(project_root, changed_root)
     dataset = """sample:
+  rounding: ceil
   cadence: 1d
   keys: [ticker]
   window_mode: intersection

@@ -95,7 +95,7 @@ from:
 map:
   entrypoint: map_sandbox_ohlcv_dto_to_equity
 preprocess:
-  - { operation: floor_time, cadence: 1d }
+  - { operation: round_time, direction: floor, cadence: 1d }
 transforms:
   - operation: dedupe
 ```
@@ -204,6 +204,7 @@ Dataset config chooses which streams become features/targets and which record fi
 
 ```yaml
 sample:
+  rounding: ceil
   cadence: ${cadence}
   window_mode: intersection
 features:

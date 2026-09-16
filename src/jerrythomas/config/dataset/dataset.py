@@ -14,13 +14,14 @@ from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from jerrythomas.config.dataset.postprocess import PostprocessConfig
 from jerrythomas.config.dataset.split import HashSplitConfig, SplitConfig
 from jerrythomas.domain.sample import WindowMode
-from jerrythomas.utils.time import CADENCE_PATTERN
+from jerrythomas.utils.time import CADENCE_PATTERN, TimeRounding
 
 
 class SampleConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     cadence: str = Field(..., pattern=CADENCE_PATTERN)
+    rounding: TimeRounding
     keys: list[NonEmptyString] = Field(default_factory=list)
     window_mode: WindowMode = "intersection"
 

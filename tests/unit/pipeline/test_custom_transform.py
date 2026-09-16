@@ -157,7 +157,7 @@ def test_custom_transform_clone_keeps_placeholders_out_of_training_domain(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path,
         dataset=DatasetConfig(
-            sample=SampleConfig(cadence="1h", keys=["entity"]),
+            sample=SampleConfig(rounding="ceil", cadence="1h", keys=["entity"]),
             features=[SeriesConfig(id="price", stream="prices", field="value")],
             split=TimeSplitConfig(
                 intervals=[
@@ -338,7 +338,7 @@ def test_hash_splits_reject_custom_transforms() -> None:
         }
     )
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1d", keys=[]),
+        sample=SampleConfig(rounding="ceil", cadence="1d", keys=[]),
         features=[SeriesConfig(stream="prices", id="close", field="close")],
         split=_hash_split(),
     )
@@ -366,7 +366,9 @@ def test_custom_transform_runs_end_to_end_from_yaml(tmp_path, monkeypatch) -> No
         ),
         encoding="utf-8",
     )
-    (tmp_path / "dataset.yaml").write_text("sample:\n  cadence: 1h\n", encoding="utf-8")
+    (tmp_path / "dataset.yaml").write_text(
+        "sample:\n  rounding: ceil\n  cadence: 1h\n", encoding="utf-8"
+    )
     (tmp_path / "streams").mkdir()
     (tmp_path / "sources").mkdir()
     (tmp_path / "sources" / "events.source.yaml").write_text(

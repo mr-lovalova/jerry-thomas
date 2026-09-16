@@ -27,7 +27,7 @@ def project_definition(
     resolved_dataset = (
         dataset
         if dataset is not None
-        else DatasetConfig(sample=SampleConfig(cadence="1h"))
+        else DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h"))
     )
     resolved_streams = streams if streams is not None else StreamsConfig()
     artifact_graph = build_artifact_graph(

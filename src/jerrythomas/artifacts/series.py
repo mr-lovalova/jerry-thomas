@@ -28,9 +28,9 @@ from jerrythomas.domain.series_id import base_id
 from jerrythomas.domain.value import validate_series_value
 from jerrythomas.io.sinks.files import GzipBinarySink
 from jerrythomas.services.path_policy import resolve_artifact_output_path
-from jerrythomas.utils.time import CADENCE_PATTERN, parse_datetime
+from jerrythomas.utils.time import CADENCE_PATTERN, TimeRounding, parse_datetime
 
-SERIES_MANIFEST_VERSION: Final = 11
+SERIES_MANIFEST_VERSION: Final = 13
 _SERIES_COMPRESSION_LEVEL: Final = 3
 _NonEmptyString = Annotated[
     str,
@@ -55,9 +55,10 @@ class SeriesEntry(BaseModel):
 class SeriesManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    version: Literal[11] = SERIES_MANIFEST_VERSION
+    version: Literal[13] = SERIES_MANIFEST_VERSION
     format: Literal["jsonl.gz"] = "jsonl.gz"
     cadence: str = Field(pattern=CADENCE_PATTERN)
+    rounding: TimeRounding
     sample_keys: tuple[_NonEmptyString, ...] = ()
     sample_key_types: tuple[SampleKeyValueType, ...] = ()
     path: _NonEmptyString

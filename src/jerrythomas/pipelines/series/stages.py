@@ -3,18 +3,23 @@ from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
 from jerrythomas.config.dataset.series import SequenceConfig
+from jerrythomas.config.dataset.dataset import SampleConfig
 from jerrythomas.domain.series import SeriesRecord, SeriesSequence
 from jerrythomas.pipelines.series.projector import SeriesProjector
 from jerrythomas.pipelines.sort import SortProgress, batch_sort
 from jerrythomas.transforms.utils import record_establishes_domain
-from jerrythomas.utils.time import floor_time_to_cadence, parse_cadence
+from jerrythomas.utils.time import TimeRounding, round_time_to_cadence, parse_cadence
 
 
 def project_series(
     projector: SeriesProjector,
+    sample: SampleConfig,
     records: Iterable[Any],
 ) -> Iterator[SeriesRecord]:
+    cadence = parse_cadence(sample.cadence)
     for record in records:
+        if sample.rounding == "exact":
+            round_time_to_cadence(record.time, cadence, sample.rounding)
         yield from projector.project(record)
 
 
@@ -70,13 +75,14 @@ class SeriesSequencer:
 def order_series(
     buffer_bytes: int,
     group_by_cadence: str,
+    rounding: TimeRounding,
     sample_keys: Sequence[str],
     progress: SortProgress,
     records: Iterator[SeriesRecord | SeriesSequence],
 ) -> Iterable[SeriesRecord | SeriesSequence]:
     key = _time_then_id
     if sample_keys:
-        key = _sample_group_then_time_and_id(group_by_cadence)
+        key = _sample_group_then_time_and_id(group_by_cadence, rounding)
     return batch_sort(
         records,
         buffer_bytes=buffer_bytes,
@@ -91,13 +97,13 @@ def _time_then_id(
     return item.time, item.id
 
 
-def _sample_group_then_time_and_id(group_by_cadence: str):
+def _sample_group_then_time_and_id(group_by_cadence: str, rounding: TimeRounding):
     cadence = parse_cadence(group_by_cadence)
 
     def key(item: SeriesRecord | SeriesSequence) -> tuple[Any, ...]:
         time_value = item.time
         return (
-            floor_time_to_cadence(time_value, cadence),
+            round_time_to_cadence(time_value, cadence, rounding),
             *item.entity_key,
             time_value,
             item.id,

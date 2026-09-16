@@ -45,7 +45,7 @@ from jerrythomas.services.project_definition import load_project_definition
 
 def _dataset_with_feature(*, scale: bool) -> DatasetConfig:
     return DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 id="x",
@@ -71,7 +71,7 @@ def _write_project(tmp_path: Path) -> Path:
     for name in ("streams", "sources", "operations", "profiles"):
         (tmp_path / name).mkdir(parents=True, exist_ok=True)
     (tmp_path / "dataset.yaml").write_text(
-        "sample:\n  cadence: 1h\nfeatures: []\ntargets: []\n",
+        "sample:\n  rounding: ceil\n  cadence: 1h\nfeatures: []\ntargets: []\n",
         encoding="utf-8",
     )
     project_path = tmp_path / "project.yaml"
@@ -123,7 +123,7 @@ def _definition_with_local_source(
         encoding="utf-8",
     )
     (tmp_path / "dataset.yaml").write_text(
-        "sample: {cadence: 1h}\n"
+        "sample: {rounding: ceil, cadence: 1h}\n"
         "features:\n"
         "  - {id: price, stream: prices, field: value}\n"
         "targets: []\n",

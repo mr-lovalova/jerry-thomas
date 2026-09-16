@@ -12,7 +12,7 @@ def test_dataset_requires_sample_config() -> None:
 def test_dataset_loads_sample_cadence_and_keys() -> None:
     dataset = DatasetConfig.model_validate(
         {
-            "sample": {"cadence": "1d", "keys": ["security_id"]},
+            "sample": {"rounding": "ceil", "cadence": "1d", "keys": ["security_id"]},
             "features": [],
             "targets": [],
         }
@@ -27,7 +27,7 @@ def test_dataset_loads_sample_cadence_and_keys() -> None:
 def test_dataset_accepts_sample_window_mode(window_mode: str) -> None:
     dataset = DatasetConfig.model_validate(
         {
-            "sample": {"cadence": "1d", "window_mode": window_mode},
+            "sample": {"rounding": "ceil", "cadence": "1d", "window_mode": window_mode},
             "features": [],
             "targets": [],
         }
@@ -40,7 +40,11 @@ def test_dataset_rejects_removed_relaxed_window_mode() -> None:
     with pytest.raises(ValidationError, match="window_mode"):
         DatasetConfig.model_validate(
             {
-                "sample": {"cadence": "1d", "window_mode": "relaxed"},
+                "sample": {
+                    "rounding": "ceil",
+                    "cadence": "1d",
+                    "window_mode": "relaxed",
+                },
                 "features": [],
                 "targets": [],
             }
@@ -51,7 +55,7 @@ def test_dataset_rejects_targets_without_features() -> None:
     with pytest.raises(ValidationError, match="must define at least one feature"):
         DatasetConfig.model_validate(
             {
-                "sample": {"cadence": "1d"},
+                "sample": {"rounding": "ceil", "cadence": "1d"},
                 "targets": [
                     {
                         "id": "return",
@@ -71,7 +75,7 @@ def test_dataset_rejects_target_coverage_without_targets() -> None:
     ):
         DatasetConfig.model_validate(
             {
-                "sample": {"cadence": "1d"},
+                "sample": {"rounding": "ceil", "cadence": "1d"},
                 "features": [
                     {
                         "id": "price",
@@ -90,7 +94,7 @@ def test_dataset_requires_an_explicit_target_horizon() -> None:
     with pytest.raises(ValidationError, match="horizon"):
         DatasetConfig.model_validate(
             {
-                "sample": {"cadence": "1d"},
+                "sample": {"rounding": "ceil", "cadence": "1d"},
                 "features": [{"id": "price", "stream": "prices", "field": "close"}],
                 "targets": [{"id": "return", "stream": "returns", "field": "value"}],
             }
@@ -101,7 +105,7 @@ def test_dataset_requires_an_explicit_target_horizon() -> None:
 def test_dataset_accepts_nonnegative_target_horizons(horizon: str) -> None:
     dataset = DatasetConfig.model_validate(
         {
-            "sample": {"cadence": "1d"},
+            "sample": {"rounding": "ceil", "cadence": "1d"},
             "features": [{"id": "price", "stream": "prices", "field": "close"}],
             "targets": [
                 {
@@ -122,7 +126,7 @@ def test_dataset_rejects_invalid_target_horizons(horizon: str) -> None:
     with pytest.raises(ValidationError, match="horizon"):
         DatasetConfig.model_validate(
             {
-                "sample": {"cadence": "1d"},
+                "sample": {"rounding": "ceil", "cadence": "1d"},
                 "features": [{"id": "price", "stream": "prices", "field": "close"}],
                 "targets": [
                     {
@@ -140,7 +144,7 @@ def test_dataset_rejects_target_horizon_on_a_feature() -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         DatasetConfig.model_validate(
             {
-                "sample": {"cadence": "1d"},
+                "sample": {"rounding": "ceil", "cadence": "1d"},
                 "features": [
                     {
                         "id": "price",
@@ -160,7 +164,7 @@ def test_dataset_rejects_positive_target_horizons_with_hash_splits() -> None:
     ):
         DatasetConfig.model_validate(
             {
-                "sample": {"cadence": "1d"},
+                "sample": {"rounding": "ceil", "cadence": "1d"},
                 "features": [{"id": "price", "stream": "prices", "field": "close"}],
                 "targets": [
                     {
@@ -188,7 +192,7 @@ def test_dataset_rejects_positive_target_horizons_with_hash_splits() -> None:
 def test_dataset_accepts_zero_target_horizon_with_hash_split() -> None:
     dataset = DatasetConfig.model_validate(
         {
-            "sample": {"cadence": "1d"},
+            "sample": {"rounding": "ceil", "cadence": "1d"},
             "features": [{"id": "price", "stream": "prices", "field": "close"}],
             "targets": [
                 {
@@ -218,7 +222,7 @@ def test_dataset_accepts_zero_target_horizon_with_hash_split() -> None:
 def test_dataset_accepts_collected_series_with_hash_split() -> None:
     dataset = DatasetConfig.model_validate(
         {
-            "sample": {"cadence": "1d"},
+            "sample": {"rounding": "ceil", "cadence": "1d"},
             "features": [
                 {
                     "id": "intraday_price",
@@ -251,7 +255,7 @@ def test_dataset_rejects_a_future_target_field_as_a_feature() -> None:
     ):
         DatasetConfig.model_validate(
             {
-                "sample": {"cadence": "1d"},
+                "sample": {"rounding": "ceil", "cadence": "1d"},
                 "features": [
                     {
                         "id": "future_return",
@@ -274,7 +278,7 @@ def test_dataset_rejects_a_future_target_field_as_a_feature() -> None:
 def test_dataset_allows_a_contemporaneous_target_field_as_a_feature() -> None:
     dataset = DatasetConfig.model_validate(
         {
-            "sample": {"cadence": "1d"},
+            "sample": {"rounding": "ceil", "cadence": "1d"},
             "features": [
                 {
                     "id": "feature",
@@ -299,7 +303,7 @@ def test_dataset_allows_a_contemporaneous_target_field_as_a_feature() -> None:
 def test_dataset_owns_split_and_postprocess_policy() -> None:
     dataset = DatasetConfig.model_validate(
         {
-            "sample": {"cadence": "1d"},
+            "sample": {"rounding": "ceil", "cadence": "1d"},
             "split": {
                 "mode": "hash",
                 "ratios": {"train": 0.8, "test": 0.2},
@@ -326,7 +330,7 @@ def test_dataset_rejects_unknown_fields() -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         DatasetConfig.model_validate(
             {
-                "sample": {"cadence": "1d"},
+                "sample": {"rounding": "ceil", "cadence": "1d"},
                 "unexpected": True,
             }
         )
@@ -334,19 +338,25 @@ def test_dataset_rejects_unknown_fields() -> None:
 
 def test_dataset_rejects_zero_cadence() -> None:
     with pytest.raises(ValidationError):
-        DatasetConfig.model_validate({"sample": {"cadence": "0min"}})
+        DatasetConfig.model_validate(
+            {"sample": {"rounding": "ceil", "cadence": "0min"}}
+        )
 
 
 @pytest.mark.parametrize("field", ["features", "targets"])
 def test_dataset_rejects_null_series_lists(field: str) -> None:
     with pytest.raises(ValidationError, match=field):
-        DatasetConfig.model_validate({"sample": {"cadence": "1d"}, field: None})
+        DatasetConfig.model_validate(
+            {"sample": {"rounding": "ceil", "cadence": "1d"}, field: None}
+        )
 
 
 @pytest.mark.parametrize("keys", [[""], ["security_id", "security_id"]])
 def test_dataset_rejects_invalid_sample_keys(keys: list[str]) -> None:
     with pytest.raises(ValidationError, match="at least 1 character|sample keys"):
-        DatasetConfig.model_validate({"sample": {"cadence": "1d", "keys": keys}})
+        DatasetConfig.model_validate(
+            {"sample": {"rounding": "ceil", "cadence": "1d", "keys": keys}}
+        )
 
 
 @pytest.mark.parametrize("duplicate_section", ["features", "targets"])
@@ -356,7 +366,7 @@ def test_dataset_rejects_duplicate_series_ids(
     feature = {"id": "price", "stream": "prices", "field": "close"}
     target = {**feature, "horizon": "0s"}
     payload = {
-        "sample": {"cadence": "1d"},
+        "sample": {"rounding": "ceil", "cadence": "1d"},
         "features": [feature],
         "targets": [],
     }
@@ -373,7 +383,7 @@ def test_dataset_rejects_series_id_shared_by_feature_and_target() -> None:
     with pytest.raises(ValidationError, match="must be unique"):
         DatasetConfig.model_validate(
             {
-                "sample": {"cadence": "1d"},
+                "sample": {"rounding": "ceil", "cadence": "1d"},
                 "features": [series],
                 "targets": [{**series, "horizon": "0s"}],
             }
@@ -383,7 +393,7 @@ def test_dataset_rejects_series_id_shared_by_feature_and_target() -> None:
 def test_dataset_series_preserves_feature_then_target_order() -> None:
     dataset = DatasetConfig.model_validate(
         {
-            "sample": {"cadence": "1d"},
+            "sample": {"rounding": "ceil", "cadence": "1d"},
             "features": [{"id": "price", "stream": "prices", "field": "close"}],
             "targets": [
                 {

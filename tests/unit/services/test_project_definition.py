@@ -45,7 +45,7 @@ paths:
         encoding="utf-8",
     )
     (root / "dataset.yaml").write_text(
-        "sample: {cadence: 1h}\nfeatures: []\ntargets: []\n",
+        "sample: {rounding: ceil, cadence: 1h}\nfeatures: []\ntargets: []\n",
         encoding="utf-8",
     )
     return project_yaml
@@ -138,7 +138,7 @@ def test_load_project_definition_rejects_legacy_scaler_fold_config(
         encoding="utf-8",
     )
     (tmp_path / "dataset.yaml").write_text(
-        "sample: {cadence: 1h}\n"
+        "sample: {rounding: ceil, cadence: 1h}\n"
         "features:\n"
         "  - {id: price, stream: prices, field: value, scale: true}\n"
         "split:\n"
@@ -338,7 +338,7 @@ def test_project_without_name_still_validates_dataset_interpolation(
         encoding="utf-8",
     )
     (tmp_path / "dataset.yaml").write_text(
-        'sample: {cadence: "${unknown_cadence}"}\n',
+        'sample: {rounding: ceil, cadence: "${unknown_cadence}"}\n',
         encoding="utf-8",
     )
 
@@ -487,7 +487,7 @@ def test_artifact_hashing_rejects_missing_active_scaler(tmp_path: Path) -> None:
     )
     definition = load_project_definition(project_yaml)
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 id="price",
@@ -514,6 +514,30 @@ def test_artifact_hashing_rejects_missing_active_scaler(tmp_path: Path) -> None:
         )
 
 
+def test_rounding_policy_invalidates_series_scaler_and_metadata(tmp_path: Path) -> None:
+    definition = load_project_definition(_write_project(tmp_path))
+    streams = _single_stream_catalog()
+    operations = (ScalerTask(), SeriesTask(), MetadataTask())
+    hashes = []
+    for rounding in ("floor", "ceil", "exact"):
+        dataset = DatasetConfig(
+            sample=SampleConfig(rounding=rounding, cadence="1h"),
+            features=[
+                SeriesConfig(id="price", stream="prices", field="close", scale=True)
+            ],
+        )
+        hashes.append(
+            calculate_artifact_hashes(
+                definition.project,
+                dataset,
+                streams,
+                build_artifact_graph(operations, dataset, streams),
+            )
+        )
+    for artifact in (SERIES, SCALER_STATISTICS, VECTOR_METADATA):
+        assert len({result.for_artifact(artifact) for result in hashes}) == 3
+
+
 def test_scaling_policy_does_not_invalidate_unscaled_series(
     tmp_path: Path,
 ) -> None:
@@ -521,7 +545,7 @@ def test_scaling_policy_does_not_invalidate_unscaled_series(
     streams = _single_stream_catalog()
     operations = (ScalerTask(), SeriesTask())
     unscaled = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[SeriesConfig(id="price", stream="prices", field="close")],
     )
     scaled = unscaled.model_copy(
@@ -565,7 +589,7 @@ def test_collection_policy_invalidates_series_but_not_scaler(
         scale=True,
     )
     scalar = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[feature],
     )
     collected = scalar.model_copy(
@@ -621,7 +645,7 @@ def test_scaler_and_metadata_hashes_track_every_fold_role(tmp_path: Path) -> Non
         ],
     )
     baseline = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[feature],
         split=split,
     )
@@ -729,7 +753,7 @@ def test_target_horizon_changes_folded_scaler_and_metadata_but_not_series(
         horizon="1d",
     )
     baseline = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[feature],
         targets=[baseline_target],
         split=split,
@@ -785,7 +809,7 @@ def test_window_mode_rebuilds_metadata_dependents_but_not_series_or_scaler(
     definition = load_project_definition(_write_project(tmp_path))
     streams = _single_stream_catalog()
     baseline = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 id="price",
@@ -838,7 +862,7 @@ def test_target_horizon_does_not_change_standard_scaler_fingerprint(
         horizon="1d",
     )
     baseline = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[SeriesConfig(id="price", stream="prices", field="close")],
         targets=[target],
     )
@@ -928,7 +952,7 @@ def test_core_artifact_hashes_track_only_referenced_source_closure(
     used.write_text("{}\n", encoding="utf-8")
     unused.write_text("{}\n", encoding="utf-8")
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[SeriesConfig(id="price", stream="used", field="close")],
     )
     streams = StreamsConfig.model_validate(
@@ -1012,7 +1036,7 @@ def test_cross_section_config_changes_series_artifact_hash(tmp_path: Path) -> No
         encoding="utf-8",
     )
     (tmp_path / "dataset.yaml").write_text(
-        "sample: {cadence: 1h, keys: [ticker]}\n"
+        "sample: {rounding: ceil, cadence: 1h, keys: [ticker]}\n"
         "features:\n"
         "  - {id: rank, stream: ranked, field: rank}\n",
         encoding="utf-8",
@@ -1076,7 +1100,7 @@ def test_hash_split_ratio_order_does_not_change_artifact_hash(tmp_path: Path) ->
     dataset = tmp_path / "dataset.yaml"
     dataset.write_text(
         """\
-sample: {cadence: 1h}
+sample: {rounding: ceil, cadence: 1h}
 features: []
 targets: []
 split:
@@ -1091,7 +1115,7 @@ split:
 
     dataset.write_text(
         """\
-sample: {cadence: 1h}
+sample: {rounding: ceil, cadence: 1h}
 features: []
 targets: []
 split:
@@ -1165,7 +1189,7 @@ def test_scaler_format_version_invalidates_only_scaler(
 ) -> None:
     definition = load_project_definition(_write_project(tmp_path))
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 id="price",

@@ -16,6 +16,7 @@ from jerrythomas.config.transforms import (
     ForwardSumConfig,
     Log1pConfig,
     LogConfig,
+    RoundTimeConfig,
     RollingConfig,
     RollingQuantileConfig,
     RollingOlsConfig,
@@ -43,6 +44,38 @@ def _stream(**values: object) -> DerivedStreamConfig:
             **values,
         }
     )
+
+
+@pytest.mark.parametrize("direction", ["floor", "ceil"])
+def test_round_time_requires_explicit_direction_in_preprocess(direction: str) -> None:
+    config = {"operation": "round_time", "cadence": "1h", "direction": direction}
+    source = _source_stream(preprocess=[config])
+    assert source.preprocess == [RoundTimeConfig(cadence="1h", direction=direction)]
+    with pytest.raises(ValidationError):
+        _stream(transforms=[config])
+
+
+@pytest.mark.parametrize(
+    "clause",
+    [
+        {"operation": "floor_time", "cadence": "1h"},
+        {"operation": "ceil_time", "cadence": "1h"},
+        {"operation": "round_time", "cadence": "1h"},
+        {"operation": "round_time", "cadence": "1h", "direction": "nearest"},
+        {"operation": "round_time", "cadence": "1h", "direction": None},
+        {"operation": "round_time", "cadence": "0h", "direction": "floor"},
+        {"operation": "round_time", "cadence": "-1h", "direction": "ceil"},
+        {
+            "operation": "round_time",
+            "cadence": "1h",
+            "direction": "ceil",
+            "keep": "last",
+        },
+    ],
+)
+def test_preprocess_rejects_old_or_ambiguous_time_rounding(clause: dict) -> None:
+    with pytest.raises(ValidationError):
+        _source_stream(preprocess=[clause])
 
 
 def test_streams_parse_builtins_into_typed_configs() -> None:

@@ -109,6 +109,7 @@ partition_by: [ticker]
     (project_root / "dataset.yaml").write_text(
         """\
 sample:
+  rounding: ceil
   cadence: 1d
   keys: [ticker]
 features:

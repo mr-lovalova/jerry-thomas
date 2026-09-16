@@ -602,7 +602,7 @@ def _dataset(
     with_targets: bool = False,
 ) -> DatasetConfig:
     return DatasetConfig(
-        sample=SampleConfig(cadence="1d"),
+        sample=SampleConfig(rounding="ceil", cadence="1d"),
         features=[
             SeriesConfig(
                 id="value",

@@ -1,23 +1,28 @@
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import timezone
+from typing import Literal
 
 from jerrythomas.domain.record import TemporalRecord
 from jerrythomas.transforms.utils import clone_record
-from jerrythomas.utils.time import parse_cadence, parse_timecode
+from jerrythomas.utils.time import (
+    parse_cadence,
+    parse_timecode,
+    round_time_to_cadence,
+)
 
 
-_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+class RoundTimeTransform:
+    """Round record timestamps in an explicit direction on a fixed UTC grid."""
 
-
-class FloorTimeTransform:
-    """Floor record timestamps to a fixed UTC cadence."""
-
-    def __init__(self, cadence: str) -> None:
+    def __init__(self, cadence: str, direction: Literal["floor", "ceil"]) -> None:
         self.step = parse_cadence(cadence)
+        self.direction = direction
 
     def apply(self, stream: Iterator[TemporalRecord]) -> Iterator[TemporalRecord]:
         for record in stream:
-            time = _EPOCH + ((record.time - _EPOCH) // self.step) * self.step
+            time = round_time_to_cadence(
+                record.time, self.step, self.direction
+            ).astimezone(timezone.utc)
             yield clone_record(record, time=time)
 
 

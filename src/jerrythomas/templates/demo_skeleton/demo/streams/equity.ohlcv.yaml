@@ -9,20 +9,29 @@ partition_by: [ticker]
 
 preprocess:
   - { operation: where, field: time, operator: ge, comparand: "${start_time}" }
-  - { operation: where, field: time, operator: le, comparand: "${end_time}" }
-  - { operation: floor_time, cadence: "${cadence}" }
+  - { operation: where, field: time, operator: lt, comparand: "${end_time}" }
 
-transforms: # ordered transforms (input sorted by partition,time)
-  # - { operation: lag, field: close, to: close_lag_1, periods: 1 }
-  # - { operation: lead, field: close, to: close_lead_126, periods: 126 }
-  # - { operation: ensure_cadence, cadence: "${cadence}" }
-  # - { operation: collapse, keep: first }
-  - operation: rolling # compute 5-day average dollar volume (ADV5)
+transforms:
+  - operation: dedupe
+  - operation: resample
+    period: { kind: fixed, every: "${cadence}" }
+    start: "${start_time}"
+    end: "${end_time}"
+    aggregations:
+      open: { field: open, statistic: first }
+      high: { field: high, statistic: max }
+      low: { field: low, statistic: min }
+      close: { field: close, statistic: last }
+      volume: { field: volume, statistic: sum }
+      dollar_volume: { field: dollar_volume, statistic: sum }
+  - { operation: derive, left: high, operator: sub, right_field: low, to: hl_range }
+  - operation: rolling # compute average dollar volume over 5 daily periods
     field: dollar_volume
     to: adv5
     window: 5
     statistic: mean
     min_samples: 1
+  - { operation: where, field: adv5, operator: ne, comparand: null }
   - { operation: where, field: adv5, operator: ge, comparand: 1_000_000 } # keep liquid stocks
 #   - { operation: fill, field: close, statistic: median, window: 6, min_samples: 1 }
 #   - { operation: forward_fill, field: close, to: close_asof }

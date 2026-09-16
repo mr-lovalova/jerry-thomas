@@ -23,7 +23,7 @@ def _filled_fold_project(root: Path, fill_value: int | float) -> Path:
             },
         },
         "dataset.yaml": {
-            "sample": {"cadence": "1h"},
+            "sample": {"rounding": "ceil", "cadence": "1h"},
             "features": [
                 {"id": "price", "stream": "prices", "field": "value"},
                 {

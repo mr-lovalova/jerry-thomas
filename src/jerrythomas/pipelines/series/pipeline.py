@@ -53,7 +53,7 @@ def build_series_stages(
     stages = [
         Stage(
             name="project_series",
-            apply=partial(project_series, projector),
+            apply=partial(project_series, projector, sample),
         ),
     ]
     if config.sequence is not None:
@@ -72,6 +72,7 @@ def build_series_stages(
                     order_series,
                     runtime.execution.sort_buffer_bytes,
                     sample.cadence,
+                    sample.rounding,
                     sample_keys,
                     sort_progress,
                 ),

@@ -276,6 +276,7 @@ def test_full_regression_project_through_serve(copy_fixture) -> None:
     assert isinstance(manifest, dict)
     assert {
         "cadence": manifest["cadence"],
+        "rounding": manifest["rounding"],
         "format": manifest["format"],
         "sample_keys": manifest["sample_keys"],
         "version": manifest["version"],
@@ -291,7 +292,8 @@ def test_full_regression_project_through_serve(copy_fixture) -> None:
         "cadence": "1h",
         "format": "jsonl.gz",
         "sample_keys": [],
-        "version": 11,
+        "version": 13,
+        "rounding": "floor",
         "features": [
             {"id": "linear_scaled", "samples": 6},
             {"id": "sine_window", "samples": 5},

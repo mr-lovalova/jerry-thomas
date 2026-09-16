@@ -34,7 +34,7 @@ def _write_project(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (tmp_path / "dataset.yaml").write_text(
-        "sample:\n  cadence: 1h\n",
+        "sample:\n  rounding: ceil\n  cadence: 1h\n",
         encoding="utf-8",
     )
     for directory in ("streams", "sources", "operations"):
@@ -279,7 +279,7 @@ def test_serve_request_uses_dataset_output_ids_by_default(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
     (tmp_path / "dataset.yaml").write_text(
         """\
-sample: {cadence: 1h}
+sample: {rounding: ceil, cadence: 1h}
 split:
   mode: hash
   ratios: {train: 0.8, test: 0.2}

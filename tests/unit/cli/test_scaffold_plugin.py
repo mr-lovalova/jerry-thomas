@@ -103,17 +103,22 @@ def test_template_dataset_cadence_resolves_from_project_global(
     assert dataset.sample.cadence == cadence
 
 
-def test_demo_liquidity_filter_has_a_value_from_the_first_record() -> None:
+def test_demo_liquidity_filter_checks_missing_values_before_comparison() -> None:
     stream_path = (
         _TEMPLATES_ROOT / "demo_skeleton" / "demo" / "streams" / "equity.ohlcv.yaml"
     )
     transforms = yaml.safe_load(stream_path.read_text(encoding="utf-8"))["transforms"]
 
-    assert transforms[0]["operation"] == "rolling"
-    assert transforms[0]["to"] == "adv5"
-    assert transforms[0]["min_samples"] == 1
-    assert transforms[1]["operation"] == "where"
-    assert transforms[1]["field"] == "adv5"
+    rolling_index = next(
+        i for i, op in enumerate(transforms) if op["operation"] == "rolling"
+    )
+    assert transforms[rolling_index]["to"] == "adv5"
+    assert transforms[rolling_index]["min_samples"] == 1
+    assert transforms[rolling_index + 1]["operation"] == "where"
+    assert transforms[rolling_index + 1]["field"] == "adv5"
+    assert transforms[rolling_index + 1]["operator"] == "ne"
+    assert transforms[rolling_index + 1]["comparand"] is None
+    assert transforms[rolling_index + 2]["operator"] == "ge"
 
 
 def test_plugin_template_has_one_minimal_dataset() -> None:

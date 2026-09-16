@@ -22,7 +22,7 @@ from jerrythomas.config.transforms import (
     EwmStdConfig,
     FillConfig,
     FillMissingConfig,
-    FloorTimeConfig,
+    RoundTimeConfig,
     ForwardFillConfig,
     ForwardSumConfig,
     LagConfig,
@@ -30,6 +30,7 @@ from jerrythomas.config.transforms import (
     Log1pConfig,
     LogConfig,
     PreprocessConfig,
+    ResampleConfig,
     RollingConfig,
     RollingQuantileConfig,
     RollingOlsConfig,
@@ -56,6 +57,7 @@ from jerrythomas.transforms.stream.forward_sum import ForwardSumTransform
 from jerrythomas.transforms.stream.lag import LagTransform
 from jerrythomas.transforms.stream.lead import LeadTransform
 from jerrythomas.transforms.stream.logarithm import Log1pTransform, LogTransform
+from jerrythomas.transforms.stream.resample import ResampleTransform
 from jerrythomas.transforms.stream.rolling import (
     RollingQuantileTransform,
     RollingTransform,
@@ -66,7 +68,7 @@ from jerrythomas.transforms.stream.time_completion import (
     EnsureCadenceTransform,
     EnsureScheduleTransform,
 )
-from jerrythomas.transforms.time import FloorTimeTransform, ShiftTimeTransform
+from jerrythomas.transforms.time import RoundTimeTransform, ShiftTimeTransform
 from jerrythomas.transforms.where import WhereTransform
 
 
@@ -89,8 +91,8 @@ def build_preprocess_stages(
                 operation.operator,
                 operation.comparand,
             ).apply
-        elif isinstance(operation, FloorTimeConfig):
-            stage_op = FloorTimeTransform(operation.cadence).apply
+        elif isinstance(operation, RoundTimeConfig):
+            stage_op = RoundTimeTransform(operation.cadence, operation.direction).apply
         elif isinstance(operation, ShiftTimeConfig):
             stage_op = ShiftTimeTransform(operation.by).apply
         else:
@@ -184,6 +186,8 @@ def build_transform_stages(
                 partition_by,
                 operation.keep,
             ).apply
+        elif isinstance(operation, ResampleConfig):
+            stage_op = ResampleTransform(operation, partition_by).apply
         elif isinstance(operation, AggregateSumConfig):
             stage_op = AggregateSumTransform(
                 operation.field,

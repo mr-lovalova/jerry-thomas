@@ -17,6 +17,16 @@ preprocess:
 
 ## Built-In Transforms
 
-- `floor_time`: snap timestamps down to a cadence (`10m`, `1h`, `1d`).
+- `round_time`: round timestamps on a fixed UTC cadence (`10m`, `1h`, `1d`).
+  Required `direction: floor` rounds down; `direction: ceil` rounds up.
+  Exact-grid timestamps stay unchanged in either direction.
+  Every record and its fields are retained, including multiple records that
+  land on the same timestamp. Use `floor` only when that earlier timestamp is intended.
+  For completed period aggregation, use the ordered `resample` transform instead.
 - `shift_time`: shift timestamps by a duration (`by: 1d`, `by: -1h`).
 - `where`: filter records with the operator language above.
+
+```yaml
+preprocess:
+  - { operation: round_time, cadence: 1h, direction: ceil }
+```

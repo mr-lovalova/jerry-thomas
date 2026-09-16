@@ -138,7 +138,7 @@ def test_schedule_artifacts_feed_scaler_and_series() -> None:
         output="build/schedule.jsonl",
     )
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 id="price",
@@ -287,7 +287,9 @@ def test_inactive_artifact_prunes_its_dependency_subtree() -> None:
         ),
         {},
     )
-    dataset = DatasetConfig(sample=SampleConfig(cadence="1h"), features=[], targets=[])
+    dataset = DatasetConfig(
+        sample=SampleConfig(rounding="ceil", cadence="1h"), features=[], targets=[]
+    )
 
     assert graph.dependency_closure({"result"}) == (
         "input",
@@ -460,7 +462,7 @@ def test_artifact_graph_rejects_cycles_with_path():
     "dataset",
     [
         None,
-        DatasetConfig(sample=SampleConfig(cadence="1h")),
+        DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
     ],
 )
 def test_artifact_graph_rejects_unknown_requested_artifact(dataset):
@@ -818,7 +820,7 @@ def test_record_and_series_previews_require_declared_schedule(
         output="build/unused_schedule.jsonl",
     )
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[SeriesConfig(id="price", stream="feature.stream", field="close")],
     )
     streams = StreamsConfig.model_validate(
@@ -858,7 +860,7 @@ def test_record_and_series_previews_require_declared_schedule(
 def test_invalid_dataset_preview_is_rejected_for_empty_dataset() -> None:
     graph = build_artifact_graph([])
     task = DatasetTask(id="dataset")
-    dataset = DatasetConfig(sample=SampleConfig(cadence="1h"))
+    dataset = DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h"))
 
     with pytest.raises(ValueError, match="preview must be one of"):
         graph.runtime_dependency_closure(
@@ -877,7 +879,9 @@ def test_runtime_dependency_closure_uses_coverage_stats_task_stage():
         ]
     )
     task = CoverageTask(id="coverage")
-    dataset = DatasetConfig(sample=SampleConfig(cadence="1h"), features=[], targets=[])
+    dataset = DatasetConfig(
+        sample=SampleConfig(rounding="ceil", cadence="1h"), features=[], targets=[]
+    )
 
     assert graph.runtime_dependency_closure(
         task,
@@ -906,7 +910,7 @@ def test_matrix_uses_vector_artifacts_without_coverage_stats(stage, expected) ->
         graph.runtime_dependency_closure(
             task,
             preview=None,
-            dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+            dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
         )
         == expected
     )
@@ -921,7 +925,7 @@ def test_matrix_uses_vector_artifacts_without_coverage_stats(stage, expected) ->
 )
 def test_dataset_scaler_requirement_matches_feature_config(scale, expected):
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 id="price",
@@ -944,7 +948,7 @@ def test_scaled_dataset_runtime_requires_scaler_beside_vector_artifacts() -> Non
         ]
     )
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[
             SeriesConfig(
                 id="price",
@@ -969,7 +973,7 @@ def test_scaled_dataset_runtime_requires_scaler_beside_vector_artifacts() -> Non
 def test_empty_dataset_has_no_runtime_artifact_requirements():
     graph = build_artifact_graph([])
     task = DatasetTask(id="dataset")
-    dataset = DatasetConfig(sample=SampleConfig(cadence="1h"))
+    dataset = DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h"))
 
     assert (
         graph.runtime_dependency_closure(
@@ -1028,7 +1032,7 @@ def test_empty_dataset_keeps_explicit_artifact_dependencies():
     assert graph.runtime_dependency_closure(
         task,
         preview=None,
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
     ) == ("custom_snapshot",)
 
 
@@ -1076,7 +1080,7 @@ def test_runtime_task_rejects_inactive_declared_artifact_dependency():
         graph.runtime_dependency_closure(
             task,
             preview=None,
-            dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+            dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
         )
 
 

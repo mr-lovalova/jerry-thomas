@@ -89,7 +89,7 @@ def _load_metadata(spec):
 def _matrix_runtime():
     return SimpleNamespace(
         dataset=DatasetConfig(
-            sample=SampleConfig(cadence="1h"),
+            sample=SampleConfig(rounding="ceil", cadence="1h"),
             features=[SeriesConfig(id="speed", stream="stream", field="value")],
         ),
         artifacts=SimpleNamespace(load=_load_metadata),

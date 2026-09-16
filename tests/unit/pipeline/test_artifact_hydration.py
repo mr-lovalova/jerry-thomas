@@ -52,7 +52,7 @@ def test_hydration_replaces_registry_with_dependency_current_artifacts(
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
     )
     state = BuildState()
     paths = {
@@ -125,7 +125,7 @@ def test_hydration_skips_incomplete_unrelated_artifact_chain(tmp_path) -> None:
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
-        dataset=DatasetConfig(sample=SampleConfig(cadence="1h")),
+        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
     )
     state = BuildState()
     paths = {
@@ -162,7 +162,7 @@ def test_project_hydration_excludes_inactive_scaler(
     tmp_path,
 ) -> None:
     scaler = ScalerTask()
-    dataset = DatasetConfig(sample=SampleConfig(cadence="1h"))
+    dataset = DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h"))
     streams = StreamsConfig()
     graph = build_artifact_graph([scaler])
     runtime = Runtime(
@@ -214,7 +214,7 @@ def test_project_hydration_excludes_nested_schedule_and_dependents(
     )
     series = SeriesTask(id="series")
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1h"),
+        sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[SeriesConfig(id="price", stream="feature", field="close")],
     )
     streams = StreamsConfig.model_validate(
@@ -304,7 +304,9 @@ def test_project_hydration_uses_semantic_artifact_hash(tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    (tmp_path / "dataset.yaml").write_text("sample:\n  cadence: 1h\n", encoding="utf-8")
+    (tmp_path / "dataset.yaml").write_text(
+        "sample:\n  rounding: ceil\n  cadence: 1h\n", encoding="utf-8"
+    )
     for directory in ("streams", "sources"):
         (tmp_path / directory).mkdir()
     operations = tmp_path / "operations"

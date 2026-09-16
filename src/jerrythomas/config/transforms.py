@@ -12,6 +12,7 @@ from pydantic import (
 
 from jerrythomas.config.constraints import NonEmptyString
 from jerrythomas.config.interpolation import is_missing_interpolation
+from jerrythomas.config.resample import ResampleConfig
 from jerrythomas.utils.time import parse_cadence, parse_datetime, parse_timecode
 
 
@@ -57,10 +58,11 @@ class WhereConfig(_TransformConfig):
         return self
 
 
-class FloorTimeConfig(_TransformConfig):
-    operation: Literal["floor_time"] = "floor_time"
+class RoundTimeConfig(_TransformConfig):
+    operation: Literal["round_time"] = "round_time"
 
     cadence: NonEmptyString
+    direction: Literal["floor", "ceil"]
 
     @field_validator("cadence")
     @classmethod
@@ -347,7 +349,7 @@ class CustomTransformConfig(_TransformConfig):
 
 
 PreprocessConfig = Annotated[
-    WhereConfig | FloorTimeConfig | ShiftTimeConfig,
+    WhereConfig | RoundTimeConfig | ShiftTimeConfig,
     Field(discriminator="operation"),
 ]
 TransformConfig = Annotated[
@@ -363,6 +365,7 @@ TransformConfig = Annotated[
     | ForwardFillConfig
     | CollapseConfig
     | AggregateSumConfig
+    | ResampleConfig
     | FillMissingConfig
     | EwmMeanConfig
     | EwmStdConfig

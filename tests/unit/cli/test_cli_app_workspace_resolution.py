@@ -24,7 +24,7 @@ def _write_build_project(tmp_path: Path, enabled: bool = True) -> Path:
         encoding="utf-8",
     )
     (tmp_path / "dataset.yaml").write_text(
-        "sample: {cadence: 1h}\n",
+        "sample: {rounding: ceil, cadence: 1h}\n",
         encoding="utf-8",
     )
     for directory in ("profiles", "sources", "streams"):

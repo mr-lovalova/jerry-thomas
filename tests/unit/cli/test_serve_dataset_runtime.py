@@ -139,7 +139,7 @@ def _dataset(
     return DatasetConfig(
         features=[SeriesConfig(id="price", stream="prices", field="value")],
         targets=[] if targets is None else targets,
-        sample=SampleConfig(cadence="1d"),
+        sample=SampleConfig(rounding="ceil", cadence="1d"),
         split=split,
     )
 
@@ -147,7 +147,7 @@ def _dataset(
 def _preview_dataset(stream: str) -> DatasetConfig:
     return DatasetConfig(
         features=[SeriesConfig(id="price", stream=stream, field="value")],
-        sample=SampleConfig(cadence="1d"),
+        sample=SampleConfig(rounding="ceil", cadence="1d"),
     )
 
 

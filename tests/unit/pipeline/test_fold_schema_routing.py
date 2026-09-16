@@ -108,7 +108,7 @@ def test_shared_fold_scan_labels_once_and_projects_each_training_schema(
 ) -> None:
     feature = SeriesConfig(id="metric", stream="metrics", field="value")
     dataset = DatasetConfig(
-        sample=SampleConfig(cadence="1d"),
+        sample=SampleConfig(rounding="ceil", cadence="1d"),
         features=[feature],
         split=TimeSplitConfig(
             intervals=[TimeInterval(id="all")],
