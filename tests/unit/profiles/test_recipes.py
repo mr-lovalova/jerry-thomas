@@ -1,6 +1,7 @@
 from importlib.metadata import EntryPoint
 from types import SimpleNamespace
 
+from jerrythomas import plugins
 from jerrythomas.profiles import recipes
 
 
@@ -18,7 +19,7 @@ def test_implementation_identifies_plugins_by_group_and_ignores_argument_payload
 
     monkeypatch.setattr(recipes, "_git_identity", lambda _: None)
     monkeypatch.setattr(
-        recipes.metadata,
+        plugins.metadata,
         "distributions",
         lambda: [
             distribution("used-parser", "jerrythomas.parsers", "shared-name"),

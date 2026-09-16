@@ -2,6 +2,10 @@
 
 All commands live under the `jerry` entry point (`src/jerrythomas/cli/app.py`).
 Pass `--help` on any command for flags.
+`jerry env` reports the Python/Jerry environment and installed plugin providers:
+package versions, entry-point groups/names, Python targets, and editable source
+locations when available. It reads package metadata without importing plugins;
+the list describes the installed environment, not a project's selected plugins.
 All commands that take a project accept either `--project <path/to/project.yaml>` or `--dataset <alias>` (from `jerry.yaml datasets:`).
 
 Profile commands run enabled profiles by default. `--profile <name>` selects

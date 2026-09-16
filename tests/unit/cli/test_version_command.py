@@ -1,8 +1,12 @@
+from importlib.metadata import EntryPoint
+from pathlib import Path
+
 import pytest
 
 from jerrythomas.cli.command_router import execute_command
 from jerrythomas.cli.parser_builder import build_parser
 from jerrythomas.cli.version import short_version, version_report
+from jerrythomas.plugins import PARSERS_EP, PluginDistribution
 
 
 def test_root_version_flag_prints_short_version(capsys) -> None:
@@ -43,3 +47,26 @@ def test_env_command_prints_diagnostic_report(capsys) -> None:
 
     assert result is None
     assert capsys.readouterr().out.strip() == version_report()
+
+
+def test_env_reports_plugin_provider_version_target_and_editable_path(monkeypatch):
+    monkeypatch.setattr(
+        "jerrythomas.cli.version.plugin_distributions",
+        lambda: (
+            PluginDistribution(
+                name="research-plugins",
+                version="2.3.0",
+                editable_path=Path("/workspace/plugins"),
+                entrypoints=(
+                    EntryPoint(
+                        name="custom_csv", group=PARSERS_EP, value="research.csv:parse"
+                    ),
+                ),
+            ),
+        ),
+    )
+    report = version_report()
+    assert "installed plugin providers:" in report
+    assert "research-plugins 2.3.0" in report
+    assert "editable: /workspace/plugins" in report
+    assert "jerrythomas.parsers/custom_csv -> research.csv:parse" in report

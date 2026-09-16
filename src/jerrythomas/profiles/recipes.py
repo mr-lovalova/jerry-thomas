@@ -1,13 +1,10 @@
 """Capture recipes from the same resolved definitions and jobs used for execution."""
 
 import glob
-import importlib.metadata as metadata
-import json
 import platform
 import subprocess
 from pathlib import Path
 from typing import Any, Literal, Sequence
-from urllib.parse import unquote, urlsplit
 
 from jerrythomas.artifacts.fingerprints import artifact_inputs, source_input_patterns
 from jerrythomas.artifacts.state import ArtifactFileFingerprint, load_build_state
@@ -17,6 +14,7 @@ from jerrythomas.config.streams import SourceStreamConfig
 from jerrythomas.config.tasks.base import PluginRuntimeTask
 from jerrythomas.io.recipes import RunRecipe
 from jerrythomas.io.runs import materialize_receipt_path
+from jerrythomas.plugins import plugin_distributions
 from jerrythomas.profiles.models import MaterializeJob, RuntimeJob
 from jerrythomas.services.definitions import ProjectDefinition
 from jerrythomas.services.path_policy import resolve_relative_fs_loader_path
@@ -235,12 +233,9 @@ def _implementation(project_dir: Path, configuration: dict[str, Any]) -> dict[st
     packages = {}
     repositories = {str(project_dir): _git_identity(project_dir)}
     entrypoints = []
-    for dist in metadata.distributions():
-        matched = [ep for ep in dist.entry_points if (ep.group, ep.name) in selected]
-        if dist.name != "jerry-thomas" and not matched:
-            continue
+    for dist in plugin_distributions(selected):
         packages[dist.name] = dist.version
-        for ep in matched:
+        for ep in dist.entrypoints:
             entrypoints.append(
                 {
                     "group": ep.group,
@@ -249,17 +244,10 @@ def _implementation(project_dir: Path, configuration: dict[str, Any]) -> dict[st
                     "distribution": dist.name,
                 }
             )
-        direct_url = dist.read_text("direct_url.json")
-        if direct_url:
-            try:
-                origin = json.loads(direct_url)
-                url = urlsplit(origin["url"])
-                if origin.get("dir_info", {}).get("editable") and url.scheme == "file":
-                    path = Path(unquote(url.path))
-                    if str(path) not in repositories:
-                        repositories[str(path)] = _git_identity(path)
-            except (ValueError, KeyError, TypeError):
-                pass
+        if dist.editable_path is not None:
+            path = str(dist.editable_path)
+            if path not in repositories:
+                repositories[path] = _git_identity(dist.editable_path)
     return {
         "python": platform.python_version(),
         "platform": platform.platform(),
