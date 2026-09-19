@@ -396,7 +396,7 @@ def _observed_node(
     started = False
 
     try:
-        progress_state = progress.start_node(context, node.progress)
+        # Deliver the node identity before the progress thread can report it.
         observer(
             NodeStarted(
                 pipeline_name=pipeline_name,
@@ -405,6 +405,7 @@ def _observed_node(
             )
         )
         started = True
+        progress_state = progress.start_node(context, node.progress)
 
         previous = progress.active_node
         progress.active_node = context

@@ -15,13 +15,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from jerrythomas.domain.sample_key import SampleKeyContract, SampleKeyValueType
-from jerrythomas.execution.events import ProgressSnapshot
+from jerrythomas.execution.events import PipelineEvent, ProgressSnapshot
 from jerrythomas.execution.observability import (
     ExecutionEvent,
     ExecutionMessage,
-    emit_execution_message,
+    ExecutionScope,
+    ScopedExecutionEvent,
+    current_execution_observer,
     execution_observer,
+    ignore_execution_event,
 )
+from jerrythomas.execution.pipeline import Input, Pipeline
+from jerrythomas.execution.runner import run_pipeline
 from jerrythomas.pipelines.sort import (
     SortedRuns,
     SortProgress,
@@ -89,7 +94,9 @@ class _Log:
 @dataclass
 class _Worker:
     index: int
+    slot: int
     stream_id: str
+    scope: ExecutionScope
     process: BaseProcess
     control: Connection
     complete: _Complete | None = None
@@ -118,18 +125,31 @@ def _prepare_stream(
         _projected_row_key,
     )
 
-    sample_keys = SampleKeyContract(runtime.dataset.sample.keys)
-    rows = _project_stream(runtime, plan, sample_keys, cadence)
-    try:
-        runs = write_sort_runs(
-            rows,
-            runtime.execution.sort_buffer_bytes,
-            _projected_row_key,
-            temp_root,
-        )
-    finally:
-        rows.close()
-    return _Complete(runs, sample_keys.inferred_types)
+    progress = SortProgress()
+
+    def prepare() -> Iterator[_Complete]:
+        sample_keys = SampleKeyContract(runtime.dataset.sample.keys)
+        rows = _project_stream(runtime, plan, sample_keys, cadence)
+        try:
+            runs = write_sort_runs(
+                rows,
+                runtime.execution.sort_buffer_bytes,
+                _projected_row_key,
+                temp_root,
+                progress,
+            )
+        finally:
+            rows.close()
+        yield _Complete(runs, sample_keys.inferred_types)
+
+    (result,) = run_pipeline(
+        runtime,
+        Pipeline(
+            name=f"prepare:{plan.stream_id}",
+            input=Input(name="order_series", open=prepare, progress=progress.snapshot),
+        ),
+    )
+    return result
 
 
 def _run_stream(
@@ -139,6 +159,7 @@ def _run_stream(
     temp_root: Path,
     control: Connection,
     log_level: int,
+    observe_events: bool,
 ) -> None:
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     tempfile.tempdir = str(temp_root)
@@ -148,16 +169,18 @@ def _run_stream(
     root_logger.setLevel(log_level)
 
     def observe(event: ExecutionEvent) -> None:
-        # Concurrent pipeline events cannot share the parent's ordered UI stack.
-        if isinstance(event, ExecutionMessage):
+        if isinstance(event, ExecutionMessage) or (
+            observe_events and isinstance(event, PipelineEvent)
+        ):
             with send_lock:
                 control.send(event)
 
     try:
         with execution_observer(observe):
             runtime = compile_runtime_snapshot(snapshot)
-            runtime.heartbeat_interval_seconds = 0
-            runtime.observe_node_events = False
+            if not observe_events:
+                runtime.heartbeat_interval_seconds = 0
+                runtime.observe_node_events = False
             result = _prepare_stream(runtime, plan, cadence, temp_root)
         with send_lock:
             control.send(result)
@@ -178,6 +201,7 @@ def order_streams(
 ) -> Iterator[_ProjectedRow]:
     from jerrythomas.operations.artifacts.series import _projected_row_key
 
+    observer = current_execution_observer()
     active: list[_Worker] = []
     pending = iter(enumerate(plans))
     completed: dict[int, _Complete] = {}
@@ -196,7 +220,7 @@ def order_streams(
             else:
                 context = multiprocessing.get_context("spawn")
 
-                def start_next() -> None:
+                def start_next(slot: int) -> None:
                     entry = next(pending, None)
                     if entry is None:
                         return
@@ -215,17 +239,30 @@ def order_streams(
                             worker_root,
                             control_write,
                             logging.getLogger("jerrythomas").getEffectiveLevel(),
+                            observer is not None
+                            and observer is not ignore_execution_event,
                         ),
                     )
-                    active.append(_Worker(index, plan.stream_id, process, control_read))
+                    active.append(
+                        _Worker(
+                            index=index,
+                            slot=slot,
+                            stream_id=plan.stream_id,
+                            scope=ExecutionScope(
+                                id=str(worker_root), label=f"Worker {slot + 1}"
+                            ),
+                            process=process,
+                            control=control_read,
+                        )
+                    )
                     try:
                         process.start()
                     finally:
                         # Keeping these open here would hide EOF after a child crash.
                         control_write.close()
 
-                for _ in range(min(runtime.execution.workers, len(plans))):
-                    start_next()
+                for slot in range(min(runtime.execution.workers, len(plans))):
+                    start_next(slot)
                 while active:
                     progress.update(len(completed), len(plans), len(active))
                     wait(
@@ -244,7 +281,7 @@ def order_streams(
                         # Remove before close so cancellation cannot revisit a closed process.
                         active.remove(worker)
                         _close_worker(worker)
-                        start_next()
+                        start_next(worker.slot)
             progress.update(len(plans), len(plans), 0)
 
             paths: list[Path] = []
@@ -266,6 +303,7 @@ def order_streams(
 
 
 def _check_workers(workers: Sequence[_Worker]) -> None:
+    observer = current_execution_observer()
     for worker in workers:
         exitcode = worker.process.exitcode
         # A finished process can still have a buffered completion or error.
@@ -284,10 +322,17 @@ def _check_workers(workers: Sequence[_Worker]) -> None:
             if isinstance(message, _Complete):
                 worker.complete = message
             elif isinstance(message, _Log):
-                logging.getLogger(message.name).log(message.level, message.message)
-            elif isinstance(message, ExecutionMessage):
-                if not emit_execution_message(message.message, message.log_level):
-                    logging.getLogger(__name__).log(message.log_level, message.message)
+                logging.getLogger(message.name).log(
+                    message.level, f"[{worker.scope.label}] {message.message}"
+                )
+            elif isinstance(message, PipelineEvent | ExecutionMessage):
+                if observer is not None:
+                    observer(ScopedExecutionEvent(scope=worker.scope, event=message))
+                elif isinstance(message, ExecutionMessage):
+                    logging.getLogger(__name__).log(
+                        message.log_level,
+                        f"[{worker.scope.label}] {message.message}",
+                    )
         if exitcode is not None and worker.complete is None:
             raise StreamWorkerError(
                 f"Stream '{worker.stream_id}' exited without completing "

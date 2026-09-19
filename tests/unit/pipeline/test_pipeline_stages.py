@@ -2830,7 +2830,7 @@ def test_series_record_sort_is_part_of_the_observed_stream_pipeline(
     manifest = load_series_manifest(manifest_path)
     [row] = open_series(manifest_path, manifest)
 
-    assert observer.starts == ["series:artifact", "series:stream"]
+    assert observer.starts == ["series:artifact", "prepare:stream", "series:stream"]
     assert "project_series" in observer.nodes
     assert "order_series" in observer.nodes
     assert row.features == {"value": 1.0}

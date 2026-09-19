@@ -98,6 +98,25 @@ def test_batch_sort_reports_buffered_and_merged_work(monkeypatch) -> None:
     progress.emitting.assert_called_once_with(3)
 
 
+def test_sort_progress_reports_spilling_before_a_run_is_written(
+    tmp_path, monkeypatch
+) -> None:
+    progress = SortProgress()
+    write_run = sort_module._write_serialized_run
+    snapshots = []
+
+    def observe_write(*args):
+        snapshots.append(progress.snapshot(0))
+        return write_run(*args)
+
+    monkeypatch.setattr(sort_module, "_write_serialized_run", observe_write)
+    runs = write_sort_runs([2, 1], 1, lambda item: item, tmp_path, progress)
+
+    assert [snapshot.phase for snapshot in snapshots] == ["spilling", "spilling"]
+    assert [snapshot.completed for snapshot in snapshots] == [0, 1]
+    assert progress.snapshot(0).completed == runs.rows == 2
+
+
 def test_sort_progress_uses_node_output_count_while_emitting() -> None:
     progress = SortProgress()
 

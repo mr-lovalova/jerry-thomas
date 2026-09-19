@@ -154,6 +154,7 @@ def _write_runs(
     paths: list[Path] = []
     rows = 0
     for run, _ in runs:
+        progress.spilling(rows, len(paths))
         paths.append(_write_serialized_run(directory, len(paths), run))
         rows += len(run)
         run.clear()

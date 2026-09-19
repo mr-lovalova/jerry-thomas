@@ -60,9 +60,22 @@ class ExecutionMessage:
     log_level: int = logging.INFO
 
 
+@dataclass(frozen=True)
+class ExecutionScope:
+    id: str
+    label: str
+
+
+@dataclass(frozen=True)
+class ScopedExecutionEvent:
+    scope: ExecutionScope
+    event: PipelineEvent | ExecutionMessage
+
+
 ExecutionEvent = (
     PipelineEvent
     | ExecutionMessage
+    | ScopedExecutionEvent
     | CommandFinished
     | FileResult
     | RowsWritten

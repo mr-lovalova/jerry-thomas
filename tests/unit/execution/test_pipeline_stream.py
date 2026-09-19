@@ -673,6 +673,70 @@ def test_live_progress_suppresses_unchanged_snapshots() -> None:
     assert [event.progress.completed for event in observer.progress_events] == [0, 1]
 
 
+def test_node_progress_is_delivered_between_start_and_finish() -> None:
+    events: list[PipelineEvent] = []
+
+    def observer(event: PipelineEvent) -> None:
+        if isinstance(event, NodeStarted | NodeFinished):
+            # Simulate a progress tick while lifecycle delivery is still pending.
+            progress._emit_due_progress()
+        events.append(event)
+
+    progress = pipeline_runner._RunProgress(observer, "pipeline", 0)
+
+    def source() -> tuple[int, ...]:
+        progress._emit_due_progress()
+        return (1,)
+
+    node = Input(
+        "source",
+        source,
+        progress=lambda _completed: ProgressSnapshot(completed=len(events)),
+    )
+    rows = pipeline_runner._observed_node("pipeline", node, 0, None, observer, progress)
+
+    assert list(rows) == [1]
+    progress._emit_due_progress()
+
+    assert [type(event) for event in events] == [
+        NodeStarted,
+        NodeProgress,
+        NodeFinished,
+    ]
+
+
+def test_node_start_observer_failure_closes_upstream_without_registering_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = RuntimeError("start observer failed")
+    upstream = _ProcessingAndCleanupFailure()
+    events: list[PipelineEvent] = []
+
+    def observer(event: PipelineEvent) -> None:
+        events.append(event)
+        if isinstance(event, NodeStarted):
+            raise failure
+
+    progress = pipeline_runner._RunProgress(observer, "pipeline", 0)
+    monkeypatch.setattr(
+        progress,
+        "start_node",
+        lambda *_args: pytest.fail("Failed start must not register node progress"),
+    )
+    node = Stage("stage", lambda _records: pytest.fail("Failed start opened stage"))
+    rows = pipeline_runner._observed_node(
+        "pipeline", node, 0, upstream, observer, progress
+    )
+
+    with pytest.raises(RuntimeError) as caught:
+        list(rows)
+
+    assert caught.value is failure
+    assert upstream.closed
+    assert [type(event) for event in events] == [NodeStarted]
+    assert progress._states == {}
+
+
 @pytest.mark.parametrize("observed", [False, True], ids=["unobserved", "observed"])
 def test_partial_close_closes_stages_in_reverse_order(
     tmp_path: Path,

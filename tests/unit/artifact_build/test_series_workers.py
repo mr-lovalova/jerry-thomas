@@ -5,20 +5,34 @@ import tempfile
 import time
 from collections.abc import Iterator
 from datetime import timedelta
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 import yaml
+from rich.console import Console
+from rich.progress import Progress
 
 import jerrythomas.operations.artifacts.series as series_module
 import jerrythomas.operations.artifacts.series_workers as worker_module
 from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.cli.visuals.rich.progress import (
+    _ExecutionProgress,
+    _RichExecutionRenderer,
+)
 from jerrythomas.domain.sample_key import SampleKeyContract
+from jerrythomas.execution.events import (
+    NodeProgress,
+    NodeStarted,
+    PipelineFinished,
+    PipelineStarted,
+)
 from jerrythomas.execution.observability import (
     ExecutionEvent,
     ExecutionMessage,
+    ScopedExecutionEvent,
     emit_execution_message,
     execution_observer,
 )
@@ -63,11 +77,49 @@ class _LifecycleLoader(BaseDataLoader):
             if self.mode == "finite":
                 yield {"time": "2024-01-01T00:00:00Z", "id_": "A", "value": 1}
                 return
+            if self.mode == "observed":
+                from jerrythomas.execution.pipeline import Input, Pipeline
+                from jerrythomas.execution.runner import run_pipeline
+
+                observed_runtime = SimpleNamespace(
+                    observe_node_events=True, heartbeat_interval_seconds=0
+                )
+                pipeline = Pipeline(
+                    name="shared:loader",
+                    input=Input(
+                        name="load",
+                        open=lambda: iter(
+                            [{"time": "2024-01-01T00:00:00Z", "id_": "A", "value": 1}]
+                        ),
+                    ),
+                )
+                yield from run_pipeline(observed_runtime, pipeline)
+                return
             if self.mode == "messages":
                 emit_execution_message("worker plugin message")
                 logging.getLogger("tests.stream_workers").warning(
                     "worker standard warning"
                 )
+                yield {"time": "2024-01-01T00:00:00Z", "id_": "A", "value": 1}
+                return
+            projection_exhausted = False
+            if self.mode == "sort_progress":
+                import jerrythomas.pipelines.sort as sort_module
+
+                write_run = sort_module._write_serialized_run
+
+                def observed_final_write(directory, run_id, items):
+                    if projection_exhausted:
+                        sort_module._write_serialized_run = write_run
+                        observed = self.marker.with_suffix(".sort-observed")
+                        deadline = time.monotonic() + 10
+                        while not observed.exists():
+                            if time.monotonic() >= deadline:
+                                raise TimeoutError("Parent did not observe final sort")
+                            time.sleep(0.01)
+                    return write_run(directory, run_id, items)
+
+                sort_module._write_serialized_run = observed_final_write
             if self.mode == "write_failure":
                 import jerrythomas.pipelines.sort as sort_module
 
@@ -84,6 +136,7 @@ class _LifecycleLoader(BaseDataLoader):
                     "id_": "A",
                     "value": f"{index}:" + "x" * 600_000,
                 }
+            projection_exhausted = True
 
 
 def _write_yaml(path: Path, value: dict[str, Any]) -> None:
@@ -293,12 +346,24 @@ def test_completed_worker_frees_slot_before_earlier_stream_finishes(
         ("finite", "finite", "finite"), barriers=(2, None, None)
     )
     baseline = _child_pids()
-
-    rows = list(_project(runtime))
+    events: list[ExecutionEvent] = []
+    with execution_observer(events.append):
+        rows = list(_project(runtime))
 
     assert all(marker.exists() for marker in markers)
     assert [row.features[0].id for row in rows] == ["first", "second", "third"]
     assert len({row.key for row in rows}) == 1
+    scopes = {
+        event.event.pipeline_name: event.scope
+        for event in events
+        if isinstance(event, ScopedExecutionEvent)
+        and isinstance(event.event, PipelineStarted)
+        and event.event.pipeline_name.startswith("prepare:")
+    }
+    assert scopes["prepare:first"].label == "Worker 1"
+    assert scopes["prepare:second"].label == "Worker 2"
+    assert scopes["prepare:third"].label == "Worker 2"
+    assert len({scope.id for scope in scopes.values()}) == 3
     assert _child_pids() == baseline
     assert list(temporary.iterdir()) == []
 
@@ -430,7 +495,7 @@ def test_second_worker_start_failure_reaps_first_worker_and_removes_spills(
 def test_worker_messages_and_logs_reach_parent_observers(
     lifecycle_project, caplog: pytest.LogCaptureFixture
 ) -> None:
-    runtime, temporary, _ = lifecycle_project(("messages", "rows"))
+    runtime, temporary, _ = lifecycle_project(("messages", "finite"))
     baseline = _child_pids()
     events: list[ExecutionEvent] = []
     projected = _project(runtime)
@@ -440,12 +505,165 @@ def test_worker_messages_and_logs_reach_parent_observers(
         finally:
             projected.close()
 
-    assert events == [ExecutionMessage(message="worker plugin message")]
+    messages = [
+        event
+        for event in events
+        if isinstance(event, ScopedExecutionEvent)
+        and isinstance(event.event, ExecutionMessage)
+    ]
+    assert len(messages) == 1
+    assert messages[0].scope.label == "Worker 1"
+    assert messages[0].event == ExecutionMessage(message="worker plugin message")
     assert (
         "tests.stream_workers",
         logging.WARNING,
-        "worker standard warning",
+        "[Worker 1] worker standard warning",
     ) in caplog.record_tuples
+    assert _child_pids() == baseline
+    assert list(temporary.iterdir()) == []
+
+
+def test_spawned_workers_render_same_pipeline_names_in_independent_scopes(
+    lifecycle_project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime, temporary, _ = lifecycle_project(("observed", "observed"))
+    runtime.heartbeat_interval_seconds = 0
+    baseline = _child_pids()
+    console = Console(file=StringIO(), force_terminal=False)
+    progress = Progress(console=console, auto_refresh=False)
+    renderer = _RichExecutionRenderer(
+        logging.WARNING, console, _ExecutionProgress(progress, debug=False)
+    )
+    events: list[ExecutionEvent] = []
+    close_worker = worker_module._close_worker
+    finished_before_close: list[str] = []
+
+    def observe(event: ExecutionEvent) -> None:
+        events.append(event)
+        renderer.render(event)
+
+    def close_after_events(worker) -> None:
+        if worker.complete is not None:
+            assert any(
+                isinstance(event, ScopedExecutionEvent)
+                and event.scope == worker.scope
+                and isinstance(event.event, PipelineFinished)
+                and event.event.pipeline_name == f"prepare:{worker.stream_id}"
+                and event.event.status == "success"
+                for event in events
+            )
+            finished_before_close.append(worker.stream_id)
+        close_worker(worker)
+
+    monkeypatch.setattr(worker_module, "_close_worker", close_after_events)
+    with execution_observer(observe):
+        rows = list(_project(runtime))
+
+    shared = [
+        event
+        for event in events
+        if isinstance(event, ScopedExecutionEvent)
+        and isinstance(event.event, PipelineStarted)
+        and event.event.pipeline_name == "shared:loader"
+    ]
+    assert {event.scope.label for event in shared} == {"Worker 1", "Worker 2"}
+    assert len({event.scope.id for event in shared}) == 2
+    for started in shared:
+        assert any(
+            isinstance(event, ScopedExecutionEvent)
+            and event.scope == started.scope
+            and isinstance(event.event, NodeStarted)
+            and event.event.pipeline_name == "shared:loader"
+            for event in events
+        )
+    assert sorted(finished_before_close) == ["first", "second"]
+    assert len(rows) == 2
+    assert progress.tasks == []
+    assert _child_pids() == baseline
+    assert list(temporary.iterdir()) == []
+
+
+def test_worker_observer_failure_reaps_workers_and_removes_spills(
+    lifecycle_project,
+) -> None:
+    runtime, temporary, markers = lifecycle_project(("slow", "slow"))
+    runtime.heartbeat_interval_seconds = 0.01
+    baseline = _child_pids()
+    failure = RuntimeError("intentional worker observer failure")
+
+    def observe(event: ExecutionEvent) -> None:
+        if (
+            isinstance(event, ScopedExecutionEvent)
+            and isinstance(event.event, NodeProgress)
+            and all(marker.exists() for marker in markers)
+        ):
+            raise failure
+
+    projected = _project(runtime)
+    with execution_observer(observe):
+        try:
+            with pytest.raises(RuntimeError) as error:
+                next(projected)
+            assert error.value is failure
+        finally:
+            projected.close()
+
+    assert all(marker.exists() for marker in markers)
+    assert _child_pids() == baseline
+    assert list(temporary.iterdir()) == []
+
+
+def test_worker_final_sort_remains_visible_after_projection_finishes(
+    lifecycle_project,
+) -> None:
+    runtime, temporary, markers = lifecycle_project(("sort_progress", "finite"))
+    runtime.heartbeat_interval_seconds = 0.01
+    baseline = _child_pids()
+    console = Console(file=StringIO(), force_terminal=False)
+    progress = Progress(console=console, auto_refresh=False)
+    renderer = _RichExecutionRenderer(
+        logging.WARNING, console, _ExecutionProgress(progress, debug=False)
+    )
+    projection_finished = False
+    sort_snapshots = []
+
+    def observe(event: ExecutionEvent) -> None:
+        nonlocal projection_finished
+        renderer.render(event)
+        if not isinstance(event, ScopedExecutionEvent):
+            return
+        payload = event.event
+        if isinstance(payload, PipelineFinished):
+            if payload.pipeline_name == "series:first":
+                projection_finished = True
+        elif (
+            projection_finished
+            and isinstance(payload, NodeProgress)
+            and payload.pipeline_name == "prepare:first"
+            and payload.node_name == "order_series"
+        ):
+            matching = [
+                task
+                for task in progress.tasks
+                if task.visible
+                and task.description == "Worker 1 [prepare:first/order_series]"
+            ]
+            assert len(matching) == 1
+            assert matching[0].completed == payload.progress.completed
+            sort_snapshots.append(payload.progress)
+            if payload.progress.phase == "spilling" and payload.progress.completed > 1:
+                markers[0].with_suffix(".sort-observed").touch()
+
+    with execution_observer(observe):
+        rows = list(_project(runtime))
+
+    assert len(rows) == 13
+    assert projection_finished
+    assert any(
+        snapshot.phase == "spilling" and snapshot.completed > 1
+        for snapshot in sort_snapshots
+    )
+    assert progress.tasks == []
     assert _child_pids() == baseline
     assert list(temporary.iterdir()) == []
 

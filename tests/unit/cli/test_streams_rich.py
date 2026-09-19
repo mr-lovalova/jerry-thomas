@@ -7,6 +7,7 @@ from textwrap import dedent
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from rich.console import Console
 from rich.progress import Progress
 from rich.table import Column
@@ -24,6 +25,7 @@ from jerrythomas.cli.visuals.execution_context import (
 from jerrythomas.execution.observability import ExecutionMessage
 from jerrythomas.cli.visuals.rich.progress import (
     _ExecutionProgress,
+    _GroupedProgress,
     _ProgressRowColumn,
     _RichExecutionRenderer,
     rich_visuals_supported,
@@ -42,11 +44,13 @@ from jerrythomas.execution.events import (
 )
 from jerrythomas.execution.observability import (
     CommandFinished,
+    ExecutionScope,
     FileResult,
     OperationFinished,
     OperationProgress,
     OperationStarted,
     RowsWritten,
+    ScopedExecutionEvent,
 )
 
 
@@ -478,6 +482,187 @@ def test_nested_pipeline_shows_deepest_active_node() -> None:
     assert progress.tasks == []
 
 
+def test_scoped_progress_groups_interleaved_workers_and_finishes_independently() -> (
+    None
+):
+    console, output = _console(width=200)
+    progress = _GroupedProgress(
+        _ProgressRowColumn(Column()), console=console, auto_refresh=False
+    )
+    renderer = _ExecutionProgress(progress, debug=False)
+    renderer.handle(PipelineStarted(pipeline_name="series:artifact"))
+    scopes = [ExecutionScope("first", "Worker 1"), ExecutionScope("second", "Worker 2")]
+    for scope in scopes:
+        renderer.handle(
+            ScopedExecutionEvent(scope, PipelineStarted(pipeline_name="stream:adv.20"))
+        )
+    for scope, completed in zip(scopes, (12, 34), strict=True):
+        renderer.handle(
+            ScopedExecutionEvent(
+                scope,
+                NodeStarted(
+                    pipeline_name="stream:adv.20", node_name="open_source", node_index=0
+                ),
+            )
+        )
+        renderer.handle(
+            ScopedExecutionEvent(
+                scope, _node_progress(0, "open_source", ProgressSnapshot(completed))
+            )
+        )
+
+    console.print(progress.get_renderable())
+    lines = output.getvalue().splitlines()
+    assert [line.split(" 0:")[0].rstrip() for line in lines] == [
+        "[series:artifact]",
+        "Worker 1 [stream:adv.20]",
+        "Worker 1 [stream:adv.20/open_source]",
+        "Worker 2 [stream:adv.20]",
+        "Worker 2 [stream:adv.20/open_source]",
+    ]
+    assert "12 items" in lines[2]
+    assert "34 items" in lines[4]
+
+    for scope in reversed(scopes):
+        renderer.handle(
+            ScopedExecutionEvent(
+                scope,
+                PipelineFinished(
+                    pipeline_name="stream:adv.20",
+                    output_items=100,
+                    elapsed_seconds=1,
+                    status="success",
+                ),
+            )
+        )
+        assert not any(
+            task.description.startswith(scope.label) for task in progress.tasks
+        )
+        assert progress.tasks[0].description == "[series:artifact]"
+        if scope == scopes[1]:
+            assert [task.completed for task in progress.tasks[1:]] == [0, 12]
+
+    renderer.handle(
+        PipelineFinished(
+            pipeline_name="series:artifact",
+            output_items=200,
+            elapsed_seconds=1,
+            status="success",
+        )
+    )
+    assert progress.tasks == []
+
+
+@pytest.mark.parametrize("debug", [False, True])
+def test_scoped_nested_stages_keep_visibility_local_to_each_worker(debug: bool) -> None:
+    progress = _progress()
+    renderer = _ExecutionProgress(progress, debug=debug)
+    first, second = ExecutionScope("a", "Worker 1"), ExecutionScope("b", "Worker 2")
+    for scope in (first, second):
+        renderer.handle(
+            ScopedExecutionEvent(scope, PipelineStarted(pipeline_name="stream:adv.20"))
+        )
+        renderer.handle(
+            ScopedExecutionEvent(
+                scope,
+                NodeStarted(
+                    pipeline_name="stream:adv.20",
+                    node_name="order_series",
+                    node_index=0,
+                ),
+            )
+        )
+    renderer.handle(
+        ScopedExecutionEvent(first, PipelineStarted(pipeline_name="source"))
+    )
+    renderer.handle(
+        ScopedExecutionEvent(
+            first,
+            NodeStarted(pipeline_name="source", node_name="read", node_index=0),
+        )
+    )
+    for scope in (first, second):
+        renderer.handle(
+            ScopedExecutionEvent(
+                scope,
+                _node_progress(0, "order_series", ProgressSnapshot(50), heartbeat=True),
+            )
+        )
+    tasks = {task.description: task for task in progress.tasks}
+    assert tasks["Worker 1 [stream:adv.20/order_series]"].visible is debug
+    assert tasks["Worker 1 [source/read]"].visible
+    assert tasks["Worker 2 [stream:adv.20/order_series]"].visible
+    renderer.handle(
+        ScopedExecutionEvent(
+            first,
+            NodeFinished(
+                pipeline_name="source",
+                node_name="read",
+                node_index=0,
+                output_items=50,
+                elapsed_seconds=1,
+                status="success",
+            ),
+        )
+    )
+    renderer.handle(
+        ScopedExecutionEvent(
+            first,
+            PipelineFinished(
+                pipeline_name="source",
+                output_items=50,
+                elapsed_seconds=1,
+                status="success",
+            ),
+        )
+    )
+    assert tasks["Worker 1 [stream:adv.20/order_series]"].visible
+    assert tasks["Worker 2 [stream:adv.20/order_series]"].visible
+    renderer.clear()
+    assert progress.tasks == []
+
+
+@pytest.mark.parametrize("finish", ["pipeline", "operation", "clear"])
+def test_parent_cleanup_removes_abandoned_worker_lanes(finish: str) -> None:
+    progress = _progress()
+    renderer = _ExecutionProgress(progress, debug=False)
+    renderer.handle(OperationStarted("build:series"))
+    renderer.handle(PipelineStarted(pipeline_name="series:artifact"))
+    scope = ExecutionScope("abandoned", "Worker 1")
+    renderer.handle(
+        ScopedExecutionEvent(scope, PipelineStarted(pipeline_name="source"))
+    )
+    renderer.handle(
+        ScopedExecutionEvent(
+            scope, NodeStarted(pipeline_name="source", node_name="read", node_index=0)
+        )
+    )
+    if finish == "pipeline":
+        renderer.handle(
+            PipelineFinished(
+                pipeline_name="series:artifact",
+                output_items=0,
+                elapsed_seconds=1,
+                status="error",
+            )
+        )
+        assert [task.description for task in progress.tasks] == [
+            "Operation build:series"
+        ]
+    if finish in {"pipeline", "operation"}:
+        renderer.handle(OperationFinished("build:series", "error", 1))
+    else:
+        renderer.clear()
+    assert progress.tasks == []
+
+    # A later invocation may reuse labels without inheriting an abandoned stack.
+    renderer.handle(
+        ScopedExecutionEvent(scope, PipelineStarted(pipeline_name="source"))
+    )
+    renderer.clear()
+    assert progress.tasks == []
+
+
 def test_operation_progress_stays_live_across_sequential_pipelines() -> None:
     now = 0.0
     console, _ = _console()
@@ -592,6 +777,75 @@ def test_rich_renderer_does_not_print_pipeline_heartbeat_over_live_progress() ->
 
     assert progress_renderer.events == []
     assert output.getvalue() == ""
+
+
+def test_scoped_renderer_routes_live_progress_without_printing() -> None:
+    console, output = _console()
+    progress_renderer = _CaptureRenderer()
+    renderer = _RichExecutionRenderer(logging.DEBUG, console, progress_renderer)
+    scope = ExecutionScope("first", "Worker 1")
+    node = ScopedExecutionEvent(
+        scope, _node_progress(0, "open_source", ProgressSnapshot(completed=10))
+    )
+    heartbeat = ScopedExecutionEvent(
+        scope,
+        PipelineProgress(
+            pipeline_name="stream:adv.20", output_items=10, elapsed_seconds=60
+        ),
+    )
+    renderer.render(node)
+    renderer.render(heartbeat)
+    assert progress_renderer.events == [node]
+    assert output.getvalue() == ""
+
+
+def test_scoped_renderer_preserves_level_filtering_and_status_styling() -> None:
+    console, output = _console(width=200)
+    renderer = _RichExecutionRenderer(logging.INFO, console)
+    scope = ExecutionScope("first", "Worker 1")
+    success = ScopedExecutionEvent(
+        scope,
+        NodeFinished(
+            pipeline_name="source",
+            node_name="read",
+            node_index=0,
+            output_items=10,
+            elapsed_seconds=1,
+            status="success",
+        ),
+    )
+    renderer.render(success)
+    assert output.getvalue() == ""
+    failure = ScopedExecutionEvent(
+        scope,
+        NodeFinished(
+            pipeline_name="source",
+            node_name="read",
+            node_index=0,
+            output_items=10,
+            elapsed_seconds=1,
+            status="error",
+            error_type="ValueError",
+            error_message="invalid row",
+        ),
+    )
+    text = renderer._render_event(failure)
+    assert text.plain == (
+        "[Worker 1] [source/read] finished status=error "
+        "error=ValueError: invalid row out=10 elapsed=1.0s"
+    )
+    assert [
+        (text.plain[span.start : span.end], str(span.style)) for span in text.spans
+    ] == [("status=error", "red")]
+    warning = renderer._render_event(
+        ScopedExecutionEvent(
+            scope, ExecutionMessage(message="check source", log_level=logging.WARNING)
+        )
+    )
+    assert warning.plain == "[Worker 1] check source"
+    assert [(span.start, span.end, str(span.style)) for span in warning.spans] == [
+        (0, len(warning.plain), "yellow")
+    ]
 
 
 def test_rich_renderer_persists_node_finish_at_debug() -> None:
@@ -925,7 +1179,7 @@ def test_visual_summary_uses_a_stateless_renderer_and_restores_context(
         raise AssertionError("A command summary must not start live progress")
 
     monkeypatch.setattr(
-        "jerrythomas.cli.visuals.rich.progress.Progress",
+        "jerrythomas.cli.visuals.rich.progress._GroupedProgress",
         fail_progress,
     )
 
@@ -1047,7 +1301,7 @@ def test_visual_execution_uses_minimal_progress_styles(monkeypatch) -> None:
         lambda **_kwargs: console,
     )
     monkeypatch.setattr(
-        "jerrythomas.cli.visuals.rich.progress.Progress",
+        "jerrythomas.cli.visuals.rich.progress._GroupedProgress",
         capture_progress,
     )
 

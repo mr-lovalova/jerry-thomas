@@ -16,6 +16,7 @@ from jerrythomas.execution.events import (
     NodeFinished,
     NodeProgress,
     NodeStarted,
+    PipelineEvent,
     PipelineFinished,
     PipelineProgress,
     PipelineStarted,
@@ -26,11 +27,13 @@ from jerrythomas.execution.events import (
 from jerrythomas.execution.observability import (
     CommandFinished,
     ExecutionMessage,
+    ExecutionScope,
     FileResult,
     OperationFinished,
     OperationProgress,
     OperationStarted,
     RowsWritten,
+    ScopedExecutionEvent,
     emit_execution_message,
     emit_file_result,
     emit_operation_progress,
@@ -159,6 +162,21 @@ def test_elapsed_time_formatting_rejects_invalid_values(seconds) -> None:
             "[pipeline/load] finished status=success out=3 elapsed=250ms",
         ),
         (
+            NodeFinished(
+                pipeline_name="pipeline",
+                node_name="load",
+                node_index=0,
+                status="error",
+                output_items=3,
+                elapsed_seconds=0.5,
+                error_type="ValueError",
+                error_message="bad\ninput",
+            ),
+            logging.ERROR,
+            "[pipeline/load] finished status=error "
+            "error=ValueError: bad\\ninput out=3 elapsed=500ms",
+        ),
+        (
             OperationProgress(
                 name="build:schema",
                 step="write",
@@ -196,6 +214,93 @@ def test_elapsed_time_formatting_rejects_invalid_values(seconds) -> None:
 def test_typed_execution_event_formatting(event, level, message) -> None:
     assert ExecutionEventFormatter.level(event) == level
     assert ExecutionEventFormatter.message(event) == message
+    if isinstance(event, PipelineEvent | ExecutionMessage):
+        scoped = ScopedExecutionEvent(ExecutionScope("worker-0", "Worker 1"), event)
+        assert ExecutionEventFormatter.level(scoped) == level
+        assert ExecutionEventFormatter.message(scoped) == f"[Worker 1] {message}"
+
+
+@pytest.mark.parametrize("level", [logging.INFO, logging.DEBUG])
+def test_scoped_observer_keeps_live_progress_out_of_logs_and_routes_full_events(
+    caplog, level
+) -> None:
+    logger = logging.getLogger("jerrythomas.cli.visuals.execution.test.scoped")
+    scope = ExecutionScope("stream-worker-0", "Worker 1")
+    events = [
+        ScopedExecutionEvent(
+            scope,
+            NodeProgress(
+                pipeline_name="series:prices",
+                node_name="load",
+                node_index=0,
+                progress=ProgressSnapshot(completed=20),
+                elapsed_seconds=60,
+                heartbeat=heartbeat,
+            ),
+        )
+        for heartbeat in (False, True)
+    ]
+    events.extend(
+        [
+            ScopedExecutionEvent(
+                scope,
+                PipelineProgress(
+                    pipeline_name="series:prices",
+                    output_items=15,
+                    elapsed_seconds=60,
+                ),
+            ),
+            ScopedExecutionEvent(
+                scope,
+                PipelineFinished(
+                    pipeline_name="series:prices",
+                    output_items=15,
+                    elapsed_seconds=60,
+                    status="error",
+                    error_type="ValueError",
+                    error_message="bad input",
+                ),
+            ),
+        ]
+    )
+    capture = _CaptureHandler()
+    token = set_current_execution_event_handler(capture)
+    try:
+        observer = make_execution_observer(logger)
+        with caplog.at_level(level, logger=logger.name):
+            for event in events:
+                observer(event)
+    finally:
+        reset_current_execution_event_handler(token)
+
+    assert len(capture.events) == len(events)
+    assert all(
+        actual is expected
+        for actual, expected in zip(capture.events, events, strict=True)
+    )
+    expected_logs = [
+        (logging.INFO, "[Worker 1] [series:prices] running elapsed=1m00.0s items=15"),
+        (
+            logging.ERROR,
+            "[Worker 1] [series:prices] finished status=error "
+            "error=ValueError: bad input items=15 elapsed=1m00.0s",
+        ),
+    ]
+    if level == logging.DEBUG:
+        expected_logs.insert(
+            0,
+            (
+                logging.DEBUG,
+                "[Worker 1] [series:prices/load] running elapsed=1m00.0s items=20",
+            ),
+        )
+    assert [(record.levelno, record.getMessage()) for record in caplog.records] == (
+        expected_logs
+    )
+    assert all(
+        getattr(record, "dp_event_kind", None) == "execution"
+        for record in caplog.records
+    )
 
 
 def test_failed_terminal_events_are_errors() -> None:

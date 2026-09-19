@@ -25,6 +25,7 @@ from jerrythomas.execution.observability import (
     OperationProgress,
     OperationStarted,
     RowsWritten,
+    ScopedExecutionEvent,
 )
 
 
@@ -47,6 +48,8 @@ class ExecutionEventFormatter:
 
     @staticmethod
     def level(event: ExecutionEvent) -> int:
+        if isinstance(event, ScopedExecutionEvent):
+            event = event.event
         if isinstance(event, ExecutionMessage):
             return int(event.log_level)
         if isinstance(
@@ -75,6 +78,8 @@ class ExecutionEventFormatter:
 
     @classmethod
     def message(cls, event: ExecutionEvent) -> str:
+        if isinstance(event, ScopedExecutionEvent):
+            return f"[{event.scope.label}] {cls.message(event.event)}"
         if isinstance(event, FileResult):
             return f"{event.label}: {event.path}"
         if isinstance(event, RowsWritten):
@@ -138,7 +143,8 @@ def route_execution_event(
     event: ExecutionEvent,
     logger: logging.Logger | None = None,
 ) -> None:
-    if not isinstance(event, NodeProgress) or event.heartbeat:
+    inner_event = event.event if isinstance(event, ScopedExecutionEvent) else event
+    if not isinstance(inner_event, NodeProgress) or inner_event.heartbeat:
         active_logger = logger or logging.getLogger(__name__)
         level = ExecutionEventFormatter.level(event)
         if active_logger.isEnabledFor(level):

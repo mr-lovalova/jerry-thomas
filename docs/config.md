@@ -316,8 +316,8 @@ child processes. Increasing workers can increase memory and disk use:
 `sort_buffer_mb` still applies to each active sort, and a stream can contain
 multiple sorts. Start with `workers: 2` and measure your workload before
 increasing it.
-Parallel builds currently show aggregate progress; individual worker stages are
-not displayed.
+Parallel builds show each active worker's pipeline and current stage alongside
+aggregate preparation progress. The final merge has shared progress.
 
 ### Operations (`operations/*.yaml`)
 

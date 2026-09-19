@@ -1,7 +1,10 @@
 import logging
 import sys
+import threading
+from collections.abc import Iterable
 from contextlib import contextmanager
 from datetime import timedelta
+from itertools import chain
 
 from rich.console import Console, RenderableType
 from rich.progress import (
@@ -36,10 +39,12 @@ from jerrythomas.execution.events import (
 from jerrythomas.execution.observability import (
     CommandFinished,
     ExecutionEvent,
+    ExecutionScope,
     FileResult,
     OperationFinished,
     OperationProgress,
     OperationStarted,
+    ScopedExecutionEvent,
 )
 
 
@@ -79,45 +84,80 @@ class _ProgressRowColumn(ProgressColumn):
         return row
 
 
+class _GroupedProgress(Progress):
+    def get_renderables(self) -> Iterable[RenderableType]:
+        groups: dict[str | None, list[Task]] = {}
+        for task in self.tasks:
+            groups.setdefault(task.fields.get("execution_scope"), []).append(task)
+        yield self.make_tasks_table(chain.from_iterable(groups.values()))
+
+
 class _ExecutionProgress:
     def __init__(self, progress: Progress, debug: bool) -> None:
         self._progress = progress
         self._debug = debug
+        self._lock = threading.RLock()
         self._operation_name: str | None = None
         self._operation_task: TaskID | None = None
-        self._pipeline_stack: list[str] = []
-        self._pipeline_task: TaskID | None = None
-        self._node_tasks: dict[tuple[str, int], TaskID] = {}
-        self._open_nodes: list[tuple[str, int]] = []
-        self._visible_node: tuple[str, int] | None = None
+        self._pipeline = _PipelineProgress(progress, debug)
+        self._scopes: dict[str, _PipelineProgress] = {}
 
     def handle(self, event: ExecutionEvent) -> None:
-        if isinstance(event, OperationStarted):
-            self._start_operation(event)
-        elif isinstance(event, OperationProgress):
-            self._update_operation(event)
-        elif isinstance(event, OperationFinished):
-            self._finish_operation(event)
-        elif isinstance(event, PipelineStarted):
-            self._start_pipeline(event)
-        elif isinstance(event, NodeStarted):
-            self._start_node(event)
-        elif isinstance(event, NodeProgress):
-            self._update_node(event)
-        elif isinstance(event, NodeFinished):
-            self._finish_node(event)
-        elif isinstance(event, PipelineFinished):
-            self._finish_pipeline(event)
-        else:
-            raise TypeError(f"Unsupported progress event: {type(event).__name__}")
+        with self._lock:
+            if isinstance(event, ScopedExecutionEvent):
+                lane = self._scope_pipeline(event.scope, event.event)
+                lane.handle(event.event)
+                if not lane.active:
+                    del self._scopes[event.scope.id]
+            elif isinstance(event, OperationStarted):
+                self._start_operation(event)
+            elif isinstance(event, OperationProgress):
+                self._update_operation(event)
+            elif isinstance(event, OperationFinished):
+                self._finish_operation(event)
+            else:
+                self._pipeline.handle(event)
+                if (
+                    isinstance(event, PipelineFinished)
+                    and not self._pipeline.active
+                    and self._scopes
+                ):
+                    self._clear_scopes()
+                    self._progress.refresh()
+
+    def _scope_pipeline(
+        self,
+        scope: ExecutionScope,
+        event: ExecutionEvent,
+    ) -> "_PipelineProgress":
+        lane = self._scopes.get(scope.id)
+        if lane is None:
+            if not isinstance(event, PipelineStarted):
+                raise RuntimeError(
+                    "Cannot update execution scope before its pipeline starts"
+                )
+            lane = _PipelineProgress(self._progress, self._debug, scope.label, scope.id)
+            self._scopes[scope.id] = lane
+        elif lane.scope_label != scope.label:
+            raise RuntimeError(
+                "Execution scope label changed while its pipeline is active"
+            )
+        return lane
 
     def clear(self) -> None:
-        self._clear_pipeline()
-        if self._operation_task is not None:
-            self._progress.remove_task(self._operation_task)
-        self._operation_name = None
-        self._operation_task = None
-        self._progress.refresh()
+        with self._lock:
+            self._pipeline.clear()
+            self._clear_scopes()
+            if self._operation_task is not None:
+                self._progress.remove_task(self._operation_task)
+            self._operation_name = None
+            self._operation_task = None
+            self._progress.refresh()
+
+    def _clear_scopes(self) -> None:
+        for lane in self._scopes.values():
+            lane.clear()
+        self._scopes.clear()
 
     def _start_operation(self, event: OperationStarted) -> None:
         if self._operation_name is not None:
@@ -153,6 +193,46 @@ class _ExecutionProgress:
             raise RuntimeError("Operation progress finished out of order")
         self.clear()
 
+
+class _PipelineProgress:
+    def __init__(
+        self,
+        progress: Progress,
+        debug: bool,
+        scope_label: str | None = None,
+        scope_id: str | None = None,
+    ) -> None:
+        self._progress = progress
+        self._debug = debug
+        self.scope_label = scope_label
+        self._scope_id = scope_id
+        self._pipeline_stack: list[str] = []
+        self._pipeline_task: TaskID | None = None
+        self._node_tasks: dict[tuple[str, int], TaskID] = {}
+        self._open_nodes: list[tuple[str, int]] = []
+        self._visible_node: tuple[str, int] | None = None
+
+    @property
+    def active(self) -> bool:
+        return bool(self._pipeline_stack)
+
+    def _description(self, label: str) -> str:
+        return label if self.scope_label is None else f"{self.scope_label} {label}"
+
+    def handle(self, event: ExecutionEvent) -> None:
+        if isinstance(event, PipelineStarted):
+            self._start_pipeline(event)
+        elif isinstance(event, NodeStarted):
+            self._start_node(event)
+        elif isinstance(event, NodeProgress):
+            self._update_node(event)
+        elif isinstance(event, NodeFinished):
+            self._finish_node(event)
+        elif isinstance(event, PipelineFinished):
+            self._finish_pipeline(event)
+        else:
+            raise TypeError(f"Unsupported progress event: {type(event).__name__}")
+
     def _start_pipeline(self, event: PipelineStarted) -> None:
         if event.pipeline_name in self._pipeline_stack:
             raise RuntimeError("Cannot start duplicate pipeline progress")
@@ -160,9 +240,10 @@ class _ExecutionProgress:
         if len(self._pipeline_stack) > 1:
             return
         self._pipeline_task = self._progress.add_task(
-            f"[{event.pipeline_name}]",
+            self._description(f"[{event.pipeline_name}]"),
             total=None,
             status=Text(),
+            execution_scope=self._scope_id,
         )
 
     def _finish_pipeline(self, event: PipelineFinished) -> None:
@@ -173,20 +254,21 @@ class _ExecutionProgress:
         self._pipeline_stack.pop()
         if self._pipeline_stack:
             return
-        self._clear_pipeline()
+        self.clear()
         self._progress.refresh()
 
     def _start_node(self, event: NodeStarted) -> None:
         if event.pipeline_name not in self._pipeline_stack:
             raise RuntimeError("Cannot start node progress for an inactive pipeline")
         node = event.pipeline_name, event.node_index
-        label = f"[{event.pipeline_name}/{event.node_name}]"
+        label = self._description(f"[{event.pipeline_name}/{event.node_name}]")
         status = Text.assemble(("0", "cyan"), " out")
         self._node_tasks[node] = self._progress.add_task(
             label,
             total=None,
             status=status,
             visible=self._debug,
+            execution_scope=self._scope_id,
         )
         self._open_nodes.append(node)
         if not self._debug:
@@ -252,7 +334,7 @@ class _ExecutionProgress:
         task.total = total
         self._progress.update(task_id, completed=completed, status=status)
 
-    def _clear_pipeline(self) -> None:
+    def clear(self) -> None:
         for task_id in self._node_tasks.values():
             self._progress.remove_task(task_id)
         if self._pipeline_task is not None:
@@ -297,10 +379,11 @@ class _RichExecutionRenderer:
         self._progress = progress
 
     def render(self, event: ExecutionEvent) -> None:
-        if self._progress is not None and isinstance(event, PipelineProgress):
+        payload = event.event if isinstance(event, ScopedExecutionEvent) else event
+        if self._progress is not None and isinstance(payload, PipelineProgress):
             return
         if self._progress is not None and isinstance(
-            event,
+            payload,
             OperationStarted
             | OperationProgress
             | OperationFinished
@@ -311,15 +394,17 @@ class _RichExecutionRenderer:
             | PipelineFinished,
         ):
             self._progress.handle(event)
-            if isinstance(event, OperationStarted):
-                self._console.print(Rule(Text(f"Operation {event.name}"), style="dim"))
+            if isinstance(payload, OperationStarted):
+                self._console.print(
+                    Rule(Text(f"Operation {payload.name}"), style="dim")
+                )
                 return
             if isinstance(
-                event,
+                payload,
                 OperationProgress | NodeStarted | NodeProgress,
             ):
                 return
-        if isinstance(event, NodeProgress):
+        if isinstance(payload, NodeProgress):
             return
         event_level = ExecutionEventFormatter.level(event)
         if event_level < self._level:
@@ -341,14 +426,15 @@ class _RichExecutionRenderer:
         return table
 
     def _render_event(self, event: ExecutionEvent) -> Text:
+        payload = event.event if isinstance(event, ScopedExecutionEvent) else event
         level = ExecutionEventFormatter.level(event)
         text = Text(ExecutionEventFormatter.message(event))
         if isinstance(
-            event,
+            payload,
             CommandFinished | PipelineFinished | NodeFinished | OperationFinished,
         ):
-            status_style = "green" if event.status == "success" else "red"
-            text.highlight_words([f"status={event.status}"], style=status_style)
+            status_style = "green" if payload.status == "success" else "red"
+            text.highlight_words([f"status={payload.status}"], style=status_style)
         elif level >= logging.ERROR:
             text.stylize("red")
         elif level >= logging.WARNING:
@@ -386,7 +472,7 @@ def visual_summary(log_level: int, enabled: bool):
 def visual_execution(log_level: int):
     console = Console(file=sys.stderr, markup=False, highlight=False)
     debug = log_level <= logging.DEBUG
-    progress = Progress(
+    progress = _GroupedProgress(
         _ProgressRowColumn(Column(no_wrap=True, overflow="ellipsis")),
         transient=True,
         console=console,
