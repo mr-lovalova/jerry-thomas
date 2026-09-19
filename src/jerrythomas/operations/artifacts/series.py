@@ -29,11 +29,10 @@ from jerrythomas.execution.runner import run_pipeline
 from jerrythomas.io.json_file import write_json_object
 from jerrythomas.operations.artifacts.series_workers import (
     StreamWorkerProgress,
-    order_streams_parallel,
+    order_streams,
 )
 from jerrythomas.pipelines.series.projector import SeriesProjector
 from jerrythomas.pipelines.series.stages import SeriesSequencer
-from jerrythomas.pipelines.sort import SortProgress, batch_sort
 from jerrythomas.pipelines.stream.pipeline import build_stream_pipeline
 from jerrythomas.runtime import Runtime, require_runtime_stream
 from jerrythomas.services.path_policy import resolve_artifact_output_path
@@ -187,64 +186,25 @@ def _ordered_projected_rows(
     sample_keys: SampleKeyContract,
     cadence: timedelta,
 ) -> Iterator[_ProjectedRow]:
-    if runtime.execution.workers > 1 and len(plans) > 1:
-        progress = StreamWorkerProgress()
-        return run_pipeline(
-            runtime,
-            Pipeline(
-                name="series:artifact",
-                input=Input(
-                    name="order_series",
-                    open=partial(
-                        order_streams_parallel,
-                        runtime,
-                        plans,
-                        sample_keys,
-                        cadence,
-                        progress,
-                    ),
-                    progress=progress.snapshot,
-                ),
-            ),
-        )
-
-    sort_progress = SortProgress()
-    pipeline = Pipeline(
-        name="series:artifact",
-        input=Input(
-            name="project_streams",
-            open=partial(
-                _project_streams,
-                runtime,
-                plans,
-                sample_keys,
-                cadence,
-            ),
-        ),
-        stages=(
-            Stage(
+    progress = StreamWorkerProgress()
+    return run_pipeline(
+        runtime,
+        Pipeline(
+            name="series:artifact",
+            input=Input(
                 name="order_series",
-                apply=partial(
-                    batch_sort,
-                    buffer_bytes=runtime.execution.sort_buffer_bytes,
-                    key=_projected_row_key,
-                    progress=sort_progress,
+                open=partial(
+                    order_streams,
+                    runtime,
+                    plans,
+                    sample_keys,
+                    cadence,
+                    progress,
                 ),
-                progress=sort_progress.snapshot,
+                progress=progress.snapshot,
             ),
         ),
     )
-    return run_pipeline(runtime, pipeline)
-
-
-def _project_streams(
-    runtime: Runtime,
-    plans: Sequence[_StreamPlan],
-    sample_keys: SampleKeyContract,
-    cadence: timedelta,
-) -> Iterator[_ProjectedRow]:
-    for plan in plans:
-        yield from _project_stream(runtime, plan, sample_keys, cadence)
 
 
 def _project_stream(

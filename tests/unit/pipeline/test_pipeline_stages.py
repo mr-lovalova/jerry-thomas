@@ -2136,17 +2136,8 @@ def test_series_shared_stream_matches_independent_series_pipelines(
     assert isinstance(source, _StubSource)
     source.opens = 0
     source.closes = 0
-    normal_batch_sort = series_operation.batch_sort
     normal_round_time = series_operation.round_time_to_cadence
     round_calls = 0
-
-    def spilling_batch_sort(items, buffer_bytes, key, progress=None):
-        return normal_batch_sort(
-            items,
-            buffer_bytes=1,
-            key=key,
-            progress=progress,
-        )
 
     def count_round_time(timestamp, cadence, rounding):
         nonlocal round_calls
@@ -2154,9 +2145,9 @@ def test_series_shared_stream_matches_independent_series_pipelines(
         return normal_round_time(timestamp, cadence, rounding)
 
     monkeypatch.setattr(
-        series_operation,
-        "batch_sort",
-        spilling_batch_sort,
+        ExecutionConfig,
+        "sort_buffer_bytes",
+        property(lambda self: 1),
     )
     monkeypatch.setattr(
         series_operation,

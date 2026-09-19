@@ -48,11 +48,12 @@ class StreamWorkerError(RuntimeError):
 
 class StreamWorkerProgress:
     def __init__(self) -> None:
-        self._detail = "starting workers"
+        self._detail = "preparing streams"
         self._sort_progress: SortProgress | None = None
 
     def update(self, completed: int, total: int, active: int) -> None:
-        self._detail = f"{completed}/{total} streams complete, {active} workers"
+        workers = "worker" if active == 1 else "workers"
+        self._detail = f"{completed}/{total} streams complete, {active} {workers}"
 
     def snapshot(self, output_items: int) -> ProgressSnapshot:
         if self._sort_progress is not None:
@@ -106,6 +107,31 @@ class _WorkerLogHandler(logging.Handler):
             self.connection.send(_Log(record.name, record.levelno, self.format(record)))
 
 
+def _prepare_stream(
+    runtime: Runtime,
+    plan: _StreamPlan,
+    cadence: timedelta,
+    temp_root: Path,
+) -> _Complete:
+    from jerrythomas.operations.artifacts.series import (
+        _project_stream,
+        _projected_row_key,
+    )
+
+    sample_keys = SampleKeyContract(runtime.dataset.sample.keys)
+    rows = _project_stream(runtime, plan, sample_keys, cadence)
+    try:
+        runs = write_sort_runs(
+            rows,
+            runtime.execution.sort_buffer_bytes,
+            _projected_row_key,
+            temp_root,
+        )
+    finally:
+        rows.close()
+    return _Complete(runs, sample_keys.inferred_types)
+
+
 def _run_stream(
     snapshot: RuntimeSnapshot,
     plan: _StreamPlan,
@@ -114,11 +140,6 @@ def _run_stream(
     control: Connection,
     log_level: int,
 ) -> None:
-    from jerrythomas.operations.artifacts.series import (
-        _project_stream,
-        _projected_row_key,
-    )
-
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     tempfile.tempdir = str(temp_root)
     send_lock = threading.Lock()
@@ -137,19 +158,9 @@ def _run_stream(
             runtime = compile_runtime_snapshot(snapshot)
             runtime.heartbeat_interval_seconds = 0
             runtime.observe_node_events = False
-            sample_keys = SampleKeyContract(runtime.dataset.sample.keys)
-            rows = _project_stream(runtime, plan, sample_keys, cadence)
-            try:
-                runs = write_sort_runs(
-                    rows,
-                    runtime.execution.sort_buffer_bytes,
-                    _projected_row_key,
-                    temp_root,
-                )
-            finally:
-                rows.close()
+            result = _prepare_stream(runtime, plan, cadence, temp_root)
         with send_lock:
-            control.send(_Complete(runs, sample_keys.inferred_types))
+            control.send(result)
     except BaseException as error:
         failure = _Failure(f"{type(error).__name__}: {error}", traceback.format_exc())
         with send_lock:
@@ -158,7 +169,7 @@ def _run_stream(
         control.close()
 
 
-def order_streams_parallel(
+def order_streams(
     runtime: Runtime,
     plans: Sequence[_StreamPlan],
     sample_keys: SampleKeyContract,
@@ -167,7 +178,6 @@ def order_streams_parallel(
 ) -> Iterator[_ProjectedRow]:
     from jerrythomas.operations.artifacts.series import _projected_row_key
 
-    context = multiprocessing.get_context("spawn")
     active: list[_Worker] = []
     pending = iter(enumerate(plans))
     completed: dict[int, _Complete] = {}
@@ -175,54 +185,66 @@ def order_streams_parallel(
     # This parent-owned lock protects every child spill, including after a crash.
     with sort_spill_directory() as temp_root:
         try:
+            if runtime.execution.workers == 1 or len(plans) <= 1:
+                for index, plan in pending:
+                    progress.update(index, len(plans), 1)
+                    worker_root = temp_root / str(index)
+                    worker_root.mkdir()
+                    completed[index] = _prepare_stream(
+                        runtime, plan, cadence, worker_root
+                    )
+            else:
+                context = multiprocessing.get_context("spawn")
 
-            def start_next() -> None:
-                entry = next(pending, None)
-                if entry is None:
-                    return
-                index, plan = entry
-                snapshot = snapshot_runtime(runtime, (plan.stream_id,))
-                worker_root = temp_root / str(index)
-                worker_root.mkdir()
-                control_read, control_write = context.Pipe(duplex=False)
-                process = context.Process(
-                    target=_run_stream,
-                    name=f"jerry-stream:{plan.stream_id}",
-                    args=(
-                        snapshot,
-                        plan,
-                        cadence,
-                        worker_root,
-                        control_write,
-                        logging.getLogger("jerrythomas").getEffectiveLevel(),
-                    ),
-                )
-                active.append(_Worker(index, plan.stream_id, process, control_read))
-                try:
-                    process.start()
-                finally:
-                    # Keeping these open here would hide EOF after a child crash.
-                    control_write.close()
+                def start_next() -> None:
+                    entry = next(pending, None)
+                    if entry is None:
+                        return
+                    index, plan = entry
+                    snapshot = snapshot_runtime(runtime, (plan.stream_id,))
+                    worker_root = temp_root / str(index)
+                    worker_root.mkdir()
+                    control_read, control_write = context.Pipe(duplex=False)
+                    process = context.Process(
+                        target=_run_stream,
+                        name=f"jerry-stream:{plan.stream_id}",
+                        args=(
+                            snapshot,
+                            plan,
+                            cadence,
+                            worker_root,
+                            control_write,
+                            logging.getLogger("jerrythomas").getEffectiveLevel(),
+                        ),
+                    )
+                    active.append(_Worker(index, plan.stream_id, process, control_read))
+                    try:
+                        process.start()
+                    finally:
+                        # Keeping these open here would hide EOF after a child crash.
+                        control_write.close()
 
-            for _ in range(min(runtime.execution.workers, len(plans))):
-                start_next()
-            while active:
-                progress.update(len(completed), len(plans), len(active))
-                wait([w.control for w in active if not w.control_closed], timeout=0.1)
-                _check_workers(active)
-                for worker in tuple(active):
-                    if worker.complete is None:
-                        continue
-                    worker.process.join(timeout=5)
-                    if worker.process.is_alive() or worker.process.exitcode != 0:
-                        raise StreamWorkerError(
-                            f"Stream '{worker.stream_id}' did not exit successfully."
-                        )
-                    completed[worker.index] = worker.complete
-                    # Remove before close so cancellation cannot revisit a closed process.
-                    active.remove(worker)
-                    _close_worker(worker)
+                for _ in range(min(runtime.execution.workers, len(plans))):
                     start_next()
+                while active:
+                    progress.update(len(completed), len(plans), len(active))
+                    wait(
+                        [w.control for w in active if not w.control_closed], timeout=0.1
+                    )
+                    _check_workers(active)
+                    for worker in tuple(active):
+                        if worker.complete is None:
+                            continue
+                        worker.process.join(timeout=5)
+                        if worker.process.is_alive() or worker.process.exitcode != 0:
+                            raise StreamWorkerError(
+                                f"Stream '{worker.stream_id}' did not exit successfully."
+                            )
+                        completed[worker.index] = worker.complete
+                        # Remove before close so cancellation cannot revisit a closed process.
+                        active.remove(worker)
+                        _close_worker(worker)
+                        start_next()
             progress.update(len(plans), len(plans), 0)
 
             paths: list[Path] = []

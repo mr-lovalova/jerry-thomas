@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 import yaml
 
+import jerrythomas.operations.artifacts.series as series_module
 import jerrythomas.operations.artifacts.series_workers as worker_module
 from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.domain.sample_key import SampleKeyContract
@@ -25,7 +26,7 @@ from jerrythomas.operations.artifacts.series import _stream_plans
 from jerrythomas.operations.artifacts.series_workers import (
     StreamWorkerError,
     StreamWorkerProgress,
-    order_streams_parallel,
+    order_streams,
 )
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.project_definition import load_project_definition
@@ -182,7 +183,7 @@ def lifecycle_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def _project(runtime: Runtime):
-    return order_streams_parallel(
+    return order_streams(
         runtime,
         _stream_plans(runtime.dataset.features, runtime.dataset.targets),
         SampleKeyContract(runtime.dataset.sample.keys),
@@ -193,6 +194,74 @@ def _project(runtime: Runtime):
 
 def _child_pids() -> set[int | None]:
     return {process.pid for process in multiprocessing.active_children()}
+
+
+@pytest.mark.parametrize("workers,stream_count", [(1, 2), (4, 1)])
+def test_inline_sort_does_not_spawn_and_closing_output_removes_runs(
+    lifecycle_project,
+    monkeypatch: pytest.MonkeyPatch,
+    workers: int,
+    stream_count: int,
+) -> None:
+    runtime, temporary, markers = lifecycle_project(
+        ("finite",) * stream_count, barriers=(None,) * stream_count
+    )
+    runtime.execution = ExecutionConfig(workers=workers, sort_buffer_mb=1)
+
+    def fail_start(process) -> None:
+        pytest.fail("Inline sorting must not start a process")
+
+    monkeypatch.setattr(multiprocessing.process.BaseProcess, "start", fail_start)
+    projected = _project(runtime)
+    try:
+        assert next(projected).features[0].id == "first"
+        assert list(temporary.rglob("*.pickle.gz"))
+        for marker in markers:
+            assert marker.exists()
+            assert not Path(marker.read_text(encoding="utf-8")).exists()
+    finally:
+        projected.close()
+
+    assert list(temporary.iterdir()) == []
+
+
+def test_inline_write_failure_closes_input_and_preserves_original_error(
+    lifecycle_project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime, temporary, markers = lifecycle_project(
+        ("finite", "finite"), barriers=(None, None)
+    )
+    runtime.execution = ExecutionConfig(workers=1, sort_buffer_mb=1)
+    project_stream = series_module._project_stream
+    closed = []
+    failure = OSError("intentional inline run write failure")
+
+    def project(runtime, plan, sample_keys, cadence):
+        try:
+            yield from project_stream(runtime, plan, sample_keys, cadence)
+        finally:
+            closed.append(plan.stream_id)
+
+    def fail_write(rows, buffer_bytes, key, directory, progress=None):
+        next(rows)
+        (directory / "partial-run").write_bytes(b"partial sorted run")
+        raise failure
+
+    monkeypatch.setattr(series_module, "_project_stream", project)
+    monkeypatch.setattr(worker_module, "write_sort_runs", fail_write)
+    projected = _project(runtime)
+    try:
+        with pytest.raises(OSError) as error:
+            next(projected)
+        assert error.value is failure
+    finally:
+        projected.close()
+
+    assert closed == ["first"]
+    assert markers[0].exists()
+    assert not markers[1].exists()
+    assert not Path(markers[0].read_text(encoding="utf-8")).exists()
+    assert list(temporary.iterdir()) == []
 
 
 def test_closing_merged_output_removes_completed_worker_runs(

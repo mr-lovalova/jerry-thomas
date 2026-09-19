@@ -194,7 +194,10 @@ def test_stream_workers_preserve_regression_dataset_with_source_spills(
 
     def record_spill(*args, **kwargs):
         path = original_write_run(*args, **kwargs)
-        spills.append(path)
+        with gzip.open(path, "rb") as source:
+            first = pickle.load(source)
+        if getattr(first, "sort_test_padding", None) is not None:
+            spills.append(path)
         return path
 
     _configure_workers(root, "serve", 1)
@@ -230,6 +233,22 @@ def test_stream_workers_preserve_key_order_ties_and_empty_stream(tmp_path) -> No
     root = _keyed_project(tmp_path / "project")
     _build_series(root, 1)
     expected = _series_snapshot(root)
+    assert [json.loads(line) for line in gzip.decompress(expected[1]).splitlines()] == [
+        {
+            "time": "2024-01-01T00:00:00Z",
+            "entity_key": ["B"],
+            "features": {"collected": [False, 1.5], "scalar": None},
+            "targets": {},
+            "placeholder_ids": [],
+        },
+        {
+            "time": "2024-01-01T01:00:00Z",
+            "entity_key": ["A"],
+            "features": {"collected": [None, 2], "scalar": "present"},
+            "targets": {},
+            "placeholder_ids": [],
+        },
+    ]
     _build_series(root, 2)
     assert _series_snapshot(root) == expected
 
@@ -301,6 +320,35 @@ def test_worker_failure_preserves_published_series_and_cleans_temporary_files(
     assert not list(temporary.iterdir())
 
 
+def test_inline_run_write_failure_preserves_published_series_and_cleans_temporary_files(
+    tmp_path, monkeypatch
+) -> None:
+    root = _keyed_project(tmp_path / "project")
+    temporary = tmp_path / "temporary"
+    temporary.mkdir()
+    monkeypatch.setenv("TMPDIR", str(temporary))
+    monkeypatch.setattr(tempfile, "tempdir", str(temporary))
+    _build_series(root, 1)
+    expected = _publication_snapshot(root)
+    partial_runs = []
+
+    def fail_write_run(directory, run_id, items):
+        path = directory / f"run-{run_id}.pickle.gz"
+        path.write_bytes(b"partial run")
+        partial_runs.append(path)
+        raise OSError("intentional sorted-run write failure")
+
+    monkeypatch.setattr(sort_module, "_write_serialized_run", fail_write_run)
+    with pytest.raises(OSError, match="intentional sorted-run write failure"):
+        _build_series(root, 1)
+
+    assert partial_runs
+    assert all(not path.exists() for path in partial_runs)
+    assert _publication_snapshot(root) == expected
+    assert not list(temporary.iterdir())
+
+
+@pytest.mark.parametrize("workers", [1, 2])
 @pytest.mark.parametrize(
     ("failure", "error", "message"),
     [
@@ -309,8 +357,8 @@ def test_worker_failure_preserves_published_series_and_cleans_temporary_files(
         ("read", OSError, "intentional sorted-run read failure"),
     ],
 )
-def test_worker_run_merge_failure_preserves_published_series_and_cleans_temporary_files(
-    tmp_path, monkeypatch, failure, error, message
+def test_run_merge_failure_preserves_published_series_and_cleans_temporary_files(
+    tmp_path, monkeypatch, workers, failure, error, message
 ) -> None:
     root = _keyed_project(tmp_path / "project")
     temporary = tmp_path / "temporary"
@@ -346,11 +394,32 @@ def test_worker_run_merge_failure_preserves_published_series_and_cleans_temporar
 
     monkeypatch.setattr(sort_module, "_read_run", fail_read_run)
     with pytest.raises(error, match=message):
-        _build_series(root, 2)
+        _build_series(root, workers)
 
     assert injected
     assert _publication_snapshot(root) == expected
     assert not list(temporary.iterdir())
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_stream_warmup_preserves_sample_key_types_without_emitting_rows(
+    tmp_path, workers
+) -> None:
+    root = _keyed_project(tmp_path / "project")
+    path = root / "dataset.yaml"
+    dataset = yaml.safe_load(path.read_text())
+    for feature in dataset["features"]:
+        feature.pop("collect", None)
+        feature["sequence"] = {"size": 3}
+    _write_yaml(path, dataset)
+
+    _build_series(root, workers)
+
+    manifest = load_series_manifest(_manifest_path(root))
+    assert manifest.sample_key_types == ("string",)
+    assert manifest.rows == 0
+    assert all(entry.samples == 0 for entry in manifest.features)
+    assert gzip.decompress(_series_snapshot(root)[1]) == b""
 
 
 @pytest.mark.parametrize("workers", [1, 2])
