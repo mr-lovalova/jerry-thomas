@@ -1,7 +1,7 @@
 import logging
 import shutil
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Generator, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
@@ -27,6 +27,10 @@ from jerrythomas.domain.series_id import base_id
 from jerrythomas.execution.pipeline import Input, Pipeline, Stage
 from jerrythomas.execution.runner import run_pipeline
 from jerrythomas.io.json_file import write_json_object
+from jerrythomas.operations.artifacts.series_workers import (
+    StreamWorkerProgress,
+    project_streams_parallel,
+)
 from jerrythomas.pipelines.series.projector import SeriesProjector
 from jerrythomas.pipelines.series.stages import SeriesSequencer
 from jerrythomas.pipelines.sort import SortProgress, batch_sort
@@ -180,6 +184,8 @@ def _ordered_projected_rows(
     cadence: timedelta,
 ) -> Iterator[_ProjectedRow]:
     sort_progress = SortProgress()
+    worker_progress = StreamWorkerProgress()
+    parallel = runtime.execution.workers > 1 and len(plans) > 1
     pipeline = Pipeline(
         name="series:artifact",
         input=Input(
@@ -190,7 +196,9 @@ def _ordered_projected_rows(
                 plans,
                 sample_keys,
                 cadence,
+                worker_progress,
             ),
+            progress=worker_progress.snapshot if parallel else None,
         ),
         stages=(
             Stage(
@@ -213,7 +221,13 @@ def _project_streams(
     plans: Sequence[_StreamPlan],
     sample_keys: SampleKeyContract,
     cadence: timedelta,
+    progress: StreamWorkerProgress,
 ) -> Iterator[_ProjectedRow]:
+    if runtime.execution.workers > 1 and len(plans) > 1:
+        yield from project_streams_parallel(
+            runtime, plans, sample_keys, cadence, progress
+        )
+        return
     for plan in plans:
         yield from _project_stream(runtime, plan, sample_keys, cadence)
 
@@ -223,7 +237,7 @@ def _project_stream(
     plan: _StreamPlan,
     sample_keys: SampleKeyContract,
     cadence: timedelta,
-) -> Iterator[_ProjectedRow]:
+) -> Generator[_ProjectedRow, None, None]:
     stream = require_runtime_stream(runtime, plan.stream_id)
     configs = (*plan.features, *plan.targets)
     feature_ids = {config.id for config in plan.features}

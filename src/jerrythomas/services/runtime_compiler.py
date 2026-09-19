@@ -1,5 +1,9 @@
+from collections.abc import Iterable
+from copy import deepcopy
 from pathlib import Path
 
+from jerrythomas.artifacts.registry import ArtifactRegistry
+from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.sources import SourceConfig
 from jerrythomas.config.streams import (
     AlignJoin,
@@ -11,6 +15,7 @@ from jerrythomas.config.streams import (
     DerivedStreamConfig,
     SourceStreamConfig,
     StreamConfig,
+    StreamsConfig,
 )
 from jerrythomas.runtime import (
     AlignedRuntimeStream,
@@ -21,13 +26,17 @@ from jerrythomas.runtime import (
     CrossSectionRuntimeStream,
     DerivedRuntimeStream,
     Runtime,
+    RuntimeSnapshot,
     RuntimeStream,
     SourceRuntimeStream,
 )
 from jerrythomas.services.definitions import ProjectDefinition
 from jerrythomas.services.streams.combine import build_combine_stage
 from jerrythomas.services.streams.source import build_mapper, build_source
-from jerrythomas.services.streams.validation import stream_partition_by
+from jerrythomas.services.streams.validation import (
+    stream_dependency_closure,
+    stream_partition_by,
+)
 from jerrythomas.utils.time import parse_timecode
 
 
@@ -118,8 +127,14 @@ def _compile_combined_stream(
     )
 
 
-def compile_runtime(definition: ProjectDefinition) -> Runtime:
-    streams = definition.streams.model_copy(deep=True)
+def _compile_runtime(
+    project_yaml: Path,
+    artifacts_root: Path,
+    dataset: DatasetConfig,
+    configuration: StreamsConfig,
+) -> Runtime:
+    blueprint = configuration.model_copy(deep=True)
+    streams = blueprint.model_copy(deep=True)
     stream_configs = streams.streams
     runtime_streams: dict[str, RuntimeStream] = {}
     for stream_id, config in stream_configs.items():
@@ -127,7 +142,7 @@ def compile_runtime(definition: ProjectDefinition) -> Runtime:
             runtime_streams[stream_id] = _compile_source_stream(
                 config,
                 streams.sources[config.from_.source],
-                definition.project.path,
+                project_yaml,
             )
         elif isinstance(config, DerivedStreamConfig):
             runtime_streams[stream_id] = _compile_derived_stream(
@@ -148,8 +163,74 @@ def compile_runtime(definition: ProjectDefinition) -> Runtime:
             raise TypeError(f"Unsupported stream config: {type(config).__name__}")
 
     return Runtime(
-        project_yaml=definition.project.path,
-        artifacts_root=definition.project.artifacts_root,
-        dataset=definition.dataset.model_copy(deep=True),
+        project_yaml=project_yaml,
+        artifacts_root=artifacts_root,
+        dataset=dataset.model_copy(deep=True),
         streams=runtime_streams,
+        _stream_configs=blueprint,
     )
+
+
+def compile_runtime(definition: ProjectDefinition) -> Runtime:
+    return _compile_runtime(
+        definition.project.path,
+        definition.project.artifacts_root,
+        definition.dataset,
+        definition.streams,
+    )
+
+
+def snapshot_runtime(runtime: Runtime, stream_ids: Iterable[str]) -> RuntimeSnapshot:
+    """Capture selected streams without carrying live loaders into another process."""
+    if runtime._stream_configs is None:
+        raise ValueError(
+            "Parallel stream execution requires a runtime created by compile_runtime; "
+            "use compile_runtime or execution.workers=1 for manually assembled runtimes."
+        )
+    streams = runtime._stream_configs.model_copy(deep=True)
+    selected = stream_dependency_closure(streams.streams, stream_ids)
+    streams.streams = {
+        stream_id: config
+        for stream_id, config in streams.streams.items()
+        if stream_id in selected
+    }
+    source_ids = {
+        config.from_.source
+        for config in streams.streams.values()
+        if isinstance(config, SourceStreamConfig)
+    }
+    streams.sources = {
+        source_id: config
+        for source_id, config in streams.sources.items()
+        if source_id in source_ids
+    }
+    return RuntimeSnapshot(
+        project_yaml=runtime.project_yaml,
+        artifacts_root=runtime.artifacts_root,
+        dataset=runtime.dataset.model_copy(deep=True),
+        execution=runtime.execution.model_copy(deep=True),
+        streams=streams,
+        artifact_registry_root=runtime.artifacts.root,
+        artifact_registrations=runtime.artifacts.registrations(),
+        heartbeat_interval_seconds=runtime.heartbeat_interval_seconds,
+        observe_node_events=runtime.observe_node_events,
+    )
+
+
+def compile_runtime_snapshot(snapshot: RuntimeSnapshot) -> Runtime:
+    """Rebuild worker-local state from resolved values, without reading project files."""
+    runtime = _compile_runtime(
+        snapshot.project_yaml,
+        snapshot.artifacts_root,
+        snapshot.dataset,
+        snapshot.streams,
+    )
+    runtime.execution = snapshot.execution.model_copy(update={"workers": 1}, deep=True)
+    runtime.heartbeat_interval_seconds = snapshot.heartbeat_interval_seconds
+    runtime.observe_node_events = snapshot.observe_node_events
+    runtime.artifacts = ArtifactRegistry(snapshot.artifact_registry_root)
+    for key, record in snapshot.artifact_registrations.items():
+        runtime.artifacts.register(
+            key, record.relative_path, deepcopy(dict(record.meta))
+        )
+    return runtime

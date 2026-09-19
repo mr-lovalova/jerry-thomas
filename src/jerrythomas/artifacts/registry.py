@@ -1,4 +1,5 @@
 from collections.abc import Callable, Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -68,6 +69,13 @@ class ArtifactRegistry:
     def clear(self) -> None:
         self._records.clear()
         self._loaded.clear()
+
+    def registrations(self) -> dict[str, ArtifactRecord]:
+        """Copy registered references without serializing loaded artifacts."""
+        return {
+            key: ArtifactRecord(record.relative_path, deepcopy(dict(record.meta)))
+            for key, record in self._records.items()
+        }
 
     def has(self, key: str) -> bool:
         return key in self._records

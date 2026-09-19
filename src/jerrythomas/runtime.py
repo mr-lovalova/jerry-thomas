@@ -6,10 +6,11 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from jerrythomas.artifacts.registry import ArtifactRegistry
+from jerrythomas.artifacts.registry import ArtifactRecord, ArtifactRegistry
 from jerrythomas.config.cross_section import CrossSectionOperation
 from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.config.streams import StreamsConfig
 from jerrythomas.config.transforms import PreprocessConfig, TransformConfig
 from jerrythomas.domain.stream import RecordStream
 
@@ -97,6 +98,21 @@ RuntimeStream = (
 )
 
 
+@dataclass(frozen=True)
+class RuntimeSnapshot:
+    """Resolved configuration and artifact references for an isolated worker."""
+
+    project_yaml: Path
+    artifacts_root: Path
+    dataset: DatasetConfig
+    execution: ExecutionConfig
+    streams: StreamsConfig
+    artifact_registry_root: Path
+    artifact_registrations: dict[str, ArtifactRecord]
+    heartbeat_interval_seconds: float | None
+    observe_node_events: bool
+
+
 @dataclass
 class Runtime:
     """Holds the active project state and prepared streams."""
@@ -109,6 +125,7 @@ class Runtime:
     heartbeat_interval_seconds: float | None = None
     observe_node_events: bool = True
     artifacts: ArtifactRegistry = field(init=False)
+    _stream_configs: StreamsConfig | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.artifacts = ArtifactRegistry(self.artifacts_root)

@@ -1013,7 +1013,7 @@ def test_execute_build_job_invalidates_only_graph_descendants(
     config = json.loads(message[8:])
     assert config["operation"]["entrypoint"] == "core.artifact.series"
     assert config["mode"] == "rebuild"
-    assert config["execution"] == {"sort_buffer_mb": 128}
+    assert config["execution"] == {"sort_buffer_mb": 128, "workers": 1}
     assert config["observability"]["visuals"] is True
 
 

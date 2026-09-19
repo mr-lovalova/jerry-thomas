@@ -283,14 +283,15 @@ artifact_mode: auto # auto | rebuild | require_current
   UTF-8. An explicitly configured encoding remains subject to the selected
   format's validation.
 
-Sorting is an execution policy, not part of a stream definition.
-Configure its buffer once in each command's defaults file:
+Sorting and worker concurrency are execution policies, not stream definitions.
+Configure them in each command's defaults file:
 
 ```yaml
-# profiles/materialize.defaults.yaml
+# profiles/serve.defaults.yaml
 artifact_mode: auto
 execution:
   sort_buffer_mb: 128
+  workers: 1
 ```
 
 `sort_buffer_mb` is the soft serialized-payload target for each active sort
@@ -300,6 +301,20 @@ larger than the target occupies a buffer by itself. Python and sort-key overhead
 are additional, so this is not a process memory limit. Sorted items must be
 pickle-serializable. The built-in default is `128`. Build, materialize, serve,
 and inspect resolve their execution settings independently.
+
+`workers` is a positive integer, defaulting to `1`. During series artifact
+building, larger values allow up to that many stream pipelines to run in separate
+processes, including their source sorting and transforms. This also applies when
+serve builds a missing or stale series artifact. Stream results retain their
+original order before the shared series sort and artifact writing. A single
+selected stream uses the sequential path. Other operations remain sequential.
+Each worker constructs fresh plugin instances from the resolved configuration;
+plugins must be installed and available to child processes. Increasing workers
+can increase memory and disk use: `sort_buffer_mb` still applies to each active
+sort, and a stream can contain multiple sorts. Start with `workers: 2` and measure
+your workload before increasing it.
+Parallel builds currently show aggregate progress; individual worker stages are
+not displayed.
 
 ### Operations (`operations/*.yaml`)
 

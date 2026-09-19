@@ -42,6 +42,10 @@ class SampleKeyContract:
             self._types = list(expected_types)
 
     @property
+    def inferred_types(self) -> tuple[SampleKeyValueType | None, ...]:
+        return tuple(self._types)
+
+    @property
     def types(self) -> tuple[SampleKeyValueType, ...]:
         missing = [
             field
@@ -53,6 +57,25 @@ class SampleKeyContract:
                 "Sample key fields produced no values: " + ", ".join(missing)
             )
         return tuple(value_type for value_type in self._types if value_type is not None)
+
+    def merge_types(
+        self,
+        inferred_types: Sequence[SampleKeyValueType | None],
+    ) -> None:
+        if len(inferred_types) != len(self.fields):
+            raise ValueError(
+                "Sample key type count must match the configured sample keys."
+            )
+        for index, (field, value_type) in enumerate(zip(self.fields, inferred_types)):
+            if value_type is None:
+                continue
+            expected = self._types[index]
+            if expected is not None and value_type != expected:
+                raise TypeError(
+                    f"Sample key field {field!r} changed type from {expected} "
+                    f"to {value_type}."
+                )
+            self._types[index] = value_type
 
     def validate(self, values: Sequence[object]) -> None:
         if len(values) != len(self.fields):

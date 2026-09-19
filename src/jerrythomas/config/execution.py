@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt
 class ExecutionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    workers: StrictInt = Field(default=1, ge=1)
     sort_buffer_mb: StrictInt = Field(default=128, ge=1)
 
     @property
