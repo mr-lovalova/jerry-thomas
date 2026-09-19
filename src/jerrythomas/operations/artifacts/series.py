@@ -29,7 +29,7 @@ from jerrythomas.execution.runner import run_pipeline
 from jerrythomas.io.json_file import write_json_object
 from jerrythomas.operations.artifacts.series_workers import (
     StreamWorkerProgress,
-    project_streams_parallel,
+    order_streams_parallel,
 )
 from jerrythomas.pipelines.series.projector import SeriesProjector
 from jerrythomas.pipelines.series.stages import SeriesSequencer
@@ -73,6 +73,10 @@ class _ProjectedRow:
     time: datetime
     features: tuple[_ProjectedValue, ...]
     targets: tuple[_ProjectedValue, ...]
+
+
+def _projected_row_key(row: _ProjectedRow) -> tuple[tuple[Any, ...], datetime]:
+    return row.key, row.time
 
 
 def build_series_artifact(
@@ -183,9 +187,28 @@ def _ordered_projected_rows(
     sample_keys: SampleKeyContract,
     cadence: timedelta,
 ) -> Iterator[_ProjectedRow]:
+    if runtime.execution.workers > 1 and len(plans) > 1:
+        progress = StreamWorkerProgress()
+        return run_pipeline(
+            runtime,
+            Pipeline(
+                name="series:artifact",
+                input=Input(
+                    name="order_series",
+                    open=partial(
+                        order_streams_parallel,
+                        runtime,
+                        plans,
+                        sample_keys,
+                        cadence,
+                        progress,
+                    ),
+                    progress=progress.snapshot,
+                ),
+            ),
+        )
+
     sort_progress = SortProgress()
-    worker_progress = StreamWorkerProgress()
-    parallel = runtime.execution.workers > 1 and len(plans) > 1
     pipeline = Pipeline(
         name="series:artifact",
         input=Input(
@@ -196,9 +219,7 @@ def _ordered_projected_rows(
                 plans,
                 sample_keys,
                 cadence,
-                worker_progress,
             ),
-            progress=worker_progress.snapshot if parallel else None,
         ),
         stages=(
             Stage(
@@ -206,7 +227,7 @@ def _ordered_projected_rows(
                 apply=partial(
                     batch_sort,
                     buffer_bytes=runtime.execution.sort_buffer_bytes,
-                    key=lambda row: (row.key, row.time),
+                    key=_projected_row_key,
                     progress=sort_progress,
                 ),
                 progress=sort_progress.snapshot,
@@ -221,13 +242,7 @@ def _project_streams(
     plans: Sequence[_StreamPlan],
     sample_keys: SampleKeyContract,
     cadence: timedelta,
-    progress: StreamWorkerProgress,
 ) -> Iterator[_ProjectedRow]:
-    if runtime.execution.workers > 1 and len(plans) > 1:
-        yield from project_streams_parallel(
-            runtime, plans, sample_keys, cadence, progress
-        )
-        return
     for plan in plans:
         yield from _project_stream(runtime, plan, sample_keys, cadence)
 

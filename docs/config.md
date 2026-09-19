@@ -304,10 +304,12 @@ and inspect resolve their execution settings independently.
 
 `workers` is a positive integer, defaulting to `1`. During series artifact
 building, larger values allow up to that many stream pipelines to run in separate
-processes, including their source sorting and transforms. This also applies when
-serve builds a missing or stale series artifact. Stream results retain their
-original order before the shared series sort and artifact writing. A single
-selected stream uses the sequential path. Other operations remain sequential.
+processes, including their source sorting, transforms, and final sample ordering.
+This also applies when serve builds a missing or stale series artifact. Workers
+write temporary sorted runs, which the parent merges before artifact assembly.
+Equal-key rows retain their original stream and record order. Parallel builds
+write runs even when a stream fits in memory. A single selected stream uses the
+sequential path. Other operations remain sequential.
 Each worker constructs fresh plugin instances from the resolved configuration;
 plugins must be installed and available to child processes. Increasing workers
 can increase memory and disk use: `sort_buffer_mb` still applies to each active

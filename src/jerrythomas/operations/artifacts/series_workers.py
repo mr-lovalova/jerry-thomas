@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
-import pickle
 import signal
 import tempfile
 import threading
@@ -23,6 +22,12 @@ from jerrythomas.execution.observability import (
     emit_execution_message,
     execution_observer,
 )
+from jerrythomas.pipelines.sort import (
+    SortedRuns,
+    SortProgress,
+    merge_sort_runs,
+    write_sort_runs,
+)
 from jerrythomas.runtime import Runtime, RuntimeSnapshot
 from jerrythomas.services.runtime_compiler import (
     compile_runtime_snapshot,
@@ -34,7 +39,6 @@ if TYPE_CHECKING:
     from jerrythomas.operations.artifacts.series import _ProjectedRow, _StreamPlan
 
 
-_BATCH_BYTES = 1024 * 1024
 _KeyTypes = tuple[SampleKeyValueType | None, ...]
 
 
@@ -45,25 +49,26 @@ class StreamWorkerError(RuntimeError):
 class StreamWorkerProgress:
     def __init__(self) -> None:
         self._detail = "starting workers"
+        self._sort_progress: SortProgress | None = None
 
     def update(self, completed: int, total: int, active: int) -> None:
         self._detail = f"{completed}/{total} streams complete, {active} workers"
 
     def snapshot(self, output_items: int) -> ProgressSnapshot:
+        if self._sort_progress is not None:
+            return self._sort_progress.snapshot(output_items)
         return ProgressSnapshot(
-            completed=output_items, phase="projecting", detail=self._detail
+            completed=output_items, phase="preparing", detail=self._detail
         )
 
-
-@dataclass(frozen=True)
-class _Batch:
-    rows: tuple[bytes, ...]
-    key_types: _KeyTypes
+    def start_merging(self) -> SortProgress:
+        self._sort_progress = SortProgress()
+        return self._sort_progress
 
 
 @dataclass(frozen=True)
 class _Complete:
-    rows: int
+    runs: SortedRuns
     key_types: _KeyTypes
 
 
@@ -82,12 +87,11 @@ class _Log:
 
 @dataclass
 class _Worker:
+    index: int
     stream_id: str
     process: BaseProcess
-    data: Connection
     control: Connection
     complete: _Complete | None = None
-    data_closed: bool = False
     control_closed: bool = False
 
 
@@ -107,11 +111,13 @@ def _run_stream(
     plan: _StreamPlan,
     cadence: timedelta,
     temp_root: Path,
-    data: Connection,
     control: Connection,
     log_level: int,
 ) -> None:
-    from jerrythomas.operations.artifacts.series import _project_stream
+    from jerrythomas.operations.artifacts.series import (
+        _project_stream,
+        _projected_row_key,
+    )
 
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     tempfile.tempdir = str(temp_root)
@@ -134,62 +140,50 @@ def _run_stream(
             sample_keys = SampleKeyContract(runtime.dataset.sample.keys)
             rows = _project_stream(runtime, plan, sample_keys, cadence)
             try:
-                count = _send_rows(rows, sample_keys, data)
+                runs = write_sort_runs(
+                    rows,
+                    runtime.execution.sort_buffer_bytes,
+                    _projected_row_key,
+                    temp_root,
+                )
             finally:
                 rows.close()
         with send_lock:
-            control.send(_Complete(count, sample_keys.inferred_types))
+            control.send(_Complete(runs, sample_keys.inferred_types))
     except BaseException as error:
         failure = _Failure(f"{type(error).__name__}: {error}", traceback.format_exc())
         with send_lock:
             control.send(failure)
     finally:
-        data.close()
         control.close()
 
 
-def _send_rows(
-    rows: Iterator[_ProjectedRow], sample_keys: SampleKeyContract, data: Connection
-) -> int:
-    batch: list[bytes] = []
-    size = 0
-    count = 0
-    for row in rows:
-        # Snapshot before advancing plugins that may reuse mutable record values.
-        payload = pickle.dumps(row, protocol=pickle.HIGHEST_PROTOCOL)
-        batch.append(payload)
-        size += len(payload)
-        count += 1
-        if size >= _BATCH_BYTES:
-            data.send(_Batch(tuple(batch), sample_keys.inferred_types))
-            batch.clear()
-            size = 0
-    if batch:
-        data.send(_Batch(tuple(batch), sample_keys.inferred_types))
-    return count
-
-
-def project_streams_parallel(
+def order_streams_parallel(
     runtime: Runtime,
     plans: Sequence[_StreamPlan],
     sample_keys: SampleKeyContract,
     cadence: timedelta,
     progress: StreamWorkerProgress,
 ) -> Iterator[_ProjectedRow]:
+    from jerrythomas.operations.artifacts.series import _projected_row_key
+
     context = multiprocessing.get_context("spawn")
     active: list[_Worker] = []
     pending = iter(enumerate(plans))
+    completed: dict[int, _Complete] = {}
 
     # This parent-owned lock protects every child spill, including after a crash.
     with sort_spill_directory() as temp_root:
         try:
 
             def start_next() -> None:
-                index, plan = next(pending)
+                entry = next(pending, None)
+                if entry is None:
+                    return
+                index, plan = entry
                 snapshot = snapshot_runtime(runtime, (plan.stream_id,))
                 worker_root = temp_root / str(index)
                 worker_root.mkdir()
-                data_read, data_write = context.Pipe(duplex=False)
                 control_read, control_write = context.Pipe(duplex=False)
                 process = context.Process(
                     target=_run_stream,
@@ -199,60 +193,52 @@ def project_streams_parallel(
                         plan,
                         cadence,
                         worker_root,
-                        data_write,
                         control_write,
                         logging.getLogger("jerrythomas").getEffectiveLevel(),
                     ),
                 )
-                active.append(_Worker(plan.stream_id, process, data_read, control_read))
+                active.append(_Worker(index, plan.stream_id, process, control_read))
                 try:
                     process.start()
                 finally:
                     # Keeping these open here would hide EOF after a child crash.
-                    data_write.close()
                     control_write.close()
 
             for _ in range(min(runtime.execution.workers, len(plans))):
                 start_next()
-            for completed in range(len(plans)):
-                progress.update(completed, len(plans), len(active))
-                current = active[0]
-                count = 0
-                while True:
-                    _check_workers(active)
-                    if current.data_closed and current.complete is not None:
-                        break
-                    readers = [w.control for w in active if not w.control_closed]
-                    if not current.data_closed:
-                        readers.append(current.data)
-                    ready = wait(readers, timeout=0.1)
-                    _check_workers(active)
-                    if not current.data_closed and current.data in ready:
-                        try:
-                            batch = current.data.recv()
-                        except EOFError:
-                            current.data_closed = True
-                            continue
-                        sample_keys.merge_types(batch.key_types)
-                        for payload in batch.rows:
-                            count += 1
-                            yield pickle.loads(payload)
-
-                sample_keys.merge_types(current.complete.key_types)
-                if count != current.complete.rows:
-                    raise StreamWorkerError(
-                        f"Stream '{current.stream_id}' returned incomplete output."
-                    )
-                current.process.join(timeout=5)
-                if current.process.is_alive() or current.process.exitcode != 0:
-                    raise StreamWorkerError(
-                        f"Stream '{current.stream_id}' did not exit successfully."
-                    )
-                active.pop(0)
-                _close_worker(current)
-                if completed + len(active) + 1 < len(plans):
+            while active:
+                progress.update(len(completed), len(plans), len(active))
+                wait([w.control for w in active if not w.control_closed], timeout=0.1)
+                _check_workers(active)
+                for worker in tuple(active):
+                    if worker.complete is None:
+                        continue
+                    worker.process.join(timeout=5)
+                    if worker.process.is_alive() or worker.process.exitcode != 0:
+                        raise StreamWorkerError(
+                            f"Stream '{worker.stream_id}' did not exit successfully."
+                        )
+                    completed[worker.index] = worker.complete
+                    # Remove before close so cancellation cannot revisit a closed process.
+                    active.remove(worker)
+                    _close_worker(worker)
                     start_next()
             progress.update(len(plans), len(plans), 0)
+
+            paths: list[Path] = []
+            rows = 0
+            # Completion order must not change equal-key precedence or type errors.
+            for index in range(len(plans)):
+                result = completed[index]
+                sample_keys.merge_types(result.key_types)
+                paths.extend(result.runs.paths)
+                rows += result.runs.rows
+            yield from merge_sort_runs(
+                SortedRuns(tuple(paths), rows),
+                _projected_row_key,
+                temp_root,
+                progress.start_merging(),
+            )
         finally:
             _stop_workers(active)
 
@@ -288,7 +274,6 @@ def _check_workers(workers: Sequence[_Worker]) -> None:
 
 
 def _close_worker(worker: _Worker) -> None:
-    worker.data.close()
     worker.control.close()
     worker.process.close()
 

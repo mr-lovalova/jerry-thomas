@@ -3,6 +3,7 @@ import heapq
 import pickle
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
+from itertools import chain
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -14,6 +15,12 @@ _BufferedItem = tuple[Any, bytes]
 _MAX_OPEN_RUNS = 64
 _MERGE_PROGRESS_INTERVAL = 100_000
 _SPILL_COMPRESSION_LEVEL = 1
+
+
+@dataclass(frozen=True)
+class SortedRuns:
+    paths: tuple[Path, ...]
+    rows: int
 
 
 @dataclass(frozen=True)
@@ -119,31 +126,70 @@ def batch_sort(
         return
 
     with sort_spill_directory(spill_dir) as temp_dir:
-        run_paths = [_write_serialized_run(temp_dir, 0, first_run)]
-        input_items = len(first_run)
-        first_run.clear()
-        progress.spilling(input_items, len(run_paths))
+        written = _write_runs(chain(((first_run, False),), runs), temp_dir, progress)
+        yield from merge_sort_runs(written, key, temp_dir, progress)
 
-        for run, _ in runs:
-            run_paths.append(_write_serialized_run(temp_dir, len(run_paths), run))
-            input_items += len(run)
-            run.clear()
-            progress.spilling(input_items, len(run_paths))
 
-        pass_id = 0
-        while len(run_paths) > _MAX_OPEN_RUNS:
-            pass_id += 1
-            run_paths = _merge_pass(
-                temp_dir,
-                pass_id,
-                run_paths,
-                key,
-                input_items,
-                progress,
-            )
+def write_sort_runs(
+    iterable: Iterable[T],
+    buffer_bytes: int,
+    key: Callable[[T], Any],
+    directory: Path,
+    progress: SortProgress | None = None,
+) -> SortedRuns:
+    """Snapshot and sort runs in a caller-owned directory, even if input fits RAM."""
+    if buffer_bytes < 1:
+        raise ValueError("buffer_bytes must be at least 1")
+    if progress is None:
+        progress = SortProgress()
+    progress.reading(0)
+    return _write_runs(_sorted_runs(iterable, buffer_bytes, key), directory, progress)
 
-        progress.emitting(input_items)
-        yield from _merge_runs(run_paths, key)
+
+def _write_runs(
+    runs: Iterable[tuple[list[_BufferedItem], bool]],
+    directory: Path,
+    progress: SortProgress,
+) -> SortedRuns:
+    paths: list[Path] = []
+    rows = 0
+    for run, _ in runs:
+        paths.append(_write_serialized_run(directory, len(paths), run))
+        rows += len(run)
+        run.clear()
+        progress.spilling(rows, len(paths))
+    return SortedRuns(tuple(paths), rows)
+
+
+def merge_sort_runs(
+    runs: SortedRuns,
+    key: Callable[[T], Any],
+    directory: Path,
+    progress: SortProgress | None = None,
+) -> Generator[T, None, None]:
+    """Merge runs in stable path order; the caller owns their directory lifetime."""
+    if progress is None:
+        progress = SortProgress()
+    paths = list(runs.paths)
+    pass_id = 0
+    while len(paths) > _MAX_OPEN_RUNS:
+        pass_id += 1
+        paths = _merge_pass(directory, pass_id, paths, key, runs.rows, progress)
+
+    progress.emitting(runs.rows)
+    merged = _merge_runs(paths, key)
+    count = 0
+    try:
+        for item in merged:
+            count += 1
+            yield item
+    finally:
+        merged.close()
+    if count != runs.rows:
+        raise ValueError(
+            f"Sorted runs returned incomplete output: expected {runs.rows} rows, "
+            f"got {count}."
+        )
 
 
 def _write_serialized_run(
@@ -197,7 +243,9 @@ def _merge_pass(
     return merged_paths
 
 
-def _merge_runs(run_paths: Sequence[Path], key: Callable[[T], Any]) -> Iterator[T]:
+def _merge_runs(
+    run_paths: Sequence[Path], key: Callable[[T], Any]
+) -> Generator[T, None, None]:
     heap: list[tuple[Any, int, T, Iterator[T]]] = []
     readers: list[Generator[T, None, None]] = []
 

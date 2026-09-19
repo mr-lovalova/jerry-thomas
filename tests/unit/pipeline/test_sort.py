@@ -5,7 +5,13 @@ from unittest.mock import Mock
 import pytest
 
 import jerrythomas.pipelines.sort as sort_module
-from jerrythomas.pipelines.sort import SortProgress, batch_sort
+from jerrythomas.pipelines.sort import (
+    SortedRuns,
+    SortProgress,
+    batch_sort,
+    merge_sort_runs,
+    write_sort_runs,
+)
 
 
 @dataclass
@@ -228,3 +234,88 @@ def test_batch_sort_accepts_empty_input(monkeypatch, tmp_path) -> None:
 def test_batch_sort_rejects_invalid_buffer_size(buffer_bytes) -> None:
     with pytest.raises(ValueError, match="buffer_bytes must be at least 1"):
         list(batch_sort([], buffer_bytes=buffer_bytes, key=lambda item: item))
+
+
+@pytest.mark.parametrize("buffer_bytes", [1, 10_000])
+def test_separately_written_runs_merge_in_original_stable_order(
+    tmp_path, monkeypatch, buffer_bytes
+) -> None:
+    monkeypatch.setattr(sort_module, "_MAX_OPEN_RUNS", 2)
+    groups = [
+        [
+            StableSortItem(value=value, position=stream * 3 + index)
+            for index, value in enumerate((1, 0, 1))
+        ]
+        for stream in range(3)
+    ]
+    written = []
+    # Completion order differs from the order that defines equal-key precedence.
+    for stream in (2, 0, 1):
+        directory = tmp_path / str(stream)
+        directory.mkdir()
+        runs = write_sort_runs(
+            groups[stream], buffer_bytes, lambda item: item.value, directory
+        )
+        written.append((stream, runs))
+    written.sort(key=lambda entry: entry[0])
+    combined = SortedRuns(
+        tuple(path for _, runs in written for path in runs.paths),
+        sum(runs.rows for _, runs in written),
+    )
+
+    actual = list(merge_sort_runs(combined, lambda item: item.value, tmp_path))
+
+    expected = sorted(
+        [item for group in groups for item in group], key=lambda item: item.value
+    )
+    assert actual == expected
+
+
+def test_empty_sorted_runs_need_no_files(tmp_path) -> None:
+    runs = write_sort_runs([], 1, lambda item: item, tmp_path)
+
+    assert runs == SortedRuns((), 0)
+    assert list(merge_sort_runs(runs, lambda item: item, tmp_path)) == []
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("buffer_bytes", [0, -1])
+def test_writing_sorted_runs_rejects_invalid_buffer_size(
+    tmp_path, buffer_bytes
+) -> None:
+    with pytest.raises(ValueError, match="buffer_bytes must be at least 1"):
+        write_sort_runs([], buffer_bytes, lambda item: item, tmp_path)
+
+
+def test_merge_rejects_incomplete_output_across_merge_passes(tmp_path, monkeypatch):
+    monkeypatch.setattr(sort_module, "_MAX_OPEN_RUNS", 2)
+    runs = write_sort_runs([5, 4, 3, 2, 1], 1, lambda item: item, tmp_path)
+    runs.paths[1].unlink()
+    incomplete = SortedRuns(
+        tuple(path for path in runs.paths if path.exists()), runs.rows
+    )
+
+    with pytest.raises(ValueError, match="expected 5 rows, got 4"):
+        list(merge_sort_runs(incomplete, lambda item: item, tmp_path))
+
+
+def test_closing_merge_closes_run_readers_but_leaves_files_to_owner(
+    tmp_path, monkeypatch
+) -> None:
+    runs = write_sort_runs([3, 2, 1], 1, lambda item: item, tmp_path)
+    readers = []
+    read_run = sort_module._read_run
+
+    def track_reader(path):
+        reader = read_run(path)
+        readers.append(reader)
+        return reader
+
+    monkeypatch.setattr(sort_module, "_read_run", track_reader)
+    merged = merge_sort_runs(runs, lambda item: item, tmp_path)
+    assert next(merged) == 1
+    merged.close()
+
+    assert len(readers) == 3
+    assert all(reader.gi_frame is None for reader in readers)
+    assert all(path.exists() for path in runs.paths)

@@ -1,4 +1,7 @@
+import gzip
+import io
 import json
+import pickle
 import tempfile
 from pathlib import Path
 
@@ -44,6 +47,18 @@ def _series_snapshot(root: Path) -> tuple[dict, bytes]:
     return (
         manifest.model_dump(mode="json", exclude={"path"}),
         (path.parent / manifest.path).read_bytes(),
+    )
+
+
+def _publication_snapshot(
+    root: Path,
+) -> tuple[bytes, tuple[dict, bytes], bytes, set[Path]]:
+    manifest_path = _manifest_path(root)
+    return (
+        manifest_path.read_bytes(),
+        _series_snapshot(root),
+        (root / "build" / "_system" / "build" / "state.json").read_bytes(),
+        set(series_cache_root(manifest_path).iterdir()),
     )
 
 
@@ -234,6 +249,29 @@ def test_stream_workers_preserve_key_order_ties_and_empty_stream(tmp_path) -> No
     assert [row.features["scalar"] for row in rows] == [None, "present"]
 
 
+def test_stream_workers_merge_spilled_projected_values(tmp_path, monkeypatch) -> None:
+    root = _keyed_project(tmp_path / "project")
+    path = root / "data" / "b.jsonl"
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    records[0]["value"] = "selected value padding " * 60_000
+    _write_rows(path, records)
+    _build_series(root, 1)
+    expected = _series_snapshot(root)
+    merge_run_counts = []
+    merge_runs = sort_module._merge_runs
+
+    def record_merge_runs(paths, key):
+        merge_run_counts.append(len(paths))
+        return merge_runs(paths, key)
+
+    monkeypatch.setattr(sort_module, "_merge_runs", record_merge_runs)
+    _build_series(root, 2)
+
+    # One run from a, at least two from b, none from the empty stream.
+    assert max(merge_run_counts) >= 3
+    assert _series_snapshot(root) == expected
+
+
 def test_worker_failure_preserves_published_series_and_cleans_temporary_files(
     tmp_path, monkeypatch
 ) -> None:
@@ -243,13 +281,7 @@ def test_worker_failure_preserves_published_series_and_cleans_temporary_files(
     monkeypatch.setenv("TMPDIR", str(temporary))
     monkeypatch.setattr(tempfile, "tempdir", str(temporary))
     _build_series(root, 1)
-    manifest_path = _manifest_path(root)
-    manifest_bytes = manifest_path.read_bytes()
-    expected_series = _series_snapshot(root)
-    state_path = root / "build" / "_system" / "build" / "state.json"
-    state_bytes = state_path.read_bytes()
-    cache_root = series_cache_root(manifest_path)
-    generations = set(cache_root.iterdir())
+    expected = _publication_snapshot(root)
 
     source_path = root / "data" / "b.jsonl"
     records = [json.loads(line) for line in source_path.read_text().splitlines()]
@@ -265,10 +297,59 @@ def test_worker_failure_preserves_published_series_and_cleans_temporary_files(
     ):
         _build_series(root, 2)
 
-    assert manifest_path.read_bytes() == manifest_bytes
-    assert _series_snapshot(root) == expected_series
-    assert state_path.read_bytes() == state_bytes
-    assert set(cache_root.iterdir()) == generations
+    assert _publication_snapshot(root) == expected
+    assert not list(temporary.iterdir())
+
+
+@pytest.mark.parametrize(
+    ("failure", "error", "message"),
+    [
+        ("missing-row", ValueError, "expected"),
+        ("truncated", pickle.UnpicklingError, "truncated"),
+        ("read", OSError, "intentional sorted-run read failure"),
+    ],
+)
+def test_worker_run_merge_failure_preserves_published_series_and_cleans_temporary_files(
+    tmp_path, monkeypatch, failure, error, message
+) -> None:
+    root = _keyed_project(tmp_path / "project")
+    temporary = tmp_path / "temporary"
+    temporary.mkdir()
+    monkeypatch.setenv("TMPDIR", str(temporary))
+    monkeypatch.setattr(tempfile, "tempdir", str(temporary))
+    _build_series(root, 1)
+    expected = _publication_snapshot(root)
+    read_run = sort_module._read_run
+    injected = False
+
+    def fail_read_run(path):
+        nonlocal injected
+        if not injected:
+            injected = True
+            if failure == "read":
+                raise OSError("intentional sorted-run read failure")
+            with gzip.open(path, "rb") as source:
+                payload = source.read()
+            if failure == "missing-row":
+                serialized = io.BytesIO(payload)
+                while serialized.tell() < len(payload):
+                    last_row_start = serialized.tell()
+                    pickle.load(serialized)
+                # Losing a whole record still leaves a readable file. The
+                # expected row count must prevent publishing incomplete output.
+                payload = payload[:last_row_start]
+            else:
+                payload = payload[:-1]
+            with gzip.open(path, "wb") as destination:
+                destination.write(payload)
+        return read_run(path)
+
+    monkeypatch.setattr(sort_module, "_read_run", fail_read_run)
+    with pytest.raises(error, match=message):
+        _build_series(root, 2)
+
+    assert injected
+    assert _publication_snapshot(root) == expected
     assert not list(temporary.iterdir())
 
 

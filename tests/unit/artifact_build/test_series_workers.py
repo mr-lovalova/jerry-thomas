@@ -25,7 +25,7 @@ from jerrythomas.operations.artifacts.series import _stream_plans
 from jerrythomas.operations.artifacts.series_workers import (
     StreamWorkerError,
     StreamWorkerProgress,
-    project_streams_parallel,
+    order_streams_parallel,
 )
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.project_definition import load_project_definition
@@ -67,9 +67,16 @@ class _LifecycleLoader(BaseDataLoader):
                 logging.getLogger("tests.stream_workers").warning(
                     "worker standard warning"
                 )
+            if self.mode == "write_failure":
+                import jerrythomas.pipelines.sort as sort_module
 
-            # Each pair fills the IPC batch; remaining rows keep both workers
-            # active when the parent closes after receiving the first record.
+                def fail_write_run(directory, run_id, items):
+                    (directory / f"partial-{run_id}").write_bytes(b"partial worker run")
+                    raise OSError("intentional sorted-run write failure")
+
+                sort_module._write_serialized_run = fail_write_run
+
+            # Selected values exceed the sort buffer and produce several runs.
             for index in range(12):
                 yield {
                     "time": "2024-01-01T00:00:00Z",
@@ -102,11 +109,17 @@ def lifecycle_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     temporary.mkdir()
     monkeypatch.setattr(tempfile, "tempdir", str(temporary))
 
-    def build(modes: tuple[str, str]) -> tuple[Runtime, Path, tuple[Path, Path]]:
+    def build(
+        modes: tuple[str, ...],
+        barriers: tuple[int | None, ...] | None = None,
+    ) -> tuple[Runtime, Path, tuple[Path, ...]]:
         root = tmp_path / "project"
         for name in ("sources", "streams"):
             (root / name).mkdir(parents=True)
-        markers = (root / "first.started", root / "second.started")
+        streams = ("first", "second", "third")[: len(modes)]
+        markers = tuple(root / f"{stream}.started" for stream in streams)
+        if barriers is None:
+            barriers = (1, 0)
         _write_yaml(
             root / "project.yaml",
             {
@@ -126,11 +139,13 @@ def lifecycle_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 "sample": {"rounding": "floor", "cadence": "1h", "keys": ["id_"]},
                 "features": [
                     {"id": stream, "stream": stream, "field": "value"}
-                    for stream in ("first", "second")
+                    for stream in streams
                 ],
             },
         )
-        for index, (stream, mode) in enumerate(zip(("first", "second"), modes)):
+        for index, (stream, mode, barrier) in enumerate(
+            zip(streams, modes, barriers, strict=True)
+        ):
             _write_yaml(
                 root / "sources" / f"{stream}.yaml",
                 {
@@ -142,7 +157,9 @@ def lifecycle_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                         "args": {
                             "mode": mode,
                             "marker": str(markers[index]),
-                            "barrier": str(markers[1 - index]),
+                            "barrier": (
+                                None if barrier is None else str(markers[barrier])
+                            ),
                         },
                     },
                 },
@@ -165,7 +182,7 @@ def lifecycle_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def _project(runtime: Runtime):
-    return project_streams_parallel(
+    return order_streams_parallel(
         runtime,
         _stream_plans(runtime.dataset.features, runtime.dataset.targets),
         SampleKeyContract(runtime.dataset.sample.keys),
@@ -178,7 +195,7 @@ def _child_pids() -> set[int | None]:
     return {process.pid for process in multiprocessing.active_children()}
 
 
-def test_closing_projection_reaps_workers_and_removes_their_spills(
+def test_closing_merged_output_removes_completed_worker_runs(
     lifecycle_project,
 ) -> None:
     runtime, temporary, markers = lifecycle_project(("rows", "rows"))
@@ -187,14 +204,59 @@ def test_closing_projection_reaps_workers_and_removes_their_spills(
     try:
         first = next(projected)
         assert first.features[0].id == "first"
-        assert len(_child_pids() - baseline) == 2
+        assert _child_pids() == baseline
+        assert list(temporary.rglob("*.pickle.gz"))
         for marker in markers:
             spill = Path(marker.read_text(encoding="utf-8"))
             assert spill.is_relative_to(temporary)
-            assert (spill / "run.pickle").exists()
+            assert not spill.exists()
     finally:
         projected.close()
 
+    assert _child_pids() == baseline
+    assert list(temporary.iterdir()) == []
+
+
+def test_completed_worker_frees_slot_before_earlier_stream_finishes(
+    lifecycle_project,
+) -> None:
+    runtime, temporary, markers = lifecycle_project(
+        ("finite", "finite", "finite"), barriers=(2, None, None)
+    )
+    baseline = _child_pids()
+
+    rows = list(_project(runtime))
+
+    assert all(marker.exists() for marker in markers)
+    assert [row.features[0].id for row in rows] == ["first", "second", "third"]
+    assert len({row.key for row in rows}) == 1
+    assert _child_pids() == baseline
+    assert list(temporary.iterdir()) == []
+
+
+def test_interrupt_while_workers_write_reaps_workers_and_removes_spills(
+    lifecycle_project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime, temporary, markers = lifecycle_project(("slow", "slow"))
+    baseline = _child_pids()
+    check_workers = worker_module._check_workers
+
+    def interrupt_after_workers_started(workers) -> None:
+        check_workers(workers)
+        if all(marker.exists() for marker in markers):
+            raise KeyboardInterrupt("interrupt while workers write")
+
+    monkeypatch.setattr(
+        worker_module, "_check_workers", interrupt_after_workers_started
+    )
+    projected = _project(runtime)
+    try:
+        with pytest.raises(KeyboardInterrupt, match="interrupt while workers write"):
+            next(projected)
+    finally:
+        projected.close()
+
+    assert all(marker.exists() for marker in markers)
     assert _child_pids() == baseline
     assert list(temporary.iterdir()) == []
 
@@ -225,6 +287,25 @@ def test_later_worker_failure_interrupts_the_current_slow_stream(
     try:
         with pytest.raises(
             (ValueError, StreamWorkerError), match="intentional later worker failure"
+        ):
+            next(projected)
+    finally:
+        projected.close()
+
+    assert all(marker.exists() for marker in markers)
+    assert _child_pids() == baseline
+    assert list(temporary.iterdir()) == []
+
+
+def test_worker_run_write_failure_reaps_peer_and_removes_partial_output(
+    lifecycle_project,
+) -> None:
+    runtime, temporary, markers = lifecycle_project(("slow", "write_failure"))
+    baseline = _child_pids()
+    projected = _project(runtime)
+    try:
+        with pytest.raises(
+            StreamWorkerError, match="intentional sorted-run write failure"
         ):
             next(projected)
     finally:
