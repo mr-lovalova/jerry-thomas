@@ -28,7 +28,7 @@ from jerrythomas.execution.pipeline import Input, Pipeline, Stage
 from jerrythomas.execution.runner import run_pipeline
 from jerrythomas.io.json_file import write_json_object
 from jerrythomas.operations.artifacts.series_workers import (
-    StreamWorkerProgress,
+    SeriesWorkerProgress,
     order_streams,
 )
 from jerrythomas.pipelines.series.projector import SeriesProjector
@@ -186,7 +186,7 @@ def _ordered_projected_rows(
     sample_keys: SampleKeyContract,
     cadence: timedelta,
 ) -> Iterator[_ProjectedRow]:
-    progress = StreamWorkerProgress()
+    progress = SeriesWorkerProgress()
     return run_pipeline(
         runtime,
         Pipeline(

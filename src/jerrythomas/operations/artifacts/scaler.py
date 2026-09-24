@@ -1,7 +1,8 @@
 from collections import defaultdict
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
+from functools import partial
 from pathlib import Path
 
 from jerrythomas.artifacts.output import ArtifactOutput
@@ -14,14 +15,42 @@ from jerrythomas.config.dataset.series import SeriesConfig
 from jerrythomas.config.dataset.split import DatasetFold, TimeSplitConfig
 from jerrythomas.config.tasks.scaler import ScalerTask
 from jerrythomas.domain.series import SeriesRecord
-from jerrythomas.domain.sample_key import SampleKeyContract
+from jerrythomas.domain.sample_key import SampleKeyContract, SampleKeyValueType
+from jerrythomas.execution.pipeline import Input, Pipeline
+from jerrythomas.execution.runner import run_pipeline
 from jerrythomas.pipelines.dataset.split import TargetHorizonPolicy, build_labeler
 from jerrythomas.pipelines.series.projector import SeriesProjector
 from jerrythomas.pipelines.stream.pipeline import run_stream_pipeline
 from jerrythomas.runtime import Runtime, require_runtime_stream
+from jerrythomas.services.stream_workers import StreamWorkerProgress, run_stream_jobs
+from jerrythomas.services.temp_cleanup import sort_spill_directory
 from jerrythomas.transforms.vector.scaler import ScalerAccumulator
 from jerrythomas.transforms.utils import record_establishes_domain
 from jerrythomas.utils.time import round_time_to_cadence, parse_cadence
+
+
+@dataclass(frozen=True)
+class _StreamPlan:
+    stream_id: str
+    configs: tuple[SeriesConfig, ...]
+
+
+@dataclass
+class _ScalerFit:
+    accumulator: ScalerAccumulator
+    expected_ids: set[str]
+    training_ids: set[str]
+
+    def extend(self, other: "_ScalerFit") -> None:
+        self.accumulator.extend(other.accumulator)
+        self.expected_ids.update(other.expected_ids)
+        self.training_ids.update(other.training_ids)
+
+
+@dataclass(frozen=True)
+class _FittedStream:
+    fits: dict[str | None, _ScalerFit]
+    key_types: tuple[SampleKeyValueType | None, ...]
 
 
 @dataclass(frozen=True)
@@ -31,118 +60,168 @@ class _ScalerInput:
 
 
 @dataclass
-class _FoldScalerState:
-    accumulator: ScalerAccumulator
-    expected_ids: set[str]
-    training_ids: set[str]
-    training_domain: set[tuple[tuple, str]]
-    training_labels: frozenset[str]
-    horizon_policy: TargetHorizonPolicy | None
+class _ScalerState:
+    fit: _ScalerFit
+    training_domain: set[tuple[tuple, str]] = field(default_factory=set)
+    training_labels: frozenset[str] | None = None
+    horizon_policy: TargetHorizonPolicy | None = None
 
-    def observe(self, label: str, item: _ScalerInput) -> None:
-        if self.horizon_policy is not None and not self.horizon_policy.allows(
-            label,
-            item.group_key,
-        ):
-            return
+    def observe(self, item: _ScalerInput, label: str | None = None) -> None:
+        if self.horizon_policy is not None:
+            assert label is not None
+            if not self.horizon_policy.allows(label, item.group_key):
+                return
+        fit = self.fit
         genuine_ids = {
             record.id for record in item.records if record_establishes_domain(record)
         }
-        self.expected_ids.update(genuine_ids)
-        if label not in self.training_labels:
+        fit.expected_ids.update(genuine_ids)
+        if self.training_labels is not None and label not in self.training_labels:
             return
 
-        self.training_ids.update(genuine_ids)
+        fit.training_ids.update(genuine_ids)
         entity_key = item.group_key[1:]
         self.training_domain.update(
             (entity_key, series_id) for series_id in genuine_ids
         )
         for record in item.records:
             if (entity_key, record.id) in self.training_domain:
-                self.accumulator.observe(record.id, record.value)
+                fit.accumulator.observe(record.id, record.value)
 
 
 def build_scaler_artifact(
     runtime: Runtime,
     task_cfg: ScalerTask,
 ) -> ArtifactOutput:
-    dataset = runtime.dataset
-    configs = tuple(config for config in dataset.series if config.scale)
-    if dataset.split is None:
-        standard = _fit_standard_scaler(runtime, configs, task_cfg)
-        artifact: StandardScalerArtifact | FoldedScalerArtifact = standard
+    progress = StreamWorkerProgress()
+    (artifact,) = run_pipeline(
+        runtime,
+        Pipeline(
+            name="scaler:artifact",
+            input=Input(
+                name="fit_scaler",
+                open=partial(_fit_scaler, runtime, task_cfg, progress),
+                progress=progress.snapshot,
+            ),
+        ),
+    )
+    if isinstance(artifact, StandardScalerArtifact):
         meta = {
-            "series": len(standard.statistics),
-            "observations": standard.observations,
+            "series": len(artifact.statistics),
+            "observations": artifact.observations,
         }
     else:
-        folded = _fit_folded_scaler(
-            runtime,
-            configs,
-            dataset.split.folds,
-            task_cfg,
-        )
-        artifact = folded
         meta = {
-            "folds": len(folded.folds),
+            "folds": len(artifact.folds),
             "observations": sum(
-                scaler.observations for scaler in folded.folds.values()
+                scaler.observations for scaler in artifact.folds.values()
             ),
         }
-
     relative_path = Path(task_cfg.output)
     save_scaler_artifact(runtime.artifacts_root / relative_path, artifact)
     return ArtifactOutput(meta=meta)
 
 
+def _fit_scaler(
+    runtime: Runtime,
+    task: ScalerTask,
+    progress: StreamWorkerProgress,
+) -> Iterator[StandardScalerArtifact | FoldedScalerArtifact]:
+    dataset = runtime.dataset
+    configs_by_stream: dict[str, list[SeriesConfig]] = defaultdict(list)
+    for config in dataset.series:
+        if config.scale:
+            configs_by_stream[config.stream].append(config)
+    plans = tuple(
+        _StreamPlan(stream_id, tuple(configs))
+        for stream_id, configs in configs_by_stream.items()
+    )
+    fold_ids = (
+        tuple(fold.id for fold in dataset.split.folds)
+        if dataset.split is not None
+        else (None,)
+    )
+    fits = {
+        fold_id: _ScalerFit(_new_accumulator(task), set(), set())
+        for fold_id in fold_ids
+    }
+    sample_keys = SampleKeyContract(dataset.sample.keys)
+    with sort_spill_directory() as temp_root:
+        results = run_stream_jobs(
+            runtime, plans, partial(_fit_stream, task=task), temp_root, progress
+        )
+        results.reverse()
+        while results:
+            result = results.pop()
+            sample_keys.merge_types(result.key_types)
+            for fold_id, fit in result.fits.items():
+                fits[fold_id].extend(fit)
+
+    if dataset.split is None:
+        fit = fits[None]
+        yield _finish_scaler(fit.accumulator, fit.expected_ids, "dataset")
+    else:
+        yield FoldedScalerArtifact(
+            folds={
+                fold.id: _finish_folded_scaler(
+                    fits[fold.id], f"dataset fold {fold.id!r}"
+                )
+                for fold in dataset.split.folds
+            }
+        )
+
+
+def _fit_stream(
+    runtime: Runtime,
+    plan: _StreamPlan,
+    _temp_root: Path,
+    *,
+    task: ScalerTask,
+) -> _FittedStream:
+    sample_keys = SampleKeyContract(runtime.dataset.sample.keys)
+    fits: dict[str | None, _ScalerFit]
+    if runtime.dataset.split is None:
+        fits = {None: _fit_standard_scaler(runtime, plan, task, sample_keys)}
+    else:
+        fits = _fit_folded_scaler(
+            runtime, plan, runtime.dataset.split.folds, task, sample_keys
+        )
+    return _FittedStream(fits, sample_keys.inferred_types)
+
+
 def _fit_standard_scaler(
     runtime: Runtime,
-    configs: Sequence[SeriesConfig],
+    plan: _StreamPlan,
     task: ScalerTask,
-) -> StandardScalerArtifact:
-    accumulator = _new_accumulator(task)
-    expected_ids: set[str] = set()
-    established_series: set[tuple[tuple, str]] = set()
-    inputs = _iter_scaler_inputs(runtime, configs)
+    sample_keys: SampleKeyContract,
+) -> _ScalerFit:
+    state = _ScalerState(_ScalerFit(_new_accumulator(task), set(), set()))
+    inputs = _iter_scaler_inputs(runtime, plan, sample_keys)
     try:
         for item in inputs:
-            entity_key = item.group_key[1:]
-            genuine_ids = {
-                record.id
-                for record in item.records
-                if record_establishes_domain(record)
-            }
-            expected_ids.update(genuine_ids)
-            established_series.update(
-                (entity_key, series_id) for series_id in genuine_ids
-            )
-            for record in item.records:
-                if (entity_key, record.id) in established_series:
-                    accumulator.observe(record.id, record.value)
+            state.observe(item)
     finally:
         _close_iterator(inputs)
-    return _finish_scaler(accumulator, expected_ids, "dataset")
+    return state.fit
 
 
 def _fit_folded_scaler(
     runtime: Runtime,
-    configs: Sequence[SeriesConfig],
+    plan: _StreamPlan,
     folds: Sequence[DatasetFold],
     task: ScalerTask,
-) -> FoldedScalerArtifact:
+    sample_keys: SampleKeyContract,
+) -> dict[str | None, _ScalerFit]:
     split = runtime.dataset.split
     assert split is not None
 
     target_horizon = runtime.dataset.max_target_horizon
     time_split = split if isinstance(split, TimeSplitConfig) else None
-    states_by_label: dict[str, list[_FoldScalerState]] = defaultdict(list)
-    states: dict[str, _FoldScalerState] = {}
+    states_by_label: dict[str, list[_ScalerState]] = defaultdict(list)
+    states: dict[str, _ScalerState] = {}
     for fold in folds:
-        state = _FoldScalerState(
-            accumulator=_new_accumulator(task),
-            expected_ids=set(),
-            training_ids=set(),
-            training_domain=set(),
+        state = _ScalerState(
+            fit=_ScalerFit(_new_accumulator(task), set(), set()),
             training_labels=frozenset(fold.train),
             horizon_policy=(
                 TargetHorizonPolicy(time_split, fold, target_horizon)
@@ -155,37 +234,29 @@ def _fit_folded_scaler(
             states_by_label[label].append(state)
 
     labeler = build_labeler(split)
-    inputs = _iter_scaler_inputs(runtime, configs)
+    inputs = _iter_scaler_inputs(runtime, plan, sample_keys)
     try:
         for item in inputs:
             label = labeler.label(item.group_key)
             for state in states_by_label.get(label, ()):
-                state.observe(label, item)
+                state.observe(item, label)
     finally:
         _close_iterator(inputs)
 
-    return FoldedScalerArtifact(
-        folds={
-            fold.id: _finish_folded_scaler(
-                states[fold.id],
-                f"dataset fold {fold.id!r}",
-            )
-            for fold in folds
-        }
-    )
+    return {fold.id: states[fold.id].fit for fold in folds}
 
 
 def _finish_folded_scaler(
-    state: _FoldScalerState,
+    fit: _ScalerFit,
     scope: str,
 ) -> StandardScalerArtifact:
-    untrained_ids = state.expected_ids - state.training_ids
+    untrained_ids = fit.expected_ids - fit.training_ids
     if untrained_ids:
         raise RuntimeError(
             f"Scaler fitting has no training observations for {scope} vector IDs: "
             + ", ".join(sorted(untrained_ids))
         )
-    return _finish_scaler(state.accumulator, state.training_ids, scope)
+    return _finish_scaler(fit.accumulator, fit.training_ids, scope)
 
 
 def _finish_scaler(
@@ -220,36 +291,31 @@ def _new_accumulator(task: ScalerTask) -> ScalerAccumulator:
 
 def _iter_scaler_inputs(
     runtime: Runtime,
-    configs: Sequence[SeriesConfig],
+    plan: _StreamPlan,
+    sample_keys: SampleKeyContract,
 ) -> Iterator[_ScalerInput]:
     cadence_step = parse_cadence(runtime.dataset.sample.cadence)
-    sample_key_contract = SampleKeyContract(runtime.dataset.sample.keys)
-    configs_by_stream: dict[str, list[SeriesConfig]] = defaultdict(list)
-    for config in configs:
-        configs_by_stream[config.stream].append(config)
-
-    for stream_id, stream_configs in configs_by_stream.items():
-        runtime_stream = require_runtime_stream(runtime, stream_id)
-        projector = SeriesProjector(
-            runtime_stream.partition_by,
-            sample_key_contract,
-            tuple(stream_configs),
-        )
-        records = run_stream_pipeline(runtime, stream_id)
-        try:
-            for record in records:
-                series_records = tuple(projector.project(record))
-                yield _ScalerInput(
-                    group_key=(
-                        round_time_to_cadence(
-                            record.time, cadence_step, runtime.dataset.sample.rounding
-                        ),
-                        *series_records[0].entity_key,
+    runtime_stream = require_runtime_stream(runtime, plan.stream_id)
+    projector = SeriesProjector(
+        runtime_stream.partition_by,
+        sample_keys,
+        plan.configs,
+    )
+    records = run_stream_pipeline(runtime, plan.stream_id)
+    try:
+        for record in records:
+            series_records = tuple(projector.project(record))
+            yield _ScalerInput(
+                group_key=(
+                    round_time_to_cadence(
+                        record.time, cadence_step, runtime.dataset.sample.rounding
                     ),
-                    records=series_records,
-                )
-        finally:
-            _close_iterator(records)
+                    *series_records[0].entity_key,
+                ),
+                records=series_records,
+            )
+    finally:
+        _close_iterator(records)
 
 
 def _close_iterator(items: Iterator[object]) -> None:

@@ -364,3 +364,56 @@ def test_scaler_artifact_rejects_old_incomplete_or_coerced_payloads(
 
     with pytest.raises(ValidationError):
         load_scaler_artifact(path)
+
+
+def test_accumulator_extends_disjoint_vectors_without_sharing_mutable_moments() -> None:
+    combined = ScalerAccumulator()
+    combined.observe("existing", 7.0)
+    source = ScalerAccumulator()
+    source.observe("scalar", 1e16)
+    source.observe("scalar", 1e16 + 2.0)
+    source.observe("positions", [None, 0.125])
+    source.observe("positions", [3.0, 0.25])
+    expected = source.artifact()
+
+    combined.extend(source)
+    combined.extend(ScalerAccumulator())
+    source.observe("scalar", -1e16)
+    source.observe("positions", [100.0, 100.0])
+
+    result = combined.artifact()
+    assert result.observations == 1 + expected.observations
+    assert result.statistics["scalar"] == expected.statistics["scalar"]
+    assert result.statistics["positions"] == expected.statistics["positions"]
+    assert result.statistics["existing"].mean == 7.0
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [{"with_mean": False}, {"with_std": False}, {"epsilon": 0.1}],
+)
+def test_accumulator_rejects_different_settings_before_extending(settings) -> None:
+    combined = ScalerAccumulator()
+    combined.observe("existing", 1.0)
+    before = combined.artifact()
+    source = ScalerAccumulator(**settings)
+    source.observe("new", 2.0)
+
+    with pytest.raises(ValueError, match="different settings"):
+        combined.extend(source)
+
+    assert combined.artifact() == before
+
+
+def test_accumulator_rejects_overlapping_ids_before_extending() -> None:
+    combined = ScalerAccumulator()
+    combined.observe("existing", 1.0)
+    before = combined.artifact()
+    source = ScalerAccumulator()
+    source.observe("new", 2.0)
+    source.observe("existing", 3.0)
+
+    with pytest.raises(ValueError, match="overlapping vector IDs: existing"):
+        combined.extend(source)
+
+    assert combined.artifact() == before

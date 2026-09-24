@@ -309,15 +309,18 @@ missing or stale series artifact. Equal-key rows retain their original stream
 and record order. Runs are written even when a stream fits in memory.
 With `workers: 1` or a single selected stream, preparation runs inline. Larger
 values allow up to that many stream pipelines to run in separate processes,
-including their source sorting, transforms, and final sample ordering. Other
-operations remain sequential. Each subprocess constructs fresh plugin instances
-from the resolved configuration; plugins must be installed and available to
+including their source sorting, transforms, and final sample ordering.
+Scaler artifact builds use the same worker limit: each worker processes a scaled
+stream and fits all its folds in one pass. Exact statistics are combined and
+validated before writing the scaler artifact; no additional sorted output runs
+are needed for fitting. Other operations remain sequential. Each subprocess
+constructs fresh plugin instances from the resolved configuration; plugins must be installed and available to
 child processes. Increasing workers can increase memory and disk use:
 `sort_buffer_mb` still applies to each active sort, and a stream can contain
 multiple sorts. Start with `workers: 2` and measure your workload before
 increasing it.
 Parallel builds show each active worker's pipeline and current stage alongside
-aggregate preparation progress. The final merge has shared progress.
+aggregate preparation progress. The final series merge has shared progress.
 
 ### Operations (`operations/*.yaml`)
 

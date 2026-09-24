@@ -16,7 +16,7 @@ from jerrythomas.artifacts.series import (
 )
 from jerrythomas.config.tasks.series import SeriesTask
 from jerrythomas.execution.settings import CommandObservability
-from jerrythomas.operations.artifacts.series_workers import StreamWorkerError
+from jerrythomas.services.stream_workers import StreamWorkerError
 from jerrythomas.profiles.orchestration import run_profiles
 from jerrythomas.profiles.request_builder import build_build_run_request
 from tests.helpers.regression import serve_dataset

@@ -119,6 +119,34 @@ class ScalerAccumulator:
         self._statistics[vector_id] = current
         self.observations += sum(number is not None for number in numbers)
 
+    def extend(self, other: "ScalerAccumulator") -> None:
+        """Combine disjoint vector statistics without changing their exact moments."""
+        if (self.with_mean, self.with_std, self.epsilon) != (
+            other.with_mean,
+            other.with_std,
+            other.epsilon,
+        ):
+            raise ValueError(
+                "Cannot combine scaler accumulators with different settings."
+            )
+        overlap = self._statistics.keys() & other._statistics.keys()
+        if overlap:
+            raise ValueError(
+                "Cannot combine scaler accumulators with overlapping vector IDs: "
+                + ", ".join(sorted(overlap))
+            )
+        self._statistics.update(
+            {
+                vector_id: (
+                    tuple(replace(position) for position in running)
+                    if isinstance(running, tuple)
+                    else replace(running)
+                )
+                for vector_id, running in other._statistics.items()
+            }
+        )
+        self.observations += other.observations
+
     def artifact(self) -> StandardScalerArtifact:
         if not self._statistics:
             raise RuntimeError("Scaler fitting produced no numeric observations.")

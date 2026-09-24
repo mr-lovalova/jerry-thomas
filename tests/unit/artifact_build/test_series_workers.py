@@ -16,7 +16,8 @@ from rich.console import Console
 from rich.progress import Progress
 
 import jerrythomas.operations.artifacts.series as series_module
-import jerrythomas.operations.artifacts.series_workers as worker_module
+import jerrythomas.operations.artifacts.series_workers as series_worker_module
+import jerrythomas.services.stream_workers as worker_module
 from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.cli.visuals.rich.progress import (
     _ExecutionProgress,
@@ -38,13 +39,13 @@ from jerrythomas.execution.observability import (
 )
 from jerrythomas.operations.artifacts.series import _stream_plans
 from jerrythomas.operations.artifacts.series_workers import (
-    StreamWorkerError,
-    StreamWorkerProgress,
+    SeriesWorkerProgress,
     order_streams,
 )
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.project_definition import load_project_definition
 from jerrythomas.services.runtime_compiler import compile_runtime
+from jerrythomas.services.stream_workers import StreamWorkerError
 from jerrythomas.services.temp_cleanup import sort_spill_directory
 from jerrythomas.sources.loader import BaseDataLoader
 
@@ -241,7 +242,7 @@ def _project(runtime: Runtime):
         _stream_plans(runtime.dataset.features, runtime.dataset.targets),
         SampleKeyContract(runtime.dataset.sample.keys),
         timedelta(hours=1),
-        StreamWorkerProgress(),
+        SeriesWorkerProgress(),
     )
 
 
@@ -301,7 +302,7 @@ def test_inline_write_failure_closes_input_and_preserves_original_error(
         raise failure
 
     monkeypatch.setattr(series_module, "_project_stream", project)
-    monkeypatch.setattr(worker_module, "write_sort_runs", fail_write)
+    monkeypatch.setattr(series_worker_module, "write_sort_runs", fail_write)
     projected = _project(runtime)
     try:
         with pytest.raises(OSError) as error:
