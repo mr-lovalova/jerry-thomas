@@ -799,6 +799,7 @@ Notes:
 Defines which canonical streams become features and targets and how samples are grouped.
 
 ```yaml
+version: v1
 sample:
   rounding: ceil
   cadence: 1d
@@ -840,6 +841,50 @@ postprocess:
   features:
     threshold: 0.95
 ```
+
+`sample`, `split`, and `postprocess` may each stay inline or reference a shared
+file. For example, replace those blocks in `datasets/default.yaml` with:
+
+```yaml
+sample: { file: shared/sample.daily.yaml }
+split: { file: shared/split.holdout.yaml }
+postprocess: { file: shared/postprocess.complete.yaml }
+```
+
+Each file contains the block itself, without a `sample`, `split`, or
+`postprocess` wrapper:
+
+```yaml
+# shared/sample.daily.yaml
+rounding: ceil
+cadence: 1d
+keys: [security_id]
+```
+
+```yaml
+# shared/split.holdout.yaml
+mode: time
+intervals:
+  - { id: train, until: "2023-01-01T00:00:00Z" }
+  - { id: test }
+folds:
+  - { id: holdout, train: [train], test: [test] }
+```
+
+```yaml
+# shared/postprocess.complete.yaml
+features:
+  threshold: 1.0
+```
+
+Relative `file` paths resolve from the directory containing `project.yaml`,
+regardless of the dataset file's location or working directory. Keep shared
+files outside `paths.datasets`, where every YAML file declares a dataset.
+A reference must contain only `file`: overrides and references to another file
+inside a shared block are rejected. Inline and referenced blocks can be mixed
+within a dataset. Shared files use the consuming project's globals and environment.
+Their contents are resolved before validation and included in artifact hashes
+and saved recipes like inline configuration.
 
 - `sample.cadence` controls the time bucket for samples (must match
   `^\\d+(m|min|h|d)$`, e.g. `10m`, `60min`, `1h`, `1d`).
