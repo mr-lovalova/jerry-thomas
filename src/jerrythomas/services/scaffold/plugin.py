@@ -75,8 +75,8 @@ def _install_dataset_files(plugin_root: Path, template_root: Path) -> None:
     shutil.copy2(template_root / "README.md", plugin_root / "README.md")
     shutil.copy2(template_root / "jerry.yaml", plugin_root / "jerry.yaml")
     shutil.copytree(
-        template_root / "your-dataset",
-        plugin_root / "your-dataset",
+        template_root / "your-project",
+        plugin_root / "your-project",
     )
 
 

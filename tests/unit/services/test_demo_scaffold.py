@@ -15,18 +15,18 @@ def test_demo_scaffold_creates_self_contained_plugin(tmp_path: Path) -> None:
     plugin_root = demo.scaffold_demo(tmp_path)
 
     assert plugin_root == tmp_path / "demo"
-    assert not (plugin_root / "your-dataset").exists()
+    assert not (plugin_root / "your-project").exists()
     assert (plugin_root / "demo" / "project.yaml").is_file()
     assert (plugin_root / "demo" / "scripts" / "run_model_batches.py").is_file()
     assert (plugin_root / "src" / "demo" / "domains" / "equity").is_dir()
-    assert "your-dataset" not in (plugin_root / "README.md").read_text()
+    assert "your-project" not in (plugin_root / "README.md").read_text()
 
     workspace = WorkspaceConfig.model_validate(
         yaml.safe_load((plugin_root / "jerry.yaml").read_text(encoding="utf-8"))
     )
     assert workspace.plugin_root == "."
-    assert workspace.datasets == {"demo": "demo/project.yaml"}
-    assert workspace.default_dataset == "demo"
+    assert workspace.projects == {"demo": "demo/project.yaml"}
+    assert workspace.default_project == "demo"
     assert not (tmp_path / "jerry.yaml").exists()
 
     pyproject = plugin_root / "pyproject.toml"
@@ -94,7 +94,7 @@ def test_demo_scaffold_refuses_existing_target_without_mutation(
 
 def test_demo_scaffold_does_not_modify_parent_workspace(tmp_path: Path) -> None:
     workspace_path = tmp_path / "jerry.yaml"
-    original = b"# keep this comment\ndatasets: {research: research/project.yaml}\n"
+    original = b"# keep this comment\nprojects: {research: research/project.yaml}\n"
     workspace_path.write_bytes(original)
 
     plugin_root = demo.scaffold_demo(tmp_path)

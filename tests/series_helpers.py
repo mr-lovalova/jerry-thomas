@@ -17,7 +17,7 @@ def register_series(
     targets: Sequence[TargetSeriesConfig] = (),
     sample_keys: Sequence[str] = (),
 ) -> None:
-    current = runtime.dataset
+    current = runtime.require_dataset()
     runtime.dataset = DatasetConfig(
         sample=SampleConfig(
             rounding=current.sample.rounding, cadence=cadence, keys=list(sample_keys)
@@ -31,7 +31,7 @@ def register_series(
     task = SeriesTask()
     result = build_series_artifact(runtime, task)
     runtime.artifacts.register(
-        SERIES,
+        runtime.artifact_aliases.get(SERIES, SERIES),
         relative_path=task.output,
         meta=result.meta,
     )

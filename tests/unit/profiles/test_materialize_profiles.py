@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.config.profiles.materialize import MaterializeProfile
 from jerrythomas.execution.settings import (
     CommandObservability,
@@ -34,7 +35,7 @@ def _profile(name: str, stream: str, output: str) -> MaterializeProfile:
     return MaterializeProfile(
         cmd="materialize",
         name=name,
-        stream=stream,
+        operation=stream,
         output=output,
     )
 
@@ -47,7 +48,7 @@ def _job(
 ):
     return MaterializeJob(
         name=name,
-        stream=stream,
+        task=StreamTask(id=stream, stream=stream),
         output=resolve_materialize_output(output),
         overwrite=overwrite,
         observability=_observability(),
@@ -64,7 +65,12 @@ def test_resolve_materialize_jobs_applies_command_overrides(
 
     jobs = materialize.resolve_materialize_jobs(
         profiles=profiles,
-        project_path=tmp_path / "project.yaml",
+        definition=SimpleNamespace(
+            project=SimpleNamespace(path=tmp_path / "project.yaml"),
+            runtime_operations=tuple(
+                StreamTask(id=stream, stream=stream) for stream in ("adv.20", "adv.63")
+            ),
+        ),
         execution_dir=tmp_path / "execution",
         overwrite=True,
         cli_output=None,
@@ -84,7 +90,12 @@ def test_resolve_materialize_jobs_applies_command_overrides(
 def test_resolve_materialize_jobs_derives_gzip_from_profile_output(tmp_path) -> None:
     jobs = materialize.resolve_materialize_jobs(
         profiles=[_profile("adv-20", "adv.20", "adv-20.jsonl.gz")],
-        project_path=tmp_path / "project.yaml",
+        definition=SimpleNamespace(
+            project=SimpleNamespace(path=tmp_path / "project.yaml"),
+            runtime_operations=tuple(
+                StreamTask(id=stream, stream=stream) for stream in ("adv.20", "adv.63")
+            ),
+        ),
         execution_dir=tmp_path / "execution",
         overwrite=None,
         cli_output=None,
@@ -98,7 +109,12 @@ def test_resolve_materialize_jobs_derives_gzip_from_profile_output(tmp_path) -> 
 def test_resolve_materialize_jobs_derives_gzip_from_output_override(tmp_path) -> None:
     jobs = materialize.resolve_materialize_jobs(
         profiles=[_profile("adv-20", "adv.20", "profile.jsonl")],
-        project_path=tmp_path / "project.yaml",
+        definition=SimpleNamespace(
+            project=SimpleNamespace(path=tmp_path / "project.yaml"),
+            runtime_operations=tuple(
+                StreamTask(id=stream, stream=stream) for stream in ("adv.20", "adv.63")
+            ),
+        ),
         execution_dir=tmp_path / "execution",
         overwrite=None,
         cli_output=tmp_path / "override.jsonl.gz",
@@ -118,7 +134,13 @@ def test_output_override_requires_one_selected_profile(tmp_path) -> None:
     with pytest.raises(ValueError, match="one selected profile"):
         materialize.resolve_materialize_jobs(
             profiles=profiles,
-            project_path=tmp_path / "project.yaml",
+            definition=SimpleNamespace(
+                project=SimpleNamespace(path=tmp_path / "project.yaml"),
+                runtime_operations=tuple(
+                    StreamTask(id=stream, stream=stream)
+                    for stream in ("adv.20", "adv.63")
+                ),
+            ),
             execution_dir=tmp_path / "execution",
             overwrite=None,
             cli_output=tmp_path / "override.jsonl",

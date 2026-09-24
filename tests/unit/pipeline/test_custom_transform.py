@@ -359,19 +359,20 @@ def test_custom_transform_runs_end_to_end_from_yaml(tmp_path, monkeypatch) -> No
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 6",
+                "schema_version: 7",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: streams",
                 "  sources: sources",
-                "  dataset: dataset.yaml",
+                "  datasets: datasets",
                 "  artifacts: artifacts",
             ]
         ),
         encoding="utf-8",
     )
-    (tmp_path / "dataset.yaml").write_text(
-        "sample:\n  rounding: ceil\n  cadence: 1h\n", encoding="utf-8"
+    (tmp_path / "datasets").mkdir()
+    (tmp_path / "datasets/default.yaml").write_text(
+        "version: v1\nsample:\n  rounding: ceil\n  cadence: 1h\n", encoding="utf-8"
     )
     (tmp_path / "streams").mkdir()
     (tmp_path / "sources").mkdir()
@@ -438,7 +439,9 @@ transforms:
         lambda group, name: FillThenPrice,
     )
 
-    runtime = compile_runtime(load_project_definition(project_yaml))
+    runtime = compile_runtime(
+        load_project_definition(project_yaml), dataset_id="default"
+    )
     records = list(run_stream_pipeline(runtime, "enriched"))
 
     assert [(r.ticker, r.value, r.fill_value) for r in records] == [

@@ -113,7 +113,7 @@ def _run_build_profiles(request: BuildRunRequest) -> None:
 
     resolved_artifacts: set[str] = set()
     for job in jobs:
-        runtime = compile_runtime(request.definition)
+        runtime = compile_runtime(request.definition, job.task.dataset)
         runtime.execution = request.execution
         with execution_scope(runtime, job.settings.observability):
             run_build_if_needed(
@@ -138,8 +138,6 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[SavedRun, ...]:
     run_outputs: dict[RunPaths, list[RunOutput]] = {
         plan.paths: [] for plan in request.serve_run_plans
     }
-    split = request.definition.dataset.split
-    split_snapshot = split.model_copy(deep=True) if split is not None else None
     recipes = {
         run.paths: capture_recipe(
             request.definition,
@@ -167,7 +165,11 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[SavedRun, ...]:
                 run_plan.paths,
                 recipe=recipes[run_plan.paths],
                 preview=run_plan.preview,
-                split=split_snapshot,
+                split=(
+                    request.definition.require_dataset(run_plan.dataset_id).split
+                    if run_plan.dataset_id is not None
+                    else None
+                ),
             )
             started_runs.append(run_plan)
 
@@ -184,15 +186,20 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[SavedRun, ...]:
                     plan,
                 )
             if job.output.run is not None:
+                split = (
+                    job.runtime.dataset.split
+                    if job.runtime.dataset is not None
+                    else None
+                )
                 for written in written_outputs:
                     fold_output = None
                     if (
                         job.preview is None
-                        and split_snapshot is not None
+                        and split is not None
                         and written.output_id is not None
                     ):
                         fold, role, labels = resolve_fold_output(
-                            split_snapshot, written.output_id
+                            split, written.output_id
                         )
                         fold_output = RunFoldOutput(
                             id=fold.id, role=role, labels=labels
@@ -201,6 +208,7 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[SavedRun, ...]:
                         RunOutput(
                             profile=job.name,
                             operation=job.task.id,
+                            stream=getattr(job.task, "stream", None),
                             output_id=written.output_id,
                             path=written.path.relative_to(
                                 job.output.run.run_root

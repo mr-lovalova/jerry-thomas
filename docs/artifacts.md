@@ -1,14 +1,13 @@
 # Artifacts
 
-Core artifact operations are registered by Jerry and use these default outputs.
-Projects declare YAML only for overrides and custom operations:
+Core artifact operations are generated for each dataset as
+`dataset.<id>.<kind>`, where kind is `scaler`, `series`, `metadata`, or
+`coverage_stats`. Their registry keys are those operation IDs. Explicit operation
+IDs come from YAML filenames, such as `operations/schedule.yaml`. Default outputs
+are relative to `paths.artifacts`:
 
-An artifact's registry key is its operation ID (`scaler`, `series`,
-`metadata`, or `coverage_stats`). Configured operation IDs come from their YAML
-filenames, such as `operations/schedule.yaml`.
-
-- `build/series/manifest.json` plus one compressed, globally ordered companion
-  under `build/series/manifest.data/`: durable sparse sample inputs consumed
+- `datasets/<id>/series/manifest.json` plus one compressed, globally ordered companion
+  under `datasets/<id>/series/manifest.data/`: durable sparse sample inputs consumed
   by dataset assembly. Each row stores its sample key once with all available
   feature and target values. A value must be `None`, `bool`, `int`, `float`,
   `str`, or a non-empty flat list containing those scalar types. Mappings,
@@ -19,15 +18,15 @@ filenames, such as `operations/schedule.yaml`.
   digest.
   Project commands hold one artifact-workspace lock; generations no longer
   referenced by the manifest are pruned only after the locked command finishes.
-- `build/scaler.json`: managed scaler statistics. Unsplit datasets store one
+- `datasets/<id>/scaler.json`: managed scaler statistics. Unsplit datasets store one
   standard scaler; split datasets store one scaler fitted from each fold's
   training labels.
-- `build/metadata.json`: the typed feature/target contract used during
+- `datasets/<id>/metadata.json`: the typed feature/target contract used during
   postprocess, including identifiers, scalar/list kinds, fixed list lengths,
   coverage counts, value types, sample domain, and resolved dataset window.
   Unsplit datasets use the global catalog directly. Split datasets additionally
   store one training-owned schema and one output-domain contract per fold.
-- `build/coverage_stats.json`: bounded assembled or postprocessed availability
+- `datasets/<id>/coverage_stats.json`: bounded assembled or postprocessed availability
   counters used by coverage inspection. It never stores per-sample status maps.
 - Schedule operation outputs: named expected-timestamp sets used by
   `ensure_schedule` transforms. Their output paths are operation-defined.
@@ -80,7 +79,7 @@ only streams and local source snapshots that can feed that artifact. Unrelated
 operations, streams, and sources therefore do not invalidate it. Every hash
 includes `project.yaml:artifact_revision`; runtime-operation settings do not
 enter it. Plugin artifact operations receive the full runtime but cannot declare
-inputs, so their hashes conservatively cover the complete dataset and stream
+inputs, so their hashes conservatively cover the bound dataset and complete stream
 catalog. Runtime hydration registers only current artifacts;
 orphaned, missing, altered, stale, and incomplete chains are left unavailable.
 Commands targeting the same artifacts root cannot overlap; a second command
@@ -118,7 +117,7 @@ The old operation and transform names are removed. Reinstall an editable
 checkout after upgrading so its entry-point metadata exposes
 `core.artifact.schedule`, then rebuild the renamed artifact and its dependents.
 
-Jerry 8 requires every target in `dataset.yaml` to declare `horizon`. Add
+Jerry 8 requires every target in `datasets/default.yaml` to declare `horizon`. Add
 `horizon: 0s` for contemporaneous targets. Future-derived targets must declare
 a conservative wall-clock duration that covers their latest supporting
 observation. Positive horizons cannot use a hash split. With a time split,
@@ -172,7 +171,7 @@ coverage artifacts. YAML configuration and final dataset output are unchanged.
 Jerry 7 metadata supports the three distinct window modes `union`,
 `intersection`, and `strict`. The former `relaxed` mode was identical to
 `union`. Project schema 5 moves this policy from metadata operation overrides
-to `dataset.yaml:sample.window_mode`; use `union` when migrating a former
+to `datasets/default.yaml:sample.window_mode`; use `union` when migrating a former
 `relaxed` value. Metadata format version 3 records the narrower contract, so
 `auto` rebuilds older metadata and dependent coverage artifacts.
 
@@ -254,7 +253,7 @@ Build profiles remain explicit roots for `jerry build` and retain their own
 
 ## Splitting & Serving
 
-`dataset.yaml:split` has two explicit responsibilities:
+`datasets/default.yaml:split` has two explicit responsibilities:
 
 - `mode: hash` assigns one deterministic label from the complete sample key.
 - `mode: time` assigns one interval ID from ordered, exclusive `until` timestamps.

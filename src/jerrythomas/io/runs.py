@@ -97,7 +97,9 @@ class RunMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal[3]
+    schema_version: Literal[4]
+    dataset_id: str | None
+    dataset_version: str | None
     command: Literal["serve", "materialize"]
     run_id: str
     started_at: str
@@ -112,23 +114,32 @@ class RunMetadata(BaseModel):
     @field_validator("schema_version", mode="before")
     @classmethod
     def validate_schema_version(cls, value: object) -> object:
-        if type(value) is not int or value != 3:
-            raise ValueError("unsupported run manifest schema_version; expected 3")
+        if type(value) is not int or value != 4:
+            raise ValueError("unsupported run manifest schema_version; expected 4")
         return value
 
     @model_validator(mode="after")
     def validate_outputs(self) -> Self:
+        if (self.dataset_id is None) != (self.dataset_version is None):
+            raise ValueError("dataset_id and dataset_version must be supplied together")
+        if self.dataset_id is not None:
+            assert self.dataset_version is not None
+            if not self.dataset_id.strip() or not self.dataset_version.strip():
+                raise ValueError("dataset identity must not be empty")
         if self.command == "materialize":
-            if self.preview is not None or self.split is not None:
+            if (
+                self.preview is not None
+                or self.split is not None
+                or self.dataset_id is not None
+            ):
                 raise ValueError(
-                    "materialize receipts must not declare preview or split"
+                    "materialize receipts must not declare dataset, preview, or split"
                 )
             if self.status == "success" and len(self.outputs) != 1:
                 raise ValueError("successful materialize receipts require one output")
             for output in self.outputs:
                 if (
-                    output.operation != "materialize"
-                    or not output.stream
+                    not output.stream
                     or output.output_id is not None
                     or output.fold is not None
                     or PurePosixPath(output.path).name != output.path
@@ -291,7 +302,9 @@ def start_run(
         metadata_path = paths
 
     meta = RunMetadata(
-        schema_version=3,
+        schema_version=4,
+        dataset_id=recipe.dataset_id,
+        dataset_version=recipe.dataset_version,
         command=command,
         run_id=run_id or make_run_id(),
         started_at=_now_utc_iso(),
@@ -326,6 +339,8 @@ def finish_run(
 
     meta = RunMetadata(
         schema_version=meta.schema_version,
+        dataset_id=meta.dataset_id,
+        dataset_version=meta.dataset_version,
         command=meta.command,
         run_id=meta.run_id,
         started_at=meta.started_at,

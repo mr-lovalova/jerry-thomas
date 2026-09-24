@@ -16,9 +16,9 @@ def test_drop_with_metadata_and_partitioned_streams(copy_fixture):
     project_root = copy_fixture("drop_null_project")
     project = project_root / "project.yaml"
     definition = load_project_definition(project)
-    runtime = compile_runtime(definition)
+    runtime = compile_runtime(definition, dataset_id="default")
     hydrate_runtime_artifacts_for_pipeline(runtime, definition)
-    dataset = definition.dataset
+    dataset = definition.require_dataset("default")
     register_series(
         runtime,
         dataset.features,
@@ -28,7 +28,7 @@ def test_drop_with_metadata_and_partitioned_streams(copy_fixture):
     metadata_task = MetadataTask(id="metadata", output="metadata.json")
     build_metadata_artifact(runtime, metadata_task)
     runtime.artifacts.register(
-        VECTOR_METADATA,
+        runtime.artifact_aliases.get(VECTOR_METADATA, VECTOR_METADATA),
         relative_path=metadata_task.output,
     )
     metadata_artifact = runtime.artifacts.load(VECTOR_METADATA_SPEC)

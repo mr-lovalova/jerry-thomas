@@ -17,9 +17,12 @@ from jerrythomas.profiles.request_builder import build_materialize_run_request
 
 
 def _profiles(root):
+    (root / "operations" / "raw-linear.yaml").write_text(
+        "kind: runtime\nentrypoint: core.runtime.stream\nstream: metrics.linear\n"
+    )
     for order, name, suffix in [(2, "first", ".jsonl"), (1, "second", ".jsonl.gz")]:
         (root / "profiles" / f"materialize.{name}.yaml").write_text(
-            f"stream: metrics.linear\norder: {order}\noutput: exports/{name}{suffix}\n"
+            f"operation: raw-linear\norder: {order}\noutput: exports/{name}{suffix}\n"
         )
 
 
@@ -107,8 +110,11 @@ def test_materialize_cli_result_json(copy_fixture, capsys):
 
 def test_materialize_cli_empty_selection(copy_fixture, capsys):
     root = copy_fixture("regression_project")
+    (root / "operations" / "raw-linear.yaml").write_text(
+        "kind: runtime\nentrypoint: core.runtime.stream\nstream: metrics.linear\n"
+    )
     (root / "profiles" / "materialize.disabled.yaml").write_text(
-        "stream: metrics.linear\noutput: exports/disabled.jsonl\nenabled: false\n"
+        "operation: raw-linear\noutput: exports/disabled.jsonl\nenabled: false\n"
     )
     _execute(root)
     assert json.loads(capsys.readouterr().out) == {"schema_version": 3, "runs": []}

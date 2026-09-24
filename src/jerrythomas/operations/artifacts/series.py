@@ -82,7 +82,7 @@ def build_series_artifact(
     runtime: Runtime,
     task_cfg: SeriesTask,
 ) -> ArtifactOutput:
-    dataset = runtime.dataset
+    dataset = runtime.require_dataset()
     relative_path = Path(task_cfg.output)
     destination = resolve_artifact_output_path(relative_path, runtime.artifacts_root)
     cache_root = series_cache_root(destination)
@@ -230,7 +230,7 @@ def _project_stream(
             row_key: tuple[Any, ...] | None = None
             row_time: datetime | None = None
             sample_time = round_time_to_cadence(
-                record.time, cadence, runtime.dataset.sample.rounding
+                record.time, cadence, runtime.require_dataset().sample.rounding
             )
 
             for config, projected in zip(

@@ -20,26 +20,26 @@ from jerrythomas.services.runtime_compiler import compile_runtime
 
 def _dataset_samples(project_yaml):
     definition = load_project_definition(project_yaml)
-    runtime = compile_runtime(definition)
+    runtime = compile_runtime(definition, dataset_id="default")
     hydrate_runtime_artifacts_for_pipeline(runtime, definition)
 
     # Ensure artifacts are materialized for the test run.
     scaler_task = ScalerTask(id="scaler", output="scaler.json")
     build_scaler_artifact(runtime, scaler_task)
     runtime.artifacts.register(
-        SCALER_STATISTICS,
+        runtime.artifact_aliases.get(SCALER_STATISTICS, SCALER_STATISTICS),
         relative_path=scaler_task.output,
     )
     series_task = SeriesTask(id="series", output="series/manifest.json")
     build_series_artifact(runtime, series_task)
     runtime.artifacts.register(
-        SERIES,
+        runtime.artifact_aliases.get(SERIES, SERIES),
         relative_path=series_task.output,
     )
     metadata_task = MetadataTask(id="metadata", output="metadata.json")
     build_metadata_artifact(runtime, metadata_task)
     runtime.artifacts.register(
-        VECTOR_METADATA,
+        runtime.artifact_aliases.get(VECTOR_METADATA, VECTOR_METADATA),
         relative_path=metadata_task.output,
     )
     metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)

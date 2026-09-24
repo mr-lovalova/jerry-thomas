@@ -86,6 +86,7 @@ def execute_command(
         case "list":
             handle_list(
                 subcmd=args.list_cmd,
+                project=getattr(args, "project", None),
                 plugin_root=plugin_root,
                 workspace=workspace_context,
             )

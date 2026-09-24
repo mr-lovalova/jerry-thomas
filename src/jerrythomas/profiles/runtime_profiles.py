@@ -43,7 +43,7 @@ def _resolve_serve_output_ids(
     definition: ProjectDefinition,
     profile: ServeProfile,
     preview: PreviewStage | None,
-    operation: RuntimeTask | None,
+    operation: RuntimeTask,
 ) -> tuple[str, ...]:
     include_outputs = tuple(profile.include_outputs or ())
     if include_outputs and preview is not None:
@@ -52,7 +52,12 @@ def _resolve_serve_output_ids(
             "include_outputs."
         )
 
-    split = definition.dataset.split
+    dataset = (
+        definition.require_dataset(operation.dataset)
+        if operation.dataset is not None
+        else None
+    )
+    split = dataset.split if dataset is not None else None
     dataset_output_ids = split_output_ids(split) if split is not None else ()
     if include_outputs:
         if split is None:
@@ -75,10 +80,11 @@ def _resolve_serve_output_ids(
     if isinstance(operation, DatasetTask) and preview is None and not include_outputs:
         return dataset_output_ids
     if isinstance(operation, DatasetTask) and preview is not None:
+        assert dataset is not None
         return tuple(
             output_id
             for output_id, _config in preview_output_plan(
-                definition.dataset.series,
+                dataset.series,
                 preview,
             )
         )
@@ -108,17 +114,18 @@ def resolve_serve_profiles(
         operation.id: operation for operation in definition.runtime_operations
     }
     shared_runs: dict[Path, RunPaths] = {}
-    previews_by_root: dict[Path, PreviewStage | None] = {}
+    identities_by_root: dict[Path, tuple[str | None, PreviewStage | None]] = {}
 
     resolved: list[ResolvedRuntimeProfile] = []
     for profile in profiles:
+        operation = runtime_operations[profile.operation]
         resolved_preview = preview if preview is not None else profile.preview
         resolved_limit = limit if limit is not None else profile.limit
         output_ids = _resolve_serve_output_ids(
             definition,
             profile,
             resolved_preview,
-            runtime_operations.get(profile.operation),
+            operation,
         )
         effective_output = _effective_cli_output(profile.output, cli_output)
         serve_root = resolve_output_directory(
@@ -127,15 +134,20 @@ def resolve_serve_profiles(
         )
         run_paths = None
         if serve_root is not None:
-            if (
-                serve_root in previews_by_root
-                and previews_by_root[serve_root] != resolved_preview
-            ):
-                raise ValueError(
-                    "Serve profiles sharing output directory "
-                    f"'{serve_root}' must use the same preview."
-                )
-            previews_by_root[serve_root] = resolved_preview
+            identity = (operation.dataset, resolved_preview)
+            if serve_root in identities_by_root:
+                previous_dataset, previous_preview = identities_by_root[serve_root]
+                if previous_dataset != operation.dataset:
+                    raise ValueError(
+                        "Serve profiles sharing output directory "
+                        f"'{serve_root}' must use the same dataset."
+                    )
+                if previous_preview != resolved_preview:
+                    raise ValueError(
+                        "Serve profiles sharing output directory "
+                        f"'{serve_root}' must use the same preview."
+                    )
+            identities_by_root[serve_root] = identity
             run_paths = shared_runs.get(serve_root)
             if run_paths is None:
                 run_paths = get_run_paths(serve_root)

@@ -7,13 +7,13 @@ from jerrythomas.services.config_refs import project_vars_from_data
 
 def _project_data(**overrides):
     data = {
-        "schema_version": 6,
+        "schema_version": 7,
         "artifact_revision": 1,
         "name": "momentum",
         "paths": {
             "streams": "streams",
             "sources": "sources",
-            "dataset": "dataset.yaml",
+            "datasets": "datasets",
             "artifacts": "artifacts",
         },
     }
@@ -61,7 +61,7 @@ def test_project_config_accepts_multiple_discovery_roots() -> None:
             paths={
                 "streams": ["streams", "../common/streams"],
                 "sources": ["sources", "../common/sources"],
-                "dataset": "dataset.yaml",
+                "datasets": "datasets",
                 "artifacts": "artifacts",
             }
         )
@@ -92,7 +92,7 @@ def test_project_config_rejects_empty_discovery_roots() -> None:
                 paths={
                     "streams": [],
                     "sources": "sources",
-                    "dataset": "dataset.yaml",
+                    "datasets": "datasets",
                     "artifacts": "artifacts",
                 }
             )
@@ -101,7 +101,7 @@ def test_project_config_rejects_empty_discovery_roots() -> None:
 
 @pytest.mark.parametrize(
     "field",
-    ["streams", "sources", "dataset", "artifacts", "operations", "profiles"],
+    ["streams", "sources", "datasets", "artifacts", "operations", "profiles"],
 )
 def test_project_config_rejects_blank_paths(field: str) -> None:
     data = _project_data()
@@ -175,5 +175,5 @@ def test_project_config_rejects_unknown_path_fields() -> None:
 
 
 def test_project_rejects_older_schema_version() -> None:
-    with pytest.raises(ValidationError, match="Input should be 6"):
+    with pytest.raises(ValidationError, match="Input should be 7"):
         ProjectConfig.model_validate(_project_data(schema_version=1))

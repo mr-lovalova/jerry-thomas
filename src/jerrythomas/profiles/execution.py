@@ -5,12 +5,12 @@ from typing import Literal
 
 from jerrythomas.artifacts.errors import ArtifactResolutionError
 from jerrythomas.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
-from jerrythomas.artifacts.planning import required_schedule_artifacts
 from jerrythomas.artifacts.validation import validate_artifact_plan
 from jerrythomas.config.tasks.base import ArtifactTask, PluginRuntimeTask
 from jerrythomas.config.tasks.coverage import CoverageTask
 from jerrythomas.config.tasks.dataset import DatasetTask
 from jerrythomas.config.tasks.matrix import MatrixTask
+from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.execution.observability import (
     emit_execution_message,
     operation_scope,
@@ -21,7 +21,8 @@ from jerrythomas.operations.persistence import (
     persist_runtime_result,
 )
 from jerrythomas.operations.runtime.coverage import run_coverage_operation
-from jerrythomas.operations.runtime.dataset import run_dataset_operation
+from jerrythomas.operations.runtime.dataset import limit_items, run_dataset_operation
+from jerrythomas.pipelines.stream.pipeline import run_stream_pipeline
 from jerrythomas.operations.runtime.matrix import run_matrix_operation
 from jerrythomas.plugins import RUNTIME_OPERATIONS_EP, load_entrypoint
 from jerrythomas.services.definitions import ProjectDefinition
@@ -48,12 +49,9 @@ def plan_materialize_job(
     definition: ProjectDefinition,
 ) -> MaterializeJobPlan:
     graph = definition.artifact_graph
-    roots = required_schedule_artifacts(
-        (job.stream,), definition.streams, graph.tasks_by_id
-    )
     return MaterializeJobPlan(
         job=job,
-        required_artifacts=graph.dependency_closure(roots, definition.dataset),
+        required_artifacts=graph.runtime_dependency_closure(job.task, preview=None),
     )
 
 
@@ -63,7 +61,7 @@ def validate_build_job(
 ) -> None:
     graph = definition.artifact_graph
     roots = {task.id}
-    artifact_keys = set(graph.dependency_closure(roots, definition.dataset))
+    artifact_keys = set(graph.dependency_closure(roots))
     validate_artifact_plan(definition.streams, graph, artifact_keys)
 
 
@@ -93,7 +91,6 @@ def plan_runtime_job(
     required_artifacts = graph.runtime_dependency_closure(
         job.task,
         preview=job.preview,
-        dataset=definition.dataset,
     )
     validate_artifact_plan(definition.streams, graph, set(required_artifacts))
     return RuntimeJobPlan(job=job, required_artifacts=required_artifacts)
@@ -109,6 +106,10 @@ def run_runtime_operation(job: RuntimeJob) -> object:
             output_format=job.output.format,
             throttle_ms=job.throttle_ms,
             preview=job.preview,
+        )
+    if isinstance(task, StreamTask):
+        return RuntimeOutput(
+            rows=limit_items(run_stream_pipeline(job.runtime, task.stream), job.limit)
         )
     if isinstance(task, MatrixTask):
         return run_matrix_operation(job.runtime, task, job.limit)

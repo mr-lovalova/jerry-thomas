@@ -37,6 +37,7 @@ from jerrythomas.config.tasks.matrix import MatrixTask
 from jerrythomas.config.tasks.metadata import MetadataTask
 from jerrythomas.config.tasks.series import SeriesTask
 from jerrythomas.config.tasks.schedule import ScheduleTask
+from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.execution.settings import (
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     LogLevelDecision,
@@ -154,6 +155,7 @@ def _runtime(tmp_path: Path, marker: str = "runtime") -> SimpleNamespace:
         marker=marker,
         artifacts=ArtifactRegistry(tmp_path / marker / "artifacts"),
         dataset=_dataset(),
+        dataset_id="default",
         execution=ExecutionConfig(),
         heartbeat_interval_seconds=None,
         output_ids=(),
@@ -187,7 +189,7 @@ def _runtime_job(
 ) -> RuntimeJob:
     return RuntimeJob(
         name=name,
-        task=task,
+        task=task.model_copy(update={"dataset": "default"}),
         runtime=runtime,
         output=_output() if output is None else output,
         observability=_observability(heartbeat_interval_seconds),
@@ -384,7 +386,7 @@ def test_build_jobs_keep_order_and_share_resolved_artifacts(
 
     monkeypatch.setattr(
         "jerrythomas.profiles.orchestration.compile_runtime",
-        lambda _definition: next(runtimes),
+        lambda _definition, _dataset_id=None: next(runtimes),
     )
     monkeypatch.setattr(
         "jerrythomas.profiles.orchestration.execution_scope",
@@ -476,7 +478,7 @@ def test_runtime_artifact_union_is_prepared_once_before_jobs(
 
     monkeypatch.setattr(
         "jerrythomas.profiles.orchestration.compile_runtime",
-        lambda _definition: canonical_runtime,
+        lambda _definition, _dataset_id=None: canonical_runtime,
     )
     monkeypatch.setattr(
         "jerrythomas.profiles.orchestration.run_build_if_needed",
@@ -544,7 +546,7 @@ def test_custom_runtime_artifact_requirement_is_prepared(
 
     monkeypatch.setattr(
         "jerrythomas.profiles.orchestration.compile_runtime",
-        lambda _definition: _runtime(tmp_path, "artifact-build"),
+        lambda _definition, _dataset_id=None: _runtime(tmp_path, "artifact-build"),
     )
     monkeypatch.setattr(
         "jerrythomas.profiles.orchestration.run_build_if_needed",
@@ -614,7 +616,7 @@ def test_v5_features_preview_is_rejected_before_starting_run(tmp_path: Path) -> 
             )
         ],
         serve_run_plans=(
-            ServeRunPlan(run_paths, "features"),  # type: ignore[arg-type]
+            ServeRunPlan(run_paths, "features", "default"),  # type: ignore[arg-type]
         ),
     )
 
@@ -809,7 +811,7 @@ def test_runtime_plugin_receives_the_documented_contract(
     )
 
     assert run_runtime_operation(job) == RuntimeOutput(payload={"result": "ok"})
-    assert received == (job.runtime, task, 7)
+    assert received == (job.runtime, job.task, 7)
 
 
 @pytest.mark.parametrize(
@@ -916,7 +918,7 @@ def test_matrix_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> N
     )
 
     assert run_runtime_operation(job) == "matrix"
-    assert received == (job.runtime, task, 5)
+    assert received == (job.runtime, job.task, 5)
 
 
 def test_coverage_operation_rejects_limit_before_planning(tmp_path: Path) -> None:
@@ -983,7 +985,7 @@ def test_shared_serve_run_is_finalized_once(monkeypatch, tmp_path: Path) -> None
             _runtime_job(name, task, _runtime(tmp_path, name))
             for name in ("train", "val")
         ],
-        serve_run_plans=(ServeRunPlan(run_paths, None),),
+        serve_run_plans=(ServeRunPlan(run_paths, None, "default"),),
     )
     calls = {"start": 0, "success": 0, "failed": 0, "latest": 0}
     monkeypatch.setattr(
@@ -1031,7 +1033,7 @@ def test_series_cache_filesystem_failure_does_not_fail_published_run(
         command="serve",
         artifact_tasks=[series],
         jobs=[_runtime_job("serve", task, _runtime(tmp_path))],
-        serve_run_plans=(ServeRunPlan(run_paths, None),),
+        serve_run_plans=(ServeRunPlan(run_paths, None, "default"),),
     )
 
     monkeypatch.setattr(
@@ -1101,7 +1103,7 @@ def test_job_failure_marks_shared_run_failed(monkeypatch, tmp_path: Path) -> Non
             _runtime_job(name, task, _runtime(tmp_path, name))
             for name in ("train", "val")
         ],
-        serve_run_plans=(ServeRunPlan(run_paths, None),),
+        serve_run_plans=(ServeRunPlan(run_paths, None, "default"),),
     )
     calls = 0
     failed: list[RunPaths] = []
@@ -1146,7 +1148,7 @@ def test_cleanup_failure_does_not_replace_job_failure(
         command="serve",
         artifact_tasks=[],
         jobs=[_runtime_job("serve", task, _runtime(tmp_path))],
-        serve_run_plans=(ServeRunPlan(run_paths, None),),
+        serve_run_plans=(ServeRunPlan(run_paths, None, "default"),),
     )
     job_error = RuntimeError("job failed")
 
@@ -1190,7 +1192,10 @@ def test_latest_failure_still_finalizes_all_runs(
         command="serve",
         artifact_tasks=[],
         jobs=[_runtime_job("serve", task, _runtime(tmp_path))],
-        serve_run_plans=(ServeRunPlan(first, None), ServeRunPlan(second, None)),
+        serve_run_plans=(
+            ServeRunPlan(first, None, "default"),
+            ServeRunPlan(second, None, "default"),
+        ),
     )
     latest: list[RunPaths] = []
 
@@ -1272,7 +1277,7 @@ def test_later_output_commit_failure_marks_run_failed_and_preserves_latest(
                 output=output,
             )
         ],
-        serve_run_plans=(ServeRunPlan(current_paths, None),),
+        serve_run_plans=(ServeRunPlan(current_paths, None, "default"),),
     )
     monkeypatch.setattr(
         "jerrythomas.profiles.orchestration.execution_scope",
@@ -1350,7 +1355,7 @@ def test_preview_run_exists_at_job_boundary_and_is_not_latest(
                 heartbeat_interval_seconds=15,
             )
         ],
-        serve_run_plans=(ServeRunPlan(run_paths, "records"),),
+        serve_run_plans=(ServeRunPlan(run_paths, "records", "default"),),
     )
     observed: dict[str, object] = {}
 
@@ -1402,7 +1407,10 @@ def test_later_run_start_failure_fails_only_started_run(
         command="serve",
         artifact_tasks=[],
         jobs=[_runtime_job("serve", task, _runtime(tmp_path))],
-        serve_run_plans=(ServeRunPlan(first, None), ServeRunPlan(second, None)),
+        serve_run_plans=(
+            ServeRunPlan(first, None, "default"),
+            ServeRunPlan(second, None, "default"),
+        ),
     )
     starts: list[RunPaths] = []
     failed: list[RunPaths] = []
@@ -1458,14 +1466,14 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
     jobs = [
         MaterializeJob(
             name="adv-20",
-            stream="adv.20",
+            task=StreamTask(id="adv.20", stream="adv.20"),
             output=_materialize_output(tmp_path / "adv-20.jsonl"),
             overwrite=False,
             observability=_observability(10),
         ),
         MaterializeJob(
             name="adv-63",
-            stream="adv.63",
+            task=StreamTask(id="adv.63", stream="adv.63"),
             output=_materialize_output(tmp_path / "adv-63.jsonl"),
             overwrite=False,
             observability=_observability(20),
@@ -1540,7 +1548,7 @@ def test_materialize_hydrates_current_schedule_when_build_skips(
     )
     job = MaterializeJob(
         name="adv-20",
-        stream="adv.20",
+        task=StreamTask(id="adv.20", stream="adv.20"),
         output=_materialize_output(tmp_path / "adv-20.jsonl"),
         overwrite=False,
         observability=_observability(),
@@ -1629,7 +1637,7 @@ def test_materialize_rejects_invalid_schedule_artifact_producer(
     )
     job = MaterializeJob(
         name="adv-20",
-        stream="adv.20",
+        task=StreamTask(id="adv.20", stream="adv.20"),
         output=_materialize_output(tmp_path / "adv-20.jsonl"),
         overwrite=False,
         observability=_observability(),

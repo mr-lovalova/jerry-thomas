@@ -1,7 +1,6 @@
 import argparse
 
 from .common import (
-    add_dataset_flag,
     add_execution_observability_flags,
     add_project_flag,
 )
@@ -13,7 +12,6 @@ def add_build_command(sub, common: argparse.ArgumentParser) -> None:
         help="materialize project artifacts (metadata, statistics, etc.)",
         parents=[common],
     )
-    add_dataset_flag(parser)
     add_project_flag(parser)
     parser.add_argument(
         "--force",

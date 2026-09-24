@@ -20,11 +20,14 @@ from jerrythomas.services.operations import (
     operations_from_documents,
 )
 from jerrythomas.services.project import load_project
+from jerrythomas.services.dataset import load_datasets
 
 
 def _tasks(project_yaml: Path):
     project = load_project(project_yaml)
-    return operations_from_documents(project, operation_documents(project))
+    return operations_from_documents(
+        project, operation_documents(project), load_datasets(project)
+    )
 
 
 def _artifact_tasks(project_yaml: Path):
@@ -60,14 +63,18 @@ def _materialize_defaults(project_yaml: Path):
 
 
 def _write_project(tmp_path: Path, operations_ref: str | None = None) -> Path:
+    (tmp_path / "datasets").mkdir()
+    (tmp_path / "datasets" / "default.yaml").write_text(
+        "version: v1\nsample: {cadence: 1d, rounding: exact}\n", encoding="utf-8"
+    )
     project_yaml = tmp_path / "project.yaml"
     lines = [
-        "schema_version: 6",
+        "schema_version: 7",
         "artifact_revision: 1",
         "paths:",
         "  streams: streams",
         "  sources: sources",
-        "  dataset: dataset.yaml",
+        "  datasets: datasets",
         "  artifacts: artifacts",
     ]
     if operations_ref:
@@ -111,7 +118,7 @@ def test_artifact_tasks_load_configs(tmp_path):
         encoding="utf-8",
     )
     (config_dir / "scaler.yaml").write_text(
-        "output: stats.pkl\n",
+        "kind: artifact\nentrypoint: core.artifact.scaler\ndataset: default\noutput: stats.pkl\n",
         encoding="utf-8",
     )
 
@@ -119,9 +126,9 @@ def test_artifact_tasks_load_configs(tmp_path):
 
     assert {task.id for task in tasks} == {
         "scaler",
-        "series",
-        "metadata",
-        "coverage_stats",
+        "dataset.default.series",
+        "dataset.default.metadata",
+        "dataset.default.coverage_stats",
         "schema",
     }
     schema = next(task for task in tasks if task.id == "schema")
@@ -132,7 +139,7 @@ def test_artifact_tasks_load_configs(tmp_path):
     assert scaler.output == "stats.pkl"
 
 
-def test_core_operations_load_without_configuration(tmp_path):
+def test_core_artifacts_are_defaults_but_runtime_operations_are_explicit(tmp_path):
     project_yaml = _write_project(tmp_path)
 
     tasks = _tasks(project_yaml)
@@ -140,25 +147,21 @@ def test_core_operations_load_without_configuration(tmp_path):
     runtime_tasks = [task for task in tasks if isinstance(task, RuntimeTask)]
 
     assert [task.id for task in artifact_tasks] == [
-        "scaler",
-        "series",
-        "metadata",
-        "coverage_stats",
+        "dataset.default.scaler",
+        "dataset.default.series",
+        "dataset.default.metadata",
+        "dataset.default.coverage_stats",
     ]
-    assert [task.id for task in runtime_tasks] == [
-        "dataset",
-        "coverage",
-        "matrix",
-    ]
-    task = next(task for task in artifact_tasks if task.id == "series")
-    assert task.id == "series"
+    assert runtime_tasks == []
+    task = next(task for task in artifact_tasks if task.id == "dataset.default.series")
     assert task.entrypoint == "core.artifact.series"
-    assert task.output == "build/series/manifest.json"
+    assert task.dataset == "default"
+    assert task.output == "datasets/default/series/manifest.json"
     coverage_stats = next(
-        task for task in artifact_tasks if task.id == "coverage_stats"
+        task for task in artifact_tasks if task.id == "dataset.default.coverage_stats"
     )
     assert coverage_stats.entrypoint == "core.artifact.coverage_stats"
-    assert coverage_stats.output == "build/coverage_stats.json"
+    assert coverage_stats.output == "datasets/default/coverage_stats.json"
 
 
 @pytest.mark.parametrize("operation_id", ["vector_inputs", "variable_records"])
@@ -175,7 +178,7 @@ def test_legacy_series_override_is_not_a_core_operation(
 
     with pytest.raises(
         ValueError,
-        match=rf"Custom operation '{operation_id}' must set kind to artifact or runtime",
+        match=rf"Operation '{operation_id}' must declare an entrypoint",
     ):
         _tasks(project_yaml)
 
@@ -318,12 +321,12 @@ def test_artifact_operation_allows_non_reserved_system_names(output: str) -> Non
     assert task.output == output
 
 
-def test_core_operation_rejects_entrypoint_override(tmp_path):
+def test_default_artifact_id_cannot_name_an_unrelated_operation(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
-    (config_dir / "metadata.yaml").write_text(
+    (config_dir / "dataset.default.metadata.yaml").write_text(
         (
-            "entrypoint: core.artifact.schedule\n"
+            "kind: artifact\nentrypoint: core.artifact.schedule\n"
             "stream: reference.stream\n"
             "partition_by: []\n"
             "output: build/metadata_schedule.jsonl\n"
@@ -331,7 +334,7 @@ def test_core_operation_rejects_entrypoint_override(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="cannot replace its kind or entrypoint"):
+    with pytest.raises(ValueError, match="reserved for the default metadata producer"):
         _artifact_tasks(project_yaml)
 
 
@@ -339,7 +342,7 @@ def test_coverage_stats_task_loads_configs(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "coverage_stats.yaml").write_text(
-        "output: build/custom-coverage-stats.json\nstage: assembled\n",
+        "kind: artifact\nentrypoint: core.artifact.coverage_stats\ndataset: default\noutput: build/custom-coverage-stats.json\nstage: assembled\n",
         encoding="utf-8",
     )
 
@@ -353,7 +356,7 @@ def test_coverage_stats_task_defaults_to_postprocessed_stage(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "coverage_stats.yaml").write_text(
-        "output: build/custom-coverage-stats.json\n",
+        "kind: artifact\nentrypoint: core.artifact.coverage_stats\ndataset: default\noutput: build/custom-coverage-stats.json\n",
         encoding="utf-8",
     )
 
@@ -368,7 +371,7 @@ def test_coverage_stats_task_rejects_unknown_fields(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "coverage_stats.yaml").write_text(
-        "unexpected: true\n",
+        "kind: artifact\nentrypoint: core.artifact.coverage_stats\ndataset: default\nunexpected: true\n",
         encoding="utf-8",
     )
 
@@ -533,14 +536,14 @@ def test_serve_profiles_interpolate_project_globals(tmp_path):
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 6",
+                "schema_version: 7",
                 "artifact_revision: 1",
                 "name: momentum",
                 "variant: price",
                 "paths:",
                 "  streams: streams",
                 "  sources: sources",
-                "  dataset: dataset.yaml",
+                "  datasets: datasets",
                 "  artifacts: artifacts",
                 "  operations: operations",
                 "  profiles: profiles",
@@ -550,7 +553,7 @@ def test_serve_profiles_interpolate_project_globals(tmp_path):
                 "  momentum_skip_days: 21",
                 "  momentum_lag_days: 189",
                 "  forward_return_horizon_days: 126",
-                "  dataset_version: ${project_name}_${project_variant}_adv${adv_window_days}_vol${volatility_window_days}_mom${momentum_lag_days}_${momentum_skip_days}_fwd${forward_return_horizon_days}",
+                "  output_label: ${project_name}_${project_variant}_adv${adv_window_days}_vol${volatility_window_days}_mom${momentum_lag_days}_${momentum_skip_days}_fwd${forward_return_horizon_days}",
             ]
         ),
         encoding="utf-8",
@@ -564,8 +567,8 @@ def test_serve_profiles_interpolate_project_globals(tmp_path):
                 "  transport: fs",
                 "  format: jsonl",
                 "  view: raw",
-                "  directory: ../../data/processed/${dataset_version}",
-                "  filename: ${dataset_version}",
+                "  directory: ../../data/processed/${output_label}",
+                "  filename: ${output_label}",
             ]
         ),
         encoding="utf-8",
@@ -583,19 +586,19 @@ def test_profile_defaults_interpolate_project_globals(tmp_path):
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 6",
+                "schema_version: 7",
                 "artifact_revision: 1",
                 "name: momentum",
                 "variant: price",
                 "paths:",
                 "  streams: streams",
                 "  sources: sources",
-                "  dataset: dataset.yaml",
+                "  datasets: datasets",
                 "  artifacts: artifacts",
                 "  operations: operations",
                 "  profiles: profiles",
                 "globals:",
-                "  dataset_version: ${project_name}_${project_variant}",
+                "  output_label: ${project_name}_${project_variant}",
             ]
         ),
         encoding="utf-8",
@@ -608,7 +611,7 @@ def test_profile_defaults_interpolate_project_globals(tmp_path):
                 "  transport: fs",
                 "  format: jsonl",
                 "  view: raw",
-                "  directory: ../../data/processed/${dataset_version}",
+                "  directory: ../../data/processed/${output_label}",
             ]
         ),
         encoding="utf-8",
@@ -700,7 +703,7 @@ def test_materialize_profiles_load_and_normalize_fields(tmp_path):
     (profiles_dir / "materialize.adv-20.yaml").write_text(
         (
             "order: 20\n"
-            "stream: ' adv.20 '\n"
+            "operation: ' adv.20 '\n"
             "output: ' data/features/adv/20.jsonl '\n"
             "overwrite: true\n"
             "observability:\n"
@@ -714,7 +717,7 @@ def test_materialize_profiles_load_and_normalize_fields(tmp_path):
     assert len(profiles) == 1
     profile = profiles[0]
     assert isinstance(profile, MaterializeProfile)
-    assert profile.stream == "adv.20"
+    assert profile.operation == "adv.20"
     assert profile.output == Path("data/features/adv/20.jsonl")
     assert profile.overwrite is True
     assert profile.observability is not None
@@ -725,7 +728,7 @@ def test_materialize_profile_accepts_gzip_output(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
     (profiles_dir / "materialize.adv-20.yaml").write_text(
-        "stream: adv.20\noutput: data/features/adv/20.jsonl.gz\n",
+        "operation: adv.20\noutput: data/features/adv/20.jsonl.gz\n",
         encoding="utf-8",
     )
 
@@ -738,7 +741,7 @@ def test_materialize_profile_rejects_compression_field(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
     (profiles_dir / "materialize.adv-20.yaml").write_text(
-        "stream: adv.20\noutput: data/features/adv/20.jsonl.gz\ncompression: gzip\n",
+        "operation: adv.20\noutput: data/features/adv/20.jsonl.gz\ncompression: gzip\n",
         encoding="utf-8",
     )
 
@@ -746,14 +749,14 @@ def test_materialize_profile_rejects_compression_field(tmp_path):
         _materialize_profiles(project_yaml)
 
 
-@pytest.mark.parametrize("field", ["stream", "output"])
+@pytest.mark.parametrize("field", ["operation", "output"])
 def test_materialize_profile_requires_nonempty_paths(tmp_path, field):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
-    values = {"stream": "adv.20", "output": "adv-20.jsonl"}
+    values = {"operation": "adv.20", "output": "adv-20.jsonl"}
     values[field] = "   "
     (profiles_dir / "materialize.adv-20.yaml").write_text(
-        (f"stream: '{values['stream']}'\noutput: '{values['output']}'\n"),
+        (f"operation: '{values['operation']}'\noutput: '{values['output']}'\n"),
         encoding="utf-8",
     )
 
@@ -765,7 +768,7 @@ def test_materialize_profile_requires_jsonl_output(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
     (profiles_dir / "materialize.adv-20.yaml").write_text(
-        ("stream: adv.20\noutput: data/features/adv/20.csv\n"),
+        ("operation: adv.20\noutput: data/features/adv/20.csv\n"),
         encoding="utf-8",
     )
 
@@ -777,7 +780,7 @@ def test_materialize_profile_requires_boolean_overwrite(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
     (profiles_dir / "materialize.adv-20.yaml").write_text(
-        ("stream: adv.20\noutput: data/features/adv/20.jsonl\noverwrite: 'false'\n"),
+        ("operation: adv.20\noutput: data/features/adv/20.jsonl\noverwrite: 'false'\n"),
         encoding="utf-8",
     )
 
@@ -799,7 +802,7 @@ def test_materialize_defaults_apply_overwrite_and_observability(tmp_path):
     )
     (profiles_dir / "materialize.adv-20.yaml").write_text(
         (
-            "stream: adv.20\n"
+            "operation: adv.20\n"
             "output: data/features/adv/20.jsonl\n"
             "observability:\n"
             "  visuals: false\n"
@@ -836,7 +839,9 @@ def test_materialize_artifact_mode_is_defaults_only(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
     (profiles_dir / "materialize.adv-20.yaml").write_text(
-        ("stream: adv.20\noutput: data/features/adv/20.jsonl\nartifact_mode: auto\n"),
+        (
+            "operation: adv.20\noutput: data/features/adv/20.jsonl\nartifact_mode: auto\n"
+        ),
         encoding="utf-8",
     )
 
@@ -1005,7 +1010,7 @@ def test_artifact_operation_rejects_dependencies_field(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "metadata.yaml").write_text(
-        "dependencies:\n  - schema\n",
+        "kind: artifact\nentrypoint: core.artifact.metadata\ndataset: default\ndependencies:\n  - schema\n",
         encoding="utf-8",
     )
 
@@ -1014,18 +1019,23 @@ def test_artifact_operation_rejects_dependencies_field(tmp_path):
 
 
 def test_dataset_operation_loads(tmp_path):
-    project_yaml = _write_project(tmp_path)
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    (_operations_dir(project_yaml) / "dataset.yaml").write_text(
+        "kind: runtime\nentrypoint: core.runtime.dataset\ndataset: default\n",
+        encoding="utf-8",
+    )
 
     task = next(task for task in _all_tasks(project_yaml) if task.id == "dataset")
     assert isinstance(task, DatasetTask)
     assert task.entrypoint == "core.runtime.dataset"
+    assert task.dataset == "default"
 
 
 def test_coverage_operation_options_are_typed(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "coverage.yaml").write_text(
-        "options:\n  threshold: 0.8\n",
+        "kind: runtime\nentrypoint: core.runtime.coverage\ndataset: default\noptions:\n  threshold: 0.8\n",
         encoding="utf-8",
     )
 
@@ -1039,7 +1049,7 @@ def test_typed_runtime_options_accept_an_empty_mapping(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "runtime.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.matrix\noptions: {}\n",
+        "kind: runtime\nentrypoint: core.runtime.matrix\ndataset: default\noptions: {}\n",
         encoding="utf-8",
     )
 
@@ -1053,7 +1063,7 @@ def test_dataset_runtime_rejects_options(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "runtime.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.dataset\noptions: {}\n",
+        "kind: runtime\nentrypoint: core.runtime.dataset\ndataset: default\noptions: {}\n",
         encoding="utf-8",
     )
 
@@ -1076,7 +1086,7 @@ def test_unknown_core_runtime_entrypoint_is_rejected_during_loading(
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="Unsupported core runtime entrypoint"):
+    with pytest.raises(ValueError, match="Unsupported core operation entrypoint"):
         _all_tasks(project_yaml)
 
 
@@ -1141,7 +1151,7 @@ def test_coverage_options_default_to_current_threshold(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "runtime.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.coverage\n",
+        "kind: runtime\nentrypoint: core.runtime.coverage\ndataset: default\n",
         encoding="utf-8",
     )
 
@@ -1196,7 +1206,7 @@ def test_plugin_runtime_options_default_to_an_empty_mapping(tmp_path: Path) -> N
         "core.artifact.coverage_stats",
     ],
 )
-def test_custom_artifact_rejects_reserved_core_entrypoint(
+def test_custom_artifact_requires_dataset_binding(
     tmp_path: Path,
     entrypoint: str,
 ) -> None:
@@ -1207,7 +1217,7 @@ def test_custom_artifact_rejects_reserved_core_entrypoint(
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="is reserved for core operation"):
+    with pytest.raises(ValueError, match="must bind a dataset"):
         _all_tasks(project_yaml)
 
 
@@ -1224,7 +1234,7 @@ def test_custom_operation_rejects_entrypoint_outer_whitespace(tmp_path: Path) ->
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="must not contain outer whitespace"):
+    with pytest.raises(ValueError, match="without outer whitespace"):
         _all_tasks(project_yaml)
 
 
@@ -1268,7 +1278,7 @@ def test_runtime_operation_rejects_dependencies_field(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "dataset.yaml").write_text(
-        "dependencies:\n  - missing_artifact\n",
+        "kind: runtime\nentrypoint: core.runtime.dataset\ndataset: default\ndependencies:\n  - missing_artifact\n",
         encoding="utf-8",
     )
 
@@ -1280,7 +1290,7 @@ def test_runtime_operation_rejects_output_formats_field(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "dataset.yaml").write_text(
-        "output_formats:\n  - jsonl\n",
+        "kind: runtime\nentrypoint: core.runtime.dataset\ndataset: default\noutput_formats:\n  - jsonl\n",
         encoding="utf-8",
     )
 
@@ -1292,13 +1302,15 @@ def test_duplicate_operation_filenames_raise(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "snapshot.yaml").write_text(
-        "output: snapshot-a.json\n", encoding="utf-8"
+        "kind: artifact\nentrypoint: plugin.artifact.snapshot\noutput: snapshot-a.json\n",
+        encoding="utf-8",
     )
     (config_dir / "snapshot.yml").write_text(
-        "output: snapshot-b.json\n", encoding="utf-8"
+        "kind: artifact\nentrypoint: plugin.artifact.snapshot\noutput: snapshot-b.json\n",
+        encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="Duplicate operation ids"):
+    with pytest.raises(ValueError, match="Duplicate operation ID"):
         _artifact_tasks(project_yaml)
 
 
@@ -1372,7 +1384,7 @@ def test_legacy_config_directory_is_not_loaded(tmp_path):
     tasks_root = project_yaml.parent / "tasks"
     tasks_root.mkdir(parents=True, exist_ok=True)
     (tasks_root / "report.yaml").write_text(
-        "id: report\nkind: runtime\nentrypoint: core.runtime.dataset\n",
+        "id: report\nkind: runtime\nentrypoint: core.runtime.dataset\ndataset: default\n",
         encoding="utf-8",
     )
 
@@ -1464,7 +1476,9 @@ def test_operation_task_rejects_unknown_fields(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "dataset.yaml").write_text(
-        ("runtime_kind: inspect\n"),
+        (
+            "kind: runtime\nentrypoint: core.runtime.dataset\ndataset: default\nruntime_kind: inspect\n"
+        ),
         encoding="utf-8",
     )
 

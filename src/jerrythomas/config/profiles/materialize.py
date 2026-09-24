@@ -3,22 +3,13 @@ from typing import Literal
 
 from pydantic import StrictBool, field_validator
 
-from .base import Profile
+from .base import OperationProfile
 
 
-class MaterializeProfile(Profile):
+class MaterializeProfile(OperationProfile):
     cmd: Literal["materialize"]
-    stream: str
     output: Path
     overwrite: StrictBool = False
-
-    @field_validator("stream", mode="before")
-    @classmethod
-    def _normalize_stream(cls, value: object) -> str:
-        stream = str(value).strip() if value is not None else ""
-        if not stream:
-            raise ValueError("stream must be set")
-        return stream
 
     @field_validator("output", mode="before")
     @classmethod

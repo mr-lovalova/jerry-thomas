@@ -11,7 +11,7 @@ from jerrythomas.services.scaffold.paths import (
 
 def test_default_project_path_matches_plugin_scaffold(tmp_path: Path) -> None:
     assert default_project_yaml_path(tmp_path) == (
-        tmp_path / "your-dataset" / "project.yaml"
+        tmp_path / "your-project" / "project.yaml"
     )
 
 
@@ -29,7 +29,7 @@ def test_ensure_project_scaffold_creates_dotenv_example(tmp_path: Path) -> None:
 def test_ensure_project_scaffold_reports_invalid_project(tmp_path: Path) -> None:
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 6\npaths:\n  profiels: ./profiles\n",
+        "schema_version: 7\npaths:\n  profiels: ./profiles\n",
         encoding="utf-8",
     )
 

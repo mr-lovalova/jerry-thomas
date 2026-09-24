@@ -18,8 +18,8 @@ class WorkspaceContext:
     def resolve_path(self, raw_path: str | Path) -> Path:
         return resolve_workspace_path(raw_path, self.root)
 
-    def resolve_dataset_alias(self, alias: str) -> Path | None:
-        raw = self.config.datasets.get(alias)
+    def resolve_project_alias(self, alias: str) -> Path | None:
+        raw = self.config.projects.get(alias)
         if raw is None:
             return None
         candidate = self.resolve_path(raw)
@@ -44,12 +44,12 @@ def load_workspace_context(start_dir: Path | None = None) -> WorkspaceContext | 
 
 
 def resolve_default_project_yaml(workspace: WorkspaceContext | None) -> Path | None:
-    if workspace is None or workspace.config.default_dataset is None:
+    if workspace is None or workspace.config.default_project is None:
         return None
-    alias = workspace.config.default_dataset
-    resolved = workspace.resolve_dataset_alias(alias)
+    alias = workspace.config.default_project
+    resolved = workspace.resolve_project_alias(alias)
     if resolved is None:
         raise SystemExit(
-            f"Unknown default_dataset '{alias}'. Define it under datasets: in jerry.yaml."
+            f"Unknown default_project '{alias}'. Define it under projects: in jerry.yaml."
         )
     return resolved

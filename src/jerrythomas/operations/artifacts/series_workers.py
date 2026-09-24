@@ -61,7 +61,7 @@ def _prepare_stream(
     progress = SortProgress()
 
     def prepare() -> Iterator[_PreparedStream]:
-        sample_keys = SampleKeyContract(runtime.dataset.sample.keys)
+        sample_keys = SampleKeyContract(runtime.require_dataset().sample.keys)
         rows = _project_stream(runtime, plan, sample_keys, cadence)
         try:
             runs = write_sort_runs(

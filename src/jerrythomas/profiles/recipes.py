@@ -12,6 +12,7 @@ from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.config.sources import FsLoaderConfig
 from jerrythomas.config.streams import SourceStreamConfig
 from jerrythomas.config.tasks.base import PluginRuntimeTask
+from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.io.recipes import RunRecipe
 from jerrythomas.io.runs import materialize_receipt_path
 from jerrythomas.plugins import plugin_distributions
@@ -30,10 +31,20 @@ def capture_recipe(
 ) -> RunRecipe:
     graph = definition.artifact_graph
     streams = definition.streams
-    include_dataset = command == "serve" or graph.requires_dataset(required_artifacts)
-    roots = {job.stream for job in jobs if isinstance(job, MaterializeJob)}
-    if include_dataset:
-        roots.update(config.stream for config in definition.dataset.series)
+    dataset_ids = {job.task.dataset for job in jobs if job.task.dataset is not None}
+    if len(dataset_ids) > 1:
+        raise ValueError("A saved run must belong to one dataset")
+    dataset_id = next(iter(dataset_ids), None)
+    dataset = definition.require_dataset(dataset_id) if dataset_id is not None else None
+    captured_ids = dataset_ids | {
+        task.dataset
+        for key in required_artifacts
+        if (task := graph.tasks_by_id[key]).dataset is not None
+    }
+    datasets = {key: definition.require_dataset(key) for key in sorted(captured_ids)}
+    roots = {job.task.stream for job in jobs if isinstance(job.task, StreamTask)}
+    for selected in datasets.values():
+        roots.update(config.stream for config in selected.series)
     limitations = [
         "Inputs and executable code are identified, not archived.",
         "Local source files use filesystem fingerprints, not content hashes.",
@@ -46,7 +57,13 @@ def capture_recipe(
         roots.update(streams.streams)
         limitations.append("Plugin runtime operations can access the entire catalog.")
     for key in required_artifacts:
-        inputs, _ = artifact_inputs(graph.tasks_by_id[key], definition.dataset, streams)
+        task = graph.tasks_by_id[key]
+        bound_dataset = (
+            definition.require_dataset(task.dataset)
+            if task.dataset is not None
+            else None
+        )
+        inputs, _ = artifact_inputs(task, bound_dataset, streams)
         catalog = inputs.get("streams", {})
         if isinstance(catalog, dict):
             roots.update(catalog.get("streams", {}))
@@ -79,9 +96,9 @@ def capture_recipe(
     configuration = {
         "artifact_revision": definition.project.config.artifact_revision,
         "execution": execution.model_dump(mode="json"),
-        "dataset": definition.dataset.model_dump(mode="json")
-        if include_dataset
-        else None,
+        "datasets": {
+            key: value.model_dump(mode="json") for key, value in datasets.items()
+        },
         "sources": sources,
         "streams": {
             key: streams.streams[key].model_dump(mode="json", by_alias=True)
@@ -96,6 +113,8 @@ def capture_recipe(
     return RunRecipe(
         command=command,
         project=str(definition.project.path),
+        dataset_id=dataset_id,
+        dataset_version=dataset.version if dataset is not None else None,
         configuration=configuration,
         implementation=_implementation(definition.project.path.parent, configuration),
         inputs={key: _source_snapshot(definition, key) for key in sorted(source_ids)},
@@ -146,7 +165,11 @@ def _job_configuration(job: RuntimeJob | MaterializeJob) -> dict[str, Any]:
         },
     }
     if isinstance(job, MaterializeJob):
-        config.update(stream=job.stream, overwrite=job.overwrite)
+        config.update(
+            operation=job.task.model_dump(mode="json", by_alias=True),
+            stream=job.stream,
+            overwrite=job.overwrite,
+        )
     else:
         config.update(
             operation=job.task.model_dump(mode="json", by_alias=True),

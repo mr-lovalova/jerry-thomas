@@ -1,7 +1,14 @@
 from pathlib import Path
 
+from jerrythomas.config.profiles.base import OperationProfile
 from jerrythomas.cli.workspace import WorkspaceContext, resolve_default_project_yaml
 from jerrythomas.services.project import load_project
+from jerrythomas.services.project_definition import load_project_definition
+from jerrythomas.profiles.loader import (
+    PROFILE_KINDS,
+    profile_specs_with_defaults,
+    apply_profile_defaults,
+)
 from jerrythomas.services.scaffold.discovery import (
     list_combiners,
     list_domains,
@@ -18,20 +25,56 @@ def handle(
     subcmd: str,
     *,
     plugin_root: Path | None = None,
+    project: str | None = None,
     workspace: WorkspaceContext | None = None,
 ) -> None:
-    if subcmd == "sources":
-        proj_path = resolve_default_project_yaml(workspace)
-        if proj_path is None:
+    if subcmd in {"datasets", "streams", "profiles", "sources"}:
+        project_path = (
+            Path(project)
+            if project is not None
+            else resolve_default_project_yaml(workspace)
+        )
+        if project_path is None:
             root_dir, _, _ = pkg_root(plugin_root)
-            proj_path = default_project_yaml_path(root_dir)
+            project_path = default_project_yaml_path(root_dir)
         try:
-            streams = load_streams(load_project(proj_path))
-        except FileNotFoundError as exc:
+            if subcmd in {"sources", "streams"}:
+                streams = load_streams(load_project(project_path))
+                entries = streams.sources if subcmd == "sources" else streams.streams
+                for entry in sorted(entries):
+                    print(entry)
+            else:
+                definition = load_project_definition(project_path)
+                if subcmd == "datasets":
+                    for dataset_id, dataset in sorted(definition.datasets.items()):
+                        print(f"{dataset_id}\tversion={dataset.version}")
+                else:
+                    operations = {
+                        **definition.artifact_graph.tasks_by_id,
+                        **{task.id: task for task in definition.runtime_operations},
+                    }
+                    for command in PROFILE_KINDS:
+                        profiles, defaults = profile_specs_with_defaults(
+                            definition.project, command
+                        )
+                        for profile in profiles:
+                            profile = apply_profile_defaults(profile, defaults)
+                            assert isinstance(profile, OperationProfile)
+                            task = operations.get(profile.operation)
+                            binding = ""
+                            if task is not None:
+                                bound_dataset = task.dataset
+                                stream_id = getattr(task, "stream", None)
+                                if bound_dataset is not None:
+                                    binding = f"\tdataset={bound_dataset}"
+                                elif stream_id is not None:
+                                    binding = f"\tstream={stream_id}"
+                            enabled = str(profile.enabled).lower()
+                            print(
+                                f"{command}.{profile.name}\toperation={profile.operation}{binding}\tenabled={enabled}"
+                            )
+        except (OSError, TypeError, ValueError) as exc:
             raise SystemExit(str(exc)) from None
-        aliases = sorted(streams.sources)
-        for alias in aliases:
-            print(alias)
     elif subcmd == "domains":
         for k in list_domains(root=plugin_root):
             print(k)

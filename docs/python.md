@@ -15,11 +15,13 @@ from jerrythomas.integrations.ml import iter_samples
 
 for sample in iter_samples(
     "path/to/project.yaml",
+    dataset="default",
     output_id="holdout.train",
 ):
     print(sample.key, sample.features, sample.targets)
 ```
 
+`dataset` is the named dataset ID from `datasets/<id>.yaml`.
 Datasets with a configured split require an `output_id`; unsplit datasets
 reject it. `limit` bounds the selected output without materializing it.
 
@@ -40,6 +42,7 @@ from jerrythomas.integrations.ml import iter_model_batches
 
 for batch in iter_model_batches(
     "path/to/project.yaml",
+    dataset="default",
     output_id="holdout.train",
     batch_size=4096,
     dtype="float32",

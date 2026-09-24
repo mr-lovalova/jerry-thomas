@@ -8,6 +8,7 @@ def main() -> None:
     batch = next(
         iter_model_batches(
             project,
+            dataset="default",
             output_id="holdout.train",
             batch_size=32,
             dtype="float32",

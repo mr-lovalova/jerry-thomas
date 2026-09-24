@@ -2,7 +2,6 @@ import argparse
 
 from .common import (
     add_artifact_mode_flag,
-    add_dataset_flag,
     add_execution_observability_flags,
     add_project_flag,
 )
@@ -15,7 +14,6 @@ def add_materialize_command(sub, common: argparse.ArgumentParser) -> None:
         description="Run configured materialize profiles.",
         parents=[common],
     )
-    add_dataset_flag(parser)
     add_project_flag(parser)
     parser.add_argument(
         "--profile",

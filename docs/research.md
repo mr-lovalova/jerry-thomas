@@ -65,11 +65,12 @@ for result in results:
 shared `metadata` model, and absolute `outputs` paths. `output()` selects an
 output descriptor; `output_path()` validates and resolves its file.
 
-Serve profiles sharing a run directory contribute to one result. Materialize
+Serve profiles sharing a run directory must select the same dataset and contribute
+to one result. Materialize
 returns one result per profile in execution order, with a shared invocation ID.
 It automatically saves `<output filename>.run.json` beside each output. Receipts
-record command, timestamps, status, profile, stream or operation, file format,
-compression, and row count. Preview and split metadata apply to serve.
+record dataset ID/version for dataset runs, command, timestamps, status, profile,
+stream or operation, file format, compression, and row count. Preview and split metadata apply to serve.
 
 Build, inspect, and stdout-only execution return an empty tuple. Execution or
 publication failures raise instead of returning partial results. Materialize
@@ -94,6 +95,19 @@ train_path = saved.output_path("dataset", "fold_0.train")
 print(train.format, train.row_count, train.fold.labels)
 ```
 
+When selecting by dataset identity, use the configured output roots:
+
+```python
+from jerrythomas.services.saved_runs import load_dataset_run
+
+saved = load_dataset_run(
+    "research/project.yaml", dataset="daily", version="v1", run_id="saved-run-id"
+)
+```
+
+This checks the receipt’s dataset, version, and run ID. `load_run(path)` remains
+available for reading a saved run directly without the current project.
+
 Selection uses the original profile name and exact output ID, independently of
 filename sanitization. For an unsplit output, use `saved.output_path("dataset")`.
 Omitting the ID never guesses a fold or selects all roles. Missing selections
@@ -109,9 +123,9 @@ outputs have no fold identity; `saved.metadata.preview` records their stage.
 
 `saved.metadata.split` contains the resolved `SplitConfig` captured before
 execution: time intervals and folds, or hash ratios, seed, and folds. It is
-`None` for an unsplit project. Fold output IDs, roles, and labels must agree
+`None` for an unsplit dataset. Fold output IDs, roles, and labels must agree
 with these saved rules; inconsistent manifests are rejected. A preview retains
-the project's split configuration, but its outputs do not claim fold membership.
+the dataset's split configuration, but its outputs do not claim fold membership.
 
 For a time split, use the saved rules to label a JSONL sample without reopening
 project configuration:
@@ -136,7 +150,7 @@ saved rules. These rules describe label assignment and fold membership; they
 are complemented by the saved recipe, which includes the resolved dataset
 configuration, target horizons, and postprocess policies.
 
-Both receipt layouts use `schema_version: 3`, independently of the package
+Both receipt layouts use `schema_version: 4`, independently of the package
 and project schema versions. They retain run ID, timestamps, status, notes, and
 preview, and list completed files under `outputs`. Output descriptors are
 written atomically with successful completion; serve then publishes `latest`.
@@ -266,7 +280,7 @@ partition_by: [ticker]
 presorted: true
 ```
 
-Then reference the field from `dataset.yaml`:
+Then reference the field from `datasets/default.yaml`:
 
 ```yaml
 features:

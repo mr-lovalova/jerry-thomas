@@ -28,20 +28,12 @@ def positive_integer(value: str) -> int:
     return number
 
 
-def add_dataset_flag(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--dataset",
-        "-d",
-        help="dataset alias, folder, or project.yaml path",
-    )
-
-
 def add_project_flag(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--project",
         "-p",
         default=None,
-        help="path to project.yaml",
+        help="project alias, folder, or project.yaml path",
     )
 
 

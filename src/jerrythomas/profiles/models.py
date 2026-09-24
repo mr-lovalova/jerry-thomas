@@ -5,6 +5,7 @@ from jerrythomas.artifacts.settings import BuildSettings
 from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.config.preview import PreviewStage
 from jerrythomas.config.tasks.base import ArtifactTask, RuntimeTask
+from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.execution.settings import (
     ObservabilitySettings,
 )
@@ -18,6 +19,7 @@ from jerrythomas.services.definitions import ProjectDefinition
 class ServeRunPlan:
     paths: RunPaths
     preview: PreviewStage | None
+    dataset_id: str | None
 
 
 @dataclass(frozen=True)
@@ -50,10 +52,14 @@ class RuntimeJob:
 @dataclass(frozen=True)
 class MaterializeJob:
     name: str
-    stream: str
+    task: StreamTask
     output: OutputTarget
     overwrite: bool
     observability: ObservabilitySettings
+
+    @property
+    def stream(self) -> str:
+        return self.task.stream
 
 
 @dataclass(frozen=True, kw_only=True)

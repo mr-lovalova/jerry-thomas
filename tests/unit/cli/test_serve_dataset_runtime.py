@@ -63,6 +63,7 @@ def _runtime(streams=None):
         streams=streams or {},
     )
     runtime.dataset = _dataset()
+    runtime.require_dataset = lambda: runtime.dataset
 
     def load_artifact(spec):
         assert spec.key == "metadata"

@@ -13,9 +13,11 @@ from jerrythomas.io.json_file import write_json_object
 class RunRecipe(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     command: Literal["serve", "materialize"]
     project: str
+    dataset_id: str | None = None
+    dataset_version: str | None = None
     configuration: dict[str, Any]
     implementation: dict[str, Any]
     inputs: dict[str, Any]

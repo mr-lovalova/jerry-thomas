@@ -1,7 +1,6 @@
 import argparse
 import logging
 import sys
-from pathlib import Path
 
 from jerrythomas.cli.command_router import execute_command
 from jerrythomas.cli.workspace import WorkspaceContext, load_workspace_context
@@ -19,61 +18,32 @@ logger = logging.getLogger(__name__)
 _PROFILE_COMMANDS = {"build", "inspect", "materialize", "serve"}
 
 
-def _dataset_to_project_path(
-    dataset: str,
-    workspace: WorkspaceContext | None,
-) -> str:
-    """Resolve a dataset selector (alias, folder, or file) into a project.yaml path."""
-    if workspace is not None:
-        resolved = workspace.resolve_dataset_alias(dataset)
-        if resolved is not None:
-            return str(resolved)
-
-    path = Path(dataset)
-    if path.suffix in {".yaml", ".yml"}:
-        return str(
-            resolve_workspace_path(
-                path,
-                workspace.root if workspace is not None else None,
-            )
-        )
-
-    candidate_dir = resolve_workspace_path(
-        path,
-        workspace.root if workspace is not None else None,
-    )
-    if candidate_dir.is_dir():
-        candidate = candidate_dir / "project.yaml"
-        return str(candidate.resolve())
-
-    raise SystemExit(
-        f"Unknown dataset '{dataset}'. Define it under datasets: in jerry.yaml or pass a valid path."
-    )
-
-
 def _resolve_project_from_args(
     project: str | None,
-    dataset: str | None,
     workspace: WorkspaceContext | None,
 ) -> str:
-    """Resolve final project path from --project / --dataset / jerry.yaml defaults."""
-    if project is not None and dataset is not None:
-        raise SystemExit("Cannot use both --project and --dataset; pick one.")
-
-    if dataset is not None:
-        return _dataset_to_project_path(dataset, workspace)
-
+    """Resolve a project alias, folder, or YAML path relative to the workspace."""
     if project is None and workspace is not None:
-        default_ds = workspace.config.default_dataset
-        if default_ds:
-            return _dataset_to_project_path(default_ds, workspace)
-
-    if project is not None:
-        return project
-
+        project = workspace.config.default_project
+    if project is None:
+        raise SystemExit(
+            "No project selected. Use --project <alias|folder|project.yaml> "
+            "or define default_project in jerry.yaml."
+        )
+    if workspace is not None:
+        resolved = workspace.resolve_project_alias(project)
+        if resolved is not None:
+            return str(resolved)
+    path = resolve_workspace_path(
+        project, workspace.root if workspace is not None else None
+    )
+    if path.is_dir():
+        return str(path / "project.yaml")
+    if path.suffix in {".yaml", ".yml"}:
+        return str(path)
     raise SystemExit(
-        "No dataset/project selected. Use --dataset <name|path>, --project <path>, "
-        "or define default_dataset in jerry.yaml."
+        f"Unknown project '{project}'. Define it under projects: in jerry.yaml "
+        "or pass a project folder or YAML path."
     )
 
 
@@ -81,13 +51,19 @@ def _resolve_project_arguments(
     args: argparse.Namespace,
     workspace_context: WorkspaceContext | None,
 ) -> None:
-    if args.cmd not in _PROFILE_COMMANDS:
-        return
-    args.project = _resolve_project_from_args(
-        args.project,
-        args.dataset,
-        workspace_context,
+    is_project_listing = args.cmd == "list" and args.list_cmd in {
+        "datasets",
+        "streams",
+        "profiles",
+    }
+    explicit_source_project = (
+        args.cmd == "list" and args.list_cmd == "sources" and args.project is not None
     )
+    if args.cmd not in _PROFILE_COMMANDS and not (
+        is_project_listing or explicit_source_project
+    ):
+        return
+    args.project = _resolve_project_from_args(args.project, workspace_context)
 
 
 def _configure_cli_logging(

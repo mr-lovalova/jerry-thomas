@@ -188,7 +188,7 @@ def test_latest_run_refuses_to_delete_a_real_directory(tmp_path: Path) -> None:
     assert not (paths.serve_root / ".latest-run").exists()
 
 
-@pytest.mark.parametrize("version", [None, 0, 1, 2, "3", True, 3.0])
+@pytest.mark.parametrize("version", [None, 0, 1, 2, 3, "4", True, 4.0])
 def test_saved_run_rejects_missing_or_unsupported_version(tmp_path, version):
     paths = runs.get_run_paths(tmp_path, "run")
     runs.start_run(paths, recipe=empty_recipe())
@@ -200,6 +200,29 @@ def test_saved_run_rejects_missing_or_unsupported_version(tmp_path, version):
         data["schema_version"] = version
     paths.metadata_path.write_text(json.dumps(data))
     with pytest.raises(ValueError, match="schema_version"):
+        runs.load_run(paths.run_root)
+
+
+@pytest.mark.parametrize(
+    ("identity", "missing"),
+    [
+        ({"dataset_id": "prices", "dataset_version": "v2"}, "dataset_version"),
+        ({"dataset_id": "prices", "dataset_version": None}, None),
+        ({"dataset_id": None, "dataset_version": "v2"}, None),
+        ({"dataset_id": "prices", "dataset_version": " "}, None),
+    ],
+)
+def test_saved_run_rejects_incomplete_dataset_identity(tmp_path, identity, missing):
+    paths = runs.get_run_paths(tmp_path, "run")
+    runs.start_run(paths, recipe=empty_recipe())
+    runs.finish_run_success(paths)
+    data = json.loads(paths.metadata_path.read_text())
+    data.update(identity)
+    if missing is not None:
+        del data[missing]
+    paths.metadata_path.write_text(json.dumps(data))
+
+    with pytest.raises(ValueError, match="dataset"):
         runs.load_run(paths.run_root)
 
 

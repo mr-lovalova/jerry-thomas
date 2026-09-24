@@ -352,7 +352,7 @@ def _runtime_with_rows(
     artifacts_root.mkdir(parents=True, exist_ok=True)
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 6\nartifact_revision: 1\n", encoding="utf-8"
+        "schema_version: 7\nartifact_revision: 1\n", encoding="utf-8"
     )
     runtime = Runtime(
         project_yaml=project_yaml,
@@ -3054,7 +3054,7 @@ def test_series_rejects_symlinked_output_before_mutation(
     victim = redirected / "manifest.json"
     victim.write_text("keep", encoding="utf-8")
     (artifacts_root / "build").symlink_to(redirected, target_is_directory=True)
-    runtime = SimpleNamespace(
+    runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=artifacts_root,
         dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),

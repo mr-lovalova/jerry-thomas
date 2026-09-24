@@ -36,9 +36,8 @@ for custom loaders, parsers, mappers, and stream combiners.
 
 ## Quick Start
 
-Upgrading from v10? Read the [v11 migration guide](docs/migrations/v11.md)
-before upgrading. v11 removes the previous ordering, artifact-mode, and visual
-configuration syntax without compatibility aliases.
+Upgrading from v11? Read the [v12 migration guide](docs/migrations/v12.md).
+Projects now contain named datasets, and every executable profile selects an operation.
 
 From zero to a served dataset:
 
@@ -49,11 +48,11 @@ python -m pip install -U jerry-thomas
 jerry demo create
 cd demo
 python -m pip install -e .
-jerry serve --dataset demo --limit 3
+jerry serve --project demo --limit 3
 ```
 
 The generated demo is a self-contained workspace. Scaffold commands do not
-modify a parent `jerry.yaml`; add a dataset alias explicitly when you want to
+modify a parent `jerry.yaml`; add a project alias explicitly when you want to
 integrate a generated project into another workspace.
 
 ### Create Your Own Plugin + First Stream
@@ -100,6 +99,7 @@ that profile explicitly, including one configured with `enabled: false`.
 - `jerry build`: build the series artifact, scaler statistics, and
   metadata.
 - `jerry inspect`: run coverage, matrix, or custom inspection profiles.
+- `jerry list datasets|streams|profiles --project <alias>`: inspect a project catalog.
 - `jerry materialize`: write configured streams to durable `.jsonl` or
   gzip-compressed `.jsonl.gz` files.
 - `jerry clean [--yes] [--older-than <age>]`: lists or removes stale sort spill directories. It does not delete materialized outputs.
@@ -128,8 +128,8 @@ Use `jerry <command> --help` for current flags and the
 
 ### Workspace (`jerry.yaml`)
 
-- `datasets`: dataset aliases → `project.yaml` paths (relative to `jerry.yaml`).
-- `default_dataset`: which dataset project commands use when you omit `--dataset/--project`.
+- `projects`: project aliases → `project.yaml` paths (relative to `jerry.yaml`).
+- `default_project`: which project commands use when you omit `--project`.
 - `plugin_root`: where scaffolding commands write Python code (`src/<package>/...`) and where they look for `pyproject.toml`.
 
 ### Plugin Package
@@ -171,7 +171,7 @@ These live under `lib/<plugin>/src/<package>/`:
   selected dataset fold's scaler during full serving.
   Each target also declares its maximum elapsed `horizon`, which time folds use
   to remove boundary samples whose future support reaches the next role.
-- **Postprocess policies** filter assembled samples by feature or target coverage. Configure them under `postprocess:` in `dataset.yaml`.
+- **Postprocess policies** filter assembled samples by feature or target coverage. Configure them under `postprocess:` in `datasets/default.yaml`.
 - Transform lists contain flat, validated built-in operations. Each item has an
   `operation` discriminator and that operation's fields. See the
   [transform guide](docs/transforms/index.md) for the supported operations.
@@ -179,7 +179,7 @@ These live under `lib/<plugin>/src/<package>/`:
 ### Glossary
 
 - **Source alias**: `sources/*.yaml:id` (referenced by source-backed streams under `from.source`).
-- **Stream id**: `streams/*.yaml:id` (referenced by `dataset.yaml` under `stream:`).
+- **Stream id**: `streams/*.yaml:id` (referenced by `datasets/default.yaml` under `stream:`).
 - **Sample key**: sample identity: floored time plus optional `dataset.sample.keys`.
 - **Partition**: complete identity of an independent record series, declared by
   stream `partition_by` and used as the state boundary for history-based

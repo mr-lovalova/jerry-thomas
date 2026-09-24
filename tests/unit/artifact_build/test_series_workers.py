@@ -141,6 +141,9 @@ class _LifecycleLoader(BaseDataLoader):
 
 
 def _write_yaml(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.parent.name == "datasets":
+        value = {"version": "v1", **value}
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
 
 
@@ -178,18 +181,18 @@ def lifecycle_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         _write_yaml(
             root / "project.yaml",
             {
-                "schema_version": 6,
+                "schema_version": 7,
                 "artifact_revision": 1,
                 "paths": {
                     "sources": "sources",
                     "streams": "streams",
-                    "dataset": "dataset.yaml",
+                    "datasets": "datasets",
                     "artifacts": "build",
                 },
             },
         )
         _write_yaml(
-            root / "dataset.yaml",
+            root / "datasets" / "default.yaml",
             {
                 "sample": {"rounding": "floor", "cadence": "1h", "keys": ["id_"]},
                 "features": [
@@ -229,7 +232,9 @@ def lifecycle_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                     "presorted": True,
                 },
             )
-        runtime = compile_runtime(load_project_definition(root / "project.yaml"))
+        runtime = compile_runtime(
+            load_project_definition(root / "project.yaml"), "default"
+        )
         runtime.execution = ExecutionConfig(workers=2, sort_buffer_mb=1)
         return runtime, temporary, markers
 

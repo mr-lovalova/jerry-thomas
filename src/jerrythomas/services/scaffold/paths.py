@@ -9,7 +9,7 @@ from jerrythomas.services.scaffold.locking import ScaffoldLock, acquire_scaffold
 from jerrythomas.services.scaffold.utils import write_new_file
 
 _DEFAULT_DOTENV_EXAMPLE = (
-    "# Copy this file to .env next to project.yaml for local dataset-specific secrets.\n"
+    "# Copy this file to .env next to project.yaml for local project secrets.\n"
     "RAW_ROOT=\n"
 )
 
@@ -60,7 +60,7 @@ def ensure_base_pkg_dir(root_dir: Path, pkg_name: str) -> Path:
 
 def default_project_yaml_path(plugin_root: Path) -> Path:
     """Return the project path created by the standard plugin scaffold."""
-    return plugin_root / "your-dataset" / "project.yaml"
+    return plugin_root / "your-project" / "project.yaml"
 
 
 def ensure_project_scaffold(
@@ -79,7 +79,7 @@ def ensure_project_scaffold(
                 "paths:\n"
                 "  streams: ./streams\n"
                 "  sources: ./sources\n"
-                "  dataset: dataset.yaml\n"
+                "  datasets: ./datasets\n"
                 "  artifacts: ../artifacts/default\n"
                 "  profiles: ./profiles\n"
                 "globals:\n"
@@ -92,6 +92,8 @@ def ensure_project_scaffold(
             streams.mkdir(parents=True, exist_ok=True)
         for sources in project.source_dirs:
             sources.mkdir(parents=True, exist_ok=True)
+        for datasets in project.dataset_dirs:
+            datasets.mkdir(parents=True, exist_ok=True)
         if project.operations_dir is not None:
             project.operations_dir.mkdir(parents=True, exist_ok=True)
         project.profiles_dir.mkdir(parents=True, exist_ok=True)

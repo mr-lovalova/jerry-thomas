@@ -55,7 +55,7 @@ jerrythomas = [
   "templates/plugin_skeleton/**",
   "templates/plugin_skeleton/.gitignore",
   "templates/dataset_skeleton/**",
-  "templates/dataset_skeleton/your-dataset/.env.example",
+  "templates/dataset_skeleton/your-project/.env.example",
   "templates/demo_skeleton/**",
   "templates/demo_skeleton/demo/.env.example",
   "templates/stubs/**"

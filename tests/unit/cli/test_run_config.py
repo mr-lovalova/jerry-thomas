@@ -15,24 +15,31 @@ def _write_project(tmp_path: Path) -> Path:
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 6",
+                "schema_version: 7",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: streams",
                 "  sources: sources",
-                "  dataset: dataset.yaml",
+                "  datasets: datasets",
                 "  artifacts: artifacts",
+                "  operations: operations",
                 "  profiles: profiles",
             ]
         ),
         encoding="utf-8",
     )
-    (tmp_path / "dataset.yaml").write_text(
-        "sample:\n  rounding: ceil\n  cadence: 1h\n",
+    (tmp_path / "datasets").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "datasets/default.yaml").write_text(
+        "version: v1\nsample:\n  rounding: ceil\n  cadence: 1h\n",
         encoding="utf-8",
     )
-    for directory in ("streams", "sources"):
+    for directory in ("streams", "sources", "operations"):
         (tmp_path / directory).mkdir(parents=True, exist_ok=True)
+    for operation in ("dataset", "coverage", "matrix"):
+        (tmp_path / "operations" / f"{operation}.yaml").write_text(
+            f"kind: runtime\nentrypoint: core.runtime.{operation}\ndataset: default\n",
+            encoding="utf-8",
+        )
     return project_yaml
 
 
@@ -224,9 +231,9 @@ def test_runtime_request_rejects_colliding_routed_output_ids(
     tmp_path: Path,
 ) -> None:
     project_yaml = _write_project(tmp_path)
-    (tmp_path / "dataset.yaml").write_text(
+    (tmp_path / "datasets/default.yaml").write_text(
         (
-            "sample: {rounding: ceil, cadence: 1h}\n"
+            "version: v1\nsample: {rounding: ceil, cadence: 1h}\n"
             "split:\n"
             "  mode: hash\n"
             "  ratios: {train: 1.0}\n"
@@ -284,9 +291,9 @@ def test_runtime_request_rejects_colliding_preview_output_ids(
             ),
             encoding="utf-8",
         )
-    (tmp_path / "dataset.yaml").write_text(
+    (tmp_path / "datasets/default.yaml").write_text(
         (
-            "sample: {rounding: ceil, cadence: 1h}\n"
+            "version: v1\nsample: {rounding: ceil, cadence: 1h}\n"
             "features:\n"
             '  - {id: "a/b", stream: first, field: value}\n'
             '  - {id: "a?b", stream: second, field: value}\n'
@@ -332,7 +339,7 @@ def test_build_request_rejects_logs_under_artifacts_root(
     profiles.mkdir(parents=True, exist_ok=True)
     (profiles / "build.metadata.yaml").write_text(
         (
-            "operation: metadata\n"
+            "operation: dataset.default.metadata\n"
             "observability:\n"
             "  logging:\n"
             "    outputs:\n"
@@ -384,7 +391,7 @@ def test_serve_profile_rejects_artifact_operation(tmp_path: Path):
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
     (profiles / "serve.metadata.yaml").write_text(
-        "operation: metadata\n",
+        "operation: dataset.default.metadata\n",
         encoding="utf-8",
     )
 
@@ -396,7 +403,7 @@ def test_serve_profile_rejects_artifact_operation(tmp_path: Path):
         )
 
     assert (
-        "must reference a runtime operation; 'metadata' is an artifact operation"
+        "must reference a runtime operation; 'dataset.default.metadata' is an artifact operation"
         in str(exc.value)
     )
 
@@ -406,7 +413,7 @@ def test_inspect_profile_rejects_artifact_operation(tmp_path: Path):
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
     (profiles / "inspect.coverage_stats.yaml").write_text(
-        "operation: coverage_stats\n",
+        "operation: dataset.default.coverage_stats\n",
         encoding="utf-8",
     )
 
@@ -414,7 +421,7 @@ def test_inspect_profile_rejects_artifact_operation(tmp_path: Path):
         build_runtime_run_request(command="inspect", project=str(project_yaml))
 
     assert (
-        "must reference a runtime operation; 'coverage_stats' is an artifact operation"
+        "must reference a runtime operation; 'dataset.default.coverage_stats' is an artifact operation"
         in str(exc.value)
     )
 
@@ -785,7 +792,7 @@ def test_build_defaults_apply_to_build_profiles(tmp_path: Path):
         encoding="utf-8",
     )
     (profiles / "build.metadata.yaml").write_text(
-        "operation: metadata\n",
+        "operation: dataset.default.metadata\n",
         encoding="utf-8",
     )
 

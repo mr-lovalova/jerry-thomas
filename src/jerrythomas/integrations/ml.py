@@ -68,10 +68,12 @@ class _SampleSource:
     def from_project(
         cls,
         project_yaml: str | Path,
+        dataset_id: str,
         output_id: str | None,
     ) -> _SampleSource:
         definition = load_project_definition(Path(project_yaml))
-        split = definition.dataset.split
+        dataset = definition.require_dataset(dataset_id)
+        split = dataset.split
         if split is None:
             if output_id is not None:
                 raise ValueError(
@@ -92,7 +94,7 @@ class _SampleSource:
                     + ", ".join(available)
                 ) from exc
 
-        runtime = compile_runtime(definition)
+        runtime = compile_runtime(definition, dataset_id)
         hydrate_runtime_artifacts_for_pipeline(runtime, definition)
         metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
         if split is None:
@@ -104,8 +106,8 @@ class _SampleSource:
             key_plan = require_metadata_key_plan(
                 metadata.catalog.window,
                 metadata.catalog.sample,
-                definition.dataset.sample.cadence,
-                definition.dataset.sample.keys,
+                dataset.sample.cadence,
+                dataset.sample.keys,
             )
             return cls(
                 runtime=runtime,
@@ -127,7 +129,7 @@ class _SampleSource:
         if limit is not None and limit < 0:
             raise ValueError("limit must be non-negative")
 
-        dataset = self.runtime.dataset
+        dataset = self.runtime.require_dataset()
         if not dataset.features:
             raise ValueError(
                 "Dataset does not define any features. Configure at least one feature "
@@ -166,18 +168,20 @@ class _SampleSource:
 def iter_samples(
     project_yaml: str | Path,
     *,
+    dataset: str,
     output_id: str | None = None,
     limit: int | None = None,
 ) -> Iterator[Sample]:
     """Stream final samples from current Jerry artifacts."""
 
-    source = _SampleSource.from_project(project_yaml, output_id)
+    source = _SampleSource.from_project(project_yaml, dataset, output_id)
     return source.iter_samples(limit)
 
 
 def iter_model_batches(
     project_yaml: str | Path,
     *,
+    dataset: str,
     output_id: str | None = None,
     batch_size: int = 4096,
     limit: int | None = None,
@@ -197,7 +201,7 @@ def iter_model_batches(
             "NumPy is required for model batches; install jerry-thomas[ml]."
         ) from exc
 
-    source = _SampleSource.from_project(project_yaml, output_id)
+    source = _SampleSource.from_project(project_yaml, dataset, output_id)
     feature_entries = source.schema.features
     target_entries = source.schema.targets
     feature_columns = _columns(feature_entries)

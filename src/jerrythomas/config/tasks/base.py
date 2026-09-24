@@ -14,6 +14,7 @@ class Task(BaseModel):
     kind: Literal["artifact", "runtime"]
     id: str
     entrypoint: str
+    dataset: str | None = None
 
     @field_validator("id", mode="before")
     @classmethod
@@ -22,6 +23,13 @@ class Task(BaseModel):
         if not operation_id:
             raise ValueError("id must be set")
         return operation_id
+
+    @field_validator("dataset")
+    @classmethod
+    def _validate_dataset(cls, value: str | None) -> str | None:
+        if value is not None and (not value or value != value.strip()):
+            raise ValueError("dataset must be a nonempty dataset ID without whitespace")
+        return value
 
     @field_validator("entrypoint", mode="before")
     @classmethod

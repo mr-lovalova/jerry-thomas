@@ -100,7 +100,7 @@ def build_scaler_artifact(
             name="scaler:artifact",
             input=Input(
                 name="fit_scaler",
-                open=partial(_fit_scaler, runtime, task_cfg, progress),
+                open=partial(_fit_scaler, runtime, progress),
                 progress=progress.snapshot,
             ),
         ),
@@ -124,10 +124,9 @@ def build_scaler_artifact(
 
 def _fit_scaler(
     runtime: Runtime,
-    task: ScalerTask,
     progress: StreamWorkerProgress,
 ) -> Iterator[StandardScalerArtifact | FoldedScalerArtifact]:
-    dataset = runtime.dataset
+    dataset = runtime.require_dataset()
     configs_by_stream: dict[str, list[SeriesConfig]] = defaultdict(list)
     for config in dataset.series:
         if config.scale:
@@ -142,14 +141,12 @@ def _fit_scaler(
         else (None,)
     )
     fits = {
-        fold_id: _ScalerFit(_new_accumulator(task), set(), set())
+        fold_id: _ScalerFit(_new_accumulator(runtime), set(), set())
         for fold_id in fold_ids
     }
     sample_keys = SampleKeyContract(dataset.sample.keys)
     with sort_spill_directory() as temp_root:
-        results = run_stream_jobs(
-            runtime, plans, partial(_fit_stream, task=task), temp_root, progress
-        )
+        results = run_stream_jobs(runtime, plans, _fit_stream, temp_root, progress)
         results.reverse()
         while results:
             result = results.pop()
@@ -175,27 +172,24 @@ def _fit_stream(
     runtime: Runtime,
     plan: _StreamPlan,
     _temp_root: Path,
-    *,
-    task: ScalerTask,
 ) -> _FittedStream:
-    sample_keys = SampleKeyContract(runtime.dataset.sample.keys)
+    dataset = runtime.require_dataset()
+    sample_keys = SampleKeyContract(dataset.sample.keys)
     fits: dict[str | None, _ScalerFit]
-    if runtime.dataset.split is None:
-        fits = {None: _fit_standard_scaler(runtime, plan, task, sample_keys)}
+    split = dataset.split
+    if split is None:
+        fits = {None: _fit_standard_scaler(runtime, plan, sample_keys)}
     else:
-        fits = _fit_folded_scaler(
-            runtime, plan, runtime.dataset.split.folds, task, sample_keys
-        )
+        fits = _fit_folded_scaler(runtime, plan, split.folds, sample_keys)
     return _FittedStream(fits, sample_keys.inferred_types)
 
 
 def _fit_standard_scaler(
     runtime: Runtime,
     plan: _StreamPlan,
-    task: ScalerTask,
     sample_keys: SampleKeyContract,
 ) -> _ScalerFit:
-    state = _ScalerState(_ScalerFit(_new_accumulator(task), set(), set()))
+    state = _ScalerState(_ScalerFit(_new_accumulator(runtime), set(), set()))
     inputs = _iter_scaler_inputs(runtime, plan, sample_keys)
     try:
         for item in inputs:
@@ -209,19 +203,19 @@ def _fit_folded_scaler(
     runtime: Runtime,
     plan: _StreamPlan,
     folds: Sequence[DatasetFold],
-    task: ScalerTask,
     sample_keys: SampleKeyContract,
 ) -> dict[str | None, _ScalerFit]:
-    split = runtime.dataset.split
+    dataset = runtime.require_dataset()
+    split = dataset.split
     assert split is not None
 
-    target_horizon = runtime.dataset.max_target_horizon
+    target_horizon = dataset.max_target_horizon
     time_split = split if isinstance(split, TimeSplitConfig) else None
     states_by_label: dict[str, list[_ScalerState]] = defaultdict(list)
     states: dict[str, _ScalerState] = {}
     for fold in folds:
         state = _ScalerState(
-            fit=_ScalerFit(_new_accumulator(task), set(), set()),
+            fit=_ScalerFit(_new_accumulator(runtime), set(), set()),
             training_labels=frozenset(fold.train),
             horizon_policy=(
                 TargetHorizonPolicy(time_split, fold, target_horizon)
@@ -285,8 +279,9 @@ def _finish_scaler(
     )
 
 
-def _new_accumulator(task: ScalerTask) -> ScalerAccumulator:
-    return ScalerAccumulator(task.with_mean, task.with_std, task.epsilon)
+def _new_accumulator(runtime: Runtime) -> ScalerAccumulator:
+    policy = runtime.require_dataset().scaling
+    return ScalerAccumulator(policy.with_mean, policy.with_std, policy.epsilon)
 
 
 def _iter_scaler_inputs(
@@ -294,7 +289,8 @@ def _iter_scaler_inputs(
     plan: _StreamPlan,
     sample_keys: SampleKeyContract,
 ) -> Iterator[_ScalerInput]:
-    cadence_step = parse_cadence(runtime.dataset.sample.cadence)
+    sample = runtime.require_dataset().sample
+    cadence_step = parse_cadence(sample.cadence)
     runtime_stream = require_runtime_stream(runtime, plan.stream_id)
     projector = SeriesProjector(
         runtime_stream.partition_by,
@@ -307,9 +303,7 @@ def _iter_scaler_inputs(
             series_records = tuple(projector.project(record))
             yield _ScalerInput(
                 group_key=(
-                    round_time_to_cadence(
-                        record.time, cadence_step, runtime.dataset.sample.rounding
-                    ),
+                    round_time_to_cadence(record.time, cadence_step, sample.rounding),
                     *series_records[0].entity_key,
                 ),
                 records=series_records,

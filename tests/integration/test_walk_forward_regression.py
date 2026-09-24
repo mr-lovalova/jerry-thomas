@@ -17,7 +17,7 @@ def _serve(project_root: Path) -> tuple[Path, FoldedScalerArtifact]:
     assert run_metadata["finished_at"] is not None
     assert (run_paths.serve_root / "latest").resolve() == run_paths.run_root.resolve()
 
-    scaler = load_scaler_artifact(project_root / "artifacts" / "build" / "scaler.json")
+    scaler = load_scaler_artifact(project_root / "artifacts" / "datasets" / "default" / "scaler.json")
     assert isinstance(scaler, FoldedScalerArtifact)
     return run_paths.dataset_dir, scaler
 
@@ -182,7 +182,7 @@ def test_training_rows_do_not_depend_on_validation_availability(
 
 def test_target_horizon_removes_each_fold_role_tail(copy_fixture) -> None:
     project_root = copy_fixture("walk_forward_project")
-    dataset_path = project_root / "dataset.yaml"
+    dataset_path = project_root / "datasets/default.yaml"
     dataset_path.write_text(
         dataset_path.read_text(encoding="utf-8").replace(
             "    horizon: 0s",
@@ -227,7 +227,7 @@ def test_target_horizon_protects_future_derived_values(copy_fixture) -> None:
         encoding="utf-8",
     )
 
-    dataset_path = project_root / "dataset.yaml"
+    dataset_path = project_root / "datasets/default.yaml"
     dataset_path.write_text(
         dataset_path.read_text(encoding="utf-8").replace(
             "  - id: outcome\n"

@@ -35,15 +35,16 @@ class MutatingValuesLoader(BaseDataLoader):
 @pytest.fixture
 def compiled_runtime(tmp_path):
     (tmp_path / "sources").mkdir()
+    (tmp_path / "datasets").mkdir()
     (tmp_path / "streams").mkdir()
     (tmp_path / "project.yaml").write_text(
-        "schema_version: 6\nartifact_revision: 1\nname: snapshot-test\n"
+        "schema_version: 7\nartifact_revision: 1\nname: snapshot-test\n"
         "paths:\n  sources: sources\n  streams: streams\n"
-        "  dataset: dataset.yaml\n  artifacts: artifacts\n"
+        "  datasets: datasets\n  artifacts: artifacts\n"
         "globals:\n  data_file: prices.jsonl\n"
     )
-    (tmp_path / "dataset.yaml").write_text(
-        "sample: {cadence: 1h, rounding: exact, keys: [ticker]}\n"
+    (tmp_path / "datasets" / "default.yaml").write_text(
+        "version: v1\nsample: {cadence: 1h, rounding: exact, keys: [ticker]}\n"
         "features: [{id: value, stream: selected, field: value}]\n"
     )
     (tmp_path / "prices.jsonl").write_text(
@@ -66,7 +67,9 @@ def compiled_runtime(tmp_path):
         "transforms:\n"
         "- {operation: where, field: value, operator: in, comparand: [1, 2]}\n"
     )
-    return compile_runtime(load_project_definition(tmp_path / "project.yaml"))
+    return compile_runtime(
+        load_project_definition(tmp_path / "project.yaml"), "default"
+    )
 
 
 def _snapshot_values(snapshot):
@@ -167,7 +170,7 @@ def test_snapshot_preserves_plugin_arguments_before_loader_mutation(
     definition.streams.sources["prices"].loader = EntryPointConfig(
         entrypoint="snapshot.mutable-values", args={"settings": {"values": [1]}}
     )
-    runtime = compile_runtime(definition)
+    runtime = compile_runtime(definition, "default")
     snapshot = pickle.loads(pickle.dumps(snapshot_runtime(runtime, ["selected"])))
 
     assert snapshot.streams.sources["prices"].loader.args == {

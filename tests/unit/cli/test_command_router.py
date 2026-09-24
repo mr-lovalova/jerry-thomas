@@ -78,6 +78,7 @@ def test_list_route_forwards_plugin_and_workspace(
 
     assert captured == {
         "subcmd": subcmd,
+        "project": None,
         "plugin_root": plugin_root,
         "workspace": workspace,
     }

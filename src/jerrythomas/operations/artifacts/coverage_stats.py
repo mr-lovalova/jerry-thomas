@@ -18,7 +18,7 @@ def build_coverage_stats_artifact(
     runtime: Runtime,
     task_cfg: CoverageStatsTask,
 ) -> ArtifactOutput:
-    dataset = runtime.dataset
+    dataset = runtime.require_dataset()
     metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     schema = metadata.catalog
     key_plan = require_metadata_key_plan(

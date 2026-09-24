@@ -6,44 +6,47 @@ The goal is to make the reference chain explicit and easy to debug.
 ## End-to-end Reference Chain
 
 ```text
-jerry.yaml: default_dataset
-  -> datasets.<alias> = <path/to/project.yaml>
-    -> project.yaml: paths.sources / paths.streams / paths.dataset
-      -> sources/*.yaml: id
-        -> streams/*.yaml: id, from.source|from.stream
-                           optional join.kind and partner stream references
-          -> dataset.yaml: stream: <streams.id>, field: <record_field>
-            -> jerry serve
-              -> runs/<run_id>/dataset/<profile>.jsonl|csv|parquet|...
-              -> runs/<run_id>/dataset/<profile>.<fold>.<role>.jsonl|csv|parquet|... when dataset.split is configured
+jerry serve --profile dataset
+  -> jerry.yaml: default_project -> projects.<alias> = <path/to/project.yaml>
+    -> project.yaml: paths.sources / paths.streams / paths.datasets / paths.operations / paths.profiles
+      -> profiles/serve.dataset.yaml: operation: dataset
+        -> operations/dataset.yaml: entrypoint: core.runtime.dataset, dataset: default
+          -> datasets/default.yaml: version, features/targets with stream and field
+            -> streams/*.yaml: id, from.source|from.stream, optional joins
+              -> sources/*.yaml: id, loader, parser
+  -> runs/<run_id>/dataset/<profile>.jsonl|csv|parquet|...
+  -> runs/<run_id>/dataset/<profile>.<fold>.<role>.jsonl|csv|parquet|... for split datasets
 ```
 
-## 1) Workspace selects dataset project
+## 1) Workspace selects project
 
-`jerry.yaml` picks which `project.yaml` to run when `--dataset`/`--project` is omitted.
+`jerry.yaml` picks which `project.yaml` to run when `--project` is omitted.
 
 ```yaml
 plugin_root: demo
-datasets:
+projects:
   demo: demo/demo/project.yaml
-default_dataset: demo
+default_project: demo
 ```
 
 Expected behavior:
-- `jerry serve` resolves to `datasets.demo`.
+- `jerry serve` selects `projects.demo`.
 - Relative paths here are resolved from the workspace root (directory containing `jerry.yaml`).
 
 ## 2) Project maps to config folders/files
 
-`project.yaml` is the root map for all dataset config.
+`project.yaml` maps the shared catalogs and execution settings.
 
 ```yaml
-schema_version: 6
+schema_version: 7
+name: demo
 artifact_revision: 1
 paths:
   sources: ./sources
   streams: ./streams
-  dataset: dataset.yaml
+  datasets: ./datasets
+  operations: ./operations
+  profiles: ./profiles
   artifacts: ../artifacts/${project_name}
 globals:
   cadence: 1d
@@ -102,7 +105,7 @@ transforms:
 
 Expected behavior:
 - `from.source` must match a `sources/*.yaml:id`.
-- `id` is what `dataset.yaml` references under `stream`.
+- `id` is what `datasets/default.yaml` references under `stream`.
 
 Derived streams consume existing stream ids:
 
@@ -200,9 +203,11 @@ combine:
 
 ## 5) Dataset selects fields from stream ids
 
-Dataset config chooses which streams become features/targets and which record field is used as value.
+Dataset config chooses feature and target fields. Its filename supplies the dataset ID; `version` labels the dataset definition.
 
 ```yaml
+# datasets/default.yaml
+version: v1
 sample:
   rounding: ceil
   cadence: ${cadence}
@@ -231,7 +236,7 @@ Expected behavior:
 Run command:
 
 ```bash
-jerry serve --output-transport fs --output-format jsonl --output-directory outputs
+jerry serve --profile dataset --output-transport fs --output-format jsonl --output-directory outputs
 ```
 
 Output layout:
@@ -240,23 +245,22 @@ Output layout:
 outputs/
   runs/<run_id>/
     dataset/
-      dataset.test.jsonl
-      dataset.train.jsonl
-      dataset.val.jsonl
+      dataset.jsonl
 ```
 
 Expected behavior:
-- Relative output directory resolves from workspace root.
+- Relative CLI output directories resolve from the workspace root; profile output directories resolve from `project.yaml`.
+- Split output filenames include the fold and role, such as `dataset.holdout.train.jsonl`.
 - Output format extension follows `--output-format` or configured format.
 
 ## Quick Debug Checklist
 
-1. Dataset not found:
-- Verify `jerry.yaml` `default_dataset` and `datasets.<alias>`.
+1. Project not found:
+- Verify `jerry.yaml` `default_project` and `projects.<alias>`.
 
 2. Unknown stream/source ids:
 - Verify `streams/*.yaml:from.source` matches `sources/*.yaml:id`.
-- Verify `dataset.yaml:stream` matches an id in `streams/`.
+- Verify `datasets/default.yaml:stream` matches an id in `streams/`.
 
 3. Empty output:
 - Check source loader `path/url`.

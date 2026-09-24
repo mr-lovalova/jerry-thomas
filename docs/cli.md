@@ -6,10 +6,18 @@ Pass `--help` on any command for flags.
 package versions, entry-point groups/names, Python targets, and editable source
 locations when available. It reads package metadata without importing plugins;
 the list describes the installed environment, not a project's selected plugins.
-All commands that take a project accept either `--project <path/to/project.yaml>` or `--dataset <alias>` (from `jerry.yaml datasets:`).
+Project commands accept `--project <alias|folder|project.yaml>`; aliases come from
+`jerry.yaml projects:`. Omit it to use `default_project`.
 
 Profile commands run enabled profiles by default. `--profile <name>` selects
 that profile explicitly, including one configured with `enabled: false`.
+The profile selects an operation; that operation selects its dataset or stream.
+There is no CLI dataset selector.
+
+`jerry list datasets --project <alias>` prints dataset IDs and versions.
+`jerry list streams --project <alias>` prints stream IDs.
+`jerry list profiles --project <alias>` includes each profile’s operation, binding,
+and enabled state.
 
 Profile commands validate every selected data and log destination before
 activating filesystem logging. Data and logs cannot both use stdout, and
@@ -60,8 +68,10 @@ Both commands emit the same versioned structure:
   "runs": [
     {
       "receipt": "/research/interim/volatility.jsonl.gz.run.json",
-      "schema_version": 3,
+      "schema_version": 4,
       "command": "materialize",
+      "dataset_id": null,
+      "dataset_version": null,
       "run_id": "2026-09-15T10-00-00-000000Z",
       "started_at": "2026-09-15T10:00:00+00:00",
       "finished_at": "2026-09-15T10:01:00+00:00",
@@ -71,7 +81,7 @@ Both commands emit the same versioned structure:
       "split": null,
       "recipe": {"path": "volatility.jsonl.gz.recipe.json", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
       "outputs": [{
-        "profile": "volatility", "operation": "materialize",
+        "profile": "volatility", "operation": "volatility",
         "stream": "equity.volatility", "output_id": null,
         "path": "volatility.jsonl.gz", "format": "jsonl", "view": "raw",
         "encoding": "utf-8", "compression": "gzip", "row_count": 1000,
@@ -84,6 +94,7 @@ Both commands emit the same versioned structure:
 ```
 
 Each entry contains the saved receipt fields plus its absolute `receipt` path.
+Dataset-bound runs record `dataset_id` and `dataset_version`; stream runs use null.
 Output paths are relative to the receipt's directory. Serve emits one entry per
 run directory; materialize emits one per output, in profile order. No enabled
 profiles produces `{"schema_version": 3, "runs": []}`. Failure emits no result
@@ -151,8 +162,8 @@ without `--result-json`. See [saved runs](research.md#read-a-saved-run).
   - Use `--profile coverage` or `--profile matrix` to execute one profile.
   - Like `serve`, prepares the union of selected profiles' artifact requirements
     once, then executes the profiles in their exact configured order.
-  - Profile `operation` values map to core or custom runtime operations. Core coverage and
-    matrix operations require no YAML declarations.
+  - Profiles select explicitly declared runtime operations. Coverage and matrix
+    operations bind a named dataset.
   - `--limit N` caps samples for the matrix operation and is passed to custom
     runtime operations. Coverage is artifact-based and rejects `--limit`.
   - `--output-compression gzip` is available for filesystem JSONL and CSV
@@ -179,6 +190,7 @@ without `--result-json`. See [saved runs](research.md#read-a-saved-run).
 - `jerry materialize [--result-json] [--profile <name>] [--output <path.jsonl|path.jsonl.gz>] [--overwrite|--no-overwrite] [--artifact-mode auto|rebuild|require_current] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
   - Runs every enabled `profiles/materialize.<name>.yaml` file in configured
     order, or one profile selected by `--profile`.
+  - Each profile selects a `core.runtime.stream` operation by `operation`.
   - Checks every selected output before the first profile starts writing.
   - Collects the selected streams' artifact requirements and prepares their
     union once. `--artifact-mode` overrides `materialize.defaults.yaml`; the

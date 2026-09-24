@@ -9,9 +9,9 @@ from jerrythomas.artifacts.models import (
     VectorMetadataEntry,
     VectorSchema,
 )
-from jerrythomas.artifacts.registry import VECTOR_METADATA_SPEC
+from jerrythomas.artifacts.registry import SERIES_SPEC, VECTOR_METADATA_SPEC
 from jerrythomas.artifacts.series import load_series_manifest
-from jerrythomas.artifacts.specs import SERIES, dataset_requires_scaler
+from jerrythomas.artifacts.specs import dataset_requires_scaler
 from jerrythomas.config.preview import PreviewStage
 from jerrythomas.config.profiles.output import Format
 from jerrythomas.domain.sample import Sample
@@ -107,7 +107,7 @@ def _serve_preview(
     throttle_ms: float | None,
     preview: PreviewStage,
 ) -> RuntimeOutputItem | RuntimeOutputBatch:
-    dataset = runtime.dataset
+    dataset = runtime.require_dataset()
     if output_format == "parquet" and preview not in {"samples", "postprocess"}:
         raise ValueError(
             "Parquet preview supports only the 'samples' and 'postprocess' stages."
@@ -170,7 +170,7 @@ def _serve_dataset(
     output_format: Format,
     throttle_ms: float | None,
 ) -> RuntimeOutput | DatasetTableOutput:
-    dataset = runtime.dataset
+    dataset = runtime.require_dataset()
     metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     if not isinstance(metadata.layout, UnsplitMetadataLayout):
         raise RuntimeError(
@@ -212,7 +212,7 @@ def _serve_fold_outputs(
     output_format: Format,
     throttle_ms: float | None,
 ) -> RoutedRuntimeOutput | RoutedDatasetTableOutput:
-    dataset = runtime.dataset
+    dataset = runtime.require_dataset()
     split_cfg = dataset.split
     if split_cfg is None:
         raise ValueError("Fold outputs require dataset split configuration.")
@@ -243,7 +243,7 @@ def _served_dataset_table(
     runtime: Runtime,
     schema: VectorSchema,
 ) -> DatasetTable:
-    dataset = runtime.dataset
+    dataset = runtime.require_dataset()
     return _dataset_table(
         runtime,
         schema.features,
@@ -260,8 +260,8 @@ def _dataset_table(
     scaled_feature_ids: tuple[str, ...] = (),
     scaled_target_ids: tuple[str, ...] = (),
 ) -> DatasetTable:
-    sample_keys = runtime.dataset.sample.keys
-    manifest = load_series_manifest(runtime.artifacts.resolve_path(SERIES))
+    sample_keys = runtime.require_dataset().sample.keys
+    manifest = load_series_manifest(runtime.artifacts.resolve_path(SERIES_SPEC))
     if manifest.sample_keys != tuple(sample_keys):
         raise RuntimeError(
             "Series sample keys do not match the dataset table contract."
@@ -284,7 +284,7 @@ def run_dataset_operation(
     throttle_ms: float | None,
     preview: PreviewStage | None,
 ) -> RuntimeOutputItem | RuntimeOutputBatch | None:
-    dataset = runtime.dataset
+    dataset = runtime.require_dataset()
 
     if not dataset.series:
         logger.warning("(no features configured; nothing to serve)")

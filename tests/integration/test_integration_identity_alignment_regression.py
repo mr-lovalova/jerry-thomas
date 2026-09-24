@@ -7,10 +7,10 @@ from jerrythomas.artifacts.hydration import hydrate_runtime_artifacts_for_pipeli
 from jerrythomas.artifacts.models import FoldedMetadataLayout
 from jerrythomas.artifacts.registry import (
     SCALER_SPEC,
+    SERIES_SPEC,
     VECTOR_METADATA_SPEC,
 )
 from jerrythomas.artifacts.scaler import FoldedScalerArtifact
-from jerrythomas.artifacts.specs import SERIES
 from jerrythomas.services.runtime_compiler import compile_runtime
 from jerrythomas.artifacts.series import load_series_manifest
 from tests.helpers.regression import read_jsonl, serve_dataset
@@ -20,11 +20,15 @@ def test_long_and_hybrid_identity_with_aligned_derived_stream(copy_fixture) -> N
     project_root = copy_fixture("identity_alignment_project")
     request = serve_dataset(project_root)
 
-    runtime = compile_runtime(request.definition)
+    runtime = compile_runtime(request.definition, dataset_id="default")
     hydrated = hydrate_runtime_artifacts_for_pipeline(runtime, request.definition)
-    assert set(hydrated) >= {"series", "scaler", "metadata"}
+    assert set(hydrated) >= {
+        "dataset.default.series",
+        "dataset.default.scaler",
+        "dataset.default.metadata",
+    }
 
-    manifest = load_series_manifest(runtime.artifacts.resolve_path(SERIES))
+    manifest = load_series_manifest(runtime.artifacts.resolve_path(SERIES_SPEC))
     assert manifest.sample_keys == ("ticker",)
     assert manifest.sample_key_types == ("string",)
     assert [(entry.id, entry.samples) for entry in manifest.features] == [
@@ -163,7 +167,8 @@ def test_validation_availability_does_not_change_hybrid_wide_training_contract(
     project_root = copy_fixture("identity_alignment_project")
     changed_root = tmp_path / "identity_alignment_changed_validation"
     shutil.copytree(project_root, changed_root)
-    dataset = """sample:
+    dataset = """version: v1
+sample:
   rounding: ceil
   cadence: 1d
   keys: [ticker]
@@ -188,7 +193,7 @@ split:
       validation: [validation]
 """
     for root in (project_root, changed_root):
-        (root / "dataset.yaml").write_text(dataset, encoding="utf-8")
+        (root / "datasets/default.yaml").write_text(dataset, encoding="utf-8")
 
     fundamentals_path = project_root / "data" / "fundamentals.jsonl"
     training_gap = (
@@ -248,12 +253,14 @@ split:
         for feature_id in fundamental_ids
     )
 
-    baseline_runtime = compile_runtime(baseline_request.definition)
+    baseline_runtime = compile_runtime(
+        baseline_request.definition, dataset_id="default"
+    )
     hydrate_runtime_artifacts_for_pipeline(
         baseline_runtime,
         baseline_request.definition,
     )
-    changed_runtime = compile_runtime(changed_request.definition)
+    changed_runtime = compile_runtime(changed_request.definition, dataset_id="default")
     hydrate_runtime_artifacts_for_pipeline(
         changed_runtime,
         changed_request.definition,

@@ -8,21 +8,23 @@ from tests.helpers.regression import read_jsonl, serve_dataset
 
 
 def _filled_fold_project(root: Path, fill_value: int | float) -> Path:
-    for directory in ("sources", "streams", "profiles"):
+    for directory in ("sources", "streams", "profiles", "operations", "datasets"):
         (root / directory).mkdir()
     documents = {
         "project.yaml": {
-            "schema_version": 6,
+            "schema_version": 7,
             "artifact_revision": 1,
             "paths": {
                 "streams": "streams",
                 "sources": "sources",
-                "dataset": "dataset.yaml",
+                "datasets": "datasets",
                 "artifacts": "artifacts",
                 "profiles": "profiles",
+                "operations": "operations",
             },
         },
-        "dataset.yaml": {
+        "datasets/default.yaml": {
+            "version": "v1",
             "sample": {"rounding": "ceil", "cadence": "1h"},
             "features": [
                 {"id": "price", "stream": "prices", "field": "value"},
@@ -66,6 +68,11 @@ def _filled_fold_project(root: Path, fill_value: int | float) -> Path:
                 {"operation": "fill_missing", "field": "value", "value": fill_value},
             ],
         },
+        "operations/dataset.yaml": {
+            "kind": "runtime",
+            "entrypoint": "core.runtime.dataset",
+            "dataset": "default",
+        },
         "profiles/serve.dataset.yaml": {
             "operation": "dataset",
             "output": {"transport": "fs", "format": "jsonl", "directory": "output"},
@@ -92,7 +99,9 @@ def test_filled_training_types_cover_validation(
     request = serve_dataset(project_root)
 
     metadata = json.loads(
-        (project_root / "artifacts/build/metadata.json").read_text(encoding="utf-8")
+        (project_root / "artifacts/datasets/default/metadata.json").read_text(
+            encoding="utf-8"
+        )
     )
     training = metadata["layout"]["folds"][0]["training_schema"]["features"]
     expected_types = ["float", "int"] if isinstance(fill_value, float) else ["int"]

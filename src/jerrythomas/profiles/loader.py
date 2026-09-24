@@ -4,7 +4,7 @@ from typing import Annotated
 from pydantic import Field
 from pydantic.type_adapter import TypeAdapter
 
-from jerrythomas.config.profiles.base import Profile, ProfileCommand
+from jerrythomas.config.profiles.base import OperationProfile, Profile, ProfileCommand
 from jerrythomas.config.profiles.build import BuildProfile
 from jerrythomas.config.profiles.defaults import (
     BuildProfileDefaults,
@@ -16,7 +16,7 @@ from jerrythomas.config.profiles.defaults import (
 from jerrythomas.config.profiles.inspect import InspectProfile
 from jerrythomas.config.profiles.materialize import MaterializeProfile
 from jerrythomas.config.profiles.serve import ServeProfile
-from jerrythomas.services.definitions import ProjectManifest
+from jerrythomas.services.definitions import ProjectDefinition, ProjectManifest
 from jerrythomas.io.yaml import read_yaml_document
 
 ProfileModel = Annotated[
@@ -45,7 +45,13 @@ PROFILE_DEFAULTS_ADAPTER: TypeAdapter[ProfileDefaultsModel] = TypeAdapter(
 
 def _load_profile_doc(path: Path, project: ProjectManifest):
     document = read_yaml_document(path, require_mapping=False)
-    return project.resolve_config(document.data)
+    return project.resolve_config(
+        document.data,
+        variables={
+            "dataset_id": "${dataset_id}",
+            "dataset_version": "${dataset_version}",
+        },
+    )
 
 
 def _profile_identity_from_filename(
@@ -204,3 +210,37 @@ def _ordered_profiles(specs: list[Profile]) -> list[Profile]:
     unordered = [spec for spec in specs if spec.order is None]
     ordered.sort(key=lambda spec: (spec.order, spec.name))
     return ordered + unordered
+
+
+def bind_profile(
+    profile: Profile,
+    definition: ProjectDefinition,
+    *,
+    dataset_version: str | None = None,
+) -> Profile:
+    """Resolve dataset variables after operation selection.
+
+    A version override is used only to locate previously saved runs.
+    """
+    if not isinstance(profile, OperationProfile):
+        raise TypeError("Profiles must select an operation")
+    operations = {
+        **definition.artifact_graph.tasks_by_id,
+        **{task.id: task for task in definition.runtime_operations},
+    }
+    operation = operations.get(profile.operation)
+    if operation is None:
+        return profile
+    variables = {}
+    if operation.dataset is not None:
+        dataset = definition.require_dataset(operation.dataset)
+        variables = {
+            "dataset_id": operation.dataset,
+            "dataset_version": dataset_version
+            if dataset_version is not None
+            else dataset.version,
+        }
+    payload = definition.project.resolve_config(
+        profile.model_dump(mode="json"), variables=variables
+    )
+    return type(profile).model_validate(payload)

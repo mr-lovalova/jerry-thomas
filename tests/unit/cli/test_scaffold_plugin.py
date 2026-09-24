@@ -86,7 +86,7 @@ def test_demo_stream_catalog_matches_config_models() -> None:
 @pytest.mark.parametrize(
     ("project", "cadence"),
     [
-        (_DATASET_SKELETON_ROOT / "your-dataset" / "project.yaml", "1h"),
+        (_DATASET_SKELETON_ROOT / "your-project" / "project.yaml", "1h"),
         (_TEMPLATES_ROOT / "demo_skeleton" / "demo" / "project.yaml", "1d"),
     ],
 )
@@ -97,7 +97,7 @@ def test_template_dataset_cadence_resolves_from_project_global(
     manifest = load_project(project)
     dataset = dataset_from_document(
         manifest,
-        read_yaml_document(manifest.dataset_path),
+        read_yaml_document(manifest.dataset_dirs[0] / "default.yaml"),
     )
 
     assert dataset.sample.cadence == cadence
@@ -122,7 +122,7 @@ def test_demo_liquidity_filter_checks_missing_values_before_comparison() -> None
 
 
 def test_plugin_template_has_one_minimal_dataset() -> None:
-    assert (_DATASET_SKELETON_ROOT / "your-dataset").is_dir()
+    assert (_DATASET_SKELETON_ROOT / "your-project").is_dir()
     assert not (_DATASET_SKELETON_ROOT / "your-interim-data-builder").exists()
     assert not (_DATASET_SKELETON_ROOT / "_dataset_base").exists()
     assert not (_DATASET_SKELETON_ROOT / "reference").exists()
@@ -140,7 +140,7 @@ def test_template_profiles_separate_builds_from_runtime_actions() -> None:
         "serve.defaults.yaml",
         "serve.dataset.yaml",
     }
-    dataset_profiles = _DATASET_SKELETON_ROOT / "your-dataset" / "profiles"
+    dataset_profiles = _DATASET_SKELETON_ROOT / "your-project" / "profiles"
     demo_profiles = _TEMPLATES_ROOT / "demo_skeleton" / "demo" / "profiles"
 
     assert {path.name for path in dataset_profiles.glob("*.yaml")} == {
@@ -151,7 +151,7 @@ def test_template_profiles_separate_builds_from_runtime_actions() -> None:
     }
     assert {path.name for path in demo_profiles.glob("*.yaml")} == demo_expected
 
-    project = load_project(_DATASET_SKELETON_ROOT / "your-dataset" / "project.yaml")
+    project = load_project(_DATASET_SKELETON_ROOT / "your-project" / "project.yaml")
     serve_profiles, _ = profile_specs_with_defaults(project, cmd="serve")
     inspect_profiles, _ = profile_specs_with_defaults(project, cmd="inspect")
     assert [
@@ -168,13 +168,13 @@ def test_scaffold_plugin_normalizes_hyphenated_name(tmp_path: Path) -> None:
     scaffold_plugin("test-datapipeline", tmp_path)
 
     plugin_root = tmp_path / "test-datapipeline"
-    dataset_root = plugin_root / "your-dataset"
+    dataset_root = plugin_root / "your-project"
     assert (plugin_root / "src" / "test_datapipeline").is_dir()
     assert (dataset_root / ".env.example").is_file()
     assert not (plugin_root / "_dataset_base").exists()
     assert not (plugin_root / "reference").exists()
     assert not (plugin_root / "your-interim-data-builder").exists()
-    assert not (dataset_root / "operations").exists()
+    assert (dataset_root / "operations" / "dataset.yaml").is_file()
     assert not (dataset_root / "profiles" / "build.schema.yaml").exists()
     assert (dataset_root / "profiles" / "inspect.coverage.yaml").is_file()
     assert (dataset_root / "profiles" / "inspect.matrix.yaml").is_file()
@@ -187,7 +187,7 @@ def test_scaffold_plugin_normalizes_hyphenated_name(tmp_path: Path) -> None:
 
     pyproject = (plugin_root / "pyproject.toml").read_text()
     assert 'name = "test-datapipeline"' in pyproject
-    assert '"jerry-thomas>=11.0.0"' in pyproject
+    assert '"jerry-thomas>=12.0.0"' in pyproject
     assert '[project.entry-points."jerrythomas.combiners"]' in pyproject
 
     readme = (plugin_root / "README.md").read_text()
@@ -211,8 +211,8 @@ def test_scaffold_plugin_creates_local_workspace(tmp_path: Path) -> None:
 
     cfg = yaml.safe_load(plugin_jerry.read_text())
     assert cfg["plugin_root"] == "."
-    assert cfg["datasets"]["your-dataset"] == "your-dataset/project.yaml"
-    assert set(cfg["datasets"]) == {"your-dataset"}
+    assert cfg["projects"]["your-project"] == "your-project/project.yaml"
+    assert set(cfg["projects"]) == {"your-project"}
 
 
 def test_scaffold_plugin_respects_outdir(tmp_path: Path) -> None:
@@ -226,13 +226,13 @@ def test_scaffold_plugin_respects_outdir(tmp_path: Path) -> None:
     assert not (tmp_path / "jerry.yaml").exists()
     cfg = yaml.safe_load((plugin_root / "jerry.yaml").read_text())
     assert cfg["plugin_root"] == "."
-    assert cfg["datasets"]["your-dataset"] == "your-dataset/project.yaml"
-    assert set(cfg["datasets"]) == {"your-dataset"}
+    assert cfg["projects"]["your-project"] == "your-project/project.yaml"
+    assert set(cfg["projects"]) == {"your-project"}
 
 
 def test_scaffold_plugin_does_not_modify_parent_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "jerry.yaml"
-    original = b"# keep formatting\ndatasets: {research: research/project.yaml}\n"
+    original = b"# keep formatting\nprojects: {research: research/project.yaml}\n"
     workspace.write_bytes(original)
 
     scaffold_plugin("myplugin", tmp_path)

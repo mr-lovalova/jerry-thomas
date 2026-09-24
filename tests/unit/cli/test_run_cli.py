@@ -20,6 +20,8 @@ from jerrythomas.config.profiles.serve import ServeProfile
 from jerrythomas.config.streams import SourceStreamConfig, StreamsConfig
 from jerrythomas.config.tasks.base import PluginRuntimeTask, RuntimeTask
 from jerrythomas.config.tasks.dataset import DatasetTask
+from jerrythomas.config.tasks.coverage import CoverageTask
+from jerrythomas.config.tasks.matrix import MatrixTask
 from jerrythomas.execution.settings import CommandObservability, LogOutputTarget
 from jerrythomas.profiles.runtime_profiles import (
     resolve_inspect_profiles,
@@ -31,8 +33,15 @@ from tests.unit.profiles.helpers import project_definition
 def _definition(
     project_path: Path,
     split: HashSplitConfig | TimeSplitConfig | None = None,
-    runtime_operations: tuple[RuntimeTask, ...] = (),
+    runtime_operations: tuple[RuntimeTask, ...] | None = None,
 ):
+    if runtime_operations is None:
+        runtime_operations = (
+            DatasetTask(id="serve", dataset="default"),
+            DatasetTask(id="dataset", dataset="default"),
+            CoverageTask(id="coverage", dataset="default"),
+            MatrixTask(id="matrix", dataset="default"),
+        )
     return project_definition(
         project_path,
         dataset=DatasetConfig(
@@ -52,7 +61,7 @@ def _resolve_serve(
     cli_log_outputs: list[LogOutputTarget] | None = None,
     cli_heartbeat_interval_seconds: float | None = None,
     split: HashSplitConfig | TimeSplitConfig | None = None,
-    runtime_operations: tuple[RuntimeTask, ...] = (),
+    runtime_operations: tuple[RuntimeTask, ...] | None = None,
 ):
     return resolve_serve_profiles(
         definition=_definition(project_path, split, runtime_operations),

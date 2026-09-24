@@ -1,5 +1,5 @@
 plugin_root: .
-datasets:
-  your-dataset: your-dataset/project.yaml
+projects:
+  your-project: your-project/project.yaml
 
-default_dataset: your-dataset
+default_project: your-project

@@ -44,15 +44,17 @@ def test_hydration_replaces_registry_with_dependency_current_artifacts(
     )
     graph = build_artifact_graph(
         [
-            SeriesTask(id="series"),
-            MetadataTask(id="metadata"),
+            SeriesTask(dataset="default", id="series"),
+            MetadataTask(dataset="default", id="metadata"),
             custom,
-        ]
+        ],
+        {"default": DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h"))},
     )
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
-        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
+        dataset_id="default",
+        dataset=graph.datasets["default"],
     )
     state = BuildState()
     paths = {
@@ -120,17 +122,21 @@ def test_hydration_skips_incomplete_unrelated_artifact_chain(tmp_path) -> None:
         entrypoint="plugin.snapshot",
         output="build/custom.json",
     )
-    metadata = MetadataTask(id="metadata")
-    graph = build_artifact_graph([custom, metadata])
+    metadata = MetadataTask(dataset="default", id="metadata")
+    graph = build_artifact_graph(
+        [custom, metadata],
+        {"default": DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h"))},
+    )
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
-        dataset=DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h")),
+        dataset_id="default",
+        dataset=graph.datasets["default"],
     )
     state = BuildState()
     paths = {
         "custom_snapshot": "build/custom.json",
-        SERIES: "build/series.json",
+        "dataset.default.series": "build/series.json",
         VECTOR_METADATA: "build/metadata.json",
     }
     for key, relative_path in paths.items():
@@ -161,14 +167,17 @@ def test_project_hydration_excludes_inactive_scaler(
     monkeypatch,
     tmp_path,
 ) -> None:
-    scaler = ScalerTask()
+    scaler = ScalerTask(
+        dataset="default",
+    )
     dataset = DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h"))
     streams = StreamsConfig()
-    graph = build_artifact_graph([scaler])
+    graph = build_artifact_graph([scaler], {"default": dataset})
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
-        dataset=dataset,
+        dataset_id="default",
+        dataset=graph.datasets["default"],
     )
     output = runtime.artifacts_root / scaler.output
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -188,7 +197,6 @@ def test_project_hydration_excludes_inactive_scaler(
         project=SimpleNamespace(artifacts_root=runtime.artifacts_root),
         artifact_graph=graph,
         artifact_hashes=_current_hashes(SCALER_STATISTICS),
-        dataset=dataset,
         streams=streams,
     )
 
@@ -212,7 +220,7 @@ def test_project_hydration_excludes_nested_schedule_and_dependents(
         partition_by=[],
         output="build/derived-schedule.jsonl",
     )
-    series = SeriesTask(id="series")
+    series = SeriesTask(dataset="default", id="series")
     dataset = DatasetConfig(
         sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[SeriesConfig(id="price", stream="feature", field="close")],
@@ -234,11 +242,12 @@ def test_project_hydration_excludes_nested_schedule_and_dependents(
             }
         }
     )
-    graph = build_artifact_graph([schedule, series], dataset, streams)
+    graph = build_artifact_graph([schedule, series], {"default": dataset}, streams)
     runtime = Runtime(
         project_yaml=tmp_path / "project.yaml",
         artifacts_root=tmp_path / "artifacts",
-        dataset=dataset,
+        dataset_id="default",
+        dataset=graph.datasets["default"],
     )
     state = BuildState()
     for key, relative_path in (
@@ -273,7 +282,6 @@ def test_project_hydration_excludes_nested_schedule_and_dependents(
         project=SimpleNamespace(artifacts_root=runtime.artifacts_root),
         artifact_graph=graph,
         artifact_hashes=_current_hashes("derived_schedule", SERIES),
-        dataset=runtime.dataset,
         streams=streams,
     )
     hydrated = hydrate_runtime_artifacts_for_pipeline(
@@ -291,12 +299,12 @@ def test_project_hydration_uses_semantic_artifact_hash(tmp_path) -> None:
     project_path.write_text(
         "\n".join(
             [
-                "schema_version: 6",
+                "schema_version: 7",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: ./streams",
                 "  sources: ./sources",
-                "  dataset: ./dataset.yaml",
+                "  datasets: ./datasets",
                 "  artifacts: ./artifacts",
                 "  operations: ./operations",
                 "  profiles: ./profiles",
@@ -304,8 +312,9 @@ def test_project_hydration_uses_semantic_artifact_hash(tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    (tmp_path / "dataset.yaml").write_text(
-        "sample:\n  rounding: ceil\n  cadence: 1h\n", encoding="utf-8"
+    (tmp_path / "datasets").mkdir()
+    (tmp_path / "datasets/default.yaml").write_text(
+        "version: v1\nsample:\n  rounding: ceil\n  cadence: 1h\n", encoding="utf-8"
     )
     for directory in ("streams", "sources"):
         (tmp_path / directory).mkdir()
@@ -323,7 +332,7 @@ def test_project_hydration_uses_semantic_artifact_hash(tmp_path) -> None:
         encoding="utf-8",
     )
     definition = load_project_definition(project_path)
-    runtime = compile_runtime(definition)
+    runtime = compile_runtime(definition, dataset_id="default")
     output = runtime.artifacts_root / "build/custom.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("{}", encoding="utf-8")
@@ -341,7 +350,7 @@ def test_project_hydration_uses_semantic_artifact_hash(tmp_path) -> None:
     task_path.write_text(task_path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
 
     whitespace_definition = load_project_definition(project_path)
-    whitespace_runtime = compile_runtime(whitespace_definition)
+    whitespace_runtime = compile_runtime(whitespace_definition, dataset_id="default")
     assert whitespace_definition.artifact_hashes == definition.artifact_hashes
     assert hydrate_runtime_artifacts_for_pipeline(
         whitespace_runtime,
@@ -358,7 +367,7 @@ def test_project_hydration_uses_semantic_artifact_hash(tmp_path) -> None:
     )
 
     changed_definition = load_project_definition(project_path)
-    changed_runtime = compile_runtime(changed_definition)
+    changed_runtime = compile_runtime(changed_definition, dataset_id="default")
     assert changed_definition.artifact_hashes != definition.artifact_hashes
     assert (
         hydrate_runtime_artifacts_for_pipeline(

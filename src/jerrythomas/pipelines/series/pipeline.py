@@ -43,7 +43,7 @@ def build_series_stages(
     config: SeriesConfig,
 ) -> tuple[Stage, ...]:
     stream = require_runtime_stream(runtime, config.stream)
-    sample = runtime.dataset.sample
+    sample = runtime.require_dataset().sample
     sample_keys = tuple(sample.keys)
     projector = SeriesProjector(
         stream.partition_by,

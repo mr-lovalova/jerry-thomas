@@ -70,23 +70,33 @@ def test_workspace_rejects_serve_observability_block(tmp_path):
         load_workspace_context(tmp_path)
 
 
-def test_workspace_resolve_dataset_alias(tmp_path: Path):
+def test_workspace_resolve_project_alias(tmp_path: Path):
     _write_jerry(
         tmp_path,
         """
-        datasets:
+        projects:
           example: example/project.yaml
-        default_dataset: example
+        default_project: example
         """,
     )
     (tmp_path / "example").mkdir(parents=True, exist_ok=True)
     (tmp_path / "example" / "project.yaml").write_text(
-        "schema_version: 6\nartifact_revision: 1\nname: x\npaths:\n  streams: ./streams\n  sources: ./sources\n  dataset: dataset.yaml\n  artifacts: ./artifacts\n  operations: ./operations\n",
+        "schema_version: 7\nartifact_revision: 1\nname: x\npaths:\n  streams: ./streams\n  sources: ./sources\n  datasets: datasets\n  artifacts: ./artifacts\n  operations: ./operations\n",
         encoding="utf-8",
     )
 
     context = load_workspace_context(tmp_path)
     assert context
-    resolved = context.resolve_dataset_alias("example")
+    resolved = context.resolve_project_alias("example")
     assert resolved is not None
     assert resolved.name == "project.yaml"
+
+
+@pytest.mark.parametrize(
+    "legacy", ["datasets: {demo: demo/project.yaml}", "default_dataset: demo"]
+)
+def test_workspace_rejects_old_dataset_alias_fields(tmp_path, legacy):
+    _write_jerry(tmp_path, legacy)
+
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        load_workspace_context(tmp_path)

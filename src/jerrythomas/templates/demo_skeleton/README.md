@@ -5,7 +5,7 @@ dataset with source, stream, feature, artifact, and serve configurations.
 
 ```bash
 python -m pip install -e .
-jerry serve --dataset demo --limit 3
+jerry serve --project demo --limit 3
 ```
 
 The bounded NumPy model-batch example lives at

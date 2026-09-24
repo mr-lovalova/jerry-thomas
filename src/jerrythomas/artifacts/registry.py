@@ -10,8 +10,10 @@ from jerrythomas.artifacts.models import (
     CoverageStatsArtifact,
 )
 from jerrythomas.artifacts.scaler import ScalerArtifact, load_scaler_artifact
+from jerrythomas.artifacts.series import SeriesManifest, load_series_manifest
 from jerrythomas.artifacts.specs import (
     SCALER_STATISTICS,
+    SERIES,
     VECTOR_METADATA,
     COVERAGE_STATS,
 )
@@ -27,6 +29,7 @@ ArtifactLoader = Callable[[Path], ArtifactValue]
 class ArtifactSpec(Generic[ArtifactValue]):
     key: str
     loader: ArtifactLoader[ArtifactValue]
+    dataset_scoped: bool = False
 
 
 @dataclass(frozen=True)
@@ -45,8 +48,9 @@ class ArtifactNotRegisteredError(RuntimeError):
 class ArtifactRegistry:
     """Registered build artifacts available to a runtime."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, aliases: Mapping[str, str] | None = None) -> None:
         self._root = Path(root)
+        self._aliases = dict(aliases or {})
         self._records: dict[str, ArtifactRecord] = {}
         self._loaded: dict[str, Any] = {}
 
@@ -77,10 +81,20 @@ class ArtifactRegistry:
             for key, record in self._records.items()
         }
 
-    def has(self, key: str) -> bool:
-        return key in self._records
+    def _key(self, reference: str | ArtifactSpec[Any]) -> str:
+        if isinstance(reference, str):
+            return reference
+        return (
+            self._aliases.get(reference.key, reference.key)
+            if reference.dataset_scoped
+            else reference.key
+        )
 
-    def require(self, key: str) -> ArtifactRecord:
+    def has(self, key: str | ArtifactSpec[Any]) -> bool:
+        return self._key(key) in self._records
+
+    def require(self, key: str | ArtifactSpec[Any]) -> ArtifactRecord:
+        key = self._key(key)
         try:
             return self._records[key]
         except KeyError as exc:
@@ -89,16 +103,17 @@ class ArtifactRegistry:
                 "Run `jerry build --project <project.yaml>` first."
             ) from exc
 
-    def optional(self, key: str) -> ArtifactRecord | None:
-        return self._records.get(key)
+    def optional(self, key: str | ArtifactSpec[Any]) -> ArtifactRecord | None:
+        return self._records.get(self._key(key))
 
-    def resolve_path(self, key: str) -> Path:
+    def resolve_path(self, key: str | ArtifactSpec[Any]) -> Path:
         return self.require(key).resolve(self._root)
 
     def load(self, spec: ArtifactSpec[ArtifactValue]) -> ArtifactValue:
-        if spec.key in self._loaded:
-            return self._loaded[spec.key]
-        path = self.resolve_path(spec.key)
+        key = self._key(spec)
+        if key in self._loaded:
+            return self._loaded[key]
+        path = self.resolve_path(key)
         try:
             value = spec.loader(path)
         except FileNotFoundError as exc:
@@ -107,7 +122,7 @@ class ArtifactRegistry:
                 "Run `jerry build --project <project.yaml>` to regenerate it."
             )
             raise RuntimeError(message) from exc
-        self._loaded[spec.key] = value
+        self._loaded[key] = value
         return value
 
 
@@ -129,14 +144,24 @@ def _read_coverage_stats(path: Path) -> CoverageStatsArtifact:
 VECTOR_METADATA_SPEC = ArtifactSpec[VectorMetadata](
     key=VECTOR_METADATA,
     loader=_read_vector_metadata,
+    dataset_scoped=True,
 )
 
 SCALER_SPEC = ArtifactSpec[ScalerArtifact](
     key=SCALER_STATISTICS,
     loader=load_scaler_artifact,
+    dataset_scoped=True,
 )
 
 COVERAGE_STATS_SPEC = ArtifactSpec[CoverageStatsArtifact](
     key=COVERAGE_STATS,
     loader=_read_coverage_stats,
+    dataset_scoped=True,
+)
+
+
+SERIES_SPEC = ArtifactSpec[SeriesManifest](
+    key=SERIES,
+    loader=load_series_manifest,
+    dataset_scoped=True,
 )

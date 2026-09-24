@@ -9,7 +9,7 @@ from jerrythomas.artifacts.series import (
     load_series_manifest,
     open_series,
 )
-from jerrythomas.artifacts.specs import SERIES
+from jerrythomas.artifacts.registry import SERIES_SPEC
 from jerrythomas.domain.sample import Sample
 from jerrythomas.domain.series_id import base_id
 from jerrythomas.domain.vector import Vector
@@ -71,7 +71,7 @@ def build_sample_input(
 def _require_series(
     runtime: Runtime,
 ) -> tuple[Path, SeriesManifest]:
-    artifact = runtime.artifacts.optional(SERIES)
+    artifact = runtime.artifacts.optional(SERIES_SPEC)
     if artifact is None:
         raise RuntimeError(
             "Series artifact is required before sample assembly. "
@@ -81,7 +81,7 @@ def _require_series(
 
     manifest_path = artifact.resolve(runtime.artifacts.root)
     manifest = load_series_manifest(manifest_path)
-    sample = runtime.dataset.sample
+    sample = runtime.require_dataset().sample
     if manifest.cadence != sample.cadence:
         raise RuntimeError(
             "Series artifact cadence does not match requested pipeline cadence: "

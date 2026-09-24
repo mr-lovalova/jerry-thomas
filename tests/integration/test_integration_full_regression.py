@@ -126,7 +126,7 @@ def test_full_regression_project_through_serve(copy_fixture) -> None:
         ),
     ]
 
-    build_root = project_root / "build" / "build"
+    build_root = project_root / "build" / "datasets" / "default"
     assert _read_json(build_root / "scaler.json") == {
         "epsilon": 1e-12,
         "kind": "standard_scaler",

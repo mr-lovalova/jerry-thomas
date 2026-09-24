@@ -178,7 +178,7 @@ def test_pipeline_closes_source_when_forward_sum_output_is_closed(
 
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 6\nartifact_revision: 1\n",
+        "schema_version: 7\nartifact_revision: 1\n",
         encoding="utf-8",
     )
     runtime = Runtime(

@@ -104,13 +104,15 @@ class RuntimeSnapshot:
 
     project_yaml: Path
     artifacts_root: Path
-    dataset: DatasetConfig
+    dataset: DatasetConfig | None
     execution: ExecutionConfig
     streams: StreamsConfig
     artifact_registry_root: Path
     artifact_registrations: dict[str, ArtifactRecord]
     heartbeat_interval_seconds: float | None
     observe_node_events: bool
+    dataset_id: str | None = None
+    artifact_aliases: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -119,7 +121,9 @@ class Runtime:
 
     project_yaml: Path
     artifacts_root: Path
-    dataset: DatasetConfig
+    dataset: DatasetConfig | None = None
+    dataset_id: str | None = None
+    artifact_aliases: dict[str, str] = field(default_factory=dict)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     streams: dict[str, RuntimeStream] = field(default_factory=dict)
     heartbeat_interval_seconds: float | None = None
@@ -128,7 +132,14 @@ class Runtime:
     _stream_configs: StreamsConfig | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
-        self.artifacts = ArtifactRegistry(self.artifacts_root)
+        self.artifacts = ArtifactRegistry(
+            self.artifacts_root, aliases=self.artifact_aliases
+        )
+
+    def require_dataset(self) -> DatasetConfig:
+        if self.dataset is None:
+            raise ValueError("This operation requires a selected dataset.")
+        return self.dataset
 
 
 def require_runtime_stream(runtime: Runtime, stream_id: str) -> RuntimeStream:
@@ -137,6 +148,6 @@ def require_runtime_stream(runtime: Runtime, stream_id: str) -> RuntimeStream:
     except KeyError as exc:
         available = ", ".join(sorted(runtime.streams)) or "(none)"
         raise KeyError(
-            f"Unknown stream '{stream_id}'. Check dataset.yaml and stream ids. "
+            f"Unknown stream '{stream_id}'. Check the stream catalog. "
             f"Available streams: {available}"
         ) from exc

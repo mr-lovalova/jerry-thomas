@@ -1,10 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
+from jerrythomas.config.dataset.dataset import ScalingConfig
 from jerrythomas.config.tasks.scaler import ScalerTask
 
 
-def test_scaler_task_has_only_fitting_options() -> None:
+def test_scaler_task_binds_dataset_and_output() -> None:
     task = ScalerTask()
 
     assert task.model_dump() == {
@@ -12,9 +13,7 @@ def test_scaler_task_has_only_fitting_options() -> None:
         "id": "scaler",
         "entrypoint": "core.artifact.scaler",
         "output": "build/scaler.json",
-        "with_mean": True,
-        "with_std": True,
-        "epsilon": 1e-12,
+        "dataset": None,
     }
 
 
@@ -32,6 +31,6 @@ def test_scaler_task_rejects_unknown_fields() -> None:
         ("epsilon", float("inf")),
     ],
 )
-def test_scaler_task_options_are_strict(field: str, value: object) -> None:
+def test_dataset_scaling_options_are_strict(field: str, value: object) -> None:
     with pytest.raises(ValidationError):
-        ScalerTask.model_validate({field: value})
+        ScalingConfig.model_validate({field: value})

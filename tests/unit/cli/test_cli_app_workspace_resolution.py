@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from jerrythomas.cli import app
+from jerrythomas.cli.parser_builder import build_parser
 from jerrythomas.cli.workspace import WorkspaceContext
 from jerrythomas.config.workspace import WorkspaceConfig
 from jerrythomas.profiles.errors import ProfileCommandError
@@ -12,25 +13,26 @@ def _write_build_project(tmp_path: Path, enabled: bool = True) -> Path:
     project = tmp_path / "project.yaml"
     project.write_text(
         (
-            "schema_version: 6\n"
+            "schema_version: 7\n"
             "artifact_revision: 1\n"
             "paths:\n"
             "  streams: streams\n"
             "  sources: sources\n"
-            "  dataset: dataset.yaml\n"
+            "  datasets: datasets\n"
             "  artifacts: artifacts\n"
             "  profiles: profiles\n"
         ),
         encoding="utf-8",
     )
-    (tmp_path / "dataset.yaml").write_text(
-        "sample: {rounding: ceil, cadence: 1h}\n",
+    (tmp_path / "datasets").mkdir()
+    (tmp_path / "datasets" / "default.yaml").write_text(
+        "version: v1\nsample: {rounding: ceil, cadence: 1h}\n",
         encoding="utf-8",
     )
     for directory in ("profiles", "sources", "streams"):
         (tmp_path / directory).mkdir()
     (tmp_path / "profiles" / "build.metadata.yaml").write_text(
-        f"operation: metadata\nenabled: {str(enabled).lower()}\n",
+        f"operation: dataset.default.metadata\nenabled: {str(enabled).lower()}\n",
         encoding="utf-8",
     )
     return project
@@ -100,7 +102,7 @@ def test_dataset_path_resolves_relative_to_workspace_root(monkeypatch, tmp_path)
     project_file = workspace_root / "projects" / "weather" / "project.yaml"
     project_file.parent.mkdir(parents=True)
     project_file.write_text(
-        "schema_version: 6\nartifact_revision: 1\nname: weather\npaths: {}\n",
+        "schema_version: 7\nartifact_revision: 1\nname: weather\npaths: {}\n",
         encoding="utf-8",
     )
 
@@ -110,26 +112,25 @@ def test_dataset_path_resolves_relative_to_workspace_root(monkeypatch, tmp_path)
     )
     monkeypatch.chdir(nested)
 
-    resolved = app._dataset_to_project_path("projects/weather/project.yaml", workspace)
+    resolved = app._resolve_project_from_args(
+        "projects/weather/project.yaml", workspace
+    )
     assert Path(resolved) == project_file.resolve()
 
 
-def test_resolve_project_from_args_rejects_project_and_dataset():
-    try:
-        app._resolve_project_from_args("project.yaml", "alias", None)
-    except SystemExit as exc:
-        assert "Cannot use both --project and --dataset" in str(exc)
-    else:
-        raise AssertionError(
-            "Expected SystemExit when both project and dataset are set"
-        )
+@pytest.mark.parametrize("command", ["serve", "build", "inspect", "materialize"])
+@pytest.mark.parametrize("flag", ["--dataset", "-d"])
+def test_commands_reject_removed_dataset_selector(command, flag):
+    with pytest.raises(SystemExit) as error:
+        build_parser().parse_args([command, flag, "default"])
+    assert error.value.code == 2
 
 
-def test_resolve_project_from_args_uses_workspace_default_dataset(tmp_path):
+def test_resolve_project_from_args_uses_workspace_default_project(tmp_path):
     project_file = tmp_path / "datasets" / "demo" / "project.yaml"
     project_file.parent.mkdir(parents=True)
     project_file.write_text(
-        "schema_version: 6\nartifact_revision: 1\nname: demo\npaths: {}\n",
+        "schema_version: 7\nartifact_revision: 1\nname: demo\npaths: {}\n",
         encoding="utf-8",
     )
 
@@ -137,13 +138,13 @@ def test_resolve_project_from_args_uses_workspace_default_dataset(tmp_path):
         file_path=tmp_path / "jerry.yaml",
         config=WorkspaceConfig.model_validate(
             {
-                "datasets": {"demo": "datasets/demo/project.yaml"},
-                "default_dataset": "demo",
+                "projects": {"demo": "datasets/demo/project.yaml"},
+                "default_project": "demo",
             }
         ),
     )
 
-    project = app._resolve_project_from_args(None, None, workspace)
+    project = app._resolve_project_from_args(None, workspace)
     assert Path(project) == project_file.resolve()
 
 
@@ -154,14 +155,14 @@ def test_resolve_project_from_args_prefers_explicit_project_over_workspace_defau
         file_path=tmp_path / "jerry.yaml",
         config=WorkspaceConfig.model_validate(
             {
-                "datasets": {"demo": "datasets/demo/project.yaml"},
-                "default_dataset": "demo",
+                "projects": {"demo": "datasets/demo/project.yaml"},
+                "default_project": "demo",
             }
         ),
     )
 
-    project = app._resolve_project_from_args("custom/project.yaml", None, workspace)
-    assert project == "custom/project.yaml"
+    project = app._resolve_project_from_args("custom/project.yaml", workspace)
+    assert project == str(tmp_path / "custom/project.yaml")
 
 
 def test_resolve_project_from_args_requires_selection_without_workspace_default():
@@ -170,9 +171,9 @@ def test_resolve_project_from_args_requires_selection_without_workspace_default(
         config=WorkspaceConfig.model_validate({}),
     )
     try:
-        app._resolve_project_from_args(None, None, workspace)
+        app._resolve_project_from_args(None, workspace)
     except SystemExit as exc:
-        assert "No dataset/project selected" in str(exc)
+        assert "No project selected" in str(exc)
     else:
         raise AssertionError(
             "Expected SystemExit when no project selection is available"
@@ -394,15 +395,15 @@ def test_main_resolves_project_for_serve_with_workspace_default(monkeypatch, tmp
     project_file = tmp_path / "datasets" / "demo" / "project.yaml"
     project_file.parent.mkdir(parents=True)
     project_file.write_text(
-        "schema_version: 6\nartifact_revision: 1\nname: demo\npaths: {}\n",
+        "schema_version: 7\nartifact_revision: 1\nname: demo\npaths: {}\n",
         encoding="utf-8",
     )
     workspace = WorkspaceContext(
         file_path=tmp_path / "jerry.yaml",
         config=WorkspaceConfig.model_validate(
             {
-                "datasets": {"demo": "datasets/demo/project.yaml"},
-                "default_dataset": "demo",
+                "projects": {"demo": "datasets/demo/project.yaml"},
+                "default_project": "demo",
             }
         ),
     )
@@ -419,3 +420,24 @@ def test_main_resolves_project_for_serve_with_workspace_default(monkeypatch, tmp
     app.main()
 
     assert Path(captured["project"]) == project_file.resolve()
+
+
+@pytest.mark.parametrize(
+    "selector", ["research", "projects/research", "projects/research/project.yaml"]
+)
+def test_project_selector_accepts_alias_folder_or_yaml(tmp_path, selector):
+    project = tmp_path / "projects" / "research" / "project.yaml"
+    project.parent.mkdir(parents=True)
+    project.touch()
+    workspace = WorkspaceContext(
+        file_path=tmp_path / "jerry.yaml",
+        config=WorkspaceConfig(projects={"research": "projects/research"}),
+    )
+
+    assert app._resolve_project_from_args(selector, workspace) == str(project)
+
+
+@pytest.mark.parametrize("resource", ["datasets", "streams", "profiles"])
+def test_list_catalog_commands_accept_project_selector(resource):
+    args = build_parser().parse_args(["list", resource, "--project", "research"])
+    assert args.project == "research"

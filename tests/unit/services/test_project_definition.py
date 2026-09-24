@@ -5,12 +5,6 @@ import pytest
 from jerrythomas.artifacts import fingerprints
 from jerrythomas.artifacts.fingerprints import calculate_artifact_hashes
 from jerrythomas.artifacts.planning import build_artifact_graph
-from jerrythomas.artifacts.specs import (
-    SCALER_STATISTICS,
-    SERIES,
-    VECTOR_METADATA,
-    COVERAGE_STATS,
-)
 from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
 from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from jerrythomas.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
@@ -27,11 +21,11 @@ from jerrythomas.io import yaml as yaml_loader
 
 
 def _write_project(root: Path) -> Path:
-    for name in ("sources", "streams", "operations", "profiles"):
+    for name in ("sources", "streams", "operations", "profiles", "datasets"):
         (root / name).mkdir(parents=True)
     project_yaml = root / "project.yaml"
     project_yaml.write_text(
-        """schema_version: 6
+        """schema_version: 7
 artifact_revision: 1
 name: snapshot
 paths:
@@ -39,13 +33,13 @@ paths:
   streams: streams
   operations: operations
   profiles: profiles
-  dataset: dataset.yaml
+  datasets: datasets
   artifacts: artifacts
 """,
         encoding="utf-8",
     )
-    (root / "dataset.yaml").write_text(
-        "sample: {rounding: ceil, cadence: 1h}\nfeatures: []\ntargets: []\n",
+    (root / "datasets" / "default.yaml").write_text(
+        "version: v1\nsample: {rounding: ceil, cadence: 1h}\nfeatures: []\ntargets: []\n",
         encoding="utf-8",
     )
     return project_yaml
@@ -82,15 +76,15 @@ def test_project_definition_owns_the_canonical_artifact_graph(
     definition = load_project_definition(_write_project(tmp_path))
 
     assert tuple(definition.artifact_graph.tasks_by_id) == (
-        "scaler",
-        "series",
-        "metadata",
-        "coverage_stats",
+        "dataset.default.scaler",
+        "dataset.default.series",
+        "dataset.default.metadata",
+        "dataset.default.coverage_stats",
     )
     assert (
         calculate_artifact_hashes(
             definition.project,
-            definition.dataset,
+            definition.datasets,
             definition.streams,
             definition.artifact_graph,
         )
@@ -102,23 +96,23 @@ def test_compile_runtime_uses_the_loaded_definition(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path)
     definition = load_project_definition(project_yaml)
     project_yaml.unlink()
-    (tmp_path / "dataset.yaml").unlink()
+    (tmp_path / "datasets" / "default.yaml").unlink()
 
-    first = compile_runtime(definition)
-    second = compile_runtime(definition)
+    first = compile_runtime(definition, "default")
+    second = compile_runtime(definition, "default")
     first.dataset.features.append(
         SeriesConfig(id="local", stream="local", field="value")
     )
 
     assert first is not second
-    assert first.dataset != definition.dataset
-    assert second.dataset == definition.dataset
-    assert first.dataset is not definition.dataset
-    assert second.dataset is not definition.dataset
+    assert first.dataset != definition.require_dataset("default")
+    assert second.dataset == definition.require_dataset("default")
+    assert first.dataset is not definition.require_dataset("default")
+    assert second.dataset is not definition.require_dataset("default")
     assert first.dataset is not second.dataset
     assert first.streams == second.streams == {}
     assert first.streams is not second.streams
-    assert definition.dataset.features == []
+    assert definition.require_dataset("default").features == []
     assert second.dataset.features == []
 
 
@@ -137,8 +131,8 @@ def test_load_project_definition_rejects_legacy_scaler_fold_config(
         "id: prices\nfrom: {source: prices}\nmap: {entrypoint: identity}\n",
         encoding="utf-8",
     )
-    (tmp_path / "dataset.yaml").write_text(
-        "sample: {rounding: ceil, cadence: 1h}\n"
+    (tmp_path / "datasets" / "default.yaml").write_text(
+        "version: v1\nsample: {rounding: ceil, cadence: 1h}\n"
         "features:\n"
         "  - {id: price, stream: prices, field: value, scale: true}\n"
         "split:\n"
@@ -149,7 +143,7 @@ def test_load_project_definition_rejects_legacy_scaler_fold_config(
         encoding="utf-8",
     )
     (tmp_path / "operations" / "scaler.yaml").write_text(
-        "folds:\n  - fit: [train]\n    apply: [train, validation]\n",
+        "kind: artifact\nentrypoint: core.artifact.scaler\ndataset: default\nfolds:\n  - fit: [train]\n    apply: [train, validation]\n",
         encoding="utf-8",
     )
 
@@ -194,14 +188,15 @@ def test_load_project_definition_canonicalizes_symlinked_dataset_path(
     tmp_path: Path,
 ) -> None:
     project_yaml = _write_project(tmp_path)
-    dataset = tmp_path / "dataset.yaml"
+    dataset = tmp_path / "datasets" / "default.yaml"
     target = tmp_path / "dataset.actual.yaml"
     dataset.rename(target)
     dataset.symlink_to(target)
 
     definition = load_project_definition(project_yaml)
 
-    assert definition.project.dataset_path == target.resolve()
+    assert set(definition.datasets) == {"default"}
+    assert definition.require_dataset("default").version == "v1"
 
 
 def test_load_project_definition_canonicalizes_symlinked_config_root(
@@ -337,8 +332,8 @@ def test_project_without_name_still_validates_dataset_interpolation(
         ),
         encoding="utf-8",
     )
-    (tmp_path / "dataset.yaml").write_text(
-        'sample: {rounding: ceil, cadence: "${unknown_cadence}"}\n',
+    (tmp_path / "datasets" / "default.yaml").write_text(
+        'version: v1\nsample: {rounding: ceil, cadence: "${unknown_cadence}"}\n',
         encoding="utf-8",
     )
 
@@ -429,27 +424,27 @@ def test_custom_artifact_change_does_not_change_core_artifact_hashes(
 
     first = calculate_artifact_hashes(
         definition.project,
-        definition.dataset,
+        definition.datasets,
         definition.streams,
         build_artifact_graph(
             (*base_tasks, first_task),
-            definition.dataset,
+            definition.datasets,
             definition.streams,
         ),
     )
     second = calculate_artifact_hashes(
         definition.project,
-        definition.dataset,
+        definition.datasets,
         definition.streams,
         build_artifact_graph(
             (*base_tasks, second_task),
-            definition.dataset,
+            definition.datasets,
             definition.streams,
         ),
     )
 
     assert first.for_artifact("snapshot") != second.for_artifact("snapshot")
-    for key in (SERIES, VECTOR_METADATA):
+    for key in ("dataset.default.series", "dataset.default.metadata"):
         assert first.for_artifact(key) == second.for_artifact(key)
 
 
@@ -458,15 +453,15 @@ def test_artifact_hashing_rejects_missing_metadata_dependencies(tmp_path: Path) 
 
     with pytest.raises(
         ValueError,
-        match="Required artifact operation 'series' is not declared",
+        match="Required artifact operation 'dataset.default.series' is not declared",
     ):
         calculate_artifact_hashes(
             definition.project,
-            definition.dataset,
+            definition.datasets,
             definition.streams,
             build_artifact_graph(
-                (MetadataTask(),),
-                definition.dataset,
+                (MetadataTask(id="dataset.default.metadata", dataset="default"),),
+                definition.datasets,
                 definition.streams,
             ),
         )
@@ -500,15 +495,15 @@ def test_artifact_hashing_rejects_missing_active_scaler(tmp_path: Path) -> None:
 
     with pytest.raises(
         ValueError,
-        match="Required artifact operation 'scaler' is not declared",
+        match="Required artifact operation 'dataset.default.scaler' is not declared",
     ):
         calculate_artifact_hashes(
             definition.project,
-            dataset,
+            {"default": dataset},
             definition.streams,
             build_artifact_graph(
-                (SeriesTask(),),
-                dataset,
+                (SeriesTask(id="dataset.default.series", dataset="default"),),
+                {"default": dataset},
                 definition.streams,
             ),
         )
@@ -517,7 +512,11 @@ def test_artifact_hashing_rejects_missing_active_scaler(tmp_path: Path) -> None:
 def test_rounding_policy_invalidates_series_scaler_and_metadata(tmp_path: Path) -> None:
     definition = load_project_definition(_write_project(tmp_path))
     streams = _single_stream_catalog()
-    operations = (ScalerTask(), SeriesTask(), MetadataTask())
+    operations = (
+        ScalerTask(id="dataset.default.scaler", dataset="default"),
+        SeriesTask(id="dataset.default.series", dataset="default"),
+        MetadataTask(id="dataset.default.metadata", dataset="default"),
+    )
     hashes = []
     for rounding in ("floor", "ceil", "exact"):
         dataset = DatasetConfig(
@@ -529,12 +528,16 @@ def test_rounding_policy_invalidates_series_scaler_and_metadata(tmp_path: Path) 
         hashes.append(
             calculate_artifact_hashes(
                 definition.project,
-                dataset,
+                {"default": dataset},
                 streams,
-                build_artifact_graph(operations, dataset, streams),
+                build_artifact_graph(operations, {"default": dataset}, streams),
             )
         )
-    for artifact in (SERIES, SCALER_STATISTICS, VECTOR_METADATA):
+    for artifact in (
+        "dataset.default.series",
+        "dataset.default.scaler",
+        "dataset.default.metadata",
+    ):
         assert len({result.for_artifact(artifact) for result in hashes}) == 3
 
 
@@ -543,7 +546,10 @@ def test_scaling_policy_does_not_invalidate_unscaled_series(
 ) -> None:
     definition = load_project_definition(_write_project(tmp_path))
     streams = _single_stream_catalog()
-    operations = (ScalerTask(), SeriesTask())
+    operations = (
+        ScalerTask(id="dataset.default.scaler", dataset="default"),
+        SeriesTask(id="dataset.default.series", dataset="default"),
+    )
     unscaled = DatasetConfig(
         sample=SampleConfig(rounding="ceil", cadence="1h"),
         features=[SeriesConfig(id="price", stream="prices", field="close")],
@@ -554,20 +560,22 @@ def test_scaling_policy_does_not_invalidate_unscaled_series(
 
     unscaled_hashes = calculate_artifact_hashes(
         definition.project,
-        unscaled,
+        {"default": unscaled},
         streams,
-        build_artifact_graph(operations, unscaled, streams),
+        build_artifact_graph(operations, {"default": unscaled}, streams),
     )
     scaled_hashes = calculate_artifact_hashes(
         definition.project,
-        scaled,
+        {"default": scaled},
         streams,
-        build_artifact_graph(operations, scaled, streams),
+        build_artifact_graph(operations, {"default": scaled}, streams),
     )
 
-    assert scaled_hashes.for_artifact(SERIES) == (unscaled_hashes.for_artifact(SERIES))
-    assert scaled_hashes.for_artifact(SCALER_STATISTICS) != (
-        unscaled_hashes.for_artifact(SCALER_STATISTICS)
+    assert scaled_hashes.for_artifact("dataset.default.series") == (
+        unscaled_hashes.for_artifact("dataset.default.series")
+    )
+    assert scaled_hashes.for_artifact("dataset.default.scaler") != (
+        unscaled_hashes.for_artifact("dataset.default.scaler")
     )
 
 
@@ -577,10 +585,10 @@ def test_collection_policy_invalidates_series_but_not_scaler(
     definition = load_project_definition(_write_project(tmp_path))
     streams = _single_stream_catalog()
     operations = (
-        ScalerTask(),
-        SeriesTask(),
-        MetadataTask(),
-        CoverageStatsTask(),
+        ScalerTask(id="dataset.default.scaler", dataset="default"),
+        SeriesTask(id="dataset.default.series", dataset="default"),
+        MetadataTask(id="dataset.default.metadata", dataset="default"),
+        CoverageStatsTask(id="dataset.default.coverage_stats", dataset="default"),
     )
     feature = SeriesConfig(
         id="price",
@@ -602,21 +610,25 @@ def test_collection_policy_invalidates_series_but_not_scaler(
 
     scalar_hashes = calculate_artifact_hashes(
         definition.project,
-        scalar,
+        {"default": scalar},
         streams,
-        build_artifact_graph(operations, scalar, streams),
+        build_artifact_graph(operations, {"default": scalar}, streams),
     )
     collected_hashes = calculate_artifact_hashes(
         definition.project,
-        collected,
+        {"default": collected},
         streams,
-        build_artifact_graph(operations, collected, streams),
+        build_artifact_graph(operations, {"default": collected}, streams),
     )
 
-    assert collected_hashes.for_artifact(SCALER_STATISTICS) == (
-        scalar_hashes.for_artifact(SCALER_STATISTICS)
+    assert collected_hashes.for_artifact("dataset.default.scaler") == (
+        scalar_hashes.for_artifact("dataset.default.scaler")
     )
-    for artifact in (SERIES, VECTOR_METADATA, COVERAGE_STATS):
+    for artifact in (
+        "dataset.default.series",
+        "dataset.default.metadata",
+        "dataset.default.coverage_stats",
+    ):
         assert collected_hashes.for_artifact(artifact) != (
             scalar_hashes.for_artifact(artifact)
         )
@@ -697,13 +709,17 @@ def test_scaler_and_metadata_hashes_track_every_fold_role(tmp_path: Path) -> Non
 
     def artifact_hashes(dataset: DatasetConfig):
         graph = build_artifact_graph(
-            (ScalerTask(), SeriesTask(), MetadataTask()),
-            dataset,
+            (
+                ScalerTask(id="dataset.default.scaler", dataset="default"),
+                SeriesTask(id="dataset.default.series", dataset="default"),
+                MetadataTask(id="dataset.default.metadata", dataset="default"),
+            ),
+            {"default": dataset},
             streams,
         )
         return calculate_artifact_hashes(
             definition.project,
-            dataset,
+            {"default": dataset},
             streams,
             graph,
         )
@@ -711,15 +727,15 @@ def test_scaler_and_metadata_hashes_track_every_fold_role(tmp_path: Path) -> Non
     baseline_hashes = artifact_hashes(baseline)
     for changed in (validation_changed, test_changed, training_changed):
         changed_hashes = artifact_hashes(changed)
-        assert changed_hashes.for_artifact(SCALER_STATISTICS) != (
-            baseline_hashes.for_artifact(SCALER_STATISTICS)
+        assert changed_hashes.for_artifact("dataset.default.scaler") != (
+            baseline_hashes.for_artifact("dataset.default.scaler")
         )
-        assert changed_hashes.for_artifact(VECTOR_METADATA) != (
-            baseline_hashes.for_artifact(VECTOR_METADATA)
+        assert changed_hashes.for_artifact("dataset.default.metadata") != (
+            baseline_hashes.for_artifact("dataset.default.metadata")
         )
-        assert changed_hashes.for_artifact(SERIES) == baseline_hashes.for_artifact(
-            SERIES
-        )
+        assert changed_hashes.for_artifact(
+            "dataset.default.series"
+        ) == baseline_hashes.for_artifact("dataset.default.series")
 
 
 def test_target_horizon_changes_folded_scaler_and_metadata_but_not_series(
@@ -772,33 +788,39 @@ def test_target_horizon_changes_folded_scaler_and_metadata_but_not_series(
             ]
         }
     )
-    tasks = (ScalerTask(), SeriesTask(), MetadataTask())
+    tasks = (
+        ScalerTask(id="dataset.default.scaler", dataset="default"),
+        SeriesTask(id="dataset.default.series", dataset="default"),
+        MetadataTask(id="dataset.default.metadata", dataset="default"),
+    )
 
     baseline_hashes = calculate_artifact_hashes(
         definition.project,
-        baseline,
+        {"default": baseline},
         streams,
-        build_artifact_graph(tasks, baseline, streams),
+        build_artifact_graph(tasks, {"default": baseline}, streams),
     )
     changed_hashes = calculate_artifact_hashes(
         definition.project,
-        changed,
+        {"default": changed},
         streams,
-        build_artifact_graph(tasks, changed, streams),
+        build_artifact_graph(tasks, {"default": changed}, streams),
     )
     equivalent_hashes = calculate_artifact_hashes(
         definition.project,
-        equivalent,
+        {"default": equivalent},
         streams,
-        build_artifact_graph(tasks, equivalent, streams),
+        build_artifact_graph(tasks, {"default": equivalent}, streams),
     )
 
-    assert changed_hashes.for_artifact(SCALER_STATISTICS) != (
-        baseline_hashes.for_artifact(SCALER_STATISTICS)
+    assert changed_hashes.for_artifact("dataset.default.scaler") != (
+        baseline_hashes.for_artifact("dataset.default.scaler")
     )
-    assert changed_hashes.for_artifact(SERIES) == baseline_hashes.for_artifact(SERIES)
-    assert changed_hashes.for_artifact(VECTOR_METADATA) != (
-        baseline_hashes.for_artifact(VECTOR_METADATA)
+    assert changed_hashes.for_artifact(
+        "dataset.default.series"
+    ) == baseline_hashes.for_artifact("dataset.default.series")
+    assert changed_hashes.for_artifact("dataset.default.metadata") != (
+        baseline_hashes.for_artifact("dataset.default.metadata")
     )
     assert equivalent_hashes == baseline_hashes
 
@@ -822,30 +844,37 @@ def test_window_mode_rebuilds_metadata_dependents_but_not_series_or_scaler(
     changed = baseline.model_copy(
         update={"sample": baseline.sample.model_copy(update={"window_mode": "union"})}
     )
-    tasks = (ScalerTask(), SeriesTask(), MetadataTask(), CoverageStatsTask())
+    tasks = (
+        ScalerTask(id="dataset.default.scaler", dataset="default"),
+        SeriesTask(id="dataset.default.series", dataset="default"),
+        MetadataTask(id="dataset.default.metadata", dataset="default"),
+        CoverageStatsTask(id="dataset.default.coverage_stats", dataset="default"),
+    )
 
     baseline_hashes = calculate_artifact_hashes(
         definition.project,
-        baseline,
+        {"default": baseline},
         streams,
-        build_artifact_graph(tasks, baseline, streams),
+        build_artifact_graph(tasks, {"default": baseline}, streams),
     )
     changed_hashes = calculate_artifact_hashes(
         definition.project,
-        changed,
+        {"default": changed},
         streams,
-        build_artifact_graph(tasks, changed, streams),
+        build_artifact_graph(tasks, {"default": changed}, streams),
     )
 
-    assert changed_hashes.for_artifact(SCALER_STATISTICS) == (
-        baseline_hashes.for_artifact(SCALER_STATISTICS)
+    assert changed_hashes.for_artifact("dataset.default.scaler") == (
+        baseline_hashes.for_artifact("dataset.default.scaler")
     )
-    assert changed_hashes.for_artifact(SERIES) == baseline_hashes.for_artifact(SERIES)
-    assert changed_hashes.for_artifact(VECTOR_METADATA) != (
-        baseline_hashes.for_artifact(VECTOR_METADATA)
+    assert changed_hashes.for_artifact(
+        "dataset.default.series"
+    ) == baseline_hashes.for_artifact("dataset.default.series")
+    assert changed_hashes.for_artifact("dataset.default.metadata") != (
+        baseline_hashes.for_artifact("dataset.default.metadata")
     )
-    assert changed_hashes.for_artifact(COVERAGE_STATS) != (
-        baseline_hashes.for_artifact(COVERAGE_STATS)
+    assert changed_hashes.for_artifact("dataset.default.coverage_stats") != (
+        baseline_hashes.for_artifact("dataset.default.coverage_stats")
     )
 
 
@@ -876,16 +905,24 @@ def test_target_horizon_does_not_change_standard_scaler_fingerprint(
 
     baseline_hash = calculate_artifact_hashes(
         definition.project,
-        baseline,
+        {"default": baseline},
         streams,
-        build_artifact_graph((ScalerTask(),), baseline, streams),
-    ).for_artifact(SCALER_STATISTICS)
+        build_artifact_graph(
+            (ScalerTask(id="dataset.default.scaler", dataset="default"),),
+            {"default": baseline},
+            streams,
+        ),
+    ).for_artifact("dataset.default.scaler")
     changed_hash = calculate_artifact_hashes(
         definition.project,
-        changed,
+        {"default": changed},
         streams,
-        build_artifact_graph((ScalerTask(),), changed, streams),
-    ).for_artifact(SCALER_STATISTICS)
+        build_artifact_graph(
+            (ScalerTask(id="dataset.default.scaler", dataset="default"),),
+            {"default": changed},
+            streams,
+        ),
+    ).for_artifact("dataset.default.scaler")
 
     assert changed_hash == baseline_hash
 
@@ -981,33 +1018,35 @@ def test_core_artifact_hashes_track_only_referenced_source_closure(
     )
     graph = build_artifact_graph(
         definition.artifact_graph.tasks_by_id.values(),
-        dataset,
+        {"default": dataset},
         streams,
     )
 
     baseline = calculate_artifact_hashes(
         definition.project,
-        dataset,
+        {"default": dataset},
         streams,
         graph,
     )
     unused.write_text("unused changed\n", encoding="utf-8")
     after_unused_change = calculate_artifact_hashes(
         definition.project,
-        dataset,
+        {"default": dataset},
         streams,
         graph,
     )
-    assert after_unused_change.for_artifact(SERIES) == baseline.for_artifact(SERIES)
+    assert after_unused_change.for_artifact(
+        "dataset.default.series"
+    ) == baseline.for_artifact("dataset.default.series")
 
     used.write_text("used changed\n", encoding="utf-8")
     after_used_change = calculate_artifact_hashes(
         definition.project,
-        dataset,
+        {"default": dataset},
         streams,
         graph,
     )
-    for key in (SERIES, VECTOR_METADATA):
+    for key in ("dataset.default.series", "dataset.default.metadata"):
         assert after_used_change.for_artifact(key) != baseline.for_artifact(key)
 
 
@@ -1035,8 +1074,8 @@ def test_cross_section_config_changes_series_artifact_hash(tmp_path: Path) -> No
         "  - {operation: rank_score, field: value, to: rank, min_samples: 2}\n",
         encoding="utf-8",
     )
-    (tmp_path / "dataset.yaml").write_text(
-        "sample: {rounding: ceil, cadence: 1h, keys: [ticker]}\n"
+    (tmp_path / "datasets" / "default.yaml").write_text(
+        "version: v1\nsample: {rounding: ceil, cadence: 1h, keys: [ticker]}\n"
         "features:\n"
         "  - {id: rank, stream: ranked, field: rank}\n",
         encoding="utf-8",
@@ -1052,8 +1091,8 @@ def test_cross_section_config_changes_series_artifact_hash(tmp_path: Path) -> No
     )
     second = load_project_definition(project_yaml)
 
-    assert first.artifact_hashes.for_artifact(SERIES) != (
-        second.artifact_hashes.for_artifact(SERIES)
+    assert first.artifact_hashes.for_artifact("dataset.default.series") != (
+        second.artifact_hashes.for_artifact("dataset.default.series")
     )
 
 
@@ -1097,9 +1136,10 @@ def test_artifact_revision_change_changes_artifact_hashes(tmp_path: Path) -> Non
 
 def test_hash_split_ratio_order_does_not_change_artifact_hash(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path)
-    dataset = tmp_path / "dataset.yaml"
+    dataset = tmp_path / "datasets" / "default.yaml"
     dataset.write_text(
         """\
+version: v1
 sample: {rounding: ceil, cadence: 1h}
 features: []
 targets: []
@@ -1115,6 +1155,7 @@ split:
 
     dataset.write_text(
         """\
+version: v1
 sample: {rounding: ceil, cadence: 1h}
 features: []
 targets: []
@@ -1143,7 +1184,7 @@ def test_artifact_cache_version_changes_artifact_hash(
     )
     changed_artifact_hashes = calculate_artifact_hashes(
         definition.project,
-        definition.dataset,
+        definition.datasets,
         definition.streams,
         definition.artifact_graph,
     )
@@ -1156,11 +1197,14 @@ def test_metadata_format_version_invalidates_only_metadata_and_dependents(
     monkeypatch,
 ) -> None:
     definition = load_project_definition(_write_project(tmp_path))
-    tasks = (SeriesTask(), MetadataTask())
-    graph = build_artifact_graph(tasks, definition.dataset, definition.streams)
+    tasks = (
+        SeriesTask(id="dataset.default.series", dataset="default"),
+        MetadataTask(id="dataset.default.metadata", dataset="default"),
+    )
+    graph = build_artifact_graph(tasks, definition.datasets, definition.streams)
     current = calculate_artifact_hashes(
         definition.project,
-        definition.dataset,
+        definition.datasets,
         definition.streams,
         graph,
     )
@@ -1172,14 +1216,16 @@ def test_metadata_format_version_invalidates_only_metadata_and_dependents(
     )
     changed = calculate_artifact_hashes(
         definition.project,
-        definition.dataset,
+        definition.datasets,
         definition.streams,
         graph,
     )
 
-    assert changed.for_artifact(SERIES) == current.for_artifact(SERIES)
-    assert changed.for_artifact(VECTOR_METADATA) != current.for_artifact(
-        VECTOR_METADATA
+    assert changed.for_artifact("dataset.default.series") == current.for_artifact(
+        "dataset.default.series"
+    )
+    assert changed.for_artifact("dataset.default.metadata") != current.for_artifact(
+        "dataset.default.metadata"
     )
 
 
@@ -1199,12 +1245,15 @@ def test_scaler_format_version_invalidates_only_scaler(
             )
         ],
     )
-    tasks = (ScalerTask(), SeriesTask())
+    tasks = (
+        ScalerTask(id="dataset.default.scaler", dataset="default"),
+        SeriesTask(id="dataset.default.series", dataset="default"),
+    )
     streams = _single_stream_catalog()
-    graph = build_artifact_graph(tasks, dataset, streams)
+    graph = build_artifact_graph(tasks, {"default": dataset}, streams)
     current = calculate_artifact_hashes(
         definition.project,
-        dataset,
+        {"default": dataset},
         streams,
         graph,
     )
@@ -1216,12 +1265,14 @@ def test_scaler_format_version_invalidates_only_scaler(
     )
     changed = calculate_artifact_hashes(
         definition.project,
-        dataset,
+        {"default": dataset},
         streams,
         graph,
     )
 
-    assert changed.for_artifact(SCALER_STATISTICS) != current.for_artifact(
-        SCALER_STATISTICS
+    assert changed.for_artifact("dataset.default.scaler") != current.for_artifact(
+        "dataset.default.scaler"
     )
-    assert changed.for_artifact(SERIES) == current.for_artifact(SERIES)
+    assert changed.for_artifact("dataset.default.series") == current.for_artifact(
+        "dataset.default.series"
+    )

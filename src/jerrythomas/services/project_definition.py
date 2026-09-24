@@ -3,10 +3,8 @@ from pathlib import Path
 from jerrythomas.artifacts.fingerprints import calculate_artifact_hashes
 from jerrythomas.artifacts.planning import build_artifact_graph
 from jerrythomas.config.tasks.base import ArtifactTask, RuntimeTask
-from jerrythomas.services.dataset import (
-    dataset_from_document,
-    validate_dataset_streams,
-)
+from jerrythomas.config.tasks.stream import StreamTask
+from jerrythomas.services.dataset import load_datasets, validate_dataset_streams
 from jerrythomas.services.definitions import ProjectDefinition
 from jerrythomas.services.operations import (
     operation_documents,
@@ -14,37 +12,41 @@ from jerrythomas.services.operations import (
 )
 from jerrythomas.services.project import load_project
 from jerrythomas.services.streams.loader import load_streams
-from jerrythomas.io.yaml import read_yaml_document
 
 
 def load_project_definition(project_yaml: Path) -> ProjectDefinition:
     project = load_project(project_yaml)
-    dataset_document = read_yaml_document(project.dataset_path)
-    operation_config_documents = operation_documents(project)
-    dataset = dataset_from_document(project, dataset_document)
+    datasets = load_datasets(project)
     streams = load_streams(project)
-    validate_dataset_streams(dataset, streams)
-    operations = operations_from_documents(project, operation_config_documents)
+    for dataset_id, dataset in datasets.items():
+        try:
+            validate_dataset_streams(dataset, streams)
+        except ValueError as exc:
+            raise ValueError(f"Dataset '{dataset_id}': {exc}") from exc
+    operations = operations_from_documents(
+        project, operation_documents(project), datasets
+    )
+    for operation in operations:
+        if (
+            isinstance(operation, StreamTask)
+            and operation.stream not in streams.streams
+        ):
+            raise ValueError(
+                f"Operation '{operation.id}' references unknown stream '{operation.stream}'."
+            )
     artifact_operations = tuple(
         operation for operation in operations if isinstance(operation, ArtifactTask)
     )
     runtime_operations = tuple(
         operation for operation in operations if isinstance(operation, RuntimeTask)
     )
-    artifact_graph = build_artifact_graph(
-        artifact_operations,
-        dataset,
-        streams,
-    )
+    artifact_graph = build_artifact_graph(artifact_operations, datasets, streams)
     artifact_hashes = calculate_artifact_hashes(
-        project,
-        dataset,
-        streams,
-        artifact_graph,
+        project, datasets, streams, artifact_graph
     )
     return ProjectDefinition(
         project=project,
-        dataset=dataset,
+        datasets=datasets,
         streams=streams,
         artifact_graph=artifact_graph,
         runtime_operations=runtime_operations,

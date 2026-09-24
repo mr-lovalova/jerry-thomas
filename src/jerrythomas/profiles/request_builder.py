@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from jerrythomas.artifacts.settings import BuildSettings
 from jerrythomas.config.preview import PreviewStage
+from jerrythomas.config.observability import ObservabilityConfig
 from jerrythomas.config.profiles.base import Profile, ProfileCommand
 from jerrythomas.config.profiles.build import (
     ARTIFACT_MODE_ADAPTER,
@@ -34,6 +35,7 @@ from jerrythomas.profiles.destinations import validate_command_destinations
 from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.profiles.loader import (
     apply_profile_defaults,
+    bind_profile,
     profile_specs_with_defaults,
 )
 from jerrythomas.profiles.materialize import (
@@ -52,7 +54,7 @@ from jerrythomas.profiles.runtime_profiles import (
     resolve_inspect_profiles,
     resolve_serve_profiles,
 )
-from jerrythomas.services.definitions import ProjectDefinition, ProjectManifest
+from jerrythomas.services.definitions import ProjectDefinition
 from jerrythomas.services.path_policy import sanitize_path_segment
 from jerrythomas.services.project_definition import load_project_definition
 from jerrythomas.services.runtime_compiler import compile_runtime
@@ -87,13 +89,13 @@ def _load_definition(project: str) -> ProjectDefinition:
 
 
 def _select_profiles(
-    project: ProjectManifest,
+    definition: ProjectDefinition,
     command: ProfileCommand,
     profile_name: str | None,
 ) -> tuple[list[Profile], ProfileDefaults]:
     try:
         profiles, defaults = profile_specs_with_defaults(
-            project,
+            definition.project,
             cmd=command,
         )
     except ValidationError as exc:
@@ -118,13 +120,65 @@ def _select_profiles(
             raise ProfileCommandError(f"Unknown {command} profile '{normalized_name}'")
     try:
         return (
-            [apply_profile_defaults(profile, defaults) for profile in selected],
+            [
+                bind_profile(apply_profile_defaults(profile, defaults), definition)
+                for profile in selected
+            ],
             defaults,
         )
     except ValidationError as exc:
         raise ProfileCommandError(_validation_error_without_inputs(exc)) from exc
     except ValueError as exc:
         raise ProfileCommandError(str(exc)) from exc
+
+
+def _prerequisite_settings(
+    definition: ProjectDefinition,
+    command: str,
+    configured_mode: str | None,
+    cli_mode: str | None,
+    observability: ObservabilityConfig | None,
+    command_observability: CommandObservability,
+    execution_dir: Path,
+) -> BuildSettings:
+    try:
+        mode = ARTIFACT_MODE_ADAPTER.validate_python(
+            cli_mode if cli_mode is not None else configured_mode or "auto"
+        )
+    except ValueError as exc:
+        raise ProfileCommandError(f"Invalid artifact mode: {exc}") from exc
+    try:
+        if observability is not None:
+            logging = observability.logging
+            if logging is not None and any(
+                token in (output.path or "")
+                for output in logging.outputs or ()
+                for token in ("${dataset_id}", "${dataset_version}")
+            ):
+                raise ValueError(
+                    "Shared prerequisite logs have no selected dataset. Put "
+                    "dataset-specific log paths in concrete profiles instead of "
+                    f"{command}.defaults.yaml."
+                )
+            observability = ObservabilityConfig.model_validate(
+                definition.project.resolve_config(observability.model_dump(mode="json"))
+            )
+        settings = resolve_observability_settings(
+            definition.project.path, observability, command_observability
+        )
+    except ValueError as exc:
+        raise ProfileCommandError(f"Invalid prerequisite observability: {exc}") from exc
+    return BuildSettings(
+        mode=mode,
+        observability=replace(
+            settings,
+            log_output=resolve_execution_log_outputs(
+                settings.log_output,
+                execution_dir,
+                default_path=Path("logs") / f"{command}.artifacts.log",
+            ),
+        ),
+    )
 
 
 def _serve_run_plans(
@@ -138,6 +192,7 @@ def _serve_run_plans(
             plans_by_run[job.output.run] = ServeRunPlan(
                 paths=job.output.run,
                 preview=job.preview,
+                dataset_id=job.runtime.dataset_id,
             )
     return tuple(plans_by_run.values())
 
@@ -151,7 +206,7 @@ def build_build_run_request(
     definition = _load_definition(project)
     project_path = definition.project.path
     loaded_profiles, defaults = _select_profiles(
-        definition.project,
+        definition,
         "build",
         profile_name,
     )
@@ -238,9 +293,8 @@ def build_runtime_run_request(
     command_observability: CommandObservability = CommandObservability(),
 ) -> RuntimeRunRequest | None:
     definition = _load_definition(project)
-    project_path = definition.project.path
     loaded_profiles, defaults = _select_profiles(
-        definition.project,
+        definition,
         command,
         profile_name,
     )
@@ -284,34 +338,15 @@ def build_runtime_run_request(
                 f"operation '{profile.operation}'."
             )
 
-    try:
-        resolved_artifact_mode = (
-            ARTIFACT_MODE_ADAPTER.validate_python(artifact_mode)
-            if artifact_mode is not None
-            else defaults.artifact_mode or "auto"
-        )
-    except ValueError as exc:
-        raise ProfileCommandError(f"Invalid artifact mode: {exc}") from exc
-
     execution_dir = _execution_root(definition.project.artifacts_root)
-    try:
-        artifact_observability = resolve_observability_settings(
-            project_path,
-            defaults.observability,
-            command_observability,
-        )
-    except ValueError as exc:
-        raise ProfileCommandError(f"Invalid prerequisite observability: {exc}") from exc
-    artifact_settings = BuildSettings(
-        mode=resolved_artifact_mode,
-        observability=replace(
-            artifact_observability,
-            log_output=resolve_execution_log_outputs(
-                artifact_observability.log_output,
-                execution_dir,
-                default_path=Path("logs") / f"{command}.artifacts.log",
-            ),
-        ),
+    artifact_settings = _prerequisite_settings(
+        definition,
+        command,
+        defaults.artifact_mode,
+        artifact_mode,
+        defaults.observability,
+        command_observability,
+        execution_dir,
     )
 
     try:
@@ -338,7 +373,9 @@ def build_runtime_run_request(
             RuntimeJob(
                 name=profile.name,
                 task=runtime_tasks_by_id[profile.operation_id].model_copy(deep=True),
-                runtime=compile_runtime(definition),
+                runtime=compile_runtime(
+                    definition, runtime_tasks_by_id[profile.operation_id].dataset
+                ),
                 output=profile.output,
                 observability=replace(
                     profile.observability,
@@ -394,9 +431,8 @@ def build_materialize_run_request(
     command_observability: CommandObservability = CommandObservability(),
 ) -> MaterializeRunRequest | None:
     definition = _load_definition(project)
-    project_path = definition.project.path
     loaded_profiles, defaults = _select_profiles(
-        definition.project,
+        definition,
         "materialize",
         profile_name,
     )
@@ -416,32 +452,20 @@ def build_materialize_run_request(
         execution_dir = _execution_root(definition.project.artifacts_root)
         jobs = resolve_materialize_jobs(
             profiles=materialize_profiles,
-            project_path=project_path,
+            definition=definition,
             execution_dir=execution_dir,
             overwrite=overwrite,
             cli_output=output,
             command_observability=command_observability,
         )
-        resolved_artifact_mode = (
-            ARTIFACT_MODE_ADAPTER.validate_python(artifact_mode)
-            if artifact_mode is not None
-            else defaults.artifact_mode or "auto"
-        )
-        artifact_observability = resolve_observability_settings(
-            project_path,
+        artifact_settings = _prerequisite_settings(
+            definition,
+            "materialize",
+            defaults.artifact_mode,
+            artifact_mode,
             defaults.observability,
             command_observability,
-        )
-        artifact_settings = BuildSettings(
-            mode=resolved_artifact_mode,
-            observability=replace(
-                artifact_observability,
-                log_output=resolve_execution_log_outputs(
-                    artifact_observability.log_output,
-                    execution_dir,
-                    default_path=Path("logs") / "materialize.artifacts.log",
-                ),
-            ),
+            execution_dir,
         )
         log_outputs = (
             artifact_settings.observability.log_output,

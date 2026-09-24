@@ -20,12 +20,12 @@ def _write_project(tmp_path: Path) -> Path:
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 6",
+                "schema_version: 7",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: streams",
                 "  sources: sources",
-                "  dataset: dataset.yaml",
+                "  datasets: datasets",
                 "  artifacts: artifacts",
                 "  operations: operations",
                 "  profiles: profiles",
@@ -33,13 +33,31 @@ def _write_project(tmp_path: Path) -> Path:
         ),
         encoding="utf-8",
     )
-    (tmp_path / "dataset.yaml").write_text(
-        "sample:\n  rounding: ceil\n  cadence: 1h\n",
+    (tmp_path / "datasets").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "datasets/default.yaml").write_text(
+        "version: v1\nsample:\n  rounding: ceil\n  cadence: 1h\n",
         encoding="utf-8",
     )
     for directory in ("streams", "sources", "operations"):
         (tmp_path / directory).mkdir(parents=True, exist_ok=True)
+    for operation in ("dataset", "coverage", "matrix"):
+        (tmp_path / "operations" / f"{operation}.yaml").write_text(
+            f"kind: runtime\nentrypoint: core.runtime.{operation}\ndataset: default\n",
+            encoding="utf-8",
+        )
     return project_yaml
+
+
+def _write_stream(tmp_path: Path, stream: str) -> None:
+    (tmp_path / "sources" / "source.yaml").write_text(
+        "id: source\nparser: {entrypoint: identity}\n"
+        "loader: {entrypoint: plugin.source}\nfreshness: opaque\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "streams" / f"{stream}.yaml").write_text(
+        f"id: {stream}\nfrom: {{source: source}}\nmap: {{entrypoint: identity}}\n",
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.parametrize("output_file", ["serve.dataset.yaml", "serve.defaults.yaml"])
@@ -226,7 +244,7 @@ def test_inspect_request_materializes_execution_scoped_log_output(
     ops.mkdir(parents=True, exist_ok=True)
     profiles.mkdir(parents=True, exist_ok=True)
     (ops / "coverage.yaml").write_text(
-        "{}\n",
+        "kind: runtime\nentrypoint: core.runtime.coverage\ndataset: default\n",
         encoding="utf-8",
     )
     (profiles / "inspect.coverage.yaml").write_text(
@@ -258,7 +276,7 @@ def test_disabled_profiles_do_not_create_execution_directory(tmp_path: Path):
     ops.mkdir(parents=True, exist_ok=True)
     profiles.mkdir(parents=True, exist_ok=True)
     (ops / "coverage.yaml").write_text(
-        "{}\n",
+        "kind: runtime\nentrypoint: core.runtime.coverage\ndataset: default\n",
         encoding="utf-8",
     )
     (profiles / "inspect.coverage.yaml").write_text(
@@ -277,8 +295,9 @@ def test_disabled_profiles_do_not_create_execution_directory(tmp_path: Path):
 
 def test_serve_request_uses_dataset_output_ids_by_default(tmp_path: Path):
     project_yaml = _write_project(tmp_path)
-    (tmp_path / "dataset.yaml").write_text(
+    (tmp_path / "datasets/default.yaml").write_text(
         """\
+version: v1
 sample: {rounding: ceil, cadence: 1h}
 split:
   mode: hash
@@ -323,7 +342,12 @@ def test_materialize_request_uses_shared_resolution_snapshot(
         encoding="utf-8",
     )
     (profiles / "materialize.adv-20.yaml").write_text(
-        "stream: adv.20\noutput: outputs/adv-20.jsonl.gz\n",
+        "operation: adv-20\noutput: outputs/adv-20.jsonl.gz\n",
+        encoding="utf-8",
+    )
+    _write_stream(tmp_path, "adv.20")
+    (tmp_path / "operations" / "adv-20.yaml").write_text(
+        "kind: runtime\nentrypoint: core.runtime.stream\nstream: adv.20\n",
         encoding="utf-8",
     )
     runtime = SimpleNamespace(execution=ExecutionConfig())
@@ -387,7 +411,7 @@ def test_materialize_request_rejects_output_log_collision(tmp_path: Path) -> Non
     profiles.mkdir(parents=True, exist_ok=True)
     (profiles / "materialize.adv.yaml").write_text(
         (
-            "stream: adv\n"
+            "operation: adv\n"
             "output: output/adv.jsonl\n"
             "observability:\n"
             "  logging:\n"
@@ -395,6 +419,12 @@ def test_materialize_request_rejects_output_log_collision(tmp_path: Path) -> Non
             "      - transport: fs\n"
             "        path: output/adv.jsonl\n"
         ),
+        encoding="utf-8",
+    )
+
+    _write_stream(tmp_path, "adv")
+    (tmp_path / "operations" / "adv.yaml").write_text(
+        "kind: runtime\nentrypoint: core.runtime.stream\nstream: adv\n",
         encoding="utf-8",
     )
 

@@ -62,7 +62,11 @@ def load_project(project_yaml: Path) -> ProjectManifest:
         environment=MappingProxyType(environment),
         stream_dirs=_config_roots(path, config.paths.streams),
         source_dirs=_config_roots(path, config.paths.sources),
-        dataset_path=resolve_project_path(path, config.paths.dataset),
+        dataset_dirs=(
+            _config_roots(path, config.paths.datasets)
+            if config.paths.datasets is not None
+            else ()
+        ),
         artifacts_root=resolve_project_path(path, config.paths.artifacts),
         operations_dir=operations_dir,
         profiles_dir=resolve_project_path(path, config.paths.profiles),

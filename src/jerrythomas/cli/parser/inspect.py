@@ -9,7 +9,6 @@ from jerrythomas.io.compression import COMPRESSION_CHOICES
 
 from .common import (
     add_artifact_mode_flag,
-    add_dataset_flag,
     add_execution_observability_flags,
     add_project_flag,
     positive_integer,
@@ -22,7 +21,6 @@ def add_inspect_command(sub, common: argparse.ArgumentParser) -> None:
         help="run inspect operations through inspect profiles",
         parents=[common],
     )
-    add_dataset_flag(parser)
     add_project_flag(parser)
     parser.add_argument(
         "--profile",

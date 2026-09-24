@@ -44,12 +44,12 @@ def _runtime_with_config(tmp_path, dataset: DatasetConfig) -> Runtime:
     project_yaml.write_text(
         "\n".join(
             [
-                "schema_version: 6",
+                "schema_version: 7",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: streams",
                 "  sources: sources",
-                "  dataset: dataset.yaml",
+                "  datasets: datasets",
                 "  artifacts: build",
                 "  operations: operations",
                 "",
@@ -67,7 +67,8 @@ def _runtime_with_config(tmp_path, dataset: DatasetConfig) -> Runtime:
 
 
 def _runtime_with_dataset(tmp_path, dataset_text: str) -> Runtime:
-    dataset_path = tmp_path / "dataset.yaml"
+    dataset_path = tmp_path / "datasets/default.yaml"
+    dataset_path.parent.mkdir(exist_ok=True)
     dataset_path.write_text(dataset_text, encoding="utf-8")
     return _runtime_with_config(
         tmp_path,

@@ -6,6 +6,10 @@ from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
 from jerrythomas.config.project import ProjectConfig
 from jerrythomas.config.streams import StreamsConfig
 from jerrythomas.config.tasks.base import ArtifactTask, RuntimeTask
+from jerrythomas.config.tasks.coverage import CoverageTask
+from jerrythomas.config.tasks.dataset import DatasetTask
+from jerrythomas.config.tasks.matrix import MatrixTask
+from jerrythomas.services.operations import artifact_kind
 from jerrythomas.services.definitions import (
     ArtifactHashes,
     ProjectDefinition,
@@ -31,20 +35,25 @@ def project_definition(
     )
     resolved_streams = streams if streams is not None else StreamsConfig()
     artifact_graph = build_artifact_graph(
-        artifact_operations,
-        resolved_dataset,
+        [
+            operation.model_copy(update={"dataset": "default"})
+            if operation.dataset is None and artifact_kind(operation) is not None
+            else operation
+            for operation in artifact_operations
+        ],
+        {"default": resolved_dataset},
         resolved_streams,
     )
     project = ProjectManifest(
         path=project_path,
         config=ProjectConfig.model_validate(
             {
-                "schema_version": 6,
+                "schema_version": 7,
                 "artifact_revision": 1,
                 "paths": {
                     "streams": "streams",
                     "sources": "sources",
-                    "dataset": "dataset.yaml",
+                    "datasets": "datasets",
                     "artifacts": "artifacts",
                     "operations": "operations",
                     "profiles": "profiles",
@@ -55,17 +64,23 @@ def project_definition(
         environment={},
         stream_dirs=(root / "streams",),
         source_dirs=(root / "sources",),
-        dataset_path=root / "dataset.yaml",
+        dataset_dirs=(root / "datasets",),
         artifacts_root=root / "artifacts",
         operations_dir=root / "operations",
         profiles_dir=root / "profiles",
     )
     return ProjectDefinition(
         project=project,
-        dataset=resolved_dataset,
+        datasets={"default": resolved_dataset},
         streams=resolved_streams,
         artifact_graph=artifact_graph,
-        runtime_operations=tuple(runtime_operations),
+        runtime_operations=tuple(
+            operation.model_copy(update={"dataset": "default"})
+            if operation.dataset is None
+            and isinstance(operation, (DatasetTask, CoverageTask, MatrixTask))
+            else operation
+            for operation in runtime_operations
+        ),
         artifact_hashes=ArtifactHashes(
             {operation_id: artifact_hash for operation_id in artifact_graph.tasks_by_id}
         ),

@@ -9,8 +9,8 @@ from pathlib import Path
 from jerrythomas.artifacts.models import VECTOR_METADATA_VERSION
 from jerrythomas.artifacts.planning import ArtifactGraph
 from jerrythomas.artifacts.scaler import SCALER_ARTIFACT_VERSION
-from jerrythomas.artifacts.series import SERIES_MANIFEST_VERSION
 from jerrythomas.artifacts.specs import dataset_requires_scaler
+from jerrythomas.artifacts.series import SERIES_MANIFEST_VERSION
 from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.dataset.split import TimeSplitConfig
 from jerrythomas.config.sources import (
@@ -28,7 +28,7 @@ from jerrythomas.services.definitions import ArtifactHashes, ProjectManifest
 from jerrythomas.services.streams.validation import stream_dependency_closure
 
 # Increment when Jerry's core artifact semantics change without a config change.
-ARTIFACT_CACHE_VERSION = 13
+ARTIFACT_CACHE_VERSION = 14
 
 
 def _normalized_label(path: Path, base_dir: Path) -> str:
@@ -139,14 +139,21 @@ def _stream_config_closure(
 
 def artifact_inputs(
     task: ArtifactTask,
-    dataset: DatasetConfig,
+    dataset: DatasetConfig | None,
     streams: StreamsConfig,
 ) -> tuple[dict[str, object], set[str]]:
     if isinstance(task, ScheduleTask):
         stream_config, source_ids = _stream_config_closure((task.stream,), streams)
         return {"streams": stream_config}, source_ids
 
+    if (
+        isinstance(task, (ScalerTask, SeriesTask, MetadataTask, CoverageStatsTask))
+        and dataset is None
+    ):
+        raise ValueError(f"Artifact operation '{task.id}' requires a dataset.")
+
     if isinstance(task, ScalerTask):
+        assert dataset is not None
         scaled = tuple(config for config in dataset.series if config.scale)
         stream_config, source_ids = _stream_config_closure(
             (config.stream for config in scaled),
@@ -162,6 +169,7 @@ def artifact_inputs(
                 if dataset.split is not None
                 else None
             ),
+            "scaling": dataset.scaling.model_dump(mode="json"),
             "scaled_series": [
                 config.model_dump(
                     mode="json",
@@ -185,6 +193,7 @@ def artifact_inputs(
         )
 
     if isinstance(task, SeriesTask):
+        assert dataset is not None
         input_configs = dataset.series
         stream_config, source_ids = _stream_config_closure(
             (config.stream for config in input_configs),
@@ -216,9 +225,11 @@ def artifact_inputs(
         )
 
     if isinstance(task, CoverageStatsTask) and task.stage == "postprocessed":
+        assert dataset is not None
         return {"postprocess": dataset.postprocess.model_dump(mode="json")}, set()
 
     if isinstance(task, MetadataTask):
+        assert dataset is not None
         inputs: dict[str, object] = {
             "metadata_format_version": VECTOR_METADATA_VERSION,
             "window_mode": dataset.sample.window_mode,
@@ -237,7 +248,7 @@ def artifact_inputs(
     # Their only safe cache boundary is the complete dataset and stream catalog.
     return (
         {
-            "dataset": dataset.model_dump(mode="json"),
+            "dataset": dataset.model_dump(mode="json") if dataset is not None else None,
             "streams": streams.model_dump(mode="json"),
         },
         set(streams.sources),
@@ -268,20 +279,19 @@ def _artifact_digest(
 
 def calculate_artifact_hashes(
     project: ProjectManifest,
-    dataset: DatasetConfig,
+    datasets: Mapping[str, DatasetConfig],
     streams: StreamsConfig,
     graph: ArtifactGraph,
 ) -> ArtifactHashes:
-    if dataset_requires_scaler(dataset) and not any(
-        isinstance(task, ScalerTask) for task in graph.tasks_by_id.values()
-    ):
-        raise ValueError("Required artifact operation 'scaler' is not declared.")
-
+    for dataset_id, config in datasets.items():
+        if dataset_requires_scaler(
+            config
+        ) and "scaler" not in graph.dataset_artifact_keys(dataset_id):
+            raise ValueError(
+                f"Required artifact operation 'dataset.{dataset_id}.scaler' is not declared."
+            )
     base_dir = project.path.parent
-    active_keys = graph.dependency_closure(
-        graph.declared_artifact_keys(),
-        dataset,
-    )
+    active_keys = graph.dependency_closure(graph.declared_artifact_keys())
     graph.validate_producers(active_keys)
     hashes: dict[str, str] = {}
     source_snapshot_cache: dict[str, str] = {}
@@ -306,8 +316,9 @@ def calculate_artifact_hashes(
         dependency_hashes = {
             dependency: hashes[dependency]
             for dependency in graph.definition(key).dependencies
-            if graph.definition(dependency).is_required_for(dataset)
+            if graph.is_active(dependency)
         }
+        dataset = datasets[task.dataset] if task.dataset is not None else None
         inputs, source_ids = artifact_inputs(task, dataset, streams)
         snapshots = {
             source_id: source_snapshot(source_id) for source_id in sorted(source_ids)

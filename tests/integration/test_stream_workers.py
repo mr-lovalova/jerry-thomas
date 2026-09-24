@@ -14,7 +14,6 @@ from jerrythomas.artifacts.series import (
     open_series,
     series_cache_root,
 )
-from jerrythomas.config.tasks.series import SeriesTask
 from jerrythomas.execution.settings import CommandObservability
 from jerrythomas.services.stream_workers import StreamWorkerError
 from jerrythomas.profiles.orchestration import run_profiles
@@ -23,6 +22,9 @@ from tests.helpers.regression import serve_dataset
 
 
 def _write_yaml(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.parent.name == "datasets":
+        value = {"version": "v1", **value}
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
 
 
@@ -38,7 +40,7 @@ def _configure_workers(root: Path, command: str, workers: int) -> None:
 
 
 def _manifest_path(root: Path) -> Path:
-    return root / "build" / SeriesTask().output
+    return root / "build" / "datasets/default/series/manifest.json"
 
 
 def _series_snapshot(root: Path) -> tuple[dict, bytes]:
@@ -81,19 +83,19 @@ def _keyed_project(root: Path) -> Path:
     _write_yaml(
         root / "project.yaml",
         {
-            "schema_version": 6,
+            "schema_version": 7,
             "artifact_revision": 1,
             "paths": {
                 "sources": "sources",
                 "streams": "streams",
                 "profiles": "profiles",
-                "dataset": "dataset.yaml",
+                "datasets": "datasets",
                 "artifacts": "build",
             },
         },
     )
     _write_yaml(
-        root / "dataset.yaml",
+        root / "datasets" / "default.yaml",
         {
             "sample": {"rounding": "floor", "cadence": "1h", "keys": ["id_"]},
             "features": [
@@ -103,7 +105,9 @@ def _keyed_project(root: Path) -> Path:
             ],
         },
     )
-    _write_yaml(root / "profiles" / "build.series.yaml", {"operation": "series"})
+    _write_yaml(
+        root / "profiles" / "build.series.yaml", {"operation": "dataset.default.series"}
+    )
     for stream in ("a", "b", "empty"):
         _write_yaml(
             root / "sources" / f"{stream}.yaml",
@@ -166,7 +170,7 @@ def test_stream_workers_preserve_regression_dataset_with_source_spills(
     # Spawned interpreters discover the same importable plugin through metadata,
     # independently of the pytest-only registration in the parent process.
     monkeypatch.syspath_prepend(str(tmp_path))
-    dataset_path = root / "dataset.yaml"
+    dataset_path = root / "datasets" / "default.yaml"
     dataset = yaml.safe_load(dataset_path.read_text())
     dataset["features"].append(
         {
@@ -406,7 +410,7 @@ def test_stream_warmup_preserves_sample_key_types_without_emitting_rows(
     tmp_path, workers
 ) -> None:
     root = _keyed_project(tmp_path / "project")
-    path = root / "dataset.yaml"
+    path = root / "datasets" / "default.yaml"
     dataset = yaml.safe_load(path.read_text())
     for feature in dataset["features"]:
         feature.pop("collect", None)
@@ -429,7 +433,7 @@ def test_stream_workers_reject_inconsistent_sample_key_types(
 ) -> None:
     root = _keyed_project(tmp_path / "project")
     if sequence_warmup:
-        path = root / "dataset.yaml"
+        path = root / "datasets" / "default.yaml"
         dataset = yaml.safe_load(path.read_text())
         feature = dataset["features"][0]
         feature.pop("collect")

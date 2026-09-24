@@ -43,25 +43,25 @@ def _write_test_project(tmp_path):
     sources_dir = tmp_path / "sources"
     streams_dir = tmp_path / "streams"
     data_dir = tmp_path / "data"
-    for directory in (sources_dir, streams_dir, data_dir):
+    for directory in (sources_dir, streams_dir, data_dir, tmp_path / "datasets"):
         directory.mkdir()
 
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
         """\
-schema_version: 6
+schema_version: 7
 artifact_revision: 1
 name: runtime-compiler-test
 paths:
   sources: sources
   streams: streams
-  dataset: dataset.yaml
+  datasets: datasets
   artifacts: artifacts
 """,
         encoding="utf-8",
     )
-    (tmp_path / "dataset.yaml").write_text(
-        "sample:\n  rounding: ceil\n  cadence: 1h\nfeatures: []\ntargets: []\n",
+    (tmp_path / "datasets" / "default.yaml").write_text(
+        "version: v1\nsample:\n  rounding: ceil\n  cadence: 1h\nfeatures: []\ntargets: []\n",
         encoding="utf-8",
     )
     return project_yaml, sources_dir, streams_dir, data_dir
@@ -94,7 +94,7 @@ map:
             encoding="utf-8",
         )
 
-    runtime = compile_runtime(load_project_definition(project_yaml))
+    runtime = compile_runtime(load_project_definition(project_yaml), "default")
     left = runtime.streams["left"]
     right = runtime.streams["right"]
 
@@ -109,8 +109,8 @@ map:
 
 def test_compiled_runtimes_isolate_mutable_transform_configuration(tmp_path) -> None:
     project_yaml, sources_dir, streams_dir, data_dir = _write_test_project(tmp_path)
-    (tmp_path / "dataset.yaml").write_text(
-        "sample: {rounding: ceil, cadence: 1h}\n"
+    (tmp_path / "datasets" / "default.yaml").write_text(
+        "version: v1\nsample: {rounding: ceil, cadence: 1h}\n"
         "features: [{id: price, stream: selected, field: value}]\n",
         encoding="utf-8",
     )
@@ -148,8 +148,8 @@ def test_compiled_runtimes_isolate_mutable_transform_configuration(tmp_path) -> 
     )
     definition = load_project_definition(project_yaml)
     snapshot = definition.streams.model_dump(mode="json")
-    first = compile_runtime(definition)
-    second = compile_runtime(definition)
+    first = compile_runtime(definition, "default")
+    second = compile_runtime(definition, "default")
     assert [record.value for record in run_stream_pipeline(second, "selected")] == [1]
 
     first.streams["prices"].preprocess[0].comparand.append(3)
@@ -166,7 +166,7 @@ def test_compiled_runtimes_isolate_mutable_transform_configuration(tmp_path) -> 
     assert (
         calculate_artifact_hashes(
             definition.project,
-            definition.dataset,
+            definition.datasets,
             definition.streams,
             definition.artifact_graph,
         )
@@ -178,8 +178,8 @@ def test_compiled_runtimes_isolate_nested_plugin_arguments(
     tmp_path, monkeypatch
 ) -> None:
     project_yaml, sources_dir, streams_dir, data_dir = _write_test_project(tmp_path)
-    (tmp_path / "dataset.yaml").write_text(
-        "sample: {rounding: ceil, cadence: 1h}\n"
+    (tmp_path / "datasets" / "default.yaml").write_text(
+        "version: v1\nsample: {rounding: ceil, cadence: 1h}\n"
         "features: [{id: total, stream: combined, field: value}]\n",
         encoding="utf-8",
     )
@@ -284,9 +284,9 @@ def test_compiled_runtimes_isolate_nested_plugin_arguments(
     definition = load_project_definition(project_yaml)
     snapshot = definition.streams.model_dump(mode="json")
 
-    first = compile_runtime(definition)
+    first = compile_runtime(definition, "default")
     assert definition.streams.model_dump(mode="json") == snapshot
-    second = compile_runtime(definition)
+    second = compile_runtime(definition, "default")
     assert definition.streams.model_dump(mode="json") == snapshot
     expected = [
         (datetime(2024, 1, 1, 0, tzinfo=timezone.utc), 64),
@@ -303,7 +303,7 @@ def test_compiled_runtimes_isolate_nested_plugin_arguments(
     assert (
         calculate_artifact_hashes(
             definition.project,
-            definition.dataset,
+            definition.datasets,
             definition.streams,
             definition.artifact_graph,
         )
@@ -358,7 +358,7 @@ transforms:
         encoding="utf-8",
     )
 
-    runtime = compile_runtime(load_project_definition(project_yaml))
+    runtime = compile_runtime(load_project_definition(project_yaml), "default")
     derived = runtime.streams["filtered"]
 
     assert isinstance(derived, DerivedRuntimeStream)
@@ -416,7 +416,7 @@ transforms:
         encoding="utf-8",
     )
 
-    runtime = compile_runtime(load_project_definition(project_yaml))
+    runtime = compile_runtime(load_project_definition(project_yaml), "default")
     stream = runtime.streams["neutralized"]
 
     assert isinstance(stream, CrossSectionRuntimeStream)
@@ -567,7 +567,7 @@ transforms:
         lambda group, entrypoint: combiners[entrypoint],
     )
 
-    runtime = compile_runtime(load_project_definition(project_yaml))
+    runtime = compile_runtime(load_project_definition(project_yaml), "default")
     records = list(run_stream_pipeline(runtime, "enriched"))
 
     assert [record.ticker for record in records] == ["A"] * 25 + ["B"] * 25
@@ -663,7 +663,7 @@ transforms:
         lambda group, entrypoint: attach_reference,
     )
 
-    runtime = compile_runtime(load_project_definition(project_yaml))
+    runtime = compile_runtime(load_project_definition(project_yaml), "default")
     enriched = runtime.streams["enriched"]
 
     assert isinstance(enriched, BroadcastRuntimeStream)
@@ -798,7 +798,7 @@ combine:
         lambda group, entrypoint: combiners[entrypoint],
     )
 
-    runtime = compile_runtime(load_project_definition(project_yaml))
+    runtime = compile_runtime(load_project_definition(project_yaml), "default")
     reported = runtime.streams["reported"]
     factor_adjusted = runtime.streams["factor_adjusted"]
 
@@ -933,7 +933,7 @@ transforms:
         lambda group, entrypoint: attach_events,
     )
 
-    runtime = compile_runtime(load_project_definition(project_yaml))
+    runtime = compile_runtime(load_project_definition(project_yaml), "default")
     enriched = runtime.streams["enriched"]
 
     assert isinstance(enriched, AsOfRuntimeStream)
@@ -1046,7 +1046,7 @@ combine:
         load_mapper,
     )
 
-    runtime = compile_runtime(load_project_definition(project_yaml))
+    runtime = compile_runtime(load_project_definition(project_yaml), "default")
     pipeline = build_stream_pipeline(runtime, "combined")
     assert pipeline.name == "stream:combined"
     assert pipeline.input.name == "align_inputs"
@@ -1140,7 +1140,7 @@ combine:
         lambda group, entrypoint: attach_next_report,
     )
 
-    runtime = compile_runtime(load_project_definition(project_yaml))
+    runtime = compile_runtime(load_project_definition(project_yaml), "default")
     stream = runtime.streams["next_report"]
     assert isinstance(stream, AsOfRuntimeStream)
     assert stream.direction == "forward"
@@ -1182,7 +1182,7 @@ def test_source_ordering_declaration_reaches_runtime(
         '{"time":"2024-01-01T00:00:00Z","venue":"X","ticker":"A","value":1}\n',
         encoding="utf-8",
     )
-    runtime = compile_runtime(load_project_definition(project_yaml))
+    runtime = compile_runtime(load_project_definition(project_yaml), "default")
     records = run_stream_pipeline(runtime, "prices")
     if presorted:
         with pytest.raises(ValueError, match="violates presorted order"):

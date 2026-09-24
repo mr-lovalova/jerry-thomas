@@ -58,8 +58,8 @@ def test_run_results_identify_committed_files(
     assert set(result.outputs) == set((result.directory / "dataset").iterdir())
     assert all(path.is_file() for path in result.outputs)
     saved = load_run(result.directory)
-    assert saved.metadata.schema_version == 3
-    assert saved.metadata.split == request.definition.dataset.split
+    assert saved.metadata.schema_version == 4
+    assert saved.metadata.split == request.definition.require_dataset("default").split
     assert len(saved.metadata.outputs) == len(result.outputs)
     for output, path in zip(saved.metadata.outputs, result.outputs):
         assert output.profile == "dataset"
@@ -79,7 +79,7 @@ def test_run_results_identify_committed_files(
         assert output.row_count == count
         if limit is not None:
             assert count <= limit
-        if request.definition.dataset.split is None:
+        if request.definition.require_dataset("default").split is None:
             assert output.fold is None
             assert output.output_id is None
         else:
@@ -87,7 +87,7 @@ def test_run_results_identify_committed_files(
             assert output.output_id == f"{output.fold.id}.{output.fold.role}"
             configured_fold = next(
                 fold
-                for fold in request.definition.dataset.split.folds
+                for fold in request.definition.require_dataset("default").split.folds
                 if fold.id == output.fold.id
             )
             assert output.fold.labels == tuple(
@@ -214,7 +214,7 @@ def test_saved_stream_previews_have_output_ids_without_fold_identity(copy_fixtur
     (result,) = run_profiles(request)
     saved = load_run(result.directory)
     assert saved.metadata.preview == "records"
-    assert saved.metadata.split == request.definition.dataset.split
+    assert saved.metadata.split == request.definition.require_dataset("default").split
     assert (
         tuple(output.output_id for output in saved.metadata.outputs)
         == request.jobs[0].output_ids
@@ -241,7 +241,9 @@ def test_saved_split_uses_execution_rules_after_project_changes(
         profile_name="dataset",
         command_observability=CommandObservability(visuals=False),
     )
-    original_split = request.definition.dataset.split.model_dump(mode="json")
+    original_split = request.definition.require_dataset("default").split.model_dump(
+        mode="json"
+    )
     execute = orchestration.execute_runtime_job
 
     def check_started_manifest(command, definition, plan):
@@ -253,11 +255,13 @@ def test_saved_split_uses_execution_rules_after_project_changes(
 
     monkeypatch.setattr(orchestration, "execute_runtime_job", check_started_manifest)
     (result,) = run_profiles(request)
-    dataset_path = root / "dataset.yaml"
+    dataset_path = root / "datasets" / "default.yaml"
     dataset_path.write_text(
         dataset_path.read_text().replace("2024-01-03", "2024-01-02")
     )
-    changed_split = load_project_definition(project_path).dataset.split
+    changed_split = (
+        load_project_definition(project_path).require_dataset("default").split
+    )
     saved = load_run(result.directory)
     assert saved.metadata.split.model_dump(mode="json") == original_split
     key = "2024-01-02T12:00:00Z"

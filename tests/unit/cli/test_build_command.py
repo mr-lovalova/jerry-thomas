@@ -57,38 +57,55 @@ def _dataset_with_feature(*, scale: bool) -> DatasetConfig:
     )
 
 
-def _runtime(artifacts_root: Path) -> SimpleNamespace:
+def _runtime(
+    artifacts_root: Path, *, dataset_id: str | None = "default"
+) -> SimpleNamespace:
     return SimpleNamespace(
         artifacts_root=artifacts_root,
         artifacts=ArtifactRegistry(artifacts_root),
         observe_node_events=True,
         heartbeat_interval_seconds=None,
         execution=ExecutionConfig(),
+        dataset_id=dataset_id,
     )
 
 
 def _write_project(tmp_path: Path) -> Path:
-    for name in ("streams", "sources", "operations", "profiles"):
+    for name in ("streams", "sources", "operations", "profiles", "datasets"):
         (tmp_path / name).mkdir(parents=True, exist_ok=True)
-    (tmp_path / "dataset.yaml").write_text(
-        "sample:\n  rounding: ceil\n  cadence: 1h\nfeatures: []\ntargets: []\n",
+    (tmp_path / "datasets/default.yaml").write_text(
+        "version: v1\nsample:\n  rounding: ceil\n  cadence: 1h\nfeatures: []\ntargets: []\n",
         encoding="utf-8",
     )
     project_path = tmp_path / "project.yaml"
     project_path.write_text(
         "\n".join(
             [
-                "schema_version: 6",
+                "schema_version: 7",
                 "artifact_revision: 1",
                 "paths:",
                 "  streams: ./streams",
                 "  sources: ./sources",
-                "  dataset: ./dataset.yaml",
+                "  datasets: ./datasets",
                 "  artifacts: ./artifacts",
                 "  operations: ./operations",
                 "  profiles: ./profiles",
             ]
         ),
+        encoding="utf-8",
+    )
+    for operation in ("series", "metadata", "scaler", "coverage_stats"):
+        (tmp_path / "operations" / f"{operation}.yaml").write_text(
+            f"kind: artifact\nentrypoint: core.artifact.{operation}\ndataset: default\n",
+            encoding="utf-8",
+        )
+    (tmp_path / "sources" / "source.yaml").write_text(
+        "id: source\nparser: {entrypoint: identity}\n"
+        "loader: {entrypoint: plugin.source}\nfreshness: opaque\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "streams" / "stream.yaml").write_text(
+        "id: stream\nfrom: {source: source}\nmap: {entrypoint: identity}\n",
         encoding="utf-8",
     )
     return project_path
@@ -101,7 +118,7 @@ def _definition(
     definition = load_project_definition(_write_project(tmp_path))
     if dataset is None:
         return definition
-    return replace(definition, dataset=dataset)
+    return replace(definition, datasets={"default": dataset})
 
 
 def _definition_with_local_source(
@@ -122,8 +139,8 @@ def _definition_with_local_source(
         "id: prices\nfrom: {source: prices}\nmap: {entrypoint: identity}\n",
         encoding="utf-8",
     )
-    (tmp_path / "dataset.yaml").write_text(
-        "sample: {rounding: ceil, cadence: 1h}\n"
+    (tmp_path / "datasets/default.yaml").write_text(
+        "version: v1\nsample: {rounding: ceil, cadence: 1h}\n"
         "features:\n"
         "  - {id: price, stream: prices, field: value}\n"
         "targets: []\n",
@@ -288,7 +305,7 @@ def test_report_artifact_plan_logs_not_required(monkeypatch) -> None:
 
 
 def test_report_artifact_plan_keeps_run_details_at_debug(monkeypatch) -> None:
-    task = MetadataTask(id="metadata")
+    task = MetadataTask(dataset="default", id="metadata")
     captured: list[tuple[str, int]] = []
     monkeypatch.setattr(
         build_exec,
@@ -326,7 +343,11 @@ def test_plan_skips_scaler_when_dataset_has_no_scaled_features(
     tmp_path: Path,
 ) -> None:
     definition = _definition(tmp_path, _dataset_with_feature(scale=False))
-    graph = build_artifact_graph([ScalerTask(id="scaler")])
+    graph = build_artifact_graph(
+        [ScalerTask(dataset="default", id="scaler")],
+        datasets=definition.datasets,
+        streams=definition.streams,
+    )
     definition = replace(definition, artifact_graph=graph)
 
     plan = build_exec._plan_build(
@@ -335,7 +356,7 @@ def test_plan_skips_scaler_when_dataset_has_no_scaled_features(
         mode="auto",
     )
 
-    assert plan == build_exec.SkippedBuild(reason="not_required", artifacts=())
+    assert plan == build_exec.SkippedBuild(reason="no_artifacts_selected", artifacts=())
 
 
 def test_plan_builds_only_requested_generic_artifact(
@@ -347,7 +368,11 @@ def test_plan_builds_only_requested_generic_artifact(
         entrypoint="plugin.snapshot",
         output="build/custom.json",
     )
-    graph = build_artifact_graph([task, ScalerTask(id="scaler")])
+    graph = build_artifact_graph(
+        [task, ScalerTask(dataset="default", id="scaler")],
+        datasets=definition.datasets,
+        streams=definition.streams,
+    )
     definition = replace(
         definition,
         artifact_graph=graph,
@@ -372,9 +397,13 @@ def test_plan_builds_only_requested_generic_artifact(
 
 def test_plan_expands_metadata_dependencies(tmp_path: Path) -> None:
     definition = _definition(tmp_path, _dataset_with_feature(scale=False))
-    series = SeriesTask(id="series")
-    metadata = MetadataTask(id="metadata")
-    graph = build_artifact_graph([ScalerTask(id="scaler"), series, metadata])
+    series = SeriesTask(dataset="default", id="series")
+    metadata = MetadataTask(dataset="default", id="metadata")
+    graph = build_artifact_graph(
+        [ScalerTask(dataset="default", id="scaler"), series, metadata],
+        datasets=definition.datasets,
+        streams=definition.streams,
+    )
     definition = replace(definition, artifact_graph=graph)
     plan = build_exec._plan_build(
         definition=definition,
@@ -392,9 +421,11 @@ def test_plan_expands_metadata_dependencies(tmp_path: Path) -> None:
 
 def test_v5_vector_inputs_state_is_not_reused(tmp_path: Path) -> None:
     definition = _definition(tmp_path, _dataset_with_feature(scale=False))
-    series = SeriesTask()
-    metadata = MetadataTask()
-    graph = build_artifact_graph([series, metadata])
+    series = SeriesTask(dataset="default")
+    metadata = MetadataTask(dataset="default")
+    graph = build_artifact_graph(
+        [series, metadata], datasets=definition.datasets, streams=definition.streams
+    )
     definition = replace(definition, artifact_graph=graph)
     previous_state = BuildState()
     _register_artifact(
@@ -425,9 +456,11 @@ def test_v5_vector_inputs_state_is_not_reused(tmp_path: Path) -> None:
 
 def test_plan_skips_current_dependency(tmp_path: Path) -> None:
     definition = _definition(tmp_path, _dataset_with_feature(scale=False))
-    series = SeriesTask(id="series")
-    metadata = MetadataTask(id="metadata")
-    graph = build_artifact_graph([series, metadata])
+    series = SeriesTask(dataset="default", id="series")
+    metadata = MetadataTask(dataset="default", id="metadata")
+    graph = build_artifact_graph(
+        [series, metadata], datasets=definition.datasets, streams=definition.streams
+    )
     definition = replace(definition, artifact_graph=graph)
     state = BuildState()
     _register_artifact(
@@ -509,7 +542,9 @@ def test_plan_rejects_resolved_artifact_that_became_stale(
         entrypoint="plugin.second",
         output="build/second.json",
     )
-    graph = build_artifact_graph([first, second])
+    graph = build_artifact_graph(
+        [first, second], datasets=definition.datasets, streams=definition.streams
+    )
     definition = replace(
         definition,
         artifact_graph=graph,
@@ -537,12 +572,16 @@ def test_plan_rejects_missing_dependency_producer(
     tmp_path: Path,
 ) -> None:
     definition = _definition(tmp_path, _dataset_with_feature(scale=False))
-    graph = build_artifact_graph([MetadataTask(id="metadata")])
+    graph = build_artifact_graph(
+        [MetadataTask(dataset="default", id="metadata")],
+        datasets=definition.datasets,
+        streams=definition.streams,
+    )
     definition = replace(definition, artifact_graph=graph)
 
     with pytest.raises(
         ArtifactResolutionError,
-        match="Required artifact operation 'series' is not declared",
+        match="Required artifact operation 'dataset.default.series' is not declared",
     ):
         build_exec._plan_build(
             definition=definition,
@@ -574,9 +613,11 @@ def test_stale_dependency_rebuilds_current_dependent(
     tmp_path: Path,
 ) -> None:
     definition = _definition(tmp_path, _dataset_with_feature(scale=False))
-    series = SeriesTask(id="series")
-    metadata = MetadataTask(id="metadata")
-    graph = build_artifact_graph([series, metadata])
+    series = SeriesTask(dataset="default", id="series")
+    metadata = MetadataTask(dataset="default", id="metadata")
+    graph = build_artifact_graph(
+        [series, metadata], datasets=definition.datasets, streams=definition.streams
+    )
     definition = replace(definition, artifact_graph=graph)
     state = BuildState()
     _register_artifact(
@@ -604,11 +645,7 @@ def test_stale_dependency_rebuilds_current_dependent(
         SERIES,
         VECTOR_METADATA,
     )
-    assert plan.jobs[0].invalidated_artifacts == (
-        SERIES,
-        VECTOR_METADATA,
-        COVERAGE_STATS,
-    )
+    assert plan.jobs[0].invalidated_artifacts == (SERIES, VECTOR_METADATA)
 
 
 def test_mode_off_rejects_missing_artifact(tmp_path: Path) -> None:
@@ -618,7 +655,9 @@ def test_mode_off_rejects_missing_artifact(tmp_path: Path) -> None:
         entrypoint="plugin.snapshot",
         output="build/snapshot.json",
     )
-    graph = build_artifact_graph([task])
+    graph = build_artifact_graph(
+        [task], datasets=definition.datasets, streams=definition.streams
+    )
     definition = replace(
         definition,
         artifact_graph=graph,
@@ -650,7 +689,9 @@ def test_execute_build_rejects_invalid_operation_result(
         entrypoint="plugin.snapshot",
         output="build/snapshot.json",
     )
-    graph = build_artifact_graph([task])
+    graph = build_artifact_graph(
+        [task], datasets=definition.datasets, streams=definition.streams
+    )
     definition = replace(
         definition,
         artifact_graph=graph,
@@ -667,7 +708,7 @@ def test_execute_build_rejects_invalid_operation_result(
     with pytest.raises(TypeError, match="must return ArtifactOutput"):
         build_exec._execute_build_jobs(
             definition,
-            runtime=_runtime(tmp_path / "artifacts"),
+            runtime=_runtime(tmp_path / "artifacts", dataset_id=None),
             plan=plan,
             settings=_build_settings(),
         )
@@ -679,9 +720,11 @@ def test_execute_build_jobs_persists_completed_job_before_failure(
 ) -> None:
     definition = _definition(tmp_path)
     _patch_stable_artifact_inputs(monkeypatch)
-    series = SeriesTask(id="series")
-    metadata = MetadataTask(id="metadata")
-    graph = build_artifact_graph([series, metadata])
+    series = SeriesTask(dataset="default", id="series")
+    metadata = MetadataTask(dataset="default", id="metadata")
+    graph = build_artifact_graph(
+        [series, metadata], datasets=definition.datasets, streams=definition.streams
+    )
     definition = replace(
         definition,
         artifact_graph=graph,
@@ -759,9 +802,11 @@ def test_execute_build_failure_preserves_previous_persisted_state(
 ) -> None:
     definition = _definition(tmp_path)
     _patch_stable_artifact_inputs(monkeypatch)
-    series = SeriesTask(id="series")
-    metadata = MetadataTask(id="metadata")
-    graph = build_artifact_graph([series, metadata])
+    series = SeriesTask(dataset="default", id="series")
+    metadata = MetadataTask(dataset="default", id="metadata")
+    graph = build_artifact_graph(
+        [series, metadata], datasets=definition.datasets, streams=definition.streams
+    )
     definition = replace(
         definition,
         artifact_graph=graph,
@@ -820,7 +865,7 @@ def test_execute_build_failure_preserves_previous_persisted_state(
 @pytest.mark.parametrize(
     "task",
     [
-        MetadataTask(output="linked/metadata.json"),
+        MetadataTask(dataset="default", output="linked/metadata.json"),
         ArtifactTask(
             id="snapshot",
             entrypoint="plugin.snapshot",
@@ -851,7 +896,9 @@ def test_execute_build_rejects_symlink_escape_before_calling_runner(
         return ArtifactOutput()
 
     _patch_artifact_build(monkeypatch, mutate_outside)
-    graph = build_artifact_graph([task])
+    graph = build_artifact_graph(
+        [task], datasets=definition.datasets, streams=definition.streams
+    )
     definition = replace(
         definition,
         artifact_graph=graph,
@@ -905,7 +952,9 @@ def test_execute_build_preflights_every_output_before_running_any_job(
         return ArtifactOutput()
 
     _patch_artifact_build(monkeypatch, build)
-    graph = build_artifact_graph([first, second])
+    graph = build_artifact_graph(
+        [first, second], datasets=definition.datasets, streams=definition.streams
+    )
     definition = replace(
         definition,
         artifact_graph=graph,
@@ -941,21 +990,25 @@ def test_execute_build_job_invalidates_only_graph_descendants(
 ) -> None:
     definition = _definition(tmp_path)
     _patch_stable_artifact_inputs(monkeypatch)
-    scaler = ScalerTask(id="scaler")
+    scaler = ScalerTask(dataset="default", id="scaler")
     custom = ArtifactTask(
         id="custom_snapshot",
         entrypoint="plugin.snapshot",
         output="build/custom.json",
     )
-    series = SeriesTask(id="series")
+    series = SeriesTask(dataset="default", id="series")
     graph = build_artifact_graph(
         [
             scaler,
             series,
-            MetadataTask(id="metadata"),
-            CoverageStatsTask(id="coverage_stats", stage="postprocessed"),
+            MetadataTask(dataset="default", id="metadata"),
+            CoverageStatsTask(
+                dataset="default", id="coverage_stats", stage="postprocessed"
+            ),
             custom,
-        ]
+        ],
+        datasets=definition.datasets,
+        streams=definition.streams,
     )
     definition = replace(
         definition,
@@ -1111,10 +1164,16 @@ def test_run_build_hydrates_current_dependencies_before_job(
 ) -> None:
     _patch_stable_artifact_inputs(monkeypatch)
     definition = _definition(tmp_path, _dataset_with_feature(scale=False))
-    series = SeriesTask(id="series")
-    metadata = MetadataTask(id="metadata")
-    coverage_stats = CoverageStatsTask(id="coverage_stats", stage="assembled")
-    graph = build_artifact_graph([series, metadata, coverage_stats])
+    series = SeriesTask(dataset="default", id="series")
+    metadata = MetadataTask(dataset="default", id="metadata")
+    coverage_stats = CoverageStatsTask(
+        dataset="default", id="coverage_stats", stage="assembled"
+    )
+    graph = build_artifact_graph(
+        [series, metadata, coverage_stats],
+        datasets=definition.datasets,
+        streams=definition.streams,
+    )
     definition = replace(definition, artifact_graph=graph)
     state = BuildState()
     for task in (series, metadata):
@@ -1151,10 +1210,16 @@ def test_force_build_preserves_artifacts_resolved_by_previous_profile(
 ) -> None:
     _patch_stable_artifact_inputs(monkeypatch)
     definition = _definition(tmp_path, _dataset_with_feature(scale=False))
-    series = SeriesTask(id="series")
-    metadata = MetadataTask(id="metadata")
-    coverage_stats = CoverageStatsTask(id="coverage_stats", stage="postprocessed")
-    graph = build_artifact_graph([series, metadata, coverage_stats])
+    series = SeriesTask(dataset="default", id="series")
+    metadata = MetadataTask(dataset="default", id="metadata")
+    coverage_stats = CoverageStatsTask(
+        dataset="default", id="coverage_stats", stage="postprocessed"
+    )
+    graph = build_artifact_graph(
+        [series, metadata, coverage_stats],
+        datasets=definition.datasets,
+        streams=definition.streams,
+    )
     definition = replace(definition, artifact_graph=graph)
     state = BuildState()
     for task in (series, metadata):
@@ -1204,7 +1269,9 @@ def test_run_build_keeps_loaded_definition_when_config_changes(
         entrypoint="plugin.snapshot",
         output="build/snapshot.json",
     )
-    graph = build_artifact_graph([task])
+    graph = build_artifact_graph(
+        [task], datasets=definition.datasets, streams=definition.streams
+    )
     definition = replace(
         definition,
         artifact_graph=graph,

@@ -15,8 +15,11 @@ from jerrythomas.profiles.request_builder import (
 
 
 def _materialize(root, stream="metrics.linear", name="linear"):
+    (root / "operations" / f"raw-{name}.yaml").write_text(
+        f"kind: runtime\nentrypoint: core.runtime.stream\nstream: {stream}\n"
+    )
     (root / "profiles" / f"materialize.{name}.yaml").write_text(
-        f"stream: {stream}\noutput: exports/{name}.jsonl\n"
+        f"operation: raw-{name}\noutput: exports/{name}.jsonl\n"
     )
     return build_materialize_run_request(
         str(root / "project.yaml"),
@@ -53,7 +56,7 @@ def test_materialize_recipe_preserves_resolved_external_config_not_unused_catalo
     config = recipe.configuration
     assert set(config["sources"]) == {"regression.linear"}
     assert set(config["streams"]) == {"metrics.linear"}
-    assert config["dataset"] is None
+    assert config["datasets"] == {}
     assert config["artifacts"] == {}
     assert config["streams"]["metrics.linear"]["preprocess"][0]["comparand"].startswith(
         "2024-03-01"
@@ -84,10 +87,14 @@ def test_serve_recipe_includes_overrides_and_selected_artifact_identities(copy_f
     (saved,) = run_profiles(request)
     recipe = saved.load_recipe()
     assert recipe.configuration["jobs"][0]["limit"] == 2
-    assert recipe.configuration["dataset"] == request.definition.dataset.model_dump(
-        mode="json"
-    )
-    assert set(recipe.artifacts) == {"series", "metadata", "scaler"}
+    assert recipe.configuration["datasets"][
+        "default"
+    ] == request.definition.require_dataset("default").model_dump(mode="json")
+    assert set(recipe.artifacts) == {
+        "dataset.default.series",
+        "dataset.default.metadata",
+        "dataset.default.scaler",
+    }
     for key, artifact in recipe.artifacts.items():
         assert artifact[
             "expected_config_hash"
@@ -241,10 +248,13 @@ def test_materialize_batch_captures_inputs_after_previous_job_finishes(copy_fixt
     root = copy_fixture("regression_project")
     _materialize(root)
     (root / "profiles" / "materialize.linear.yaml").write_text(
-        "stream: metrics.linear\norder: 1\noutput: exports/linear.jsonl\n"
+        "operation: raw-linear\norder: 1\noutput: exports/linear.jsonl\n"
+    )
+    (root / "operations" / "raw-imported.yaml").write_text(
+        "kind: runtime\nentrypoint: core.runtime.stream\nstream: imported\n"
     )
     (root / "profiles" / "materialize.second.yaml").write_text(
-        "stream: imported\norder: 2\noutput: exports/second.jsonl\n"
+        "operation: raw-imported\norder: 2\noutput: exports/second.jsonl\n"
     )
     (root / "sources" / "imported.yaml").write_text(
         "id: imported\nparser: {entrypoint: core.temporal_record}\n"

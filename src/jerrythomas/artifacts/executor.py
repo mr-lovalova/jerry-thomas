@@ -27,6 +27,7 @@ from jerrythomas.execution.observability import (
 from jerrythomas.plugins import BUILD_OPERATIONS_EP, load_entrypoint
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.definitions import ProjectDefinition
+from jerrythomas.services.runtime_compiler import compile_runtime
 from jerrythomas.services.path_policy import resolve_artifact_output_path
 
 logger = logging.getLogger(__name__)
@@ -111,13 +112,6 @@ def _plan_build(
 
     artifact_hashes = definition.artifact_hashes
 
-    dataset = None
-    if graph.requires_dataset(selected_keys):
-        dataset = definition.dataset
-        selected_keys = set(graph.dependency_closure(selected_roots, dataset))
-    if not selected_keys:
-        return SkippedBuild(reason="not_required", artifacts=())
-
     expanded_artifacts = graph.topological_order(selected_keys)
     try:
         validate_artifact_plan(definition.streams, graph, selected_keys)
@@ -165,16 +159,7 @@ def _plan_build(
             reason="already_resolved",
             artifacts=expanded_artifacts,
         )
-    all_active_keys = (
-        set(
-            graph.dependency_closure(
-                (definition.key for definition in graph.definitions),
-                dataset,
-            )
-        )
-        if dataset is not None
-        else {definition.key for definition in graph.definitions}
-    )
+    all_active_keys = set(graph.dependency_closure(graph.declared_artifact_keys()))
     jobs = tuple(
         ArtifactBuildJob(
             task=graph.tasks_by_id[key],
@@ -214,7 +199,15 @@ def _execute_build_jobs(
         if plan.previous_state is not None
         else BuildState()
     )
+    execution = runtime.execution
+    heartbeat = runtime.heartbeat_interval_seconds
+    observe = runtime.observe_node_events
     for job in plan.jobs:
+        if runtime.dataset_id != job.task.dataset:
+            runtime = compile_runtime(definition, job.task.dataset)
+            runtime.execution = execution
+            runtime.heartbeat_interval_seconds = heartbeat
+            runtime.observe_node_events = observe
         artifact_hash = definition.artifact_hashes.for_artifact(job.task.id)
         with operation_scope(f"build:{job.task.id}"):
             _require_stable_artifact_inputs(
@@ -292,7 +285,7 @@ def _require_stable_artifact_inputs(
 ) -> None:
     current_hashes = calculate_artifact_hashes(
         definition.project,
-        definition.dataset,
+        definition.datasets,
         definition.streams,
         definition.artifact_graph,
     )
@@ -342,11 +335,18 @@ def run_build_if_needed(
     runtime.heartbeat_interval_seconds = (
         settings.observability.heartbeat_interval_seconds
     )
-    _execute_build_jobs(
+    state = _execute_build_jobs(
         definition,
         runtime=runtime,
         plan=plan,
         settings=settings,
+    )
+    hydrate_runtime_artifacts(
+        runtime=runtime,
+        graph=graph,
+        state=state,
+        artifact_hashes=definition.artifact_hashes,
+        artifact_keys=plan.artifacts,
     )
     if resolved_artifacts is not None:
         resolved_artifacts.update(plan.artifacts)

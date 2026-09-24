@@ -1,3 +1,5 @@
+import re
+
 import jerrythomas.config.transforms as transform_config
 from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.dataset.split import HashSplitConfig
@@ -8,7 +10,8 @@ from jerrythomas.config.streams import (
     CrossSectionStreamConfig,
     StreamsConfig,
 )
-from jerrythomas.io.yaml import YamlDocument
+from jerrythomas.io.yaml import YamlDocument, read_yaml_document
+from jerrythomas.services.config_inventory import pipeline_yaml_files
 from jerrythomas.services.definitions import ProjectManifest
 from jerrythomas.services.streams.validation import (
     stream_dependency_closure,
@@ -41,6 +44,32 @@ def dataset_from_document(
     document: YamlDocument,
 ) -> DatasetConfig:
     return DatasetConfig.model_validate(project.resolve_config(document.data))
+
+
+def load_datasets(project: ProjectManifest) -> dict[str, DatasetConfig]:
+    datasets: dict[str, DatasetConfig] = {}
+    for root in project.dataset_dirs:
+        try:
+            paths = pipeline_yaml_files(root)
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            raise FileNotFoundError(f"datasets directory not found: {root}") from exc
+        for path in paths:
+            dataset_id = path.stem
+            if re.fullmatch(r"[a-z0-9_-]+(?:\.[a-z0-9_-]+)*", dataset_id) is None:
+                raise ValueError(
+                    f"Dataset filename '{path.name}' must use a lowercase dataset ID."
+                )
+            if dataset_id in datasets:
+                raise ValueError(f"Duplicate dataset ID '{dataset_id}' at {path}")
+            document = read_yaml_document(path)
+            if "id" in document.data:
+                raise ValueError(
+                    f"{path} must not define id; the filename supplies '{dataset_id}'."
+                )
+            if "version" not in document.data:
+                raise ValueError(f"Dataset '{dataset_id}' must declare version")
+            datasets[dataset_id] = dataset_from_document(project, document)
+    return datasets
 
 
 def validate_dataset_streams(

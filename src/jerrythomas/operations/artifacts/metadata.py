@@ -20,7 +20,7 @@ from jerrythomas.artifacts.models import (
 )
 from jerrythomas.artifacts.output import ArtifactOutput
 from jerrythomas.artifacts.series import SeriesRow, load_series_manifest, open_series
-from jerrythomas.artifacts.specs import SERIES
+from jerrythomas.artifacts.registry import SERIES_SPEC
 from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.dataset.series import SeriesConfig
 from jerrythomas.config.dataset.split import (
@@ -628,8 +628,8 @@ def build_metadata_artifact(
     runtime: Runtime,
     task_cfg: MetadataTask,
 ) -> ArtifactOutput:
-    dataset = runtime.dataset
-    artifact = runtime.artifacts.optional(SERIES)
+    dataset = runtime.require_dataset()
+    artifact = runtime.artifacts.optional(SERIES_SPEC)
     if artifact is None:
         raise RuntimeError("Series artifact is required before metadata.")
     manifest_path = artifact.resolve(runtime.artifacts.root)

@@ -37,7 +37,7 @@ def _write_project_yaml(
 ) -> Path:
     project_yaml = project_root / "project.yaml"
     lines = [
-        "schema_version: 6",
+        "schema_version: 7",
         "artifact_revision: 1",
         "name: sample",
     ]
@@ -48,7 +48,7 @@ def _write_project_yaml(
             "paths:",
             "  streams: streams",
             "  sources: sources",
-            "  dataset: dataset.yaml",
+            "  datasets: datasets",
             f"  artifacts: {artifacts_value}",
             "  operations: operations",
         ]
@@ -64,11 +64,12 @@ def _write_project_yaml(
 
 
 def _write_project_files(project_root: Path) -> None:
+    (project_root / "datasets").mkdir(parents=True, exist_ok=True)
     (project_root / "streams").mkdir(parents=True, exist_ok=True)
     (project_root / "sources").mkdir(parents=True, exist_ok=True)
     (project_root / "operations").mkdir(parents=True, exist_ok=True)
-    (project_root / "dataset.yaml").write_text(
-        "sample:\n  rounding: ceil\n  cadence: 1h\nfeatures: []\ntargets: []\n",
+    (project_root / "datasets" / "default.yaml").write_text(
+        "version: v1\nsample:\n  rounding: ceil\n  cadence: 1h\nfeatures: []\ntargets: []\n",
         encoding="utf-8",
     )
 
@@ -78,8 +79,8 @@ def _use_source(project_root: Path, source_id: str) -> None:
         f"id: tracked\nfrom: {{source: {source_id}}}\nmap: {{entrypoint: map}}\n",
         encoding="utf-8",
     )
-    (project_root / "dataset.yaml").write_text(
-        "sample: {rounding: ceil, cadence: 1h}\n"
+    (project_root / "datasets" / "default.yaml").write_text(
+        "version: v1\nsample: {rounding: ceil, cadence: 1h}\n"
         "features: [{id: value, stream: tracked, field: value}]\n"
         "targets: []\n",
         encoding="utf-8",
@@ -92,7 +93,7 @@ def test_project_requires_schema_version(tmp_path: Path) -> None:
 
     with pytest.raises(
         ValueError,
-        match="Project config requires schema_version: 6",
+        match="Project config requires schema_version: 7",
     ):
         load_project(project_yaml)
 
@@ -116,7 +117,7 @@ def test_project_rejects_unsupported_schema_version(
 
     with pytest.raises(
         ValueError,
-        match=rf"Unsupported project schema version {value}; expected 6",
+        match=rf"Unsupported project schema version {value}; expected 7",
     ):
         load_project(project_yaml)
 
@@ -129,7 +130,7 @@ def test_project_schema_version_must_be_integer(
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(f"schema_version: {value}\n", encoding="utf-8")
 
-    with pytest.raises(TypeError, match="schema_version must be the integer 6"):
+    with pytest.raises(TypeError, match="schema_version must be the integer 7"):
         load_project(project_yaml)
 
 
@@ -521,12 +522,12 @@ def test_project_paths_validate_interpolation_without_declared_variables(
     _write_project_files(tmp_path)
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        """schema_version: 6
+        """schema_version: 7
 artifact_revision: 1
 paths:
   streams: streams
   sources: sources
-  dataset: dataset.yaml
+  datasets: datasets
   artifacts: ${unknown_root}/artifacts
 """,
         encoding="utf-8",

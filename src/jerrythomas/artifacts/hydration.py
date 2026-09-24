@@ -54,7 +54,7 @@ def hydrate_runtime_artifacts_for_pipeline(
 
     graph = definition.artifact_graph
     artifact_roots = graph.declared_artifact_keys()
-    artifact_keys = set(graph.dependency_closure(artifact_roots, definition.dataset))
+    artifact_keys = set(graph.dependency_closure(artifact_roots))
     if not artifact_keys:
         runtime.artifacts.clear()
         return ()

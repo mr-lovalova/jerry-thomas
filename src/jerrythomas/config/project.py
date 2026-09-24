@@ -12,7 +12,7 @@ from pydantic import (
 from jerrythomas.config.constraints import NonEmptyString as ProjectPath
 
 
-PROJECT_SCHEMA_VERSION: Final = 6
+PROJECT_SCHEMA_VERSION: Final = 7
 
 
 class ProjectPaths(BaseModel):
@@ -20,14 +20,16 @@ class ProjectPaths(BaseModel):
 
     streams: ProjectPath | list[ProjectPath]
     sources: ProjectPath | list[ProjectPath]
-    dataset: ProjectPath
+    datasets: ProjectPath | list[ProjectPath] | None = None
     artifacts: ProjectPath
     operations: ProjectPath | None = None
     profiles: ProjectPath = "./profiles"
 
-    @field_validator("streams", "sources")
+    @field_validator("streams", "sources", "datasets")
     @classmethod
-    def require_config_roots(cls, value: str | list[str]) -> str | list[str]:
+    def require_config_roots(
+        cls, value: str | list[str] | None
+    ) -> str | list[str] | None:
         if isinstance(value, list) and not value:
             raise ValueError("project path lists must not be empty")
         return value
@@ -60,7 +62,7 @@ class ProjectGlobals(BaseModel):
 class ProjectConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[6]
+    schema_version: Literal[7]
     artifact_revision: int = Field(strict=True, gt=0)
     name: str | None = None
     variant: str | None = None

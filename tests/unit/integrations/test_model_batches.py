@@ -60,7 +60,7 @@ def test_iter_samples_closes_dataset_pipeline_after_partial_read(
         lambda *_args, **_kwargs: sample_stream(),
     )
 
-    samples = ml.iter_samples("project.yaml")
+    samples = ml.iter_samples("project.yaml", dataset="default")
     assert next(samples) == _sample(("first",), {"value": 1.0})
     samples.close()
 
@@ -74,11 +74,11 @@ def test_iter_samples_runs_selected_fold_and_hydrates_artifacts(
     dataset = _dataset(split=_split(), scale=True)
     runtime = _runtime(tmp_path, dataset)
     _register_folded_metadata(runtime)
-    definition = SimpleNamespace(dataset=dataset)
+    definition = SimpleNamespace(require_dataset=lambda _id: dataset)
     calls: list[tuple[str, object]] = []
 
     monkeypatch.setattr(ml, "load_project_definition", lambda _path: definition)
-    monkeypatch.setattr(ml, "compile_runtime", lambda _definition: runtime)
+    monkeypatch.setattr(ml, "compile_runtime", lambda _definition, _dataset_id: runtime)
     monkeypatch.setattr(
         ml,
         "hydrate_runtime_artifacts_for_pipeline",
@@ -105,9 +105,9 @@ def test_iter_samples_runs_selected_fold_and_hydrates_artifacts(
 
     monkeypatch.setattr(ml, "run_fold_dataset_pipeline", run_fold)
 
-    assert list(ml.iter_samples("project.yaml", output_id="walk_1.train")) == [
-        _sample(("selected",), {"value": -1.0})
-    ]
+    assert list(
+        ml.iter_samples("project.yaml", dataset="default", output_id="walk_1.train")
+    ) == [_sample(("selected",), {"value": -1.0})]
     assert calls == [
         ("hydrate", (runtime, definition)),
         ("fold", ("walk_1", ("walk_1.train",), ("value",))),
@@ -134,7 +134,7 @@ def test_iter_samples_uses_scaler_for_unsplit_scaled_dataset(
 
     monkeypatch.setattr(ml, "run_scaled_dataset_pipeline", run_scaled)
 
-    assert list(ml.iter_samples("project.yaml")) == [
+    assert list(ml.iter_samples("project.yaml", dataset="default")) == [
         _sample(("sample",), {"value": 0.0})
     ]
     assert calls == ["scaled"]
@@ -143,7 +143,9 @@ def test_iter_samples_uses_scaler_for_unsplit_scaled_dataset(
 def test_iter_samples_validates_split_output_before_compilation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    split_definition = SimpleNamespace(dataset=_dataset(split=_split()))
+    split_definition = SimpleNamespace(
+        require_dataset=lambda _id: _dataset(split=_split())
+    )
     monkeypatch.setattr(
         ml,
         "load_project_definition",
@@ -158,7 +160,7 @@ def test_iter_samples_validates_split_output_before_compilation(
             "walk_1.train, walk_1.validation"
         ),
     ):
-        ml.iter_samples("project.yaml")
+        ml.iter_samples("project.yaml", dataset="default")
 
     with pytest.raises(
         ValueError,
@@ -168,9 +170,9 @@ def test_iter_samples_validates_split_output_before_compilation(
             "walk_1.train, walk_1.validation"
         ),
     ):
-        ml.iter_samples("project.yaml", output_id="walk_2.train")
+        ml.iter_samples("project.yaml", dataset="default", output_id="walk_2.train")
 
-    unsplit_definition = SimpleNamespace(dataset=_dataset())
+    unsplit_definition = SimpleNamespace(require_dataset=lambda _id: _dataset())
     monkeypatch.setattr(
         ml,
         "load_project_definition",
@@ -180,7 +182,7 @@ def test_iter_samples_validates_split_output_before_compilation(
         ValueError,
         match="output_id is only valid when dataset.split is configured",
     ):
-        ml.iter_samples("project.yaml", output_id="walk_0.train")
+        ml.iter_samples("project.yaml", dataset="default", output_id="walk_0.train")
 
 
 def test_model_batches_are_lazy_bounded_and_metadata_ordered(
@@ -222,6 +224,7 @@ def test_model_batches_are_lazy_bounded_and_metadata_ordered(
 
     batches = ml.iter_model_batches(
         "project.yaml",
+        dataset="default",
         batch_size=2,
         limit=3,
         dtype="float64",
@@ -264,6 +267,7 @@ def test_model_batches_preserve_feature_and_target_columns(
 
     [batch] = ml.iter_model_batches(
         "project.yaml",
+        dataset="default",
         batch_size=1,
         dtype="float32",
     )
@@ -288,6 +292,7 @@ def test_model_batches_use_none_for_feature_only_targets(
 
     [batch] = ml.iter_model_batches(
         "project.yaml",
+        dataset="default",
         batch_size=4,
         dtype="float32",
     )
@@ -351,6 +356,7 @@ def test_model_batches_reject_invalid_values_with_column_and_sample(
         list(
             ml.iter_model_batches(
                 "project.yaml",
+                dataset="default",
                 batch_size=1,
                 dtype="float64",
             )
@@ -370,7 +376,7 @@ def test_model_batches_reject_flattened_column_collisions(
     )
 
     with pytest.raises(ValueError, match="features produce duplicate model columns"):
-        list(ml.iter_model_batches("project.yaml"))
+        list(ml.iter_model_batches("project.yaml", dataset="default"))
 
 
 def test_model_batches_reject_values_not_representable_by_dtype(
@@ -391,6 +397,7 @@ def test_model_batches_reject_values_not_representable_by_dtype(
         list(
             ml.iter_model_batches(
                 "project.yaml",
+                dataset="default",
                 batch_size=1,
                 dtype="float32",
             )
@@ -411,7 +418,7 @@ def test_model_batches_reject_rows_that_do_not_match_declared_columns(
     )
 
     with pytest.raises(ValueError, match="rows do not match the declared columns"):
-        list(ml.iter_model_batches("project.yaml", batch_size=1))
+        list(ml.iter_model_batches("project.yaml", dataset="default", batch_size=1))
 
 
 def test_closing_model_batches_closes_dataset_pipeline(
@@ -437,6 +444,7 @@ def test_closing_model_batches_closes_dataset_pipeline(
 
     batches = ml.iter_model_batches(
         "project.yaml",
+        dataset="default",
         batch_size=1,
         dtype="float32",
     )
@@ -473,7 +481,7 @@ def test_model_batches_validate_batch_contract(
     message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        list(ml.iter_model_batches("project.yaml", **kwargs))
+        list(ml.iter_model_batches("project.yaml", dataset="default", **kwargs))
 
 
 def _install_batch_pipeline(
@@ -501,7 +509,7 @@ def _use_source(
     monkeypatch.setattr(
         ml._SampleSource,
         "from_project",
-        classmethod(lambda _cls, _project, _output: source),
+        classmethod(lambda _cls, _project, _dataset, _output: source),
     )
 
 
@@ -653,6 +661,7 @@ def _split() -> TimeSplitConfig:
 def _runtime(tmp_path: Path, dataset: DatasetConfig) -> Runtime:
     return Runtime(
         project_yaml=tmp_path / "project.yaml",
+        dataset_id="default",
         artifacts_root=tmp_path / "artifacts",
         dataset=dataset,
     )

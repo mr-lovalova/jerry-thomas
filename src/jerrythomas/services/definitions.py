@@ -26,18 +26,20 @@ class ProjectManifest:
     environment: Mapping[str, str]
     stream_dirs: tuple[Path, ...]
     source_dirs: tuple[Path, ...]
-    dataset_path: Path
+    dataset_dirs: tuple[Path, ...]
     artifacts_root: Path
     operations_dir: Path | None
     profiles_dir: Path
 
-    def resolve_config(self, value: Any) -> Any:
+    def resolve_config(
+        self, value: Any, *, variables: Mapping[str, Any] | None = None
+    ) -> Any:
         value = resolve_config_refs(
             value,
             project_yaml=self.path,
             env=self.environment,
         )
-        return interpolate_config_vars(value, self.variables)
+        return interpolate_config_vars(value, {**self.variables, **(variables or {})})
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,8 +56,20 @@ class ArtifactHashes:
 @dataclass(frozen=True, slots=True)
 class ProjectDefinition:
     project: ProjectManifest
-    dataset: DatasetConfig
+    datasets: Mapping[str, DatasetConfig]
     streams: StreamsConfig
     artifact_graph: ArtifactGraph
     runtime_operations: tuple[RuntimeTask, ...]
     artifact_hashes: ArtifactHashes
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "datasets", MappingProxyType(dict(self.datasets)))
+
+    def require_dataset(self, dataset_id: str) -> DatasetConfig:
+        try:
+            return self.datasets[dataset_id]
+        except KeyError as exc:
+            available = ", ".join(sorted(self.datasets)) or "(none)"
+            raise ValueError(
+                f"Unknown dataset '{dataset_id}'. Available datasets: {available}"
+            ) from exc

@@ -39,12 +39,12 @@ def _write_project_yaml(
     streams_dir.mkdir(parents=True, exist_ok=True)
     content = textwrap.dedent(
         f"""
-        schema_version: 6
+        schema_version: 7
         artifact_revision: 1
         paths:
           streams: {streams_dir}
           sources: {sources_dir}
-          dataset: dataset.yaml
+          datasets: datasets
           artifacts: {streams_dir.parent / "build"}
         globals: {{}}
         """
@@ -102,7 +102,7 @@ def test_stream_scaffold_uses_project_paths(
     """Stream scaffold should use the project's streams/sources paths inside the plugin repo."""
     plugin_root = _create_plugin(tmp_path)
     # Create a project with explicit streams and sources paths.
-    dataset_root = plugin_root / "your-dataset"
+    dataset_root = plugin_root / "your-project"
     sources_dir = dataset_root / "sources"
     streams_dir = dataset_root / "streams"
     project_yaml = dataset_root / "project.yaml"
@@ -130,7 +130,7 @@ def test_stream_identity_mapper_skips_scaffold(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     plugin_root = _create_plugin(tmp_path)
-    dataset_root = plugin_root / "your-dataset"
+    dataset_root = plugin_root / "your-project"
     sources_dir = dataset_root / "sources"
     streams_dir = dataset_root / "streams"
     _write_project_yaml(dataset_root / "project.yaml", sources_dir, streams_dir)
@@ -155,7 +155,7 @@ def test_source_stream_name_abort_does_not_write_config(
     tmp_path: Path,
 ) -> None:
     plugin_root = _create_plugin(tmp_path)
-    dataset_root = plugin_root / "your-dataset"
+    dataset_root = plugin_root / "your-project"
     sources_dir = dataset_root / "sources"
     streams_dir = dataset_root / "streams"
     _write_project_yaml(dataset_root / "project.yaml", sources_dir, streams_dir)
@@ -200,7 +200,7 @@ def test_source_stream_preserves_source_variant_in_default_stream_id(
     tmp_path: Path,
 ) -> None:
     plugin_root = _create_plugin(tmp_path)
-    dataset_root = plugin_root / "your-dataset"
+    dataset_root = plugin_root / "your-project"
     sources_dir = dataset_root / "sources"
     streams_dir = dataset_root / "streams"
     _write_project_yaml(dataset_root / "project.yaml", sources_dir, streams_dir)
@@ -227,7 +227,7 @@ def test_source_stream_selects_existing_mapper_reference(
             f'\n[project.entry-points."{MAPPERS_EP}"]\n'
             'weather = "sample_plugin.mappers.weather:map_weather"\n'
         )
-    dataset_root = plugin_root / "your-dataset"
+    dataset_root = plugin_root / "your-project"
     sources_dir = dataset_root / "sources"
     streams_dir = dataset_root / "streams"
     _write_project_yaml(dataset_root / "project.yaml", sources_dir, streams_dir)
@@ -252,7 +252,7 @@ def test_source_stream_accepts_custom_mapper_reference(
     tmp_path: Path,
 ) -> None:
     plugin_root = _create_plugin(tmp_path)
-    dataset_root = plugin_root / "your-dataset"
+    dataset_root = plugin_root / "your-project"
     sources_dir = dataset_root / "sources"
     streams_dir = dataset_root / "streams"
     _write_project_yaml(dataset_root / "project.yaml", sources_dir, streams_dir)
@@ -289,7 +289,7 @@ def test_aligned_stream_scaffold_writes_ordered_inputs(
     tmp_path: Path,
 ) -> None:
     plugin_root = _create_plugin(tmp_path)
-    dataset_root = plugin_root / "your-dataset"
+    dataset_root = plugin_root / "your-project"
     sources_dir = dataset_root / "sources"
     streams_dir = dataset_root / "streams"
     _write_project_yaml(dataset_root / "project.yaml", sources_dir, streams_dir)
@@ -334,7 +334,7 @@ def test_aligned_stream_scaffold_selects_registered_combiner(
         + 'air_density = "sample_plugin.combiners:air_density"\n',
         encoding="utf-8",
     )
-    dataset_root = plugin_root / "your-dataset"
+    dataset_root = plugin_root / "your-project"
     sources_dir = dataset_root / "sources"
     streams_dir = dataset_root / "streams"
     _write_project_yaml(dataset_root / "project.yaml", sources_dir, streams_dir)
@@ -362,7 +362,7 @@ def test_broadcast_stream_scaffold_selects_partitioned_and_global_inputs(
     tmp_path: Path,
 ) -> None:
     plugin_root = _create_plugin(tmp_path)
-    dataset_root = plugin_root / "your-dataset"
+    dataset_root = plugin_root / "your-project"
     sources_dir = dataset_root / "sources"
     streams_dir = dataset_root / "streams"
     project_yaml = dataset_root / "project.yaml"

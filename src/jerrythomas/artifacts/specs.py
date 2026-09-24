@@ -15,9 +15,6 @@ class ArtifactDefinition:
     dependencies: tuple[str, ...] = ()
     required_if: Callable[[DatasetConfig], bool] | None = None
 
-    def requires_dataset(self) -> bool:
-        return self.required_if is not None
-
     def is_required_for(self, dataset: DatasetConfig) -> bool:
         if self.required_if is None:
             return True

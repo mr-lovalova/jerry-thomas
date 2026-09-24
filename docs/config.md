@@ -1,21 +1,21 @@
 # Configuration
 
-For upgrades from v10, see [Migrating to v11](migrations/v11.md).
+For upgrades from v11, see [Migrating to v12](migrations/v12.md).
 
-### Dataset Project (YAML Config)
+### Project Catalog (YAML Config)
 
-These live under the dataset “project root” directory (the folder containing `project.yaml`):
+These live under the project root directory (the folder containing `project.yaml`):
 
 - `project.yaml`: paths + globals (single source of truth).
 - `sources/*.yaml`: raw sources (loader + parser wiring).
 - `streams/*.yaml`: source-backed, derived, exact/as-of fan-in, or aligned
   canonical streams.
-- `dataset.yaml`: sample, feature/target, split, and postprocess policy.
+- `datasets/<id>.yaml`: a named dataset’s version, sample, feature/target, split, scaling, and postprocess policy.
 - `profiles/serve.<name>.yaml`: serve profiles.
 - `profiles/build.<name>.yaml`: build profiles.
 - `profiles/inspect.<name>.yaml`: inspect profiles.
 - `profiles/materialize.<name>.yaml`: durable stream-output profiles.
-- `operations/*.yaml`: optional core-operation overrides and custom operations.
+- `operations/*.yaml`: explicit operations bound to datasets or streams.
 
 ### Configuration & Resolution Order
 
@@ -33,20 +33,20 @@ options are merged in the following order (highest precedence first):
 
 ## YAML Config Reference
 
-All dataset configuration is rooted at a single `project.yaml` file. Other YAML files are discovered via `project.paths.*` (relative to `project.yaml` unless absolute).
+The shared source, stream, dataset, and operation catalogs are rooted at one `project.yaml` file. Other YAML files are discovered via `project.paths.*` (relative to `project.yaml` unless absolute).
 
 ### `project.yaml`
 
 ```yaml
-schema_version: 6
+schema_version: 7
 artifact_revision: 1
 name: default
 paths:
   streams: ./streams
   sources: ./sources
-  dataset: dataset.yaml
+  datasets: ./datasets
   artifacts: ../artifacts/${project_name}
-  # operations: ./operations # optional; core operations need no declarations
+  operations: ./operations
   profiles: ./profiles
 globals:
   start_time: 2021-01-01T00:00:00Z
@@ -78,12 +78,14 @@ globals:
 - External references use `${env:NAME}`. Resolution checks the process
   environment first and then an optional project-root `.env` file.
 - New scaffolded dataset projects include a `.env.example` next to `project.yaml`.
-- `paths.operations` optionally points to `operations/*.yaml`. Omit it when the
-  built-in operations are sufficient. When configured, the directory must exist.
-  Core artifact operations are `scaler`, `series`, `metadata`, and
-  `coverage_stats`; core runtime operations are `dataset`, `coverage`, and
-  `matrix`.
-  Files override core settings or declare custom operations.
+- `paths.datasets` is optional and accepts one directory or a list. Each YAML
+  filename supplies a dataset ID; duplicate IDs are rejected. Omit it for a
+  stream-only project. Dataset files contain `version` (default: `v1`).
+- `paths.operations` optionally points to explicit operations. Each file supplies
+  `kind`, `entrypoint`, and a `dataset` or `stream` binding where required.
+  Jerry supplies each dataset’s artifact operations as `dataset.<id>.series`,
+  `dataset.<id>.scaler`, `dataset.<id>.metadata`, and `dataset.<id>.coverage_stats`.
+  Runtime operations are declared explicitly.
 - `paths.profiles` points to profile specs grouped by type:
   `profiles/serve.<name>.yaml`, `profiles/build.<name>.yaml`,
   `profiles/inspect.<name>.yaml`, and `profiles/materialize.<name>.yaml`.
@@ -96,8 +98,8 @@ globals:
   `enabled: false` excludes a profile from the default batch, but an explicit
   `--profile <name>` still selects it.
 - Dataset split label names are free-form: match the keys declared in
-  `dataset.yaml:split.ratios` (hash) or the IDs declared in
-  `dataset.yaml:split.intervals` (time).
+  `datasets/default.yaml:split.ratios` (hash) or the IDs declared in
+  `datasets/default.yaml:split.intervals` (time).
 - Dataset output IDs are `<fold-id>.<role>`, where role is `train`,
   `validation`, or `test`.
 
@@ -105,7 +107,7 @@ globals:
 
 ```yaml
 # profiles/serve.dataset.yaml
-operation: dataset # core runtime operation
+operation: dataset # declared in operations/dataset.yaml
 # include_outputs: [holdout.train, holdout.test] # optional fold outputs
 output:
   transport: fs # stdout | fs; configured split output requires fs
@@ -158,7 +160,7 @@ throttle_ms: null # milliseconds to sleep between emitted samples
 - Output values use `None` as the canonical missing value. A transient floating
   `NaN` is emitted as null (`None` in pickle and an empty CSV cell); positive
   and negative infinity fail the output operation.
-- A full dataset serve with `dataset.yaml:split` writes one output file per
+- A full dataset serve with `datasets/default.yaml:split` writes one output file per
   configured fold role, using profile-qualified filenames such as
   `dataset.holdout.train.jsonl`. `include_outputs` optionally narrows that set
   using the same `<fold-id>.<role>` IDs. Split fanout requires filesystem
@@ -195,7 +197,7 @@ throttle_ms: null # milliseconds to sleep between emitted samples
 ```yaml
 # profiles/materialize.adv.20.yaml
 order: 10
-stream: adv.20
+operation: materialize_adv
 output: ${data_root}/features/liquidity/adv/20.jsonl
 overwrite: true
 # observability:
@@ -204,10 +206,9 @@ overwrite: true
 ```
 
 - `jerry materialize` runs all enabled materialize profiles in `order`;
-  `--profile` selects one. Unlike serve and inspect profiles, these profiles
-  identify a stream directly and do not reference an operation.
-- CLI `--output` overrides the selected profile and requires `--profile`; the
-  profile remains the source of the stream identity.
+  `--profile` selects one. Each profile references a `core.runtime.stream`
+  operation whose `stream` identifies the input.
+- CLI `--output` overrides the selected profile and requires `--profile`.
 - Relative profile outputs resolve from `project.yaml`; relative CLI `--output`
   values resolve from the workspace root, or the current directory without a
   workspace. A `.jsonl` path writes plain JSONL; `.jsonl.gz` writes gzip JSONL.
@@ -229,7 +230,7 @@ overwrite: true
 
 ```yaml
 # profiles/build.metadata.yaml
-operation: metadata # required; artifact operation ID to execute
+operation: dataset.default.metadata # artifact operation ID
 artifact_mode: auto # auto | rebuild | require_current
 # enabled: true # optional; profile-level switch
 # Optional overrides:
@@ -245,8 +246,8 @@ artifact_mode: auto # auto | rebuild | require_current
 ```
 
 - Build profiles are orchestration profiles; they do not replace operation definitions.
-- `operation` selects the artifact operation ID for that profile (`metadata`,
-  `scaler`, `coverage_stats`, ...). Selected build profiles must reference
+- `operation` selects an artifact operation ID, such as
+  `dataset.default.metadata`. Selected build profiles must reference
   distinct operations.
 - Build profile `observability.logging.outputs[].path` values are resolved relative to the dataset project root (`project.yaml` directory).
 - `jerry build` runs enabled build profiles when they exist;
@@ -267,8 +268,10 @@ artifact_mode: auto # auto | rebuild | require_current
 - `execution` is command-wide and is not accepted in concrete profiles.
   Serve, inspect, and materialize `artifact_mode` is likewise defaults-only.
 - Defaults-level `observability` configures the shared prerequisite phase as
-  well as providing profile defaults. Concrete observability overrides apply
-  only to that profile.
+  well as providing profile defaults. Shared prerequisite logs have no selected
+  dataset, so their paths cannot use `${dataset_id}` or `${dataset_version}`.
+  Put dataset-specific log paths in concrete profiles.
+  Concrete observability overrides apply only to that profile.
 - Profile-level setting precedence is CLI > concrete profile >
   `<kind>.defaults.yaml` > built-ins. Command-wide `artifact_mode` precedence is
   CLI > `<command>.defaults.yaml` > `auto`.
@@ -325,16 +328,26 @@ aggregate preparation progress. The final series merge has shared progress.
 ### Operations (`operations/*.yaml`)
 
 ```yaml
-# operations/coverage.yaml — optional core override
+# operations/coverage.yaml
+kind: runtime
+entrypoint: core.runtime.coverage
+dataset: default
 options:
   threshold: 0.8
 
-# operations/matrix.yaml — optional bounded matrix override
+# operations/matrix.yaml
+kind: runtime
+entrypoint: core.runtime.matrix
+dataset: default
 options:
   stage: assembled
   max_cells: 250000
 
-# operations/coverage_stats.yaml — optional summary-stage override
+# operations/coverage_stats.yaml
+kind: artifact
+entrypoint: core.artifact.coverage_stats
+dataset: default
+output: summaries/default.json
 stage: assembled
 
 # operations/schedule.yaml — explicit expected-timestamp artifact
@@ -351,19 +364,20 @@ requires: [custom_artifact]
 options: {}
 ```
 
-- Stable core operations are registered by Jerry and need no YAML declarations.
+- Dataset artifact defaults are registered by Jerry. Runtime and stream
+  operations require explicit declarations; filenames are unrestricted operation IDs.
 - A schedule is source-specific and therefore remains an explicit artifact
-  operation rather than a core override. Its required `partition_by` must match
+  operation. Its required `partition_by` must match
   each consuming stream; an empty list means one global schedule. Streams
   reference it with
   `{ operation: ensure_schedule, schedule: schedule }`. See
   [Artifacts](artifacts.md) for completion behavior and migration details.
 - Each file contains one mapping, and its filename supplies the operation ID.
-  Do not repeat `id`. Core overrides also omit `kind` and `entrypoint`.
-- Custom operations declare `kind: artifact|runtime` and an `entrypoint`.
+  Do not repeat `id`. Every explicit operation declares `kind: artifact|runtime`
+  and `entrypoint`; built-in dataset operations also declare `dataset`.
 - Runtime operations are executable units; profiles reference them via
   `operation`.
-- Core operations use reserved `core.runtime.*` identifiers and call their typed
+- Built-in runtime entrypoints use `core.runtime.*` and call their typed
   implementations directly. A custom runtime operation's `entrypoint` must
   resolve in the `jerrythomas.operations.runtime` entry-point group.
 - `requires` declares additional prerequisite artifact operation IDs for custom or
@@ -371,12 +385,12 @@ options: {}
   have available producer operations.
 - Custom artifact operations accept `kind`, `entrypoint`, and `output`, with
   their ID supplied by the filename. They do not accept `options` or `requires`;
-  their cache hashes conservatively cover the complete dataset and stream catalog.
+  their cache hashes cover their bound dataset and relevant catalog.
 - Built-in runtime operation options are entrypoint-specific:
   - The `dataset` operation uses `core.runtime.dataset` internally and accepts
     no operation options. Limit, preview, throttle, output, and visuals can be
     set by the serve profile or CLI. Dataset split output comes from
-    `dataset.yaml`; `include_outputs` can narrow it. Preview, throttle, and split
+    `datasets/default.yaml`; `include_outputs` can narrow it. Preview, throttle, and split
     output are not accepted by other runtime operations.
   - `core.runtime.coverage`: optional `threshold` between `0` and `1`
     (default: `0.95`). Results are ordered from lowest to highest coverage.
@@ -393,15 +407,23 @@ options: {}
   limit)`. It returns one `RuntimeOutput`, or `None`; shared persistence applies
   the profile output. Runtime results cannot choose output paths.
 
-Jerry 7 names the built-in dataset runtime consistently. Explicit
-`core.runtime.pipeline` references become `core.runtime.dataset`; Python users
-replace `OperationTask` with `RuntimeTask`, `PipelineTask` with `DatasetTask`,
-and `run_pipeline_operation` with `run_dataset_operation`. Normal
-`operation: dataset` profiles require no change, and this rename does not
-invalidate artifacts.
+For example, a serve operation and a materialize operation are explicit:
 
-Jerry 8 gives custom runtime plugins their own task type. Plugin implementations
-replace `RuntimeTask` with `PluginRuntimeTask`; operation YAML is unchanged.
+```yaml
+# operations/dataset.yaml
+kind: runtime
+entrypoint: core.runtime.dataset
+dataset: default
+
+# operations/materialize_adv.yaml
+kind: runtime
+entrypoint: core.runtime.stream
+stream: adv.20
+```
+
+Profiles may use `${dataset_id}` and `${dataset_version}` in output settings
+resolved from their selected operation. Project variables remain shared catalog
+configuration; dataset selection does not redefine shared streams.
 
 ### Workspace Routing (`jerry.yaml`)
 
@@ -410,13 +432,13 @@ Create an optional `jerry.yaml` in the directory where you run the CLI to share 
 ```yaml
 plugin_root: lib/my-datapipeline # active plugin workspace (relative to this file)
 
-# Dataset aliases for --dataset; values may be dirs (auto-append project.yaml).
-datasets:
-  your-dataset: lib/my-datapipeline/your-dataset/project.yaml
-default_dataset: your-dataset
+# Project aliases for --project; values may be dirs (auto-append project.yaml).
+projects:
+  your-project: lib/my-datapipeline/your-project/project.yaml
+default_project: your-project
 ```
 
-`jerry.yaml` sits near the root of your workspace and is only used for workspace routing (`plugin_root`, dataset aliases, default dataset).
+`jerry.yaml` sits near the root of your workspace and is only used for workspace routing (`plugin_root`, project aliases, default project).
 - Command/runtime settings belong in profile files under `profiles/`.
 - Execution-scoped logs (`scope: EXECUTION`) are configured on profiles or via
   CLI `--log-output execution[:<relative-path>]`.
@@ -741,7 +763,7 @@ combine:
 Dataset stays minimal — features only reference the aligned stream:
 
 ```yaml
-# dataset.yaml
+# datasets/default.yaml
 sample:
   rounding: ceil
   cadence: 1h
@@ -771,7 +793,7 @@ Notes:
   returns one record or `None` to skip that key.
 - The aligned stream outputs records; its own `transforms` apply afterward.
 
-### `dataset.yaml`
+### `datasets/<id>.yaml`
 
 Defines which canonical streams become features and targets and how samples are grouped.
 
@@ -972,21 +994,21 @@ postprocess:
 - Postprocess does not mutate values. Configure missing-value repair on the
   ordered record stream before feature extraction.
 
-### Scaler Operation Override
+### Dataset Scaling
 
-The core scaler already has the defaults below. Create
-`operations/scaler.yaml` only to change them:
+Scaling policy belongs to the dataset and uses these defaults:
 
 ```yaml
-output: build/scaler.json
-with_mean: true
-with_std: true
-epsilon: 1.0e-12
+# datasets/default.yaml
+scaling:
+  with_mean: true
+  with_std: true
+  epsilon: 1.0e-12
 ```
 
 - An unsplit dataset stores one standard scaler fitted from all samples. A split
   dataset stores one scaler per dataset fold, fitted from that fold's `train`
-  labels. Fold definitions belong only in `dataset.yaml`; the scaler operation
+  labels. Fold definitions belong only in `datasets/default.yaml`; the scaler operation
   does not duplicate split policy.
 - `with_mean`, `with_std`, and positive finite `epsilon` are build-time options
   stored in the artifact and used unchanged at runtime.

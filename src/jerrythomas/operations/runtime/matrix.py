@@ -18,7 +18,7 @@ def run_matrix_operation(
     limit: int | None = None,
 ) -> RuntimeOutput:
     options = task.options
-    dataset = runtime.dataset
+    dataset = runtime.require_dataset()
     metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     schema = metadata.catalog
     key_plan = require_metadata_key_plan(

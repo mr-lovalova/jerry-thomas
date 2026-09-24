@@ -106,8 +106,9 @@ partition_by: [ticker]
 """,
         encoding="utf-8",
     )
-    (project_root / "dataset.yaml").write_text(
+    (project_root / "datasets/default.yaml").write_text(
         """\
+version: v1
 sample:
   rounding: ceil
   cadence: 1d

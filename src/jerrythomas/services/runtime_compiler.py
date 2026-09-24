@@ -130,8 +130,11 @@ def _compile_combined_stream(
 def _compile_runtime(
     project_yaml: Path,
     artifacts_root: Path,
-    dataset: DatasetConfig,
+    dataset: DatasetConfig | None,
     configuration: StreamsConfig,
+    *,
+    dataset_id: str | None = None,
+    artifact_aliases: dict[str, str] | None = None,
 ) -> Runtime:
     blueprint = configuration.model_copy(deep=True)
     streams = blueprint.model_copy(deep=True)
@@ -165,18 +168,28 @@ def _compile_runtime(
     return Runtime(
         project_yaml=project_yaml,
         artifacts_root=artifacts_root,
-        dataset=dataset.model_copy(deep=True),
+        dataset=dataset.model_copy(deep=True) if dataset is not None else None,
+        dataset_id=dataset_id,
+        artifact_aliases=dict(artifact_aliases or {}),
         streams=runtime_streams,
         _stream_configs=blueprint,
     )
 
 
-def compile_runtime(definition: ProjectDefinition) -> Runtime:
+def compile_runtime(
+    definition: ProjectDefinition, dataset_id: str | None = None
+) -> Runtime:
     return _compile_runtime(
         definition.project.path,
         definition.project.artifacts_root,
-        definition.dataset,
+        definition.require_dataset(dataset_id) if dataset_id is not None else None,
         definition.streams,
+        dataset_id=dataset_id,
+        artifact_aliases=(
+            dict(definition.artifact_graph.dataset_artifact_keys(dataset_id))
+            if dataset_id is not None
+            else {}
+        ),
     )
 
 
@@ -207,7 +220,13 @@ def snapshot_runtime(runtime: Runtime, stream_ids: Iterable[str]) -> RuntimeSnap
     return RuntimeSnapshot(
         project_yaml=runtime.project_yaml,
         artifacts_root=runtime.artifacts_root,
-        dataset=runtime.dataset.model_copy(deep=True),
+        dataset=(
+            runtime.dataset.model_copy(deep=True)
+            if runtime.dataset is not None
+            else None
+        ),
+        dataset_id=runtime.dataset_id,
+        artifact_aliases=dict(runtime.artifact_aliases),
         execution=runtime.execution.model_copy(deep=True),
         streams=streams,
         artifact_registry_root=runtime.artifacts.root,
@@ -224,11 +243,15 @@ def compile_runtime_snapshot(snapshot: RuntimeSnapshot) -> Runtime:
         snapshot.artifacts_root,
         snapshot.dataset,
         snapshot.streams,
+        dataset_id=snapshot.dataset_id,
+        artifact_aliases=snapshot.artifact_aliases,
     )
     runtime.execution = snapshot.execution.model_copy(update={"workers": 1}, deep=True)
     runtime.heartbeat_interval_seconds = snapshot.heartbeat_interval_seconds
     runtime.observe_node_events = snapshot.observe_node_events
-    runtime.artifacts = ArtifactRegistry(snapshot.artifact_registry_root)
+    runtime.artifacts = ArtifactRegistry(
+        snapshot.artifact_registry_root, aliases=runtime.artifact_aliases
+    )
     for key, record in snapshot.artifact_registrations.items():
         runtime.artifacts.register(
             key, record.relative_path, deepcopy(dict(record.meta))

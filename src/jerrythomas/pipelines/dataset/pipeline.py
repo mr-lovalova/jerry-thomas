@@ -48,7 +48,7 @@ def resolve_fold_output_plans(
     runtime: Runtime,
     output_ids: Sequence[str],
 ) -> tuple[FoldOutputPlan, ...]:
-    split = runtime.dataset.split
+    split = runtime.require_dataset().split
     if split is None:
         raise ValueError("Fold outputs require dataset split configuration.")
 
@@ -189,7 +189,7 @@ def build_dataset_pipeline(
 ) -> Pipeline:
     pipeline = build_sample_pipeline(runtime, schema, key_plan)
     postprocess = build_postprocess_plan(
-        runtime.dataset.postprocess,
+        runtime.require_dataset().postprocess,
         schema,
     )
     return replace(
@@ -243,7 +243,7 @@ def run_fold_outputs_pipeline(
     runtime: Runtime,
     outputs: Sequence[FoldOutputPlan],
 ) -> Iterator[tuple[str, Sample]]:
-    dataset = runtime.dataset
+    dataset = runtime.require_dataset()
     split = dataset.split
     if split is None:
         raise ValueError("Fold dataset output requires dataset split configuration.")
@@ -349,7 +349,7 @@ def _sample_scaler(
     runtime: Runtime,
     artifact: StandardScalerArtifact,
 ) -> SampleScaler:
-    dataset = runtime.dataset
+    dataset = runtime.require_dataset()
     return SampleScaler(
         artifact,
         scaled_feature_ids=tuple(

@@ -1,3 +1,6 @@
+from collections.abc import Mapping
+
+from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.tasks.base import (
     ArtifactTask,
     PluginRuntimeTask,
@@ -12,82 +15,46 @@ from jerrythomas.config.tasks.metadata import MetadataTask
 from jerrythomas.config.tasks.scaler import ScalerTask
 from jerrythomas.config.tasks.schedule import ScheduleTask
 from jerrythomas.config.tasks.series import SeriesTask
+from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.services.config_inventory import pipeline_yaml_files
 from jerrythomas.services.definitions import ProjectManifest
 from jerrythomas.io.yaml import YamlDocument, read_yaml_document
 
-CORE_OPERATION_MODELS: dict[str, type[Task]] = {
+
+DATASET_ARTIFACT_MODELS: dict[str, type[ArtifactTask]] = {
     "scaler": ScalerTask,
     "series": SeriesTask,
     "metadata": MetadataTask,
     "coverage_stats": CoverageStatsTask,
-    "dataset": DatasetTask,
-    "coverage": CoverageTask,
-    "matrix": MatrixTask,
 }
 CORE_RUNTIME_MODELS: dict[str, type[RuntimeTask]] = {
     "core.runtime.dataset": DatasetTask,
     "core.runtime.coverage": CoverageTask,
     "core.runtime.matrix": MatrixTask,
-}
-CORE_ARTIFACT_IDS_BY_ENTRYPOINT = {
-    "core.artifact.scaler": "scaler",
-    "core.artifact.series": "series",
-    "core.artifact.metadata": "metadata",
-    "core.artifact.coverage_stats": "coverage_stats",
+    "core.runtime.stream": StreamTask,
 }
 
 
-def _core_operations() -> list[Task]:
-    return [
-        model.model_validate({"id": operation_id})
-        for operation_id, model in CORE_OPERATION_MODELS.items()
-    ]
-
-
-def _custom_operation(operation_id: str, entry: dict[str, object]) -> Task:
-    kind = entry.get("kind")
-    entrypoint = entry.get("entrypoint")
-    if isinstance(entrypoint, str) and entrypoint != entrypoint.strip():
-        raise ValueError(
-            f"Custom operation '{operation_id}' entrypoint must not contain "
-            "outer whitespace."
-        )
-    if kind == "runtime":
-        model: type[RuntimeTask] = PluginRuntimeTask
-        if isinstance(entrypoint, str):
-            core_model = CORE_RUNTIME_MODELS.get(entrypoint)
-            if core_model is not None:
-                model = core_model
-            elif entrypoint.startswith("core.runtime."):
-                supported = ", ".join(sorted(CORE_RUNTIME_MODELS))
-                raise ValueError(
-                    f"Unsupported core runtime entrypoint '{entrypoint}'. "
-                    f"Supported entrypoints: {supported}."
-                )
-        return model.model_validate({"id": operation_id, **entry})
-    if kind != "artifact":
-        raise ValueError(
-            f"Custom operation '{operation_id}' must set kind to artifact or runtime."
-        )
-    if entrypoint == "core.artifact.schedule":
-        return ScheduleTask.model_validate({"id": operation_id, **entry})
-    core_operation_id = (
-        CORE_ARTIFACT_IDS_BY_ENTRYPOINT.get(entrypoint)
-        if isinstance(entrypoint, str)
-        else None
+def artifact_kind(task: Task) -> str | None:
+    return next(
+        (
+            kind
+            for kind, model in DATASET_ARTIFACT_MODELS.items()
+            if isinstance(task, model)
+        ),
+        None,
     )
-    if core_operation_id is not None:
-        raise ValueError(
-            f"Artifact entrypoint '{entrypoint}' is reserved for core operation "
-            f"'{core_operation_id}'. Override {core_operation_id}.yaml instead."
-        )
-    return ArtifactTask.model_validate({"id": operation_id, **entry})
+
+
+def _artifact_output(dataset_id: str, kind: str) -> str:
+    filename = "series/manifest.json" if kind == "series" else f"{kind}.json"
+    return f"datasets/{dataset_id}/{filename}"
 
 
 def _operation_from_document(
     project: ProjectManifest,
     document: YamlDocument,
+    datasets: Mapping[str, DatasetConfig],
 ) -> Task:
     path = document.path
     operation_id = path.stem
@@ -95,20 +62,69 @@ def _operation_from_document(
         raise ValueError(
             f"Operation filename '{path.name}' must use a lowercase operation ID."
         )
-    entry = project.resolve_config(document.data)
+    entry = project.resolve_config(
+        document.data,
+        variables={
+            "dataset_id": "${dataset_id}",
+            "dataset_version": "${dataset_version}",
+        },
+    )
+    dataset_id = entry.get("dataset")
+    selected_dataset = datasets.get(dataset_id) if isinstance(dataset_id, str) else None
+    entry = project.resolve_config(
+        entry,
+        variables=(
+            {"dataset_id": dataset_id, "dataset_version": selected_dataset.version}
+            if selected_dataset is not None
+            else None
+        ),
+    )
     if "id" in entry:
         raise ValueError(
             f"{path} must not define id; the filename supplies '{operation_id}'."
         )
+    kind = entry.get("kind")
+    entrypoint = entry.get("entrypoint")
+    if not isinstance(entrypoint, str) or entrypoint != entrypoint.strip():
+        raise ValueError(
+            f"Operation '{operation_id}' must declare an entrypoint without outer whitespace."
+        )
+    model: type[Task]
+    if kind == "runtime":
+        model = CORE_RUNTIME_MODELS.get(entrypoint, PluginRuntimeTask)
+    elif kind == "artifact":
+        models: dict[str, type[ArtifactTask]] = {
+            f"core.artifact.{name}": task_model
+            for name, task_model in DATASET_ARTIFACT_MODELS.items()
+        }
+        models["core.artifact.schedule"] = ScheduleTask
+        model = models.get(entrypoint, ArtifactTask)
+    else:
+        raise ValueError(
+            f"Operation '{operation_id}' must set kind to artifact or runtime."
+        )
+    if model in (ArtifactTask, PluginRuntimeTask) and entrypoint.startswith("core."):
+        raise ValueError(f"Unsupported core operation entrypoint '{entrypoint}'.")
 
-    model = CORE_OPERATION_MODELS.get(operation_id)
-    if model is not None:
-        if "kind" in entry or "entrypoint" in entry:
+    task = model.model_validate({"id": operation_id, **entry})
+    dataset_kind = artifact_kind(task)
+    if dataset_kind is not None or isinstance(
+        task, (DatasetTask, CoverageTask, MatrixTask)
+    ):
+        if task.dataset is None:
+            raise ValueError(f"Operation '{operation_id}' must bind a dataset.")
+    if task.dataset is not None:
+        if task.dataset not in datasets:
             raise ValueError(
-                f"Core operation '{operation_id}' cannot replace its kind or entrypoint."
+                f"Operation '{operation_id}' references unknown dataset '{task.dataset}'."
             )
-        return model.model_validate({"id": operation_id, **entry})
-    return _custom_operation(operation_id, entry)
+        if isinstance(task, ScheduleTask):
+            raise ValueError("Schedule operations must not bind a dataset.")
+        if dataset_kind is not None and "output" not in entry:
+            task = task.model_copy(
+                update={"output": _artifact_output(task.dataset, dataset_kind)}
+            )
+    return task
 
 
 def operation_documents(project: ProjectManifest) -> tuple[YamlDocument, ...]:
@@ -125,26 +141,45 @@ def operation_documents(project: ProjectManifest) -> tuple[YamlDocument, ...]:
 def operations_from_documents(
     project: ProjectManifest,
     documents: tuple[YamlDocument, ...],
+    datasets: Mapping[str, DatasetConfig],
 ) -> list[Task]:
-    paths_by_id: dict[str, list[str]] = {}
+    operations: list[Task] = []
+    by_id: dict[str, Task] = {}
+    producers: dict[tuple[str, str], Task] = {}
     for document in documents:
-        paths_by_id.setdefault(document.path.stem, []).append(str(document.path))
-    duplicates = {
-        operation_id: paths
-        for operation_id, paths in paths_by_id.items()
-        if len(paths) > 1
-    }
-    if duplicates:
-        details = "; ".join(
-            f"{operation_id} ({', '.join(paths)})"
-            for operation_id, paths in sorted(duplicates.items())
-        )
-        raise ValueError(f"Duplicate operation ids are not allowed: {details}")
+        task = _operation_from_document(project, document, datasets)
+        if task.id in by_id:
+            raise ValueError(f"Duplicate operation ID '{task.id}' at {document.path}")
+        by_id[task.id] = task
+        operations.append(task)
+        kind = artifact_kind(task)
+        if kind is not None:
+            assert task.dataset is not None
+            key = task.dataset, kind
+            if key in producers:
+                raise ValueError(
+                    f"Dataset '{task.dataset}' has multiple {kind} producers: "
+                    f"'{producers[key].id}' and '{task.id}'."
+                )
+            producers[key] = task
 
-    overrides = [_operation_from_document(project, document) for document in documents]
-    overrides_by_id = {operation.id: operation for operation in overrides}
-    specs = [
-        overrides_by_id.pop(operation.id, operation) for operation in _core_operations()
-    ]
-    specs.extend(overrides_by_id.values())
-    return specs
+    defaults: list[Task] = []
+    for dataset_id in datasets:
+        for kind, model in DATASET_ARTIFACT_MODELS.items():
+            if (dataset_id, kind) in producers:
+                continue
+            operation_id = f"dataset.{dataset_id}.{kind}"
+            if operation_id in by_id:
+                raise ValueError(
+                    f"Operation ID '{operation_id}' is reserved for the default "
+                    f"{kind} producer of dataset '{dataset_id}'."
+                )
+            defaults.append(
+                model(
+                    id=operation_id,
+                    entrypoint=f"core.artifact.{kind}",
+                    dataset=dataset_id,
+                    output=_artifact_output(dataset_id, kind),
+                )
+            )
+    return [*defaults, *operations]

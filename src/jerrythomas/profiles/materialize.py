@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Sequence
 
 from jerrythomas.config.profiles.materialize import MaterializeProfile
+from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.execution.settings import (
     CommandObservability,
     resolve_execution_log_outputs,
@@ -40,7 +41,7 @@ from jerrythomas.profiles.recipes import validate_recipe_inputs, output_identity
 
 def resolve_materialize_jobs(
     profiles: Sequence[MaterializeProfile],
-    project_path: Path,
+    definition: ProjectDefinition,
     execution_dir: Path,
     overwrite: bool | None,
     cli_output: Path | None,
@@ -49,8 +50,16 @@ def resolve_materialize_jobs(
     if cli_output is not None and len(profiles) != 1:
         raise ValueError("A materialize output override requires one selected profile.")
 
+    project_path = definition.project.path
+    operations = {task.id: task for task in definition.runtime_operations}
     jobs: list[MaterializeJob] = []
     for profile in profiles:
+        task = operations.get(profile.operation)
+        if not isinstance(task, StreamTask):
+            raise ValueError(
+                f"Materialize profile '{profile.name}' must reference a stream "
+                f"operation; got '{profile.operation}'."
+            )
         observability = resolve_observability_settings(
             project_path,
             profile.observability,
@@ -73,7 +82,7 @@ def resolve_materialize_jobs(
         jobs.append(
             MaterializeJob(
                 name=profile.name,
-                stream=profile.stream,
+                task=task.model_copy(deep=True),
                 output=resolve_materialize_output(output),
                 overwrite=profile.overwrite if overwrite is None else overwrite,
                 observability=observability,
@@ -143,6 +152,7 @@ def execute_materialize_job(
             "Config:\n"
             + json.dumps(
                 {
+                    "operation": job.task.id,
                     "stream": job.stream,
                     "output": str(job.output.destination),
                     "overwrite": job.overwrite,
@@ -174,7 +184,7 @@ def execute_materialize_job(
                 )
                 completed = RunOutput(
                     profile=job.name,
-                    operation="materialize",
+                    operation=job.task.id,
                     stream=job.stream,
                     output_id=None,
                     path=output.path.name,

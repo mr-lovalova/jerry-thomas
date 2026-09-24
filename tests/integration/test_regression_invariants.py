@@ -39,7 +39,7 @@ def _shuffled(lines: list[str], seed: int) -> list[str]:
 
 
 def _artifact_snapshot(project_root: Path) -> dict[str, tuple[int, int, int, str]]:
-    artifact_dir = project_root / "build" / "build"
+    artifact_dir = project_root / "build" / "datasets" / "default"
     snapshot: dict[str, tuple[int, int, int, str]] = {}
     for path in sorted(
         candidate for candidate in artifact_dir.rglob("*") if candidate.is_file()
@@ -138,7 +138,7 @@ def test_auto_rebuilds_after_source_and_config_changes(copy_fixture) -> None:
     assert changed_source_output != original_output
     assert changed_source_artifacts != original_artifacts
 
-    dataset_path = project_root / "dataset.yaml"
+    dataset_path = project_root / "datasets/default.yaml"
     dataset = dataset_path.read_text(encoding="utf-8")
     assert "  - id: linear_scaled" in dataset
     dataset_path.write_text(

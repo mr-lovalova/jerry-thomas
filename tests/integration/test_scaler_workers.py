@@ -14,6 +14,7 @@ from jerrythomas.artifacts.scaler import (
     StandardScalerArtifact,
     load_scaler_artifact,
 )
+from jerrythomas.config.dataset.dataset import ScalingConfig
 from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.config.tasks.scaler import ScalerTask
 from jerrythomas.execution.events import PipelineFinished, PipelineStarted
@@ -30,6 +31,9 @@ from jerrythomas.services.stream_workers import StreamWorkerError
 
 
 def _write_yaml(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.parent.name == "datasets":
+        value = {"version": "v1", **value}
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
 
 
@@ -58,18 +62,18 @@ def _runtime(
     _write_yaml(
         root / "project.yaml",
         {
-            "schema_version": 6,
+            "schema_version": 7,
             "artifact_revision": 1,
             "paths": {
                 "sources": "sources",
                 "streams": "streams",
-                "dataset": "dataset.yaml",
+                "datasets": "datasets",
                 "artifacts": "build",
             },
         },
     )
     _write_yaml(
-        root / "dataset.yaml",
+        root / "datasets" / "default.yaml",
         {
             "sample": {"rounding": "floor", "cadence": "1d", "keys": ["id_"]},
             "features": [
@@ -103,7 +107,7 @@ def _runtime(
                 "transforms": (transforms or {}).get(stream, []),
             },
         )
-    return compile_runtime(load_project_definition(root / "project.yaml"))
+    return compile_runtime(load_project_definition(root / "project.yaml"), "default")
 
 
 def _build(runtime: Runtime, workers: int, task: ScalerTask) -> tuple[bytes, dict]:
@@ -150,7 +154,10 @@ def test_scaler_workers_preserve_positions_nulls_and_filled_domain_rows(
             ],
         },
     )
-    task = ScalerTask(output="scaler.json", with_mean=False, epsilon=0.25)
+    runtime.dataset = runtime.require_dataset().model_copy(
+        update={"scaling": ScalingConfig(with_mean=False, epsilon=0.25)}
+    )
+    task = ScalerTask(output="scaler.json")
     expected = _build(runtime, 1, task)
     for workers in (2, 8):
         assert _build(runtime, workers, task) == expected

@@ -1,0 +1,3 @@
+kind: runtime
+entrypoint: core.runtime.coverage
+dataset: default

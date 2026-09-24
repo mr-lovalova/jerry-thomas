@@ -1,4 +1,4 @@
 plugin_root: .
-datasets:
+projects:
   demo: demo/project.yaml
-default_dataset: demo
+default_project: demo

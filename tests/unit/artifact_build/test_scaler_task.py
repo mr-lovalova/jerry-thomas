@@ -10,7 +10,11 @@ from jerrythomas.artifacts.scaler import (
     StandardScalerArtifact,
     load_scaler_artifact,
 )
-from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
+from jerrythomas.config.dataset.dataset import (
+    DatasetConfig,
+    SampleConfig,
+    ScalingConfig,
+)
 from jerrythomas.config.dataset.series import (
     SeriesConfig,
     SequenceConfig,
@@ -68,7 +72,7 @@ def _runtime(
     artifacts_root.mkdir()
     project_yaml = tmp_path / "project.yaml"
     project_yaml.write_text(
-        "schema_version: 6\nartifact_revision: 1\n", encoding="utf-8"
+        "schema_version: 7\nartifact_revision: 1\n", encoding="utf-8"
     )
     if dataset is None:
         dataset = DatasetConfig(sample=SampleConfig(rounding="ceil", cadence="1h"))
@@ -210,17 +214,15 @@ def test_folded_scaler_fits_list_positions_from_training_rows_only(
     assert second == ScalerStatistics(mean=100.0, std=1e-12, count=1)
 
 
-def test_materialize_standard_scaler_persists_build_options(
+def test_materialize_standard_scaler_persists_dataset_scaling(
     tmp_path,
 ) -> None:
     runtime = _runtime(tmp_path, _dataset(), rows=[_record(1, 4.0)])
 
-    task = ScalerTask(
-        output="scaler.json",
-        with_mean=False,
-        with_std=False,
-        epsilon=0.5,
+    runtime.dataset = runtime.require_dataset().model_copy(
+        update={"scaling": ScalingConfig(with_mean=False, with_std=False, epsilon=0.5)}
     )
+    task = ScalerTask(output="scaler.json")
     build_scaler_artifact(runtime, task)
 
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
