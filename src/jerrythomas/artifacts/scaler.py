@@ -10,10 +10,11 @@ from pydantic import (
     model_validator,
 )
 
+from jerrythomas.config.dataset.series import ScalingConfig
 from jerrythomas.io.json_file import write_json_object
 
 
-SCALER_ARTIFACT_VERSION: Final = 4
+SCALER_ARTIFACT_VERSION: Final = 5
 
 
 class ScalerStatistics(BaseModel):
@@ -34,35 +35,37 @@ class PositionalScalerStatistics(BaseModel):
         return sum(position.count for position in self.positions)
 
 
+class FittedScaler(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    settings: ScalingConfig
+    statistics: ScalerStatistics | PositionalScalerStatistics
+
+
 class StandardScalerArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     kind: Literal["standard_scaler"] = "standard_scaler"
-    version: Literal[4] = SCALER_ARTIFACT_VERSION
-    with_mean: bool
-    with_std: bool
-    epsilon: float = Field(gt=0, allow_inf_nan=False)
+    version: Literal[5] = SCALER_ARTIFACT_VERSION
     observations: int = Field(gt=0, strict=True)
-    statistics: dict[str, ScalerStatistics | PositionalScalerStatistics] = Field(
-        min_length=1
-    )
+    scalers: dict[str, FittedScaler] = Field(min_length=1)
 
-    @field_validator("statistics")
+    @field_validator("scalers")
     @classmethod
     def _validate_vector_ids(
         cls,
-        statistics: dict[str, ScalerStatistics | PositionalScalerStatistics],
-    ) -> dict[str, ScalerStatistics | PositionalScalerStatistics]:
-        for vector_id in statistics:
+        scalers: dict[str, FittedScaler],
+    ) -> dict[str, FittedScaler]:
+        for vector_id in scalers:
             if not vector_id.strip():
                 raise ValueError("scaler vector ids must not be empty")
             if vector_id != vector_id.strip():
                 raise ValueError("scaler vector ids must not contain outer whitespace")
-        return statistics
+        return scalers
 
     @model_validator(mode="after")
     def _validate_observation_count(self) -> Self:
-        observed = sum(statistics.count for statistics in self.statistics.values())
+        observed = sum(scaler.statistics.count for scaler in self.scalers.values())
         if self.observations != observed:
             raise ValueError(
                 "scaler observations must equal the sum of series statistic counts"
@@ -74,7 +77,7 @@ class FoldedScalerArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     kind: Literal["folded_scaler"] = "folded_scaler"
-    version: Literal[4] = SCALER_ARTIFACT_VERSION
+    version: Literal[5] = SCALER_ARTIFACT_VERSION
     folds: dict[str, StandardScalerArtifact] = Field(min_length=1)
 
     @field_validator("folds")

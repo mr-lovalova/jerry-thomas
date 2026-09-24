@@ -20,7 +20,8 @@ are relative to `paths.artifacts`:
   referenced by the manifest are pruned only after the locked command finishes.
 - `datasets/<id>/scaler.json`: managed scaler statistics. Unsplit datasets store one
   standard scaler; split datasets store one scaler fitted from each fold's
-  training labels.
+  training labels. Each scaler stores settings and statistics together for
+  every concrete series.
 - `datasets/<id>/metadata.json`: the typed feature/target contract used during
   postprocess, including identifiers, scalar/list kinds, fixed list lengths,
   coverage counts, value types, sample domain, and resolved dataset window.

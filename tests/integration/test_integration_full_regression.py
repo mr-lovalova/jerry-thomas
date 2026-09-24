@@ -128,19 +128,15 @@ def test_full_regression_project_through_serve(copy_fixture) -> None:
 
     build_root = project_root / "build" / "datasets" / "default"
     assert _read_json(build_root / "scaler.json") == {
-        "epsilon": 1e-12,
         "kind": "standard_scaler",
         "observations": 6,
-        "statistics": {
+        "version": 5,
+        "scalers": {
             "linear_scaled": {
-                "count": 6,
-                "mean": 15.0,
-                "std": 3.415650255319866,
+                "settings": {"with_mean": True, "with_std": True, "epsilon": 1e-12},
+                "statistics": {"count": 6, "mean": 15.0, "std": 3.415650255319866},
             }
         },
-        "version": 4,
-        "with_mean": True,
-        "with_std": True,
     }
     assert _read_json(build_root / "metadata.json") == {
         "schema_version": 4,

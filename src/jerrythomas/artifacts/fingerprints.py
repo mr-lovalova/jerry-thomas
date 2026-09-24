@@ -154,7 +154,7 @@ def artifact_inputs(
 
     if isinstance(task, ScalerTask):
         assert dataset is not None
-        scaled = tuple(config for config in dataset.series if config.scale)
+        scaled = tuple(config for config in dataset.series if config.scale is not None)
         stream_config, source_ids = _stream_config_closure(
             (config.stream for config in scaled),
             streams,
@@ -169,7 +169,6 @@ def artifact_inputs(
                 if dataset.split is not None
                 else None
             ),
-            "scaling": dataset.scaling.model_dump(mode="json"),
             "scaled_series": [
                 config.model_dump(
                     mode="json",

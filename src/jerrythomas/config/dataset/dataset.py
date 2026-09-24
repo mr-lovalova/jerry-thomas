@@ -35,20 +35,11 @@ class SampleConfig(BaseModel):
         return keys
 
 
-class ScalingConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    with_mean: bool = True
-    with_std: bool = True
-    epsilon: float = Field(default=1e-12, gt=0, allow_inf_nan=False)
-
-
 class DatasetConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     version: str = Field(default="v1", pattern=r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$")
     sample: SampleConfig
-    scaling: ScalingConfig = Field(default_factory=ScalingConfig)
     features: list[SeriesConfig] = Field(default_factory=list)
     targets: list[TargetSeriesConfig] = Field(default_factory=list)
     split: SplitConfig | None = None

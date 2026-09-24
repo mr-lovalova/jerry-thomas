@@ -10,7 +10,7 @@ These live under the project root directory (the folder containing `project.yaml
 - `sources/*.yaml`: raw sources (loader + parser wiring).
 - `streams/*.yaml`: source-backed, derived, exact/as-of fan-in, or aligned
   canonical streams.
-- `datasets/<id>.yaml`: a named dataset’s version, sample, feature/target, split, scaling, and postprocess policy.
+- `datasets/<id>.yaml`: a named dataset’s version, sample, feature/target, split, and postprocess policy.
 - `profiles/serve.<name>.yaml`: serve profiles.
 - `profiles/build.<name>.yaml`: build profiles.
 - `profiles/inspect.<name>.yaml`: inspect profiles.
@@ -896,8 +896,8 @@ postprocess:
   space.
 - `scale: true` scales assembled scalar or fixed-length list values with the
   managed scaler artifact (default: `datasets/<id>/scaler.json`) when a dataset
-  output is produced. Fitting policy belongs to the dataset's `scaling` block
-  and cannot be overridden per vector. `None` and transient `NaN` remain missing;
+  output is produced. Use a `scale` mapping to customize that feature or target's
+  fitting policy. `None` and transient `NaN` remain missing;
   other nonnumeric values and infinity fail. Intrinsically list-valued fields
   are fitted independently by position. Lists created from scalar `sequence`
   or `collect` inputs use the scalar series' shared statistics at every position.
@@ -997,24 +997,34 @@ postprocess:
 
 ### Dataset Scaling
 
-Scaling policy belongs to the dataset. Each feature or target opts in with
-`scale: true` and gets its own fitted statistics. Omitting `scaling` uses these
-defaults:
+Each feature or target owns its scaling policy and fitted statistics. Omit
+`scale`, or set it to `false` or `null`, to disable scaling. `scale: true` and
+`scale: {}` enable standard scaling with defaults `with_mean: true`,
+`with_std: true`, and `epsilon: 1.0e-12`. A mapping overrides only the supplied
+options:
 
 ```yaml
 # datasets/default.yaml
-scaling:
-  with_mean: true
-  with_std: true
-  epsilon: 1.0e-12
+features:
+  - id: price
+    stream: equity.prices
+    field: close
+    scale: true
+  - id: volume
+    stream: equity.prices
+    field: volume
+    scale:
+      with_mean: false
 ```
+
+There is no dataset-level `scaling` block. Targets use the same `scale` syntax.
 
 - An unsplit dataset stores one standard scaler fitted from all samples. A split
   dataset stores one scaler per dataset fold, fitted from that fold's `train`
   labels. Fold definitions belong to the selected dataset; the scaler operation
   does not duplicate split policy.
-- `with_mean`, `with_std`, and positive finite `epsilon` are build-time options
-  stored in the artifact and used unchanged at runtime.
+- Each feature or target's `with_mean`, `with_std`, and positive finite `epsilon`
+  are stored with its fitted statistics and used unchanged at runtime.
 - Every train, validation, and test output in a fold uses that fold's scaler.
   If a primitive label is reused across folds, its values are scaled separately
   for each output. Sequence windows are constructed before scaling, so every

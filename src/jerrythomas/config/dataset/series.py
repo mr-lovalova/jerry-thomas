@@ -21,15 +21,32 @@ class SequenceConfig(BaseModel):
     stride: int = Field(default=1, gt=0, strict=True)
 
 
+class ScalingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    with_mean: bool = True
+    with_std: bool = True
+    epsilon: float = Field(default=1e-12, gt=0, allow_inf_nan=False)
+
+
 class SeriesConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     id: NonEmptyString
     stream: NonEmptyString
     field: NonEmptyString
-    scale: bool = Field(default=False, strict=True)
+    scale: ScalingConfig | None = None
     sequence: SequenceConfig | None = None
     collect: int | None = Field(default=None, gt=0, strict=True)
+
+    @field_validator("scale", mode="before")
+    @classmethod
+    def normalize_scale(cls, value: object) -> object:
+        if value is True:
+            return ScalingConfig()
+        if value is False:
+            return None
+        return value
 
     @field_validator("id")
     @classmethod

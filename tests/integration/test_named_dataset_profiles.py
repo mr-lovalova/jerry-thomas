@@ -100,7 +100,7 @@ def test_build_profiles_fit_only_their_bound_dataset(tmp_path):
     artifact = load_scaler_artifact(
         tmp_path / "artifacts" / "datasets" / "beta" / "scaler.json"
     )
-    assert artifact.statistics["x"].mean == 20.0
+    assert artifact.scalers["x"].statistics.mean == 20.0
 
 
 def test_stream_operations_serve_and_materialize_without_any_dataset(tmp_path):

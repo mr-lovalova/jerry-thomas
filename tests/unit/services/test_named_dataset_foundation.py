@@ -198,19 +198,27 @@ def test_runtime_operations_are_explicit_and_stream_operations_have_no_dataset(
         StreamTask(id="invalid", stream="prices", dataset="alpha")
 
 
-def test_scaling_policy_belongs_to_dataset_not_artifact_operation(tmp_path):
+def test_scaling_policy_belongs_to_series_not_artifact_operation(tmp_path):
     project_yaml = _project(tmp_path, ("alpha",))
     _write_yaml(
         tmp_path / "datasets" / "alpha.yaml",
         {
             "version": "v2",
             "sample": {"cadence": "1d", "rounding": "exact"},
-            "scaling": {"with_mean": False, "with_std": True, "epsilon": 0.5},
+            "features": [
+                {
+                    "id": "close",
+                    "stream": "prices",
+                    "field": "close",
+                    "scale": {"with_mean": False, "with_std": True, "epsilon": 0.5},
+                }
+            ],
         },
     )
     dataset = load_datasets(load_project(project_yaml))["alpha"]
-    assert dataset.scaling.with_mean is False
-    assert dataset.scaling.epsilon == 0.5
+    assert dataset.features[0].scale is not None
+    assert dataset.features[0].scale.with_mean is False
+    assert dataset.features[0].scale.epsilon == 0.5
     _write_yaml(
         tmp_path / "operations" / "scaler.yaml",
         {

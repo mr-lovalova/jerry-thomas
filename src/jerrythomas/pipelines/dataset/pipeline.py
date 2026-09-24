@@ -353,9 +353,9 @@ def _sample_scaler(
     return SampleScaler(
         artifact,
         scaled_feature_ids=tuple(
-            config.id for config in dataset.features if config.scale
+            config.id for config in dataset.features if config.scale is not None
         ),
         scaled_target_ids=tuple(
-            config.id for config in dataset.targets if config.scale
+            config.id for config in dataset.targets if config.scale is not None
         ),
     )

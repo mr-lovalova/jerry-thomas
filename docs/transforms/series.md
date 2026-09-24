@@ -32,11 +32,15 @@ features:
     collect: 24
 ```
 
-`scale` is a boolean. It does not alter canonical series artifacts or
-preview output. During a full dataset serve, every scalar or fixed-length list
-value in one fold output is scaled with that fold's scaler. `with_mean`,
-`with_std`, and `epsilon` belong to the dataset's `scaling` block and are
-recorded in the managed artifact; individual features cannot override them.
+`scale` accepts `true` for standard scaling or a mapping of `with_mean`,
+`with_std`, and `epsilon` options for that feature or target. For example,
+`scale: {with_mean: false}` divides by standard deviation without centering.
+An empty mapping uses the defaults (`true`, `true`, and `1.0e-12`); omitted,
+`false`, or `null` disables scaling. There is no dataset-level scaling policy.
+
+Scaling does not alter canonical series artifacts or preview output. During a
+full dataset serve, every scalar or fixed-length list value uses its own fitted
+statistics and policy from that output fold's scaler artifact.
 `None` is the canonical missing value. A transient floating `NaN` is converted
 to `None` when the field is projected; other nonnumeric values and infinity are
 rejected. A field must be a scalar or a non-empty flat list of scalars;

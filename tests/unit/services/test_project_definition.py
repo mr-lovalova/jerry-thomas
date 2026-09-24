@@ -6,7 +6,11 @@ from jerrythomas.artifacts import fingerprints
 from jerrythomas.artifacts.fingerprints import calculate_artifact_hashes
 from jerrythomas.artifacts.planning import build_artifact_graph
 from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
-from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
+from jerrythomas.config.dataset.series import (
+    ScalingConfig,
+    SeriesConfig,
+    TargetSeriesConfig,
+)
 from jerrythomas.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
 from jerrythomas.config.streams import StreamsConfig
 from jerrythomas.config.tasks.base import ArtifactTask
@@ -555,7 +559,11 @@ def test_scaling_policy_does_not_invalidate_unscaled_series(
         features=[SeriesConfig(id="price", stream="prices", field="close")],
     )
     scaled = unscaled.model_copy(
-        update={"features": [unscaled.features[0].model_copy(update={"scale": True})]}
+        update={
+            "features": [
+                unscaled.features[0].model_copy(update={"scale": ScalingConfig()})
+            ]
+        }
     )
 
     unscaled_hashes = calculate_artifact_hashes(
@@ -576,6 +584,59 @@ def test_scaling_policy_does_not_invalidate_unscaled_series(
     )
     assert scaled_hashes.for_artifact("dataset.default.scaler") != (
         unscaled_hashes.for_artifact("dataset.default.scaler")
+    )
+
+
+@pytest.mark.parametrize("role", ["features", "targets"])
+@pytest.mark.parametrize(
+    "settings",
+    [{"with_mean": False}, {"with_std": False}, {"epsilon": 0.25}],
+)
+def test_feature_and_target_scaling_settings_only_invalidate_scaler(
+    tmp_path: Path, role: str, settings: dict[str, object]
+) -> None:
+    definition = load_project_definition(_write_project(tmp_path))
+    streams = _single_stream_catalog()
+    operations = (
+        ScalerTask(id="dataset.default.scaler", dataset="default"),
+        SeriesTask(id="dataset.default.series", dataset="default"),
+        MetadataTask(id="dataset.default.metadata", dataset="default"),
+    )
+    dataset = DatasetConfig.model_validate(
+        {
+            "sample": {"rounding": "ceil", "cadence": "1h"},
+            "features": [
+                {"id": "price", "stream": "prices", "field": "close", "scale": True},
+            ],
+            "targets": [
+                {
+                    "id": "target",
+                    "stream": "prices",
+                    "field": "close",
+                    "horizon": "0h",
+                    "scale": True,
+                },
+            ],
+        }
+    )
+    changed_config = dataset.model_dump(mode="json")
+    changed_config[role][0]["scale"] = settings
+    changed = DatasetConfig.model_validate(changed_config)
+    hashes = [
+        calculate_artifact_hashes(
+            definition.project,
+            {"default": selected},
+            streams,
+            build_artifact_graph(operations, {"default": selected}, streams),
+        )
+        for selected in (dataset, changed)
+    ]
+    for key in ("series", "metadata"):
+        assert hashes[0].for_artifact(f"dataset.default.{key}") == (
+            hashes[1].for_artifact(f"dataset.default.{key}")
+        )
+    assert hashes[0].for_artifact("dataset.default.scaler") != (
+        hashes[1].for_artifact("dataset.default.scaler")
     )
 
 

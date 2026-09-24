@@ -5,6 +5,7 @@ import subprocess
 
 import pytest
 
+from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.execution.settings import CommandObservability
 from jerrythomas.io.runs import load_run
 from jerrythomas.profiles.orchestration import run_profiles
@@ -90,6 +91,9 @@ def test_serve_recipe_includes_overrides_and_selected_artifact_identities(copy_f
     assert recipe.configuration["datasets"][
         "default"
     ] == request.definition.require_dataset("default").model_dump(mode="json")
+    assert DatasetConfig.model_validate(
+        recipe.configuration["datasets"]["default"]
+    ) == request.definition.require_dataset("default")
     assert set(recipe.artifacts) == {
         "dataset.default.series",
         "dataset.default.metadata",

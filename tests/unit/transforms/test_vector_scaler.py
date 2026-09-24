@@ -3,13 +3,15 @@ from collections.abc import Iterator
 import pytest
 
 from jerrythomas.artifacts.scaler import (
+    FittedScaler,
     PositionalScalerStatistics,
     ScalerStatistics,
     StandardScalerArtifact,
 )
 from jerrythomas.domain.sample import Sample
 from jerrythomas.domain.vector import Vector
-from jerrythomas.transforms.vector.scaler import SampleScaler
+from jerrythomas.config.dataset.series import ScalingConfig
+from jerrythomas.transforms.vector.scaler import SampleScaler, ScalerAccumulator
 
 
 def _artifact(
@@ -17,34 +19,42 @@ def _artifact(
     with_std: bool = True,
 ) -> StandardScalerArtifact:
     return StandardScalerArtifact(
-        with_mean=with_mean,
-        with_std=with_std,
-        epsilon=1e-12,
         observations=5,
-        statistics={
-            "price": ScalerStatistics(mean=10.0, std=2.0, count=2),
-            "price__@ticker:AAPL": ScalerStatistics(
-                mean=20.0,
-                std=4.0,
-                count=2,
+        scalers={
+            "price": FittedScaler(
+                settings=ScalingConfig(
+                    with_mean=with_mean, with_std=with_std, epsilon=1e-12
+                ),
+                statistics=ScalerStatistics(mean=10.0, std=2.0, count=2),
             ),
-            "return": ScalerStatistics(mean=1.0, std=0.5, count=1),
+            "price__@ticker:AAPL": FittedScaler(
+                settings=ScalingConfig(
+                    with_mean=with_mean, with_std=with_std, epsilon=1e-12
+                ),
+                statistics=ScalerStatistics(mean=20.0, std=4.0, count=2),
+            ),
+            "return": FittedScaler(
+                settings=ScalingConfig(
+                    with_mean=with_mean, with_std=with_std, epsilon=1e-12
+                ),
+                statistics=ScalerStatistics(mean=1.0, std=0.5, count=1),
+            ),
         },
     )
 
 
 def _positional_artifact() -> StandardScalerArtifact:
     return StandardScalerArtifact(
-        with_mean=True,
-        with_std=True,
-        epsilon=1e-12,
         observations=4,
-        statistics={
-            "embedding": PositionalScalerStatistics(
-                positions=(
-                    ScalerStatistics(mean=2.0, std=1.0, count=2),
-                    ScalerStatistics(mean=150.0, std=50.0, count=2),
-                )
+        scalers={
+            "embedding": FittedScaler(
+                settings=ScalingConfig(with_mean=True, with_std=True, epsilon=1e-12),
+                statistics=PositionalScalerStatistics(
+                    positions=(
+                        ScalerStatistics(mean=2.0, std=1.0, count=2),
+                        ScalerStatistics(mean=150.0, std=50.0, count=2),
+                    )
+                ),
             )
         },
     )
@@ -238,3 +248,49 @@ def test_sample_scaler_applies_to_an_iterator() -> None:
     scaled = list(scaler.apply(samples))
 
     assert [sample.features.values["price"] for sample in scaled] == [0.0, 1.0]
+
+
+def test_sample_scaler_applies_mixed_policies_to_features_and_targets() -> None:
+    accumulator = ScalerAccumulator()
+    for vector_id, values in {
+        "standard": [1.0, 3.0],
+        "center__@ticker:AAPL": [10.0, 14.0],
+        "spread": [10.0, 14.0],
+        "identity": [5.0, 7.0],
+        "embedding": [[1.0, 10.0], [3.0, 14.0]],
+    }.items():
+        for value in values:
+            accumulator.observe(vector_id, value)
+    settings = {
+        "standard": ScalingConfig(),
+        "center": ScalingConfig(with_std=False),
+        "spread": ScalingConfig(with_mean=False),
+        "identity": ScalingConfig(with_mean=False, with_std=False),
+        "embedding": ScalingConfig(with_mean=False),
+    }
+    scaler = SampleScaler(
+        accumulator.artifact(settings),
+        scaled_feature_ids={"standard", "center", "identity", "embedding"},
+        scaled_target_ids={"spread"},
+    )
+    sample = _sample(
+        {
+            "standard": 3.0,
+            "center__@ticker:AAPL": [10.0, None, 14.0],
+            "identity": 7.0,
+            "embedding": [3.0, 14.0],
+            "unscaled": "untouched",
+        },
+        {"spread": 14.0},
+    )
+
+    scaled = scaler.scale(sample)
+
+    assert scaled.features.values == {
+        "standard": 1.0,
+        "center__@ticker:AAPL": [-2.0, None, 2.0],
+        "identity": 7.0,
+        "embedding": [3.0, 7.0],
+        "unscaled": "untouched",
+    }
+    assert scaled.targets.values == {"spread": 7.0}

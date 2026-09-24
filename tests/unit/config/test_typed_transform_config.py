@@ -1,7 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from jerrythomas.config.dataset.series import SeriesConfig, SequenceConfig
+from jerrythomas.config.dataset.series import (
+    ScalingConfig,
+    SeriesConfig,
+    SequenceConfig,
+)
 from jerrythomas.config.streams import DerivedStreamConfig, SourceStreamConfig
 from jerrythomas.config.transforms import (
     AggregateSumConfig,
@@ -535,7 +539,7 @@ def test_series_config_uses_explicit_shaping_fields() -> None:
         }
     )
 
-    assert config.scale is True
+    assert config.scale == ScalingConfig()
     assert config.sequence == SequenceConfig(size=20, stride=5)
 
     collected = SeriesConfig.model_validate(

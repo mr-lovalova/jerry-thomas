@@ -88,7 +88,7 @@ def _runtime_with_streams(
 
 def _register_scaler(runtime: Runtime, configs: list[SeriesConfig]) -> None:
     sanitized = [
-        cfg.model_copy(update={"scale": False, "sequence": None, "collect": None})
+        cfg.model_copy(update={"scale": None, "sequence": None, "collect": None})
         for cfg in configs
     ]
     accumulator = ScalerAccumulator()
@@ -107,7 +107,10 @@ def _register_scaler(runtime: Runtime, configs: list[SeriesConfig]) -> None:
         raise RuntimeError("Unable to compute scaler statistics for test runtime.")
 
     destination = runtime.artifacts_root / "scaler.json"
-    save_scaler_artifact(destination, accumulator.artifact())
+    settings = {
+        config.id: config.scale for config in configs if config.scale is not None
+    }
+    save_scaler_artifact(destination, accumulator.artifact(settings))
     runtime.artifacts.register(
         SCALER_STATISTICS,
         relative_path=destination.relative_to(runtime.artifacts_root).as_posix(),

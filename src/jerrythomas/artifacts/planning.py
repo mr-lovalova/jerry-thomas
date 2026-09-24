@@ -437,7 +437,7 @@ def build_artifact_graph(
                 selected_streams = {
                     config.stream
                     for config in dataset.series
-                    if blueprint.key == SERIES or config.scale
+                    if blueprint.key == SERIES or config.scale is not None
                 }
                 dependencies += required_schedule_artifacts(
                     selected_streams, stream_configs, tasks_by_id

@@ -17,7 +17,9 @@ def _serve(project_root: Path) -> tuple[Path, FoldedScalerArtifact]:
     assert run_metadata["finished_at"] is not None
     assert (run_paths.serve_root / "latest").resolve() == run_paths.run_root.resolve()
 
-    scaler = load_scaler_artifact(project_root / "artifacts" / "datasets" / "default" / "scaler.json")
+    scaler = load_scaler_artifact(
+        project_root / "artifacts" / "datasets" / "default" / "scaler.json"
+    )
     assert isinstance(scaler, FoldedScalerArtifact)
     return run_paths.dataset_dir, scaler
 
@@ -51,37 +53,59 @@ def test_walk_forward_scaling_and_routed_outputs(copy_fixture, tmp_path: Path) -
     }
     assert scaler.model_dump(mode="json") == {
         "kind": "folded_scaler",
-        "version": 4,
+        "version": 5,
         "folds": {
             "fold_0": {
                 "kind": "standard_scaler",
-                "version": 4,
-                "with_mean": True,
-                "with_std": True,
-                "epsilon": 1e-12,
+                "version": 5,
                 "observations": 4,
-                "statistics": {
-                    "signal": {"mean": 1.0, "std": 1.0, "count": 2},
-                    "outcome": {"mean": 12.0, "std": 2.0, "count": 2},
+                "scalers": {
+                    "signal": {
+                        "settings": {
+                            "with_mean": True,
+                            "with_std": True,
+                            "epsilon": 1e-12,
+                        },
+                        "statistics": {"mean": 1.0, "std": 1.0, "count": 2},
+                    },
+                    "outcome": {
+                        "settings": {
+                            "with_mean": True,
+                            "with_std": True,
+                            "epsilon": 1e-12,
+                        },
+                        "statistics": {"mean": 12.0, "std": 2.0, "count": 2},
+                    },
                 },
             },
             "fold_1": {
                 "kind": "standard_scaler",
-                "version": 4,
-                "with_mean": True,
-                "with_std": True,
-                "epsilon": 1e-12,
+                "version": 5,
                 "observations": 10,
-                "statistics": {
+                "scalers": {
                     "signal": {
-                        "mean": 6.0,
-                        "std": 5.215361924162119,
-                        "count": 5,
+                        "settings": {
+                            "with_mean": True,
+                            "with_std": True,
+                            "epsilon": 1e-12,
+                        },
+                        "statistics": {
+                            "mean": 6.0,
+                            "std": 5.215361924162119,
+                            "count": 5,
+                        },
                     },
                     "outcome": {
-                        "mean": 50.0,
-                        "std": 44.23573216303761,
-                        "count": 5,
+                        "settings": {
+                            "with_mean": True,
+                            "with_std": True,
+                            "epsilon": 1e-12,
+                        },
+                        "statistics": {
+                            "mean": 50.0,
+                            "std": 44.23573216303761,
+                            "count": 5,
+                        },
                     },
                 },
             },
@@ -211,10 +235,10 @@ def test_target_horizon_removes_each_fold_role_tail(copy_fixture) -> None:
         "2024-01-10 00:00:00+00:00"
     ]
 
-    assert scaler.folds["fold_0"].statistics["signal"].count == 1
-    assert scaler.folds["fold_0"].statistics["outcome"].count == 1
-    assert scaler.folds["fold_1"].statistics["signal"].count == 4
-    assert scaler.folds["fold_1"].statistics["outcome"].count == 4
+    assert scaler.folds["fold_0"].scalers["signal"].statistics.count == 1
+    assert scaler.folds["fold_0"].scalers["outcome"].statistics.count == 1
+    assert scaler.folds["fold_1"].scalers["signal"].statistics.count == 4
+    assert scaler.folds["fold_1"].scalers["outcome"].statistics.count == 4
 
 
 def test_target_horizon_protects_future_derived_values(copy_fixture) -> None:

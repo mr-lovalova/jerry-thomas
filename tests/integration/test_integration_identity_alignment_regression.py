@@ -43,8 +43,8 @@ def test_long_and_hybrid_identity_with_aligned_derived_stream(copy_fixture) -> N
 
     scaler_artifact = runtime.artifacts.load(SCALER_SPEC)
     assert scaler_artifact.observations == 6
-    assert set(scaler_artifact.statistics) == {"price_scaled"}
-    price_statistics = scaler_artifact.statistics["price_scaled"]
+    assert set(scaler_artifact.scalers) == {"price_scaled"}
+    price_statistics = scaler_artifact.scalers["price_scaled"].statistics
     assert price_statistics.count == 6
     assert price_statistics.mean == pytest.approx(12.0)
     assert price_statistics.std == pytest.approx(math.sqrt(296 / 3))

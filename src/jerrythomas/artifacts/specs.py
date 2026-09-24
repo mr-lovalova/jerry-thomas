@@ -22,7 +22,7 @@ class ArtifactDefinition:
 
 
 def dataset_requires_scaler(dataset: DatasetConfig) -> bool:
-    return any(config.scale for config in dataset.series)
+    return any(config.scale is not None for config in dataset.series)
 
 
 ARTIFACT_DEFINITIONS: tuple[ArtifactDefinition, ...] = (

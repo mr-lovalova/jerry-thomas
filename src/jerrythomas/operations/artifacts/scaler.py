@@ -1,5 +1,5 @@
 from collections import defaultdict
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from functools import partial
@@ -11,7 +11,7 @@ from jerrythomas.artifacts.scaler import (
     StandardScalerArtifact,
     save_scaler_artifact,
 )
-from jerrythomas.config.dataset.series import SeriesConfig
+from jerrythomas.config.dataset.series import ScalingConfig, SeriesConfig
 from jerrythomas.config.dataset.split import DatasetFold, TimeSplitConfig
 from jerrythomas.config.tasks.scaler import ScalerTask
 from jerrythomas.domain.series import SeriesRecord
@@ -107,7 +107,7 @@ def build_scaler_artifact(
     )
     if isinstance(artifact, StandardScalerArtifact):
         meta = {
-            "series": len(artifact.statistics),
+            "series": len(artifact.scalers),
             "observations": artifact.observations,
         }
     else:
@@ -129,7 +129,7 @@ def _fit_scaler(
     dataset = runtime.require_dataset()
     configs_by_stream: dict[str, list[SeriesConfig]] = defaultdict(list)
     for config in dataset.series:
-        if config.scale:
+        if config.scale is not None:
             configs_by_stream[config.stream].append(config)
     plans = tuple(
         _StreamPlan(stream_id, tuple(configs))
@@ -141,8 +141,7 @@ def _fit_scaler(
         else (None,)
     )
     fits = {
-        fold_id: _ScalerFit(_new_accumulator(runtime), set(), set())
-        for fold_id in fold_ids
+        fold_id: _ScalerFit(ScalerAccumulator(), set(), set()) for fold_id in fold_ids
     }
     sample_keys = SampleKeyContract(dataset.sample.keys)
     with sort_spill_directory() as temp_root:
@@ -154,14 +153,17 @@ def _fit_scaler(
             for fold_id, fit in result.fits.items():
                 fits[fold_id].extend(fit)
 
+    settings = {
+        config.id: config.scale for config in dataset.series if config.scale is not None
+    }
     if dataset.split is None:
         fit = fits[None]
-        yield _finish_scaler(fit.accumulator, fit.expected_ids, "dataset")
+        yield _finish_scaler(fit.accumulator, fit.expected_ids, "dataset", settings)
     else:
         yield FoldedScalerArtifact(
             folds={
                 fold.id: _finish_folded_scaler(
-                    fits[fold.id], f"dataset fold {fold.id!r}"
+                    fits[fold.id], f"dataset fold {fold.id!r}", settings
                 )
                 for fold in dataset.split.folds
             }
@@ -189,7 +191,7 @@ def _fit_standard_scaler(
     plan: _StreamPlan,
     sample_keys: SampleKeyContract,
 ) -> _ScalerFit:
-    state = _ScalerState(_ScalerFit(_new_accumulator(runtime), set(), set()))
+    state = _ScalerState(_ScalerFit(ScalerAccumulator(), set(), set()))
     inputs = _iter_scaler_inputs(runtime, plan, sample_keys)
     try:
         for item in inputs:
@@ -215,7 +217,7 @@ def _fit_folded_scaler(
     states: dict[str, _ScalerState] = {}
     for fold in folds:
         state = _ScalerState(
-            fit=_ScalerFit(_new_accumulator(runtime), set(), set()),
+            fit=_ScalerFit(ScalerAccumulator(), set(), set()),
             training_labels=frozenset(fold.train),
             horizon_policy=(
                 TargetHorizonPolicy(time_split, fold, target_horizon)
@@ -243,6 +245,7 @@ def _fit_folded_scaler(
 def _finish_folded_scaler(
     fit: _ScalerFit,
     scope: str,
+    settings: Mapping[str, ScalingConfig],
 ) -> StandardScalerArtifact:
     untrained_ids = fit.expected_ids - fit.training_ids
     if untrained_ids:
@@ -250,38 +253,31 @@ def _finish_folded_scaler(
             f"Scaler fitting has no training observations for {scope} vector IDs: "
             + ", ".join(sorted(untrained_ids))
         )
-    return _finish_scaler(fit.accumulator, fit.training_ids, scope)
+    return _finish_scaler(fit.accumulator, fit.training_ids, scope, settings)
 
 
 def _finish_scaler(
     accumulator: ScalerAccumulator,
     expected_ids: set[str],
     scope: str,
+    settings: Mapping[str, ScalingConfig],
 ) -> StandardScalerArtifact:
     if not expected_ids or accumulator.observations == 0:
         raise RuntimeError(f"Scaler fitting produced no observations for {scope}.")
-    artifact = accumulator.artifact()
-    missing = expected_ids - artifact.statistics.keys()
+    artifact = accumulator.artifact(settings)
+    missing = expected_ids - artifact.scalers.keys()
     if missing:
         raise RuntimeError(
             f"Scaler fitting has no training observations for {scope} vector IDs: "
             + ", ".join(sorted(missing))
         )
-    statistics = {
-        vector_id: artifact.statistics[vector_id] for vector_id in sorted(expected_ids)
+    scalers = {
+        vector_id: artifact.scalers[vector_id] for vector_id in sorted(expected_ids)
     }
     return StandardScalerArtifact(
-        with_mean=artifact.with_mean,
-        with_std=artifact.with_std,
-        epsilon=artifact.epsilon,
-        observations=sum(entry.count for entry in statistics.values()),
-        statistics=statistics,
+        observations=sum(entry.statistics.count for entry in scalers.values()),
+        scalers=scalers,
     )
-
-
-def _new_accumulator(runtime: Runtime) -> ScalerAccumulator:
-    policy = runtime.require_dataset().scaling
-    return ScalerAccumulator(policy.with_mean, policy.with_std, policy.epsilon)
 
 
 def _iter_scaler_inputs(

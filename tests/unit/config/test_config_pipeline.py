@@ -1,7 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from jerrythomas.config.dataset.series import SeriesConfig, SequenceConfig
+from jerrythomas.config.dataset.series import (
+    ScalingConfig,
+    SeriesConfig,
+    SequenceConfig,
+)
 
 
 def test_feature_config_simple_fields():
@@ -17,7 +21,7 @@ def test_feature_config_simple_fields():
 
     assert config.id == "time"
     assert config.stream == "time_linear"
-    assert config.scale is True
+    assert config.scale == ScalingConfig()
     assert config.sequence == SequenceConfig(size=5, stride=1)
 
 

@@ -13,9 +13,9 @@ from jerrythomas.artifacts.scaler import (
 from jerrythomas.config.dataset.dataset import (
     DatasetConfig,
     SampleConfig,
-    ScalingConfig,
 )
 from jerrythomas.config.dataset.series import (
+    ScalingConfig,
     SeriesConfig,
     SequenceConfig,
     TargetSeriesConfig,
@@ -96,7 +96,7 @@ def _dataset(
     *,
     cadence: str = "1h",
     sample_keys: tuple[str, ...] = (),
-    scale: bool = True,
+    scale: bool | ScalingConfig = True,
     sequence: SequenceConfig | None = None,
     split: HashSplitConfig | TimeSplitConfig | None = None,
 ) -> DatasetConfig:
@@ -129,9 +129,9 @@ def test_materialize_standard_scaler_uses_all_scalar_observations(
 
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
-    assert artifact.version == 4
+    assert artifact.version == 5
     assert artifact.observations == 2
-    assert artifact.statistics["x"].mean == 2.0
+    assert artifact.scalers["x"].statistics.mean == 2.0
     assert result.meta == {
         "series": 1,
         "observations": 2,
@@ -155,7 +155,7 @@ def test_materialize_standard_scaler_fits_intrinsic_list_positions(
 
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
-    statistics = artifact.statistics["x"]
+    statistics = artifact.scalers["x"].statistics
     assert isinstance(statistics, PositionalScalerStatistics)
     first, second = statistics.positions
     assert first.count == 2
@@ -207,29 +207,25 @@ def test_folded_scaler_fits_list_positions_from_training_rows_only(
 
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
-    statistics = artifact.for_fold("fold").statistics["x"]
+    statistics = artifact.for_fold("fold").scalers["x"].statistics
     assert isinstance(statistics, PositionalScalerStatistics)
     first, second = statistics.positions
     assert first == ScalerStatistics(mean=1.0, std=1e-12, count=1)
     assert second == ScalerStatistics(mean=100.0, std=1e-12, count=1)
 
 
-def test_materialize_standard_scaler_persists_dataset_scaling(
+def test_materialize_standard_scaler_persists_feature_scaling(
     tmp_path,
 ) -> None:
-    runtime = _runtime(tmp_path, _dataset(), rows=[_record(1, 4.0)])
-
-    runtime.dataset = runtime.require_dataset().model_copy(
-        update={"scaling": ScalingConfig(with_mean=False, with_std=False, epsilon=0.5)}
-    )
+    settings = ScalingConfig(with_mean=False, with_std=False, epsilon=0.5)
+    runtime = _runtime(tmp_path, _dataset(scale=settings), rows=[_record(1, 4.0)])
     task = ScalerTask(output="scaler.json")
     build_scaler_artifact(runtime, task)
 
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
-    assert artifact.with_mean is False
-    assert artifact.with_std is False
-    assert artifact.epsilon == 0.5
+    assert artifact.scalers["x"].settings == settings
+    assert artifact.scalers["x"].statistics.std == 0.5
 
 
 @pytest.mark.parametrize("placeholder_value", [None, 100.0])
@@ -259,7 +255,7 @@ def test_standard_scaler_excludes_placeholder_only_wide_ids(
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
     assert artifact.observations == 1
-    assert tuple(artifact.statistics) == ("x__@bucket:known",)
+    assert tuple(artifact.scalers) == ("x__@bucket:known",)
 
 
 @pytest.mark.parametrize(
@@ -317,8 +313,8 @@ def test_scaler_excludes_leading_placeholders_for_later_entities(
     scaler = artifact.for_fold("fold") if split is not None else artifact
     assert isinstance(scaler, StandardScalerArtifact)
     assert scaler.observations == 3
-    assert scaler.statistics["x"].count == 3
-    assert scaler.statistics["x"].mean == pytest.approx(5 / 3)
+    assert scaler.scalers["x"].statistics.count == 3
+    assert scaler.scalers["x"].statistics.mean == pytest.approx(5 / 3)
 
 
 def test_scaler_fitting_observes_scalars_before_sequence(tmp_path) -> None:
@@ -334,7 +330,7 @@ def test_scaler_fitting_observes_scalars_before_sequence(tmp_path) -> None:
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
     assert artifact.observations == 2
-    assert artifact.statistics["x"].mean == 2.0
+    assert artifact.scalers["x"].statistics.mean == 2.0
 
 
 def test_target_horizon_trims_pre_sequence_feature_scaler_origins(tmp_path) -> None:
@@ -389,7 +385,7 @@ def test_target_horizon_trims_pre_sequence_feature_scaler_origins(tmp_path) -> N
     assert isinstance(artifact, FoldedScalerArtifact)
     scaler = artifact.for_fold("fold")
     assert scaler.observations == 2
-    assert scaler.statistics["x"].mean == 2.0
+    assert scaler.scalers["x"].statistics.mean == 2.0
 
 
 def test_materialize_folded_scaler_uses_dataset_owned_expanding_train_roles(
@@ -442,10 +438,10 @@ def test_materialize_folded_scaler_uses_dataset_owned_expanding_train_roles(
 
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
-    assert artifact.version == 4
-    assert artifact.for_fold("fold_0").statistics["x"].mean == 1.0
+    assert artifact.version == 5
+    assert artifact.for_fold("fold_0").scalers["x"].statistics.mean == 1.0
     assert artifact.for_fold("fold_0").observations == 1
-    assert artifact.for_fold("fold_1").statistics["x"].mean == 3.0
+    assert artifact.for_fold("fold_1").scalers["x"].statistics.mean == 3.0
     assert artifact.for_fold("fold_1").observations == 3
     assert result.meta == {
         "folds": 2,
@@ -506,7 +502,7 @@ def test_folded_scaler_honors_sample_rounding(tmp_path, rounding, mean, count) -
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
     scaler = artifact.for_fold("fold")
-    assert scaler.statistics["x"].mean == mean
+    assert scaler.scalers["x"].statistics.mean == mean
     assert scaler.observations == count
 
 
@@ -540,8 +536,8 @@ def test_scaler_opens_a_shared_stream_once_for_all_scaled_fields(tmp_path) -> No
 
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
-    assert artifact.statistics["value"].mean == 2.0
-    assert artifact.statistics["other"].mean == 20.0
+    assert artifact.scalers["value"].statistics.mean == 2.0
+    assert artifact.scalers["other"].statistics.mean == 20.0
     assert source.opens == 1
     assert source.closes == 1
 
@@ -579,7 +575,7 @@ def test_grouped_scaler_preserves_global_scalar_statistics_across_sample_keys(
 
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
-    statistics = artifact.statistics["value"]
+    statistics = artifact.scalers["value"].statistics
     assert statistics.count == 4
     assert statistics.mean == pytest.approx(11.0)
     assert statistics.std == pytest.approx(131.5**0.5)
@@ -709,8 +705,8 @@ def test_folded_scaler_includes_filled_training_placeholders(
     assert isinstance(artifact, FoldedScalerArtifact)
     scaler = artifact.for_fold("fold")
     assert scaler.observations == 3
-    assert scaler.statistics["x"].count == 3
-    assert scaler.statistics["x"].mean == pytest.approx(5 / 3)
+    assert scaler.scalers["x"].statistics.count == 3
+    assert scaler.scalers["x"].statistics.mean == pytest.approx(5 / 3)
 
 
 def test_folded_scaler_excludes_placeholder_only_wide_ids(
@@ -748,7 +744,7 @@ def test_folded_scaler_excludes_placeholder_only_wide_ids(
     assert isinstance(artifact, FoldedScalerArtifact)
     scaler = artifact.for_fold("fold")
     assert scaler.observations == 1
-    assert tuple(scaler.statistics) == ("x__@bucket:known",)
+    assert tuple(scaler.scalers) == ("x__@bucket:known",)
 
 
 def test_materialize_folded_scaler_supports_hash_splits(tmp_path) -> None:
@@ -768,4 +764,4 @@ def test_materialize_folded_scaler_supports_hash_splits(tmp_path) -> None:
 
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
-    assert artifact.for_fold("fold").statistics["x"].mean == 3.0
+    assert artifact.for_fold("fold").scalers["x"].statistics.mean == 3.0

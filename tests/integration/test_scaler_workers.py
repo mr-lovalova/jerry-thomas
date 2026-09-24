@@ -14,7 +14,7 @@ from jerrythomas.artifacts.scaler import (
     StandardScalerArtifact,
     load_scaler_artifact,
 )
-from jerrythomas.config.dataset.dataset import ScalingConfig
+from jerrythomas.config.dataset.series import ScalingConfig
 from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.config.tasks.scaler import ScalerTask
 from jerrythomas.execution.events import PipelineFinished, PipelineStarted
@@ -28,6 +28,7 @@ from jerrythomas.runtime import Runtime
 from jerrythomas.services.project_definition import load_project_definition
 from jerrythomas.services.runtime_compiler import compile_runtime
 from jerrythomas.services.stream_workers import StreamWorkerError
+from tests.helpers.regression import read_jsonl, serve_dataset
 
 
 def _write_yaml(path: Path, value: dict) -> None:
@@ -153,9 +154,21 @@ def test_scaler_workers_preserve_positions_nulls_and_filled_domain_rows(
                 {"operation": "forward_fill", "field": "value"},
             ],
         },
-    )
-    runtime.dataset = runtime.require_dataset().model_copy(
-        update={"scaling": ScalingConfig(with_mean=False, epsilon=0.25)}
+        features=[
+            {
+                "id": "a",
+                "stream": "a",
+                "field": "value",
+                "scale": {"with_mean": False, "epsilon": 0.25},
+            },
+            {
+                "id": "b",
+                "stream": "b",
+                "field": "value",
+                "scale": {"with_std": False},
+            },
+            {"id": "empty", "stream": "empty", "field": "value", "scale": True},
+        ],
     )
     task = ScalerTask(output="scaler.json")
     expected = _build(runtime, 1, task)
@@ -164,19 +177,20 @@ def test_scaler_workers_preserve_positions_nulls_and_filled_domain_rows(
 
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, StandardScalerArtifact)
-    assert artifact.with_mean is False
-    assert artifact.with_std is True
-    assert artifact.epsilon == 0.25
+    assert artifact.scalers["a"].settings == ScalingConfig(
+        with_mean=False, epsilon=0.25
+    )
+    assert artifact.scalers["b"].settings == ScalingConfig(with_std=False)
     assert artifact.observations == 7
-    assert tuple(artifact.statistics) == ("a", "b")
-    assert artifact.statistics["a"] == PositionalScalerStatistics(
+    assert tuple(artifact.scalers) == ("a", "b")
+    assert artifact.scalers["a"].statistics == PositionalScalerStatistics(
         positions=(
             ScalerStatistics(mean=2.0, std=1.0, count=2),
             ScalerStatistics(mean=12.0, std=3.0, count=2),
         ),
     )
-    assert artifact.statistics["b"].count == 3
-    assert artifact.statistics["b"].mean == pytest.approx(50 / 3)
+    assert artifact.scalers["b"].statistics.count == 3
+    assert artifact.scalers["b"].statistics.mean == pytest.approx(50 / 3)
     assert expected[1] == {"series": 2, "observations": 7}
 
 
@@ -199,13 +213,28 @@ def test_scaler_workers_preserve_two_folds_horizon_and_empty_partial_fold(
             "b": [_row(10, 20.0)],
             "empty": [],
         },
+        features=[
+            {
+                "id": "a",
+                "stream": "a",
+                "field": "value",
+                "scale": {"with_std": False},
+            },
+            {
+                "id": "b",
+                "stream": "b",
+                "field": "value",
+                "scale": {"with_mean": False, "epsilon": 0.5},
+            },
+            {"id": "empty", "stream": "empty", "field": "value", "scale": True},
+        ],
         targets=[
             {
                 "id": "target",
                 "stream": "a",
                 "field": "future",
                 "horizon": "2d",
-                "scale": True,
+                "scale": {"with_mean": False, "epsilon": 2.0},
             }
         ],
         split={
@@ -234,17 +263,138 @@ def test_scaler_workers_preserve_two_folds_horizon_and_empty_partial_fold(
     artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
     assert isinstance(artifact, FoldedScalerArtifact)
     early = artifact.for_fold("early")
-    assert tuple(early.statistics) == ("a", "target")
-    assert early.statistics["a"] == ScalerStatistics(mean=2.0, std=1.0, count=2)
-    assert early.statistics["target"] == ScalerStatistics(mean=15.0, std=5.0, count=2)
+    assert tuple(early.scalers) == ("a", "target")
+    assert early.scalers["a"].settings == ScalingConfig(with_std=False)
+    assert early.scalers["target"].settings == ScalingConfig(
+        with_mean=False, epsilon=2.0
+    )
+    assert early.scalers["a"].statistics == ScalerStatistics(mean=2.0, std=1.0, count=2)
+    assert early.scalers["target"].statistics == ScalerStatistics(
+        mean=15.0, std=5.0, count=2
+    )
     expanded = artifact.for_fold("expanded")
-    assert tuple(expanded.statistics) == ("a", "b", "target")
-    assert expanded.statistics["a"].mean == 28.25
-    assert expanded.statistics["a"].count == 4
-    assert expanded.statistics["b"] == ScalerStatistics(mean=20.0, std=1e-12, count=1)
-    assert expanded.statistics["target"].mean == 40.0
-    assert expanded.statistics["target"].count == 4
+    assert tuple(expanded.scalers) == ("a", "b", "target")
+    assert expanded.scalers["a"].statistics.mean == 28.25
+    assert expanded.scalers["a"].statistics.count == 4
+    assert expanded.scalers["b"].statistics == ScalerStatistics(
+        mean=20.0, std=0.5, count=1
+    )
+    assert expanded.scalers["target"].statistics.mean == 40.0
+    assert expanded.scalers["target"].statistics.count == 4
     assert expected[1] == {"folds": 2, "observations": 13}
+
+
+def test_mixed_feature_scaling_preserves_fold_outputs_across_workers(tmp_path) -> None:
+    root = tmp_path / "project"
+    rows = [
+        _row(day, value, id_=partition, vector=[value, 2 * value], future=100 * value)
+        for partition in ("A", "B")
+        for day, value in ((4, 101.0), (2, 3.0), (1, 1.0), (3, 5.0))
+    ]
+    _runtime(
+        root,
+        {"a": rows, "b": rows},
+        features=[
+            {
+                "id": "center",
+                "stream": "a",
+                "field": "value",
+                "scale": {"with_std": False},
+            },
+            {
+                "id": "divide",
+                "stream": "a",
+                "field": "value",
+                "scale": {"with_mean": False, "epsilon": 4.0},
+            },
+            {"id": "raw", "stream": "a", "field": "value", "scale": False},
+            {"id": "positions", "stream": "a", "field": "vector", "scale": True},
+            {
+                "id": "window",
+                "stream": "a",
+                "field": "value",
+                "sequence": {"size": 2},
+                "scale": {"with_std": False, "epsilon": 0.5},
+            },
+            {"id": "default", "stream": "b", "field": "value", "scale": True},
+        ],
+        targets=[
+            {
+                "id": "target",
+                "stream": "a",
+                "field": "future",
+                "horizon": "0d",
+                "scale": {"with_std": False, "epsilon": 0.01},
+            }
+        ],
+        split={
+            "mode": "time",
+            "intervals": [
+                {"id": "train", "until": "2024-01-04T00:00:00Z"},
+                {"id": "validation"},
+            ],
+            "folds": [
+                {"id": "holdout", "train": ["train"], "validation": ["validation"]}
+            ],
+        },
+    )
+    project = yaml.safe_load((root / "project.yaml").read_text(encoding="utf-8"))
+    project["paths"].update({"profiles": "profiles", "operations": "operations"})
+    _write_yaml(root / "project.yaml", project)
+    _write_yaml(
+        root / "operations" / "dataset.yaml",
+        {"kind": "runtime", "entrypoint": "core.runtime.dataset", "dataset": "default"},
+    )
+    _write_yaml(
+        root / "profiles" / "serve.dataset.yaml",
+        {
+            "operation": "dataset",
+            "output": {"transport": "fs", "format": "jsonl", "directory": "output"},
+        },
+    )
+
+    baseline = None
+    for workers in (1, 2, 8):
+        _write_yaml(
+            root / "profiles" / "serve.defaults.yaml",
+            {"execution": {"workers": workers, "sort_buffer_mb": 1}},
+        )
+        request = serve_dataset(root)
+        output = request.serve_run_plans[0].paths.dataset_dir
+        scaler_path = root / "build" / "datasets" / "default" / "scaler.json"
+        outputs = {
+            role: read_jsonl(output / f"dataset.holdout.{role}.jsonl")
+            for role in ("train", "validation")
+        }
+        snapshot = scaler_path.read_bytes(), outputs
+        if baseline is None:
+            baseline = snapshot
+        else:
+            assert snapshot == baseline
+
+    artifact = load_scaler_artifact(scaler_path)
+    assert isinstance(artifact, FoldedScalerArtifact)
+    scalers = artifact.for_fold("holdout").scalers
+    assert "raw" not in scalers
+    assert scalers["center"].statistics.mean == 3.0
+    assert scalers["center"].statistics.count == 6
+    assert scalers["divide"].statistics.std == 4.0
+    assert scalers["target"].statistics.mean == 300.0
+    # Sequence positions share statistics fitted on the original scalar series.
+    assert scalers["window"].statistics == ScalerStatistics(
+        mean=3.0, std=(8 / 3) ** 0.5, count=6
+    )
+    assert len(outputs["validation"]) == 2
+    assert {row["key"][1] for row in outputs["validation"]} == {"A", "B"}
+    for row in outputs["validation"]:
+        values = row["features"]["values"]
+        assert values["center"] == 98.0
+        assert values["divide"] == 25.25
+        assert values["raw"] == 101.0
+        assert values["positions"] == pytest.approx([98 / (8 / 3) ** 0.5] * 2)
+        assert values["window"] == [2.0, 98.0]
+        assert values["default"] == pytest.approx(98 / (8 / 3) ** 0.5)
+        assert row["targets"]["values"]["target"] == 9800.0
 
 
 @pytest.mark.parametrize("workers", [1, 2])

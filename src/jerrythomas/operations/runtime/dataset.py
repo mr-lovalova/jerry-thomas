@@ -248,8 +248,12 @@ def _served_dataset_table(
         runtime,
         schema.features,
         schema.targets,
-        scaled_feature_ids=tuple(cfg.id for cfg in dataset.features if cfg.scale),
-        scaled_target_ids=tuple(cfg.id for cfg in dataset.targets if cfg.scale),
+        scaled_feature_ids=tuple(
+            cfg.id for cfg in dataset.features if cfg.scale is not None
+        ),
+        scaled_target_ids=tuple(
+            cfg.id for cfg in dataset.targets if cfg.scale is not None
+        ),
     )
 
 

@@ -1,14 +1,16 @@
 import math
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass, replace
 from fractions import Fraction
 from numbers import Real
 
 from jerrythomas.artifacts.scaler import (
+    FittedScaler,
     PositionalScalerStatistics,
     ScalerStatistics,
     StandardScalerArtifact,
 )
+from jerrythomas.config.dataset.series import ScalingConfig
 from jerrythomas.domain.series_id import base_id
 from jerrythomas.domain.sample import Sample
 from jerrythomas.domain.vector import Vector
@@ -51,25 +53,7 @@ class _RunningStatistics:
 
 
 class ScalerAccumulator:
-    def __init__(
-        self,
-        with_mean: bool = True,
-        with_std: bool = True,
-        epsilon: float = 1e-12,
-    ) -> None:
-        if not isinstance(with_mean, bool):
-            raise TypeError("with_mean must be a boolean")
-        if not isinstance(with_std, bool):
-            raise TypeError("with_std must be a boolean")
-        if isinstance(epsilon, bool) or not isinstance(epsilon, Real):
-            raise TypeError("epsilon must be numeric")
-        epsilon = float(epsilon)
-        if not math.isfinite(epsilon) or epsilon <= 0:
-            raise ValueError("epsilon must be finite and positive")
-
-        self.with_mean: bool = with_mean
-        self.with_std: bool = with_std
-        self.epsilon: float = epsilon
+    def __init__(self) -> None:
         self._statistics: dict[
             str,
             _RunningStatistics | tuple[_RunningStatistics, ...],
@@ -121,14 +105,6 @@ class ScalerAccumulator:
 
     def extend(self, other: "ScalerAccumulator") -> None:
         """Combine disjoint vector statistics without changing their exact moments."""
-        if (self.with_mean, self.with_std, self.epsilon) != (
-            other.with_mean,
-            other.with_std,
-            other.epsilon,
-        ):
-            raise ValueError(
-                "Cannot combine scaler accumulators with different settings."
-            )
         overlap = self._statistics.keys() & other._statistics.keys()
         if overlap:
             raise ValueError(
@@ -147,14 +123,19 @@ class ScalerAccumulator:
         )
         self.observations += other.observations
 
-    def artifact(self) -> StandardScalerArtifact:
+    def artifact(self, settings: Mapping[str, ScalingConfig]) -> StandardScalerArtifact:
         if not self._statistics:
             raise RuntimeError("Scaler fitting produced no numeric observations.")
-        statistics: dict[
-            str,
-            ScalerStatistics | PositionalScalerStatistics,
-        ] = {}
+        scalers: dict[str, FittedScaler] = {}
         for vector_id, running in self._statistics.items():
+            series_id = base_id(vector_id)
+            try:
+                policy = settings[series_id]
+            except KeyError as exc:
+                raise KeyError(
+                    f"Missing scaler settings for series {series_id!r}."
+                ) from exc
+            statistics: ScalerStatistics | PositionalScalerStatistics
             if isinstance(running, tuple):
                 missing = [
                     str(position)
@@ -166,17 +147,15 @@ class ScalerAccumulator:
                         f"Scaler fitting produced no numeric observations for vector "
                         f"{vector_id!r} positions: {', '.join(missing)}."
                     )
-                statistics[vector_id] = PositionalScalerStatistics(
-                    positions=tuple(entry.finish(self.epsilon) for entry in running),
+                statistics = PositionalScalerStatistics(
+                    positions=tuple(entry.finish(policy.epsilon) for entry in running),
                 )
             else:
-                statistics[vector_id] = running.finish(self.epsilon)
+                statistics = running.finish(policy.epsilon)
+            scalers[vector_id] = FittedScaler(settings=policy, statistics=statistics)
         return StandardScalerArtifact(
-            with_mean=self.with_mean,
-            with_std=self.with_std,
-            epsilon=self.epsilon,
             observations=self.observations,
-            statistics=statistics,
+            scalers=scalers,
         )
 
 
@@ -236,7 +215,8 @@ def _scale_value(
 ) -> object:
     if value is None:
         return None
-    statistics = _statistics_for(vector_id, artifact)
+    scaler = _scaler_for(vector_id, artifact)
+    statistics = scaler.statistics
     if isinstance(statistics, PositionalScalerStatistics):
         if not isinstance(value, list):
             raise TypeError(
@@ -248,20 +228,20 @@ def _scale_value(
                 f"for positional scaling, got {len(value)}."
             )
         return [
-            _scale_scalar(item, position, artifact)
+            _scale_scalar(item, position, scaler.settings)
             for item, position in zip(value, statistics.positions, strict=True)
         ]
     if isinstance(value, list):
-        return [_scale_scalar(item, statistics, artifact) for item in value]
-    return _scale_scalar(value, statistics, artifact)
+        return [_scale_scalar(item, statistics, scaler.settings) for item in value]
+    return _scale_scalar(value, statistics, scaler.settings)
 
 
-def _statistics_for(
+def _scaler_for(
     vector_id: str,
     artifact: StandardScalerArtifact,
-) -> ScalerStatistics | PositionalScalerStatistics:
+) -> FittedScaler:
     try:
-        return artifact.statistics[vector_id]
+        return artifact.scalers[vector_id]
     except KeyError as exc:
         raise KeyError(f"Missing scaler statistics for vector {vector_id!r}.") from exc
 
@@ -269,14 +249,14 @@ def _statistics_for(
 def _scale_scalar(
     value: object,
     statistics: ScalerStatistics,
-    artifact: StandardScalerArtifact,
+    settings: ScalingConfig,
 ) -> float | None:
     if value is None:
         return None
     number = _finite_number(value)
-    if artifact.with_mean:
+    if settings.with_mean:
         number -= statistics.mean
-    if artifact.with_std:
+    if settings.with_std:
         number /= statistics.std
     return number
 
