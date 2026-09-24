@@ -1,6 +1,8 @@
+import gc
 import pickle
 from dataclasses import dataclass
 from unittest.mock import Mock
+from weakref import WeakValueDictionary
 
 import pytest
 
@@ -143,16 +145,38 @@ def test_batch_sort_resets_reused_progress() -> None:
     assert progress.snapshot(0).phase == "reading"
 
 
-def test_batch_sort_preserves_input_order_across_merge_passes(monkeypatch) -> None:
+@pytest.mark.parametrize("buffer_bytes", [1, 10_000])
+def test_batch_sort_preserves_equal_key_order(monkeypatch, buffer_bytes) -> None:
     monkeypatch.setattr(sort_module, "_MAX_OPEN_RUNS", 2)
     items = [StableSortItem(value=1, position=index) for index in reversed(range(6))]
-    buffer_bytes = sum(_serialized_size(item) for item in items[:2])
-
     ordered = list(
         batch_sort(items, buffer_bytes=buffer_bytes, key=lambda item: item.value)
     )
 
     assert [item.position for item in ordered] == list(reversed(range(6)))
+
+
+def test_batch_sort_releases_consumed_keys_and_remaining_keys_on_close() -> None:
+    @dataclass(order=True)
+    class SortKey:
+        value: int
+
+    keys: WeakValueDictionary[int, SortKey] = WeakValueDictionary()
+
+    def key(value: int) -> SortKey:
+        result = SortKey(value)
+        keys[value] = result
+        return result
+
+    ordered = batch_sort([3, 1, 2], buffer_bytes=10_000, key=key)
+    assert next(ordered) == 1
+    assert next(ordered) == 2
+    gc.collect()
+    assert 1 not in keys
+
+    ordered.close()
+    gc.collect()
+    assert not keys
 
 
 @pytest.mark.parametrize(

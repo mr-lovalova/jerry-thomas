@@ -121,7 +121,9 @@ def batch_sort(
 
     if final:
         progress.emitting(len(first_run))
-        for _, payload in first_run:
+        first_run.reverse()
+        while first_run:
+            _, payload = first_run.pop()
             yield pickle.loads(payload)
         return
 
