@@ -98,12 +98,10 @@ def create_source_yaml(
     project_yaml: Path | None = None,
     scaffold_lock: ScaffoldLock | None = None,
 ) -> Path:
-    root_dir, _, _ = pkg_root(root)
-    proj_yaml = (
-        project_yaml.resolve()
-        if project_yaml is not None
-        else default_project_yaml_path(root_dir)
-    )
+    if project_yaml is None:
+        root_dir, _, _ = pkg_root(root)
+        project_yaml = default_project_yaml_path(root_dir)
+    proj_yaml = project_yaml.resolve()
     with acquire_scaffold_lock(proj_yaml.parent, scaffold_lock) as project_lock:
         validate_source_id(source_id)
         parser_args = parser_args or {}

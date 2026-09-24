@@ -11,6 +11,7 @@ from jerrythomas.config.observability import ObservabilityConfig
 from jerrythomas.config.profiles.base import Profile, ProfileCommand
 from jerrythomas.config.profiles.build import (
     ARTIFACT_MODE_ADAPTER,
+    ArtifactMode,
     BuildProfile,
 )
 from jerrythomas.config.profiles.defaults import (
@@ -132,6 +133,15 @@ def _select_profiles(
         raise ProfileCommandError(str(exc)) from exc
 
 
+def _artifact_mode(configured_mode: str | None, cli_mode: str | None) -> ArtifactMode:
+    try:
+        return ARTIFACT_MODE_ADAPTER.validate_python(
+            cli_mode if cli_mode is not None else configured_mode or "auto"
+        )
+    except ValueError as exc:
+        raise ProfileCommandError(f"Invalid artifact mode: {exc}") from exc
+
+
 def _prerequisite_settings(
     definition: ProjectDefinition,
     command: str,
@@ -141,12 +151,7 @@ def _prerequisite_settings(
     command_observability: CommandObservability,
     execution_dir: Path,
 ) -> BuildSettings:
-    try:
-        mode = ARTIFACT_MODE_ADAPTER.validate_python(
-            cli_mode if cli_mode is not None else configured_mode or "auto"
-        )
-    except ValueError as exc:
-        raise ProfileCommandError(f"Invalid artifact mode: {exc}") from exc
+    mode = _artifact_mode(configured_mode, cli_mode)
     try:
         if observability is not None:
             logging = observability.logging
@@ -200,7 +205,7 @@ def _serve_run_plans(
 def build_build_run_request(
     project: str,
     profile_name: str | None = None,
-    force: bool = False,
+    artifact_mode: str | None = None,
     command_observability: CommandObservability = CommandObservability(),
 ) -> BuildRunRequest | None:
     definition = _load_definition(project)
@@ -249,7 +254,7 @@ def build_build_run_request(
             BuildJob(
                 task=artifact_tasks_by_id[profile.operation].model_copy(deep=True),
                 settings=BuildSettings(
-                    mode="rebuild" if force else profile.artifact_mode or "auto",
+                    mode=_artifact_mode(profile.artifact_mode, artifact_mode),
                     observability=replace(
                         observability,
                         log_output=resolve_execution_log_outputs(

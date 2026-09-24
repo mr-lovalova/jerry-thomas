@@ -1,70 +1,30 @@
-import argparse
-
-from jerrythomas.config.options import OUTPUT_FORMATS, OUTPUT_TRANSPORTS, OUTPUT_VIEWS
+from jerrythomas.config.options import OUTPUT_FORMATS
 from jerrythomas.config.preview import PREVIEW_STAGES
-from jerrythomas.io.compression import COMPRESSION_CHOICES
 
 from .common import (
     add_artifact_mode_flag,
     add_execution_observability_flags,
+    add_logging_flags,
+    add_profile_flag,
     add_project_flag,
+    add_runtime_output_flags,
     positive_integer,
 )
 
 
-def add_serve_command(sub, common: argparse.ArgumentParser) -> None:
+def add_serve_command(sub) -> None:
     parser = sub.add_parser(
         "serve",
-        help="produce dataset samples with configurable logging",
-        parents=[common],
+        help="run dataset or stream operations through serve profiles",
     )
     add_project_flag(parser)
-    parser.add_argument(
-        "--result-json",
-        action="store_true",
-        help="write completed run results as JSON to stdout; requires filesystem data outputs",
-    )
+    add_profile_flag(parser, "serve")
     parser.add_argument(
         "--limit",
         "-n",
         type=positive_integer,
         default=None,
-        help="optional cap on the number of samples to emit",
-    )
-    parser.add_argument(
-        "--output-transport",
-        choices=OUTPUT_TRANSPORTS,
-        help="output transport (stdout or fs) for serve runs",
-    )
-    parser.add_argument(
-        "--output-format",
-        choices=OUTPUT_FORMATS,
-        help="output format (jsonl/csv/parquet/pickle) for serve runs",
-    )
-    parser.add_argument(
-        "--output-directory",
-        help="destination directory when using fs transport",
-    )
-    parser.add_argument(
-        "--output-encoding",
-        help="text encoding for fs jsonl/csv outputs (default: utf-8)",
-    )
-    parser.add_argument(
-        "--output-compression",
-        choices=COMPRESSION_CHOICES,
-        help="compress fs jsonl/csv output with gzip",
-    )
-    parser.add_argument(
-        "--output-view",
-        choices=OUTPUT_VIEWS,
-        help=(
-            "output representation view "
-            "(jsonl: raw|flat, csv/parquet: flat, pickle: raw)"
-        ),
-    )
-    parser.add_argument(
-        "--profile",
-        help="select a serve profile by name; explicitly selected disabled profiles still run",
+        help="optional cap on dataset samples or stream records per output",
     )
     parser.add_argument(
         "--preview",
@@ -72,5 +32,12 @@ def add_serve_command(sub, common: argparse.ArgumentParser) -> None:
         default=None,
         help="stop serve after a semantic pipeline stage",
     )
-    add_execution_observability_flags(parser)
+    add_runtime_output_flags(parser, formats=OUTPUT_FORMATS)
+    parser.add_argument(
+        "--result-json",
+        action="store_true",
+        help="write completed run results as JSON to stdout; requires filesystem data outputs",
+    )
     add_artifact_mode_flag(parser)
+    add_logging_flags(parser)
+    add_execution_observability_flags(parser)

@@ -69,7 +69,7 @@ def _build_series(root: Path, workers: int) -> None:
     request = build_build_run_request(
         str(root / "project.yaml"),
         profile_name="series",
-        force=True,
+        artifact_mode="rebuild",
         command_observability=CommandObservability(visuals=False, log_level="CRITICAL"),
     )
     assert request is not None

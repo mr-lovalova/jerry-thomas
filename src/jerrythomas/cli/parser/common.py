@@ -1,5 +1,9 @@
 import argparse
 import math
+from typing import Sequence
+
+from jerrythomas.config.options import OUTPUT_TRANSPORTS, OUTPUT_VIEWS
+from jerrythomas.io.compression import COMPRESSION_CHOICES
 
 from jerrythomas.config.profiles.build import ARTIFACT_MODES
 
@@ -42,7 +46,7 @@ def add_artifact_mode_flag(parser: argparse.ArgumentParser) -> None:
         "--artifact-mode",
         choices=ARTIFACT_MODES,
         default=None,
-        help="prerequisite artifact policy: auto | rebuild | require_current",
+        help="artifact policy: auto | rebuild | require_current",
     )
 
 
@@ -63,21 +67,61 @@ def add_execution_observability_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def build_logging_parent(suppress_defaults: bool = False) -> argparse.ArgumentParser:
+def add_logging_flags(
+    parser: argparse.ArgumentParser, *, suppress_defaults: bool = True
+) -> None:
     default = argparse.SUPPRESS if suppress_defaults else None
-    common = argparse.ArgumentParser(add_help=False)
-    common.add_argument(
+    parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         type=str.upper,
         default=default,
         help="set logging level (default: INFO)",
     )
-    common.add_argument(
+    parser.add_argument(
         "--log-output",
         action="append",
         metavar="TARGET",
         default=default,
         help="repeatable log output target: stderr | stdout | fs:<path> | execution[:<relative-path>]",
     )
-    return common
+
+
+def add_profile_flag(parser: argparse.ArgumentParser, command: str) -> None:
+    parser.add_argument(
+        "--profile",
+        help=f"select a {command} profile by name; explicitly selected disabled profiles still run",
+    )
+
+
+def add_runtime_output_flags(
+    parser: argparse.ArgumentParser, *, formats: Sequence[str]
+) -> None:
+    parser.add_argument(
+        "--output-transport",
+        choices=OUTPUT_TRANSPORTS,
+        help="override the profile output transport (stdout or fs)",
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=formats,
+        help="override the profile output format",
+    )
+    parser.add_argument(
+        "--output-directory",
+        help="destination directory when using fs transport",
+    )
+    parser.add_argument(
+        "--output-encoding",
+        help="text encoding for filesystem text outputs (default: utf-8)",
+    )
+    parser.add_argument(
+        "--output-compression",
+        choices=COMPRESSION_CHOICES,
+        help="compress fs jsonl/csv output with gzip",
+    )
+    parser.add_argument(
+        "--output-view",
+        choices=OUTPUT_VIEWS,
+        help="record representation; supported views depend on the output format",
+    )

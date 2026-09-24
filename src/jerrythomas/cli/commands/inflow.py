@@ -11,7 +11,7 @@ from jerrythomas.cli.prompts import (
     prompt_required,
 )
 from jerrythomas.cli.source_options import SOURCE_TRANSPORTS, source_formats_for
-from jerrythomas.cli.workspace import WorkspaceContext, resolve_default_project_yaml
+from jerrythomas.cli.workspace import WorkspaceContext, resolve_scaffold_project_yaml
 from jerrythomas.services.scaffold.discovery import (
     list_domains,
     list_dtos,
@@ -318,11 +318,11 @@ def handle(
     *,
     plugin_root: Path | None = None,
     workspace: WorkspaceContext | None = None,
+    project: str | None = None,
 ) -> None:
+    project_yaml = resolve_scaffold_project_yaml(project, workspace)
     root_dir, package_name, _ = pkg_root(plugin_root)
-    project_yaml = resolve_default_project_yaml(workspace) or default_project_yaml_path(
-        root_dir
-    )
+    project_yaml = project_yaml or default_project_yaml_path(root_dir)
     plan = _collect_stream_plan(plugin_root, package_name, project_yaml)
     try:
         result = execute_stream_plan(plan)

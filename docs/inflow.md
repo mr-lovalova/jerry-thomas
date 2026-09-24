@@ -2,6 +2,8 @@
 
 `jerry inflow create` is an interactive wizard that scaffolds an end-to-end
 source-backed stream: source YAML + DTO/parser + domain + mapper + stream.
+Use `--project <alias|folder|project.yaml>` to select the YAML destination;
+Python code stays in the workspace's `plugin_root`.
 
 ## Quick Example
 
@@ -32,8 +34,8 @@ This produces (paths may vary):
 - `src/<package>/parsers/weather_noaa_dto_parser.py`
 - `src/<package>/domains/weather/model.py`
 - `src/<package>/mappers/map_weather_noaa_dto_to_weather.py`
-- `your-dataset/sources/noaa.weather.yaml`
-- `your-dataset/streams/weather.weather.yaml`
+- `your-project/sources/noaa.weather.yaml`
+- `your-project/streams/weather.weather.yaml`
 
 ## Identity vs Custom
 
@@ -56,7 +58,7 @@ shape (timezone‑aware `time` plus any identity fields). Otherwise choose
 ## After Scaffolding
 
 1. Fill placeholders in `sources/*.yaml` (paths/URLs/auth/etc.).
-2. Reference your stream id in `dataset.yaml` under `stream: <stream_id>`
+2. Reference your stream id in `datasets/<id>.yaml` under `stream: <stream_id>`
    and select a `field` for each feature/target.
 3. From the plugin root, reinstall it if entry points were added:
 

@@ -436,3 +436,36 @@ def test_materialize_request_rejects_output_log_collision(tmp_path: Path) -> Non
             output=None,
             artifact_mode=None,
         )
+
+
+@pytest.mark.parametrize("mode", [None, "auto", "rebuild", "require_current"])
+def test_build_artifact_mode_override_applies_to_every_selected_profile(
+    tmp_path: Path, mode
+) -> None:
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir()
+    (profiles / "build.defaults.yaml").write_text("artifact_mode: require_current\n")
+    (profiles / "build.series.yaml").write_text("operation: dataset.default.series\n")
+    (profiles / "build.metadata.yaml").write_text(
+        "operation: dataset.default.metadata\nartifact_mode: rebuild\n"
+    )
+
+    request = build_build_run_request(project=str(project_yaml), artifact_mode=mode)
+
+    assert request is not None
+    settings = {job.task.id: job.settings.mode for job in request.jobs}
+    assert settings == {
+        "dataset.default.series": mode or "require_current",
+        "dataset.default.metadata": mode or "rebuild",
+    }
+
+
+def test_build_request_rejects_invalid_artifact_mode(tmp_path: Path) -> None:
+    project_yaml = _write_project(tmp_path)
+    profiles = tmp_path / "profiles"
+    profiles.mkdir()
+    (profiles / "build.series.yaml").write_text("operation: dataset.default.series\n")
+
+    with pytest.raises(ProfileCommandError, match="Invalid artifact mode"):
+        build_build_run_request(project=str(project_yaml), artifact_mode="force")

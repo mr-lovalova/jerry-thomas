@@ -1,13 +1,12 @@
-import argparse
-
 from jerrythomas.cli.source_options import SOURCE_FORMATS, SOURCE_TRANSPORTS
 
+from .common import add_logging_flags, add_project_flag
 
-def add_source_command(sub, common: argparse.ArgumentParser) -> None:
+
+def add_source_command(sub) -> None:
     parser = sub.add_parser(
         "source",
         help="create raw sources",
-        parents=[common],
     )
     source_sub = parser.add_subparsers(required=True)
     create = source_sub.add_parser(
@@ -29,6 +28,7 @@ def add_source_command(sub, common: argparse.ArgumentParser) -> None:
             "  Synthetic:     -t synthetic"
         ),
     )
+    add_project_flag(create)
     create.add_argument(
         "source_id",
         nargs="?",
@@ -55,3 +55,5 @@ def add_source_command(sub, common: argparse.ArgumentParser) -> None:
         "--parser",
         help="parser entrypoint (defaults to identity)",
     )
+    add_logging_flags(create)
+    add_logging_flags(parser)

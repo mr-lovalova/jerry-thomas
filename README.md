@@ -111,7 +111,7 @@ Use `jerry <command> --help` for current flags and the
 
 - `jerry build` builds deterministic series, scaler, and metadata
   artifacts. Builds are keyed by configuration and local-source
-  snapshots, and skip work when nothing changed unless you pass `--force`.
+  snapshots, and skip work when nothing changed unless you pass `--artifact-mode rebuild`.
 - Filesystem serve output is run-scoped under
   `<output-directory>/runs/<run_id>/dataset/`. Normal profiles write
   `<profile>.<ext>`; split profiles write

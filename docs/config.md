@@ -80,7 +80,8 @@ globals:
 - New scaffolded dataset projects include a `.env.example` next to `project.yaml`.
 - `paths.datasets` is optional and accepts one directory or a list. Each YAML
   filename supplies a dataset ID; duplicate IDs are rejected. Omit it for a
-  stream-only project. Dataset files contain `version` (default: `v1`).
+  stream-only project. Dataset files must declare `version`, for example
+  `version: v1`.
 - `paths.operations` optionally points to explicit operations. Each file supplies
   `kind`, `entrypoint`, and a `dataset` or `stream` binding where required.
   Jerry supplies each dataset’s artifact operations as `dataset.<id>.series`,
@@ -208,8 +209,8 @@ overwrite: true
 - `jerry materialize` runs all enabled materialize profiles in `order`;
   `--profile` selects one. Each profile references a `core.runtime.stream`
   operation whose `stream` identifies the input.
-- CLI `--output` overrides the selected profile and requires `--profile`.
-- Relative profile outputs resolve from `project.yaml`; relative CLI `--output`
+- CLI `--output-file` overrides the selected profile and requires `--profile`.
+- Relative profile outputs resolve from `project.yaml`; relative CLI `--output-file`
   values resolve from the workspace root, or the current directory without a
   workspace. A `.jsonl` path writes plain JSONL; `.jsonl.gz` writes gzip JSONL.
   The concrete path is the complete materialize output contract.
@@ -280,9 +281,9 @@ artifact_mode: auto # auto | rebuild | require_current
   block, including `transport`, `format`, and a filesystem `directory` where
   required. `output: {format: csv}` alone is not a partial profile override.
 - `observability` and its nested `logging` mapping merge by field; lists such as
-  logging `outputs` are replaced. CLI `--output-*` flags override individual
-  output fields after profile defaults are applied. An omitted encoding stays
-  unspecified through that merge; filesystem text output then defaults to
+  logging `outputs` are replaced. Serve and inspect CLI `--output-*` flags
+  override individual output fields after profile defaults are applied. An omitted
+  encoding stays unspecified through that merge; filesystem text output defaults to
   UTF-8. An explicitly configured encoding remains subject to the selected
   format's validation.
 
@@ -894,12 +895,12 @@ postprocess:
   metadata operations plus postprocess policies use this shared vector-ID
   space.
 - `scale: true` scales assembled scalar or fixed-length list values with the
-  managed `build/scaler.json` artifact when a dataset output is produced.
-  Fitting options belong to the scaler operation and cannot be overridden per
-  vector. `None` and transient `NaN` remain missing; other nonnumeric values
-  and infinity fail. Intrinsically list-valued fields are fitted independently
-  by position. Lists created from scalar `sequence` or `collect` inputs use the
-  scalar series' shared statistics at every position.
+  managed scaler artifact (default: `datasets/<id>/scaler.json`) when a dataset
+  output is produced. Fitting policy belongs to the dataset's `scaling` block
+  and cannot be overridden per vector. `None` and transient `NaN` remain missing;
+  other nonnumeric values and infinity fail. Intrinsically list-valued fields
+  are fitted independently by position. Lists created from scalar `sequence`
+  or `collect` inputs use the scalar series' shared statistics at every position.
 - `sequence` emits `SeriesSequence` windows and accepts `size` plus
   optional `stride` (default `1`). Regularize cadence with ordered transforms
   before series projection when contiguous ticks are required. The resolved
@@ -996,7 +997,9 @@ postprocess:
 
 ### Dataset Scaling
 
-Scaling policy belongs to the dataset and uses these defaults:
+Scaling policy belongs to the dataset. Each feature or target opts in with
+`scale: true` and gets its own fitted statistics. Omitting `scaling` uses these
+defaults:
 
 ```yaml
 # datasets/default.yaml
@@ -1008,7 +1011,7 @@ scaling:
 
 - An unsplit dataset stores one standard scaler fitted from all samples. A split
   dataset stores one scaler per dataset fold, fitted from that fold's `train`
-  labels. Fold definitions belong only in `datasets/default.yaml`; the scaler operation
+  labels. Fold definitions belong to the selected dataset; the scaler operation
   does not duplicate split policy.
 - `with_mean`, `with_std`, and positive finite `epsilon` are build-time options
   stored in the artifact and used unchanged at runtime.
@@ -1016,7 +1019,7 @@ scaling:
   If a primitive label is reused across folds, its values are scaled separately
   for each output. Sequence windows are constructed before scaling, so every
   value in one output sequence uses the same fold scaler.
-- `build/metadata.json` (from the `metadata` operation) is the canonical typed
+- `datasets/<id>/metadata.json` is the default path for the canonical typed
   vector contract. It records feature/target identifiers (including
   partitions), scalar/list kinds and lengths, present/null counts, inferred
   value types, per-partition timestamps, and the dataset window. Mixed

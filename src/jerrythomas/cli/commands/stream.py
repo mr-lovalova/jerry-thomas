@@ -8,7 +8,7 @@ from jerrythomas.cli.prompts import (
     pick_multiple_from_list,
     prompt_required,
 )
-from jerrythomas.cli.workspace import WorkspaceContext, resolve_default_project_yaml
+from jerrythomas.cli.workspace import WorkspaceContext, resolve_scaffold_project_yaml
 from jerrythomas.services.project import load_project
 from jerrythomas.services.scaffold.discovery import (
     list_combiners,
@@ -81,9 +81,12 @@ def handle(
     plugin_root: Path | None = None,
     use_identity: bool = False,
     workspace: WorkspaceContext | None = None,
+    project: str | None = None,
 ) -> None:
-    root_dir, _package_name, _pyproject = pkg_root(plugin_root)
-    default_project = resolve_default_project_yaml(workspace)
+    project_yaml = resolve_scaffold_project_yaml(project, workspace)
+    if project_yaml is None:
+        root_dir, _package_name, _pyproject = pkg_root(plugin_root)
+        project_yaml = default_project_yaml_path(root_dir)
     stream_type = pick_from_menu(
         "Stream type:",
         [
@@ -100,18 +103,17 @@ def handle(
     if stream_type == "aligned":
         _scaffold_aligned_stream(
             plugin_root=plugin_root,
-            project_yaml=default_project,
+            project_yaml=project_yaml,
         )
         return
     if stream_type == "broadcast":
         _scaffold_broadcast_stream(
             plugin_root=plugin_root,
-            project_yaml=default_project,
+            project_yaml=project_yaml,
         )
         return
 
-    proj_path = default_project or default_project_yaml_path(root_dir)
-    source_options = list_sources(proj_path)
+    source_options = list_sources(project_yaml)
     if not source_options:
         raise SystemExit("No sources found. Create one first (jerry source create ...)")
 
@@ -134,7 +136,7 @@ def handle(
 
     try:
         path = write_source_stream(
-            project_yaml=proj_path,
+            project_yaml=project_yaml,
             stream_id=stream_id,
             source=src_key,
             mapper_entrypoint=mapper_entrypoint,
@@ -146,11 +148,9 @@ def handle(
 
 def _scaffold_aligned_stream(
     plugin_root: Path | None,
-    project_yaml: Path | None,
+    project_yaml: Path,
 ) -> None:
-    root_dir, _name, _ = pkg_root(plugin_root)
-    proj_path = project_yaml or default_project_yaml_path(root_dir)
-    streams = list_streams(proj_path)
+    streams = list_streams(project_yaml)
     if len(streams) < 2:
         raise SystemExit("Aligned streams require at least two input streams.")
     input_streams = pick_multiple_from_list(
@@ -165,7 +165,7 @@ def _scaffold_aligned_stream(
 
     try:
         path = write_aligned_stream(
-            project_yaml=proj_path,
+            project_yaml=project_yaml,
             stream_id=stream_id,
             input_streams=input_streams,
             combine_entrypoint=combine_entrypoint,
@@ -177,11 +177,9 @@ def _scaffold_aligned_stream(
 
 def _scaffold_broadcast_stream(
     plugin_root: Path | None,
-    project_yaml: Path | None,
+    project_yaml: Path,
 ) -> None:
-    root_dir, _name, _ = pkg_root(plugin_root)
-    proj_path = project_yaml or default_project_yaml_path(root_dir)
-    streams = load_streams(load_project(proj_path)).streams
+    streams = load_streams(load_project(project_yaml)).streams
     primary_streams: list[str] = []
     broadcast_streams: list[str] = []
     for stream_id in sorted(streams):
@@ -213,7 +211,7 @@ def _scaffold_broadcast_stream(
 
     try:
         path = write_broadcast_stream(
-            project_yaml=proj_path,
+            project_yaml=project_yaml,
             stream_id=stream_id,
             primary_stream=primary_stream,
             broadcast_stream=broadcast_stream,

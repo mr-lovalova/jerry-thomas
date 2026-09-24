@@ -4,7 +4,11 @@ from pathlib import Path
 from jerrythomas.plugins import COMBINERS_EP, LOADERS_EP, MAPPERS_EP, PARSERS_EP
 from jerrythomas.services.project import load_project
 from jerrythomas.services.scaffold.entrypoints import read_entry_points
-from jerrythomas.services.scaffold.paths import pkg_root, resolve_base_pkg_dir
+from jerrythomas.services.scaffold.paths import (
+    find_pyproject,
+    pkg_root,
+    resolve_base_pkg_dir,
+)
 from jerrythomas.services.streams.loader import load_streams
 
 
@@ -41,24 +45,25 @@ def _is_dataclass(node: ast.ClassDef) -> bool:
     return False
 
 
+def _list_entry_points(root: Path | None, group: str) -> dict[str, str]:
+    pyproject = find_pyproject(root)
+    return read_entry_points(pyproject, group) if pyproject is not None else {}
+
+
 def list_parsers(root: Path | None = None) -> dict[str, str]:
-    _, _, pyproject = pkg_root(root)
-    return read_entry_points(pyproject, PARSERS_EP)
+    return _list_entry_points(root, PARSERS_EP)
 
 
 def list_loaders(root: Path | None = None) -> dict[str, str]:
-    _, _, pyproject = pkg_root(root)
-    return read_entry_points(pyproject, LOADERS_EP)
+    return _list_entry_points(root, LOADERS_EP)
 
 
 def list_mappers(root: Path | None = None) -> dict[str, str]:
-    _, _, pyproject = pkg_root(root)
-    return read_entry_points(pyproject, MAPPERS_EP)
+    return _list_entry_points(root, MAPPERS_EP)
 
 
 def list_combiners(root: Path | None = None) -> dict[str, str]:
-    _, _, pyproject = pkg_root(root)
-    return read_entry_points(pyproject, COMBINERS_EP)
+    return _list_entry_points(root, COMBINERS_EP)
 
 
 def list_domains(root: Path | None = None) -> list[str]:

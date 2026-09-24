@@ -75,6 +75,7 @@ def execute_command(
             )
         case "source":
             handle_source(
+                project=args.project,
                 source_id=args.source_id,
                 transport=args.transport,
                 format=args.format,
@@ -104,9 +105,14 @@ def execute_command(
         case "loader":
             handle_loader(name=args.name, plugin_root=plugin_root)
         case "inflow":
-            handle_inflow(plugin_root=plugin_root, workspace=workspace_context)
+            handle_inflow(
+                project=args.project,
+                plugin_root=plugin_root,
+                workspace=workspace_context,
+            )
         case "stream":
             handle_stream_create(
+                project=args.project,
                 plugin_root=plugin_root,
                 use_identity=args.identity,
                 workspace=workspace_context,

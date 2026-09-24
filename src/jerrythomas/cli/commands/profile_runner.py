@@ -91,7 +91,7 @@ def handle_build(
     request = build_build_run_request(
         project=args.project,
         profile_name=args.profile,
-        force=args.force,
+        artifact_mode=args.artifact_mode,
         command_observability=CommandObservability(
             visuals=args.visuals,
             heartbeat_interval_seconds=args.heartbeat_interval_seconds,

@@ -1,7 +1,11 @@
 # CLI Reference
 
 All commands live under the `jerry` entry point (`src/jerrythomas/cli/app.py`).
-Pass `--help` on any command for flags.
+Use `jerry <command> [subcommand] [options]`; pass `--help` on any command
+for flags. Long option names must be written in full. Logging flags work before
+or after command names, including after nested commands such as `list datasets`.
+A logging option supplied at a deeper command level overrides that option at an
+earlier level; repeat `--log-output` at the same level to select multiple targets.
 `jerry env` reports the Python/Jerry environment and installed plugin providers:
 package versions, entry-point groups/names, Python targets, and editable source
 locations when available. It reads package metadata without importing plugins;
@@ -28,7 +32,7 @@ paths; use execution-scoped logging for managed command logs.
 
 ### CLI Overrides
 
-Every `--output-*` flag addresses exactly one leaf of the selected profile's
+For serve and inspect, each `--output-*` flag addresses one leaf of the profile's
 `output` block; absent flags inherit from the profile. For example,
 `jerry serve --output-directory /tmp/out` keeps the profile's transport, format,
 encoding, and compression and writes to `/tmp/out` instead. The combined
@@ -123,7 +127,7 @@ without `--result-json`. See [saved runs](research.md#read-a-saved-run).
   - Before runtime execution, Jerry combines the artifact requirements of all
     selected profiles and prepares that union once. The artifact graph orders
     those internal jobs; it never changes profile order.
-- `jerry serve --project <project.yaml> --output-transport <stdout|fs> --output-format <jsonl|csv|parquet|pickle> [--output-view flat|raw] [--output-encoding <codec>] [--output-compression gzip] --limit N [--artifact-mode auto|rebuild|require_current] [--log-level LEVEL] [--visuals | --no-visuals] [--heartbeat-interval SECONDS] [--profile name]`
+- `jerry serve --project <project.yaml> [--profile name] --output-transport <stdout|fs> --output-format <jsonl|csv|parquet|pickle> [--output-view flat|raw] [--output-encoding <codec>] [--output-compression gzip] --limit N [--artifact-mode auto|rebuild|require_current] [--log-level LEVEL] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
   - Conforms samples to the declared schema and applies configured row filters before emitting. A configured dataset split routes a full dataset serve to one fs output per fold role, named `<profile-or-filename>.<fold-id>.<role>.<ext>`; profile `include_outputs` can narrow the set using IDs such as `fold_0.train`. Record previews emit once per unique referenced stream, `series` once per configured feature or target, and sample previews once for the combined stage. Preview cannot be combined with explicit `include_outputs`. `--limit` applies separately to each output.
   - Use `--output-transport fs --output-format jsonl --output-directory build/serve` (or `csv`, `parquet`, `pickle`) to write outputs under `<output-directory>/runs/<run_id>/dataset/`.
   - `--output-view` controls payload shape:
@@ -177,8 +181,11 @@ without `--result-json`. See [saved runs](research.md#read-a-saved-run).
     `max_cells` option and can inspect assembled or postprocessed samples.
     `--limit N` caps samples after that stage; `max_cells` remains the separate
     bound on scalar cells and individual list elements.
-- `jerry build --project <project.yaml> [--profile <name>] [--force] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
-  - Regenerates core or custom artifacts when that artifact's hash changes.
+- `jerry build --project <project.yaml> [--profile <name>] [--artifact-mode auto|rebuild|require_current] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
+  - Builds missing or stale managed artifacts with `auto`; `rebuild` rebuilds
+    the selected dependency closure and `require_current` checks it without
+    building. CLI `--artifact-mode` overrides each selected build profile's
+    policy, which inherits from `build.defaults.yaml` and then `auto`.
   - If build profiles are defined, enabled profiles run by default; use
     `--profile` to select one profile.
   - Each build profile executes its configured artifact `operation`; selected
@@ -187,7 +194,7 @@ without `--result-json`. See [saved runs](research.md#read-a-saved-run).
     profile order. The graph orders only the internal dependency jobs needed by
     each root; it never reorders the profiles. A selected dependency profile
     must be ordered before a selected dependent profile.
-- `jerry materialize [--result-json] [--profile <name>] [--output <path.jsonl|path.jsonl.gz>] [--overwrite|--no-overwrite] [--artifact-mode auto|rebuild|require_current] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
+- `jerry materialize --project <alias|folder|project.yaml> [--profile <name>] [--output-file <path.jsonl|path.jsonl.gz>] [--result-json] [--overwrite|--no-overwrite] [--artifact-mode auto|rebuild|require_current] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
   - Runs every enabled `profiles/materialize.<name>.yaml` file in configured
     order, or one profile selected by `--profile`.
   - Each profile selects a `core.runtime.stream` operation by `operation`.
@@ -199,7 +206,7 @@ without `--result-json`. See [saved runs](research.md#read-a-saved-run).
     `materialize.defaults.yaml`; concrete profile overrides begin afterward.
   - A CLI overwrite choice applies to every selected profile. Without it, each
     profile uses its own `overwrite` setting or `materialize.defaults.yaml`.
-  - `--output` overrides one selected profile and therefore requires
+  - `--output-file` overrides one selected profile and therefore requires
     `--profile`.
   - The concrete output suffix selects compression: `.jsonl` writes plain
     JSONL and `.jsonl.gz` writes gzip JSONL.
@@ -219,15 +226,20 @@ without `--result-json`. See [saved runs](research.md#read-a-saved-run).
 
 ### Scaffolding & Reference
 
+`source create`, `stream create`, and `inflow create` accept the same `--project`
+alias, folder, or YAML path as runtime commands. Omit it to use the workspace
+default or the plugin scaffold project. The selected project owns the YAML
+outputs; Python scaffolding still belongs to `plugin_root`.
+
 - `jerry plugin create <package> --out <dir>`
   - Generates a self-contained plugin workspace (pyproject, package skeleton,
     local `jerry.yaml`, and config templates).
 - `jerry demo create`
   - Generates a standalone demo workspace at `./demo/`. Run it from that
     directory; the command does not modify a parent `jerry.yaml`.
-- `jerry inflow create`
+- `jerry inflow create [--project <alias|folder|project.yaml>]`
   - Wizard to scaffold a complete source-backed stream (source YAML + parser/DTO + mapper + stream).
-- `jerry stream create [--identity]`
+- `jerry stream create [--project <alias|folder|project.yaml>] [--identity]`
   - Writes a source-backed, broadcast, or aligned stream configuration. The
     wizard selects a mapper for source-backed streams and a combiner for fan-in
     streams; it does not create Python code.
@@ -241,7 +253,7 @@ without `--result-json`. See [saved runs](research.md#read-a-saved-run).
     combine function receives one matching record from each input in the
     selected order and returns one record or `None`.
   - `--identity` applies only to source-backed streams.
-- `jerry source create <provider>.<dataset> --transport fs|http|synthetic --format csv|json|jsonl|parquet`
+- `jerry source create <provider>.<dataset> [--project <alias|folder|project.yaml>] --transport fs|http|synthetic --format csv|json|jsonl|parquet`
   - Creates a source YAML only (no Python code).
   - Parquet is supported only for local `fs` files and globs. It yields row
     mappings with native Parquet values to the configured parser; text encoding,

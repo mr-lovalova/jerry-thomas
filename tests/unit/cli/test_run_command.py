@@ -329,7 +329,7 @@ def test_execute_serve_skips_when_no_enabled_profiles(monkeypatch, caplog) -> No
     assert "No enabled serve profiles; skipping serve." in caplog.text
 
 
-def test_execute_build_passes_profile_and_force(monkeypatch) -> None:
+def test_execute_build_passes_profile_and_artifact_mode(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     def _capture_request(**kwargs):
@@ -349,7 +349,7 @@ def test_execute_build_passes_profile_and_force(monkeypatch) -> None:
         cmd="build",
         project="project.yaml",
         profile="nightly",
-        force=True,
+        artifact_mode="rebuild",
         visuals=False,
         heartbeat_interval_seconds=None,
     )
@@ -363,7 +363,7 @@ def test_execute_build_passes_profile_and_force(monkeypatch) -> None:
 
     assert result is None
     assert captured["profile_name"] == "nightly"
-    assert captured["force"] is True
+    assert captured["artifact_mode"] == "rebuild"
     assert captured["command_observability"] == CommandObservability(
         visuals=False,
         log_level="DEBUG",

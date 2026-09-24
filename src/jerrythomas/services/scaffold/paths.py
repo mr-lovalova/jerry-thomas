@@ -14,27 +14,35 @@ _DEFAULT_DOTENV_EXAMPLE = (
 )
 
 
-def pkg_root(start: Path | None = None) -> tuple[Path, str, Path]:
+def find_pyproject(start: Path | None = None) -> Path | None:
     here = start or workspace_cwd()
-    for d in [here, *here.parents]:
-        pyproject = d / "pyproject.toml"
-        if pyproject.exists():
-            pkg_name = d.name
-            src_dir = d / "src"
-            if src_dir.exists():
-                candidates = [
-                    p
-                    for p in src_dir.iterdir()
-                    if p.is_dir() and (p / "__init__.py").exists()
-                ]
-                if len(candidates) == 1:
-                    pkg_name = candidates[0].name
-            return d, pkg_name, pyproject
-    print(
-        "[error] pyproject.toml not found (searched current and parent dirs)",
-        file=sys.stderr,
-    )
-    raise SystemExit(1)
+    for directory in (here, *here.parents):
+        pyproject = directory / "pyproject.toml"
+        if pyproject.is_file():
+            return pyproject
+    return None
+
+
+def pkg_root(start: Path | None = None) -> tuple[Path, str, Path]:
+    pyproject = find_pyproject(start)
+    if pyproject is None:
+        print(
+            "[error] pyproject.toml not found (searched current and parent dirs)",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    root = pyproject.parent
+    pkg_name = root.name
+    src_dir = root / "src"
+    if src_dir.exists():
+        candidates = [
+            path
+            for path in src_dir.iterdir()
+            if path.is_dir() and (path / "__init__.py").exists()
+        ]
+        if len(candidates) == 1:
+            pkg_name = candidates[0].name
+    return root, pkg_name, pyproject
 
 
 def resolve_base_pkg_dir(root_dir: Path, pkg_name: str) -> Path:

@@ -35,7 +35,7 @@ features:
 `scale` is a boolean. It does not alter canonical series artifacts or
 preview output. During a full dataset serve, every scalar or fixed-length list
 value in one fold output is scaled with that fold's scaler. `with_mean`,
-`with_std`, and `epsilon` are configured once on the scaler build operation and
+`with_std`, and `epsilon` belong to the dataset's `scaling` block and are
 recorded in the managed artifact; individual features cannot override them.
 `None` is the canonical missing value. A transient floating `NaN` is converted
 to `None` when the field is projected; other nonnumeric values and infinity are

@@ -25,7 +25,7 @@ def handle(
     result_json: bool = False,
 ) -> None:
     if profile_name is None and output is not None:
-        logger.error("--output requires --profile")
+        logger.error("--output-file requires --profile")
         raise SystemExit(2)
 
     output_path = (

@@ -26,7 +26,7 @@ def test_materialize_parser_accepts_profile_overrides() -> None:
             "project.yaml",
             "--profile",
             "adv-20",
-            "--output",
+            "--output-file",
             "adv-20.jsonl.gz",
             "--overwrite",
             "--result-json",
@@ -61,7 +61,7 @@ def test_materialize_dispatches_one_profile_execution_path(monkeypatch) -> None:
             "project.yaml",
             "--profile",
             "adv-20",
-            "--output",
+            "--output-file",
             "adv-20.jsonl",
             "--no-overwrite",
             "--artifact-mode",
@@ -85,19 +85,20 @@ def test_materialize_dispatches_one_profile_execution_path(monkeypatch) -> None:
     }
 
 
-def test_materialize_output_override_requires_profile(monkeypatch) -> None:
+def test_materialize_output_override_requires_profile(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
         "jerrythomas.cli.commands.materialize.build_materialize_run_request",
         lambda **kwargs: pytest.fail("profiles should not run"),
     )
     args = build_parser().parse_args(
-        ["materialize", "--project", "project.yaml", "--output", "out.jsonl"]
+        ["materialize", "--project", "project.yaml", "--output-file", "out.jsonl"]
     )
 
     with pytest.raises(SystemExit) as exc_info:
         _execute(args)
 
     assert exc_info.value.code == 2
+    assert "--output-file requires --profile" in caplog.text
 
 
 def test_materialize_resolves_profile_output_from_workspace(
@@ -122,7 +123,7 @@ def test_materialize_resolves_profile_output_from_workspace(
             "project.yaml",
             "--profile",
             "adv-20",
-            "--output",
+            "--output-file",
             "outputs/adv-20.jsonl",
             "--artifact-mode",
             "require_current",
@@ -154,7 +155,7 @@ def test_materialize_passes_gzip_output_to_profile_resolution(monkeypatch) -> No
             "project.yaml",
             "--profile",
             "adv-20",
-            "--output",
+            "--output-file",
             "adv-20.jsonl.gz",
         ]
     )

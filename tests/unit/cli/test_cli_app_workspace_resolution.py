@@ -38,16 +38,16 @@ def _write_build_project(tmp_path: Path, enabled: bool = True) -> Path:
     return project
 
 
-def test_source_add_skips_dataset_resolution(monkeypatch, tmp_path):
-    # Running source scaffolding should not attempt workspace dataset/project resolution.
+def test_source_create_without_project_keeps_plugin_fallback(monkeypatch, tmp_path):
+    # Omitted project selection retains plugin scaffold fallback.
     monkeypatch.chdir(tmp_path)
 
     def fail_resolution(*_args, **_kwargs):
         raise AssertionError(
-            "project/dataset resolution should be skipped for source create"
+            "required project resolution should be skipped for source create"
         )
 
-    monkeypatch.setattr(app, "_resolve_project_from_args", fail_resolution)
+    monkeypatch.setattr(app, "resolve_project_from_args", fail_resolution)
 
     captured = {}
 
@@ -95,7 +95,7 @@ def test_source_add_skips_dataset_resolution(monkeypatch, tmp_path):
     assert captured["parser_ep"] == "identity"
 
 
-def test_dataset_path_resolves_relative_to_workspace_root(monkeypatch, tmp_path):
+def test_project_path_resolves_relative_to_workspace_root(monkeypatch, tmp_path):
     workspace_root = tmp_path
     nested = workspace_root / "nested" / "cwd"
     nested.mkdir(parents=True)
@@ -112,9 +112,7 @@ def test_dataset_path_resolves_relative_to_workspace_root(monkeypatch, tmp_path)
     )
     monkeypatch.chdir(nested)
 
-    resolved = app._resolve_project_from_args(
-        "projects/weather/project.yaml", workspace
-    )
+    resolved = app.resolve_project_from_args("projects/weather/project.yaml", workspace)
     assert Path(resolved) == project_file.resolve()
 
 
@@ -144,7 +142,7 @@ def test_resolve_project_from_args_uses_workspace_default_project(tmp_path):
         ),
     )
 
-    project = app._resolve_project_from_args(None, workspace)
+    project = app.resolve_project_from_args(None, workspace)
     assert Path(project) == project_file.resolve()
 
 
@@ -161,7 +159,7 @@ def test_resolve_project_from_args_prefers_explicit_project_over_workspace_defau
         ),
     )
 
-    project = app._resolve_project_from_args("custom/project.yaml", workspace)
+    project = app.resolve_project_from_args("custom/project.yaml", workspace)
     assert project == str(tmp_path / "custom/project.yaml")
 
 
@@ -171,7 +169,7 @@ def test_resolve_project_from_args_requires_selection_without_workspace_default(
         config=WorkspaceConfig.model_validate({}),
     )
     try:
-        app._resolve_project_from_args(None, workspace)
+        app.resolve_project_from_args(None, workspace)
     except SystemExit as exc:
         assert "No project selected" in str(exc)
     else:
@@ -434,7 +432,7 @@ def test_project_selector_accepts_alias_folder_or_yaml(tmp_path, selector):
         config=WorkspaceConfig(projects={"research": "projects/research"}),
     )
 
-    assert app._resolve_project_from_args(selector, workspace) == str(project)
+    assert app.resolve_project_from_args(selector, workspace) == str(project)
 
 
 @pytest.mark.parametrize("resource", ["datasets", "streams", "profiles"])

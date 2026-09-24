@@ -3,7 +3,11 @@ import logging
 import sys
 
 from jerrythomas.cli.command_router import execute_command
-from jerrythomas.cli.workspace import WorkspaceContext, load_workspace_context
+from jerrythomas.cli.workspace import (
+    WorkspaceContext,
+    load_workspace_context,
+    resolve_project_from_args,
+)
 from jerrythomas.cli.logging_setup import (
     configure_cli_logging,
     parse_log_output_specs,
@@ -16,35 +20,6 @@ from jerrythomas.services.path_policy import resolve_workspace_path, workspace_c
 
 logger = logging.getLogger(__name__)
 _PROFILE_COMMANDS = {"build", "inspect", "materialize", "serve"}
-
-
-def _resolve_project_from_args(
-    project: str | None,
-    workspace: WorkspaceContext | None,
-) -> str:
-    """Resolve a project alias, folder, or YAML path relative to the workspace."""
-    if project is None and workspace is not None:
-        project = workspace.config.default_project
-    if project is None:
-        raise SystemExit(
-            "No project selected. Use --project <alias|folder|project.yaml> "
-            "or define default_project in jerry.yaml."
-        )
-    if workspace is not None:
-        resolved = workspace.resolve_project_alias(project)
-        if resolved is not None:
-            return str(resolved)
-    path = resolve_workspace_path(
-        project, workspace.root if workspace is not None else None
-    )
-    if path.is_dir():
-        return str(path / "project.yaml")
-    if path.suffix in {".yaml", ".yml"}:
-        return str(path)
-    raise SystemExit(
-        f"Unknown project '{project}'. Define it under projects: in jerry.yaml "
-        "or pass a project folder or YAML path."
-    )
 
 
 def _resolve_project_arguments(
@@ -63,7 +38,7 @@ def _resolve_project_arguments(
         is_project_listing or explicit_source_project
     ):
         return
-    args.project = _resolve_project_from_args(args.project, workspace_context)
+    args.project = resolve_project_from_args(args.project, workspace_context)
 
 
 def _configure_cli_logging(

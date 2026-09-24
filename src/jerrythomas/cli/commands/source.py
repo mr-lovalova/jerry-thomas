@@ -4,7 +4,7 @@ from pathlib import Path
 
 from jerrythomas.cli.prompts import pick_from_menu, prompt_required
 from jerrythomas.cli.source_options import SOURCE_TRANSPORTS, source_formats_for
-from jerrythomas.cli.workspace import WorkspaceContext, resolve_default_project_yaml
+from jerrythomas.cli.workspace import WorkspaceContext, resolve_scaffold_project_yaml
 from jerrythomas.services.scaffold.discovery import list_loaders, list_parsers
 from jerrythomas.services.scaffold.source_yaml import (
     DEFAULT_TEMPORAL_RECORD_PARSER_EP,
@@ -136,7 +136,9 @@ def handle(
     parser: str | None = None,
     plugin_root: Path | None = None,
     workspace: WorkspaceContext | None = None,
+    project: str | None = None,
 ) -> None:
+    project_yaml = resolve_scaffold_project_yaml(project, workspace)
     source_id = _resolve_source_id(source_id)
     try:
         validate_source_id(source_id)
@@ -151,7 +153,6 @@ def handle(
         raise SystemExit(2) from None
     parser_ep = _resolve_parser_entrypoint(parser, plugin_root)
 
-    project_yaml = resolve_default_project_yaml(workspace)
     try:
         path = create_source_yaml(
             source_id=source_id,
