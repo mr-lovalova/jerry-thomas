@@ -82,8 +82,9 @@ globals:
   filename supplies a dataset ID; duplicate IDs are rejected. Omit it for a
   stream-only project. Dataset files must declare `version`, for example
   `version: v1`.
-- `paths.operations` optionally points to explicit operations. Each file supplies
-  `kind`, `entrypoint`, and a `dataset` or `stream` binding where required.
+- `paths.operations` optionally points to explicit operations. Built-ins select a
+  `product` and a `dataset` or `stream` binding. Custom operations instead declare
+  `kind` and `entrypoint`.
   Jerry supplies each dataset’s artifact operations as `dataset.<id>.series`,
   `dataset.<id>.scaler`, `dataset.<id>.metadata`, and `dataset.<id>.coverage_stats`.
   Runtime operations are declared explicitly.
@@ -207,7 +208,7 @@ overwrite: true
 ```
 
 - `jerry materialize` runs all enabled materialize profiles in `order`;
-  `--profile` selects one. Each profile references a `core.runtime.stream`
+  `--profile` selects one. Each profile references a `product: records`
   operation whose `stream` identifies the input.
 - CLI `--output-file` overrides the selected profile and requires `--profile`.
 - Relative profile outputs resolve from `project.yaml`; relative CLI `--output-file`
@@ -328,32 +329,48 @@ aggregate preparation progress. The final series merge has shared progress.
 
 ### Operations (`operations/*.yaml`)
 
+`product` selects the intended result of a built-in operation. `dataset` or
+`stream` identifies its input; profiles select the operation by its filename ID
+and configure execution and output. Jerry determines whether the product is a
+managed artifact or a runtime result. Do not also specify `kind` or `entrypoint`.
+
+| Product | Result | Input |
+| --- | --- | --- |
+| `records` | Processed stream records | `stream` |
+| `dataset` | Feature/target samples, including configured scaling and fold outputs | `dataset` |
+| `availability_matrix` | Per-sample present, absent, or null statuses | `dataset` |
+| `coverage_report` | Coverage ratios and results below a threshold | `dataset` |
+| `dataset_series` | Managed, ordered sparse feature/target values | `dataset` |
+| `scaler` | Managed fitted scaling settings and statistics | `dataset` |
+| `dataset_metadata` | Managed schema, sample domains, windows, and fold layout | `dataset` |
+| `coverage_statistics` | Managed counts used by coverage reports | `dataset` |
+| `schedule` | Managed unique timestamps and partition keys | `stream` |
+
+Dataset previews select an intermediate stage without changing the operation's
+product. Sources remain inputs to streams; there is no standalone source product.
+
 ```yaml
 # operations/coverage.yaml
-kind: runtime
-entrypoint: core.runtime.coverage
+product: coverage_report
 dataset: default
 options:
   threshold: 0.8
 
 # operations/matrix.yaml
-kind: runtime
-entrypoint: core.runtime.matrix
+product: availability_matrix
 dataset: default
 options:
   stage: assembled
   max_cells: 250000
 
 # operations/coverage_stats.yaml
-kind: artifact
-entrypoint: core.artifact.coverage_stats
+product: coverage_statistics
 dataset: default
 output: summaries/default.json
 stage: assembled
 
 # operations/schedule.yaml — explicit expected-timestamp artifact
-kind: artifact
-entrypoint: core.artifact.schedule
+product: schedule
 stream: exchange.sessions
 partition_by: []
 output: build/schedule.jsonl
@@ -374,30 +391,29 @@ options: {}
   `{ operation: ensure_schedule, schedule: schedule }`. See
   [Artifacts](artifacts.md) for completion behavior and migration details.
 - Each file contains one mapping, and its filename supplies the operation ID.
-  Do not repeat `id`. Every explicit operation declares `kind: artifact|runtime`
-  and `entrypoint`; built-in dataset operations also declare `dataset`.
+  Do not repeat `id`. Product names do not change operation IDs: for example,
+  `operations/matrix.yaml` remains `operation: matrix` in a profile.
 - Runtime operations are executable units; profiles reference them via
   `operation`.
-- Built-in runtime entrypoints use `core.runtime.*` and call their typed
-  implementations directly. A custom runtime operation's `entrypoint` must
-  resolve in the `jerrythomas.operations.runtime` entry-point group.
+- Custom operations use `kind: runtime|artifact` and `entrypoint` instead of
+  `product`. A custom runtime operation's `entrypoint` must resolve in the
+  `jerrythomas.operations.runtime` entry-point group.
 - `requires` declares additional prerequisite artifact operation IDs for custom or
   built-in runtime operations. Each referenced artifact and its dependency chain must
   have available producer operations.
 - Custom artifact operations accept `kind`, `entrypoint`, and `output`, with
   their ID supplied by the filename. They do not accept `options` or `requires`;
-  their cache hashes cover their bound dataset and relevant catalog.
-- Built-in runtime operation options are entrypoint-specific:
-  - The `dataset` operation uses `core.runtime.dataset` internally and accepts
-    no operation options. Limit, preview, throttle, output, and visuals can be
-    set by the serve profile or CLI. Dataset split output comes from
+  their cache hashes cover their bound dataset and complete stream catalog.
+- Built-in runtime operation options depend on the product:
+  - `dataset` accepts no operation options. Limit, preview, throttle, output,
+    and visuals can be set by the serve profile or CLI. Dataset split output comes from
     `datasets/default.yaml`; `include_outputs` can narrow it. Preview, throttle, and split
     output are not accepted by other runtime operations.
-  - `core.runtime.coverage`: optional `threshold` between `0` and `1`
+  - `coverage_report`: optional `threshold` between `0` and `1`
     (default: `0.95`). Results are ordered from lowest to highest coverage.
     Coverage reads a completed `coverage_stats` artifact, so it does not accept
     `--limit`.
-  - `core.runtime.matrix`: optional `stage: assembled|postprocessed` (default:
+  - `availability_matrix`: optional `stage: assembled|postprocessed` (default:
     `postprocessed`) and positive `max_cells` (default: `1000000`). The bound
     counts scalar cells and individual list elements. `jerry inspect --limit N`
     caps the samples inspected after the selected stage. Its output format and
@@ -412,13 +428,11 @@ For example, a serve operation and a materialize operation are explicit:
 
 ```yaml
 # operations/dataset.yaml
-kind: runtime
-entrypoint: core.runtime.dataset
+product: dataset
 dataset: default
 
 # operations/materialize_adv.yaml
-kind: runtime
-entrypoint: core.runtime.stream
+product: records
 stream: adv.20
 ```
 
@@ -1091,8 +1105,8 @@ There is no dataset-level `scaling` block. Targets use the same `scale` syntax.
   or build profiles.
 - Profiles select operations by ID through `operation`.
 - Build profiles reference artifact operations. Serve and inspect profiles
-  reference runtime operations. The built-in `dataset` operation uses
-  `core.runtime.dataset`; custom runtime entry points are also supported.
+  reference runtime operations. Built-in products determine this distinction;
+  custom operations declare it with `kind`.
 - Observability defaults (visuals/logging outputs) belong in profile files (`serve.<name>.yaml`, `build.<name>.yaml`, `inspect.<name>.yaml`) or per-kind defaults (`<kind>.defaults.yaml`).
 
 ---

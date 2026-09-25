@@ -94,9 +94,14 @@ def _write_project(tmp_path: Path) -> Path:
         ),
         encoding="utf-8",
     )
-    for operation in ("series", "metadata", "scaler", "coverage_stats"):
+    for operation, product in (
+        ("series", "dataset_series"),
+        ("metadata", "dataset_metadata"),
+        ("scaler", "scaler"),
+        ("coverage_stats", "coverage_statistics"),
+    ):
         (tmp_path / "operations" / f"{operation}.yaml").write_text(
-            f"kind: artifact\nentrypoint: core.artifact.{operation}\ndataset: default\n",
+            f"product: {product}\ndataset: default\n",
             encoding="utf-8",
         )
     (tmp_path / "sources" / "source.yaml").write_text(

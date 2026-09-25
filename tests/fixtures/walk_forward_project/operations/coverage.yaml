@@ -1,3 +1,2 @@
-kind: runtime
-entrypoint: core.runtime.coverage
+product: coverage_report
 dataset: default

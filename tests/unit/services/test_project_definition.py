@@ -147,7 +147,7 @@ def test_load_project_definition_rejects_legacy_scaler_fold_config(
         encoding="utf-8",
     )
     (tmp_path / "operations" / "scaler.yaml").write_text(
-        "kind: artifact\nentrypoint: core.artifact.scaler\ndataset: default\nfolds:\n  - fit: [train]\n    apply: [train, validation]\n",
+        "product: scaler\ndataset: default\nfolds:\n  - fit: [train]\n    apply: [train, validation]\n",
         encoding="utf-8",
     )
 

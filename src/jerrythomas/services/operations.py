@@ -4,7 +4,6 @@ from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.tasks.base import (
     ArtifactTask,
     PluginRuntimeTask,
-    RuntimeTask,
     Task,
 )
 from jerrythomas.config.tasks.coverage import CoverageTask
@@ -27,11 +26,16 @@ DATASET_ARTIFACT_MODELS: dict[str, type[ArtifactTask]] = {
     "metadata": MetadataTask,
     "coverage_stats": CoverageStatsTask,
 }
-CORE_RUNTIME_MODELS: dict[str, type[RuntimeTask]] = {
-    "core.runtime.dataset": DatasetTask,
-    "core.runtime.coverage": CoverageTask,
-    "core.runtime.matrix": MatrixTask,
-    "core.runtime.stream": StreamTask,
+PRODUCT_MODELS: dict[str, type[Task]] = {
+    "records": StreamTask,
+    "dataset": DatasetTask,
+    "availability_matrix": MatrixTask,
+    "coverage_report": CoverageTask,
+    "dataset_series": SeriesTask,
+    "scaler": ScalerTask,
+    "dataset_metadata": MetadataTask,
+    "coverage_statistics": CoverageStatsTask,
+    "schedule": ScheduleTask,
 }
 
 
@@ -83,28 +87,46 @@ def _operation_from_document(
         raise ValueError(
             f"{path} must not define id; the filename supplies '{operation_id}'."
         )
-    kind = entry.get("kind")
-    entrypoint = entry.get("entrypoint")
-    if not isinstance(entrypoint, str) or entrypoint != entrypoint.strip():
-        raise ValueError(
-            f"Operation '{operation_id}' must declare an entrypoint without outer whitespace."
-        )
     model: type[Task]
-    if kind == "runtime":
-        model = CORE_RUNTIME_MODELS.get(entrypoint, PluginRuntimeTask)
-    elif kind == "artifact":
-        models: dict[str, type[ArtifactTask]] = {
-            f"core.artifact.{name}": task_model
-            for name, task_model in DATASET_ARTIFACT_MODELS.items()
-        }
-        models["core.artifact.schedule"] = ScheduleTask
-        model = models.get(entrypoint, ArtifactTask)
+    if "product" in entry:
+        if "kind" in entry or "entrypoint" in entry:
+            raise ValueError(
+                f"Operation '{operation_id}' must not combine product with kind or entrypoint."
+            )
+        product = entry.pop("product")
+        if not isinstance(product, str) or product not in PRODUCT_MODELS:
+            raise ValueError(
+                f"Operation '{operation_id}' must select a supported product: "
+                + ", ".join(PRODUCT_MODELS)
+                + "."
+            )
+        model = PRODUCT_MODELS[product]
     else:
-        raise ValueError(
-            f"Operation '{operation_id}' must set kind to artifact or runtime."
-        )
-    if model in (ArtifactTask, PluginRuntimeTask) and entrypoint.startswith("core."):
-        raise ValueError(f"Unsupported core operation entrypoint '{entrypoint}'.")
+        kind = entry.get("kind")
+        if kind == "runtime":
+            model = PluginRuntimeTask
+        elif kind == "artifact":
+            model = ArtifactTask
+        else:
+            raise ValueError(
+                f"Operation '{operation_id}' must declare product, or set kind to "
+                "runtime or artifact for a custom operation."
+            )
+        entrypoint = entry.get("entrypoint")
+        if (
+            not isinstance(entrypoint, str)
+            or not entrypoint
+            or entrypoint != entrypoint.strip()
+        ):
+            raise ValueError(
+                f"Operation '{operation_id}' must declare a nonempty entrypoint "
+                "without outer whitespace."
+            )
+        if entrypoint.startswith("core."):
+            raise ValueError(
+                f"Operation '{operation_id}' must select built-in operations with "
+                "product instead of kind and entrypoint."
+            )
 
     task = model.model_validate({"id": operation_id, **entry})
     dataset_kind = artifact_kind(task)

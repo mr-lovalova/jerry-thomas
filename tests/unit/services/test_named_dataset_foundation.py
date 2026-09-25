@@ -124,7 +124,7 @@ def test_explicit_core_producer_replaces_only_its_dataset_and_kind(tmp_path):
     project_yaml = _project(tmp_path, ("alpha", "beta"))
     _write_yaml(
         tmp_path / "operations" / "alpha-stats.yaml",
-        {"kind": "artifact", "entrypoint": "core.artifact.scaler", "dataset": "alpha"},
+        {"product": "scaler", "dataset": "alpha"},
     )
     operations = _operations(project_yaml)
     scalers = {
@@ -142,8 +142,7 @@ def test_multiple_core_producers_for_one_dataset_are_rejected(tmp_path):
         _write_yaml(
             tmp_path / "operations" / f"{name}.yaml",
             {
-                "kind": "artifact",
-                "entrypoint": "core.artifact.series",
+                "product": "dataset_series",
                 "dataset": "alpha",
             },
         )
@@ -152,21 +151,21 @@ def test_multiple_core_producers_for_one_dataset_are_rejected(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "kind,entrypoint",
+    "product",
     [
-        ("runtime", "core.runtime.dataset"),
-        ("runtime", "core.runtime.matrix"),
-        ("runtime", "core.runtime.coverage"),
-        ("artifact", "core.artifact.scaler"),
-        ("artifact", "core.artifact.series"),
-        ("artifact", "core.artifact.metadata"),
-        ("artifact", "core.artifact.coverage_stats"),
+        "dataset",
+        "availability_matrix",
+        "coverage_report",
+        "scaler",
+        "dataset_series",
+        "dataset_metadata",
+        "coverage_statistics",
     ],
 )
-def test_dataset_operations_require_explicit_known_bindings(tmp_path, kind, entrypoint):
+def test_dataset_operations_require_explicit_known_bindings(tmp_path, product):
     project_yaml = _project(tmp_path, ("alpha",))
     operation_path = tmp_path / "operations" / "selected.yaml"
-    operation = {"kind": kind, "entrypoint": entrypoint}
+    operation = {"product": product}
     _write_yaml(operation_path, operation)
     with pytest.raises(ValueError, match="must bind a dataset"):
         _operations(project_yaml)
@@ -181,11 +180,11 @@ def test_runtime_operations_are_explicit_and_stream_operations_have_no_dataset(
     project_yaml = _project(tmp_path, ("alpha",))
     _write_yaml(
         tmp_path / "operations" / "samples.yaml",
-        {"kind": "runtime", "entrypoint": "core.runtime.dataset", "dataset": "alpha"},
+        {"product": "dataset", "dataset": "alpha"},
     )
     _write_yaml(
         tmp_path / "operations" / "prices.yaml",
-        {"kind": "runtime", "entrypoint": "core.runtime.stream", "stream": "prices"},
+        {"product": "records", "stream": "prices"},
     )
     runtime_tasks = [
         task for task in _operations(project_yaml) if isinstance(task, RuntimeTask)
@@ -222,8 +221,7 @@ def test_scaling_policy_belongs_to_series_not_artifact_operation(tmp_path):
     _write_yaml(
         tmp_path / "operations" / "scaler.yaml",
         {
-            "kind": "artifact",
-            "entrypoint": "core.artifact.scaler",
+            "product": "scaler",
             "dataset": "alpha",
             "with_mean": False,
         },
@@ -237,8 +235,7 @@ def test_shared_artifacts_are_preserved_without_dataset_binding(tmp_path):
     _write_yaml(
         tmp_path / "operations" / "calendar.yaml",
         {
-            "kind": "artifact",
-            "entrypoint": "core.artifact.schedule",
+            "product": "schedule",
             "stream": "sessions",
             "partition_by": [],
             "output": "shared/calendar.jsonl",
@@ -341,7 +338,7 @@ def test_dataset_log_paths_must_be_configured_on_concrete_profiles(tmp_path, tok
     project = _project(tmp_path, ("alpha",))
     _write_yaml(
         tmp_path / "operations" / "samples.yaml",
-        {"kind": "runtime", "entrypoint": "core.runtime.dataset", "dataset": "alpha"},
+        {"product": "dataset", "dataset": "alpha"},
     )
     profile_path = tmp_path / "profiles" / "serve.alpha.yaml"
     defaults_path = tmp_path / "profiles" / "serve.defaults.yaml"

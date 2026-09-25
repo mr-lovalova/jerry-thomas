@@ -43,8 +43,7 @@ A schedule operation is explicit:
 
 ```yaml
 # operations/schedule.yaml
-kind: artifact
-entrypoint: core.artifact.schedule
+product: schedule
 stream: exchange.sessions
 partition_by: []
 output: build/schedule.jsonl

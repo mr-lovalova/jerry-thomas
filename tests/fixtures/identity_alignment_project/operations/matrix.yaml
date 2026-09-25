@@ -1,3 +1,2 @@
-kind: runtime
-entrypoint: core.runtime.matrix
+product: availability_matrix
 dataset: default

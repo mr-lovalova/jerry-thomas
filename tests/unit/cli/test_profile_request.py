@@ -40,9 +40,13 @@ def _write_project(tmp_path: Path) -> Path:
     )
     for directory in ("streams", "sources", "operations"):
         (tmp_path / directory).mkdir(parents=True, exist_ok=True)
-    for operation in ("dataset", "coverage", "matrix"):
+    for operation, product in (
+        ("dataset", "dataset"),
+        ("coverage", "coverage_report"),
+        ("matrix", "availability_matrix"),
+    ):
         (tmp_path / "operations" / f"{operation}.yaml").write_text(
-            f"kind: runtime\nentrypoint: core.runtime.{operation}\ndataset: default\n",
+            f"product: {product}\ndataset: default\n",
             encoding="utf-8",
         )
     return project_yaml
@@ -244,7 +248,7 @@ def test_inspect_request_materializes_execution_scoped_log_output(
     ops.mkdir(parents=True, exist_ok=True)
     profiles.mkdir(parents=True, exist_ok=True)
     (ops / "coverage.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.coverage\ndataset: default\n",
+        "product: coverage_report\ndataset: default\n",
         encoding="utf-8",
     )
     (profiles / "inspect.coverage.yaml").write_text(
@@ -276,7 +280,7 @@ def test_disabled_profiles_do_not_create_execution_directory(tmp_path: Path):
     ops.mkdir(parents=True, exist_ok=True)
     profiles.mkdir(parents=True, exist_ok=True)
     (ops / "coverage.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.coverage\ndataset: default\n",
+        "product: coverage_report\ndataset: default\n",
         encoding="utf-8",
     )
     (profiles / "inspect.coverage.yaml").write_text(
@@ -347,7 +351,7 @@ def test_materialize_request_uses_shared_resolution_snapshot(
     )
     _write_stream(tmp_path, "adv.20")
     (tmp_path / "operations" / "adv-20.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.stream\nstream: adv.20\n",
+        "product: records\nstream: adv.20\n",
         encoding="utf-8",
     )
     runtime = SimpleNamespace(execution=ExecutionConfig())
@@ -424,7 +428,7 @@ def test_materialize_request_rejects_output_log_collision(tmp_path: Path) -> Non
 
     _write_stream(tmp_path, "adv")
     (tmp_path / "operations" / "adv.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.stream\nstream: adv\n",
+        "product: records\nstream: adv\n",
         encoding="utf-8",
     )
 

@@ -1,3 +1,2 @@
-kind: runtime
-entrypoint: core.runtime.dataset
+product: dataset
 dataset: default

@@ -35,9 +35,13 @@ def _write_project(tmp_path: Path) -> Path:
     )
     for directory in ("streams", "sources", "operations"):
         (tmp_path / directory).mkdir(parents=True, exist_ok=True)
-    for operation in ("dataset", "coverage", "matrix"):
+    for operation, product in (
+        ("dataset", "dataset"),
+        ("coverage", "coverage_report"),
+        ("matrix", "availability_matrix"),
+    ):
         (tmp_path / "operations" / f"{operation}.yaml").write_text(
-            f"kind: runtime\nentrypoint: core.runtime.{operation}\ndataset: default\n",
+            f"product: {product}\ndataset: default\n",
             encoding="utf-8",
         )
     return project_yaml

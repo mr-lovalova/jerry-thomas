@@ -49,6 +49,9 @@ belong to `jerrythomas.combiners`, not the iterator-oriented
 timezone-aware timestamps; Jerry normalizes them to UTC before downstream
 processing.
 
+Built-in operation YAML selects a `product`. Custom operations instead declare
+`kind: runtime|artifact` and a registered `entrypoint`, without `product`.
+
 A custom runtime operation receives exactly three positional arguments:
 
 ```python
@@ -80,7 +83,7 @@ fanout remains available through dataset profiles.
 Custom artifact operations use the `jerrythomas.operations.build` group. Their
 configuration accepts `kind: artifact`, `entrypoint`, and `output`; the filename
 supplies the operation ID. They do not accept `options` or `requires`. Their
-cache hashes cover the complete dataset and stream catalog. Runtime plugins
+cache hashes cover the bound dataset and complete stream catalog. Runtime plugins
 can declare prerequisite artifacts with `requires` and plugin settings with
 `options`; those capabilities do not extend to custom artifact operations.
 

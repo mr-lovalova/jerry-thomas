@@ -58,8 +58,8 @@ Profile sequencing:
 - Each concrete profile is one mapping in `<command>.<name>.yaml`; the filename
   supplies both command and name. Defaults use `<command>.defaults.yaml`.
 - Profiles execute by `order` (ascending); unset falls back to filename order.
-- Every concrete profile references an `operation`. Operations select the dataset
-  or stream; profiles select output and execution settings.
+- Every concrete profile references an `operation`. Built-in operations select a
+  `product` and its dataset or stream; profiles select output and execution settings.
 - Dataset artifact operations are generated as `dataset.<id>.<kind>`. Runtime
   operations are declared under `operations/`.
 - Before selected serve or inspect profiles run, their artifact requirements are

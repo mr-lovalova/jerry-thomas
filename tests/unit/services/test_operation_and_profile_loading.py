@@ -7,10 +7,17 @@ from jerrythomas.config.tasks.base import (
     ArtifactTask,
     PluginRuntimeTask,
     RuntimeTask,
+    Task,
 )
 from jerrythomas.config.tasks.coverage import CoverageTask
+from jerrythomas.config.tasks.coverage_stats import CoverageStatsTask
 from jerrythomas.config.tasks.dataset import DatasetTask
 from jerrythomas.config.tasks.matrix import MatrixOptions, MatrixTask
+from jerrythomas.config.tasks.metadata import MetadataTask
+from jerrythomas.config.tasks.scaler import ScalerTask
+from jerrythomas.config.tasks.schedule import ScheduleTask
+from jerrythomas.config.tasks.series import SeriesTask
+from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.profiles.loader import (
     apply_profile_defaults,
     profile_specs_with_defaults,
@@ -110,6 +117,244 @@ def test_plugin_runtime_task_rejects_non_serializable_options() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("product", "body", "expected"),
+    [
+        (
+            "records",
+            "stream: equity.prices\n",
+            StreamTask(id="selected", stream="equity.prices"),
+        ),
+        (
+            "dataset",
+            "dataset: default\n",
+            DatasetTask(id="selected", dataset="default"),
+        ),
+        (
+            "availability_matrix",
+            "dataset: default\noptions: {stage: assembled, max_cells: 20}\n",
+            MatrixTask(
+                id="selected",
+                dataset="default",
+                options=MatrixOptions(stage="assembled", max_cells=20),
+            ),
+        ),
+        (
+            "coverage_report",
+            "dataset: default\n",
+            CoverageTask(id="selected", dataset="default"),
+        ),
+        (
+            "dataset_series",
+            "dataset: default\n",
+            SeriesTask(
+                id="selected",
+                dataset="default",
+                output="datasets/default/series/manifest.json",
+            ),
+        ),
+        (
+            "scaler",
+            "dataset: default\n",
+            ScalerTask(
+                id="selected", dataset="default", output="datasets/default/scaler.json"
+            ),
+        ),
+        (
+            "dataset_metadata",
+            "dataset: default\n",
+            MetadataTask(
+                id="selected",
+                dataset="default",
+                output="datasets/default/metadata.json",
+            ),
+        ),
+        (
+            "coverage_statistics",
+            "dataset: default\nstage: assembled\n",
+            CoverageStatsTask(
+                id="selected",
+                dataset="default",
+                output="datasets/default/coverage_stats.json",
+                stage="assembled",
+            ),
+        ),
+        (
+            "schedule",
+            "stream: calendar\npartition_by: []\noutput: calendars/exchange.jsonl\n",
+            ScheduleTask(
+                id="selected",
+                stream="calendar",
+                partition_by=[],
+                output="calendars/exchange.jsonl",
+            ),
+        ),
+    ],
+)
+def test_builtin_products_preserve_normalized_tasks(
+    tmp_path: Path, product: str, body: str, expected: Task
+) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    (_operations_dir(project_yaml) / "selected.yaml").write_text(
+        f"product: {product}\n{body}", encoding="utf-8"
+    )
+
+    task = next(task for task in _tasks(project_yaml) if task.id == "selected")
+
+    assert type(task) is type(expected)
+    assert task.model_dump(mode="json") == expected.model_dump(mode="json")
+
+
+@pytest.mark.parametrize(
+    "product",
+    ["null", "''", "' records '", "true", "123", "[]", "{}", "typo", "custom"],
+)
+def test_invalid_products_are_rejected(tmp_path: Path, product: str) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    (_operations_dir(project_yaml) / "selected.yaml").write_text(
+        f"product: {product}\nstream: equity.prices\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="product"):
+        _tasks(project_yaml)
+
+
+@pytest.mark.parametrize(
+    "plugin_selector",
+    [
+        "kind: runtime\n",
+        "kind: null\n",
+        "entrypoint: core.runtime.stream\n",
+        "entrypoint: plugin.records\n",
+        "entrypoint: null\n",
+        "kind: runtime\nentrypoint: plugin.records\n",
+    ],
+)
+def test_product_rejects_plugin_selectors(tmp_path: Path, plugin_selector: str) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    (_operations_dir(project_yaml) / "selected.yaml").write_text(
+        f"product: records\nstream: equity.prices\n{plugin_selector}",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="must not combine product"):
+        _tasks(project_yaml)
+
+
+@pytest.mark.parametrize(
+    "entrypoint",
+    [
+        "core.runtime.stream",
+        "core.runtime.dataset",
+        "core.runtime.matrix",
+        "core.runtime.coverage",
+        "core.artifact.series",
+        "core.artifact.scaler",
+        "core.artifact.metadata",
+        "core.artifact.coverage_stats",
+        "core.artifact.schedule",
+    ],
+)
+def test_builtin_entrypoints_require_product_syntax(
+    tmp_path: Path, entrypoint: str
+) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    kind = entrypoint.split(".")[1]
+    (_operations_dir(project_yaml) / "selected.yaml").write_text(
+        f"kind: {kind}\nentrypoint: {entrypoint}\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="with product instead of kind and entrypoint"):
+        _tasks(project_yaml)
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (
+            "kind: runtime\nentrypoint: research.report\ndataset: default\n"
+            "requires: [snapshot]\noptions: {threshold: 3}\n",
+            PluginRuntimeTask(
+                id="selected",
+                entrypoint="research.report",
+                dataset="default",
+                requires=("snapshot",),
+                options={"threshold": 3},
+            ),
+        ),
+        (
+            "kind: artifact\nentrypoint: research.snapshot\ndataset: default\n"
+            "output: research/snapshot.json\n",
+            ArtifactTask(
+                id="selected",
+                entrypoint="research.snapshot",
+                dataset="default",
+                output="research/snapshot.json",
+            ),
+        ),
+    ],
+)
+def test_plugin_selectors_preserve_normalized_tasks(
+    tmp_path: Path, body: str, expected: Task
+) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    (_operations_dir(project_yaml) / "selected.yaml").write_text(body, encoding="utf-8")
+
+    task = next(task for task in _tasks(project_yaml) if task.id == "selected")
+
+    assert type(task) is type(expected)
+    assert task.model_dump(mode="json") == expected.model_dump(mode="json")
+
+
+@pytest.mark.parametrize("entrypoint", ["null", "''", "'   '", "true", "[]", "{}"])
+def test_plugin_selector_requires_nonempty_entrypoint(
+    tmp_path: Path, entrypoint: str
+) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    (_operations_dir(project_yaml) / "selected.yaml").write_text(
+        f"kind: runtime\nentrypoint: {entrypoint}\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="nonempty entrypoint"):
+        _tasks(project_yaml)
+
+
+@pytest.mark.parametrize("kind", ["null", "''", "other", "true", "[]"])
+def test_plugin_selector_requires_runtime_or_artifact_kind(
+    tmp_path: Path, kind: str
+) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    (_operations_dir(project_yaml) / "selected.yaml").write_text(
+        f"kind: {kind}\nentrypoint: research.report\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="kind"):
+        _tasks(project_yaml)
+
+
+@pytest.mark.parametrize(
+    ("body", "error"),
+    [
+        ("product: dataset\n", "must bind a dataset"),
+        ("product: dataset\ndataset: unknown\n", "unknown dataset"),
+        (
+            "product: records\nstream: equity.prices\ndataset: default\n",
+            "must not bind a dataset",
+        ),
+        ("product: records\n", "stream"),
+        ("product: records\nstream: equity.prices\nunknown: true\n", "Extra inputs"),
+    ],
+)
+def test_product_binding_and_fields_are_validated(
+    tmp_path: Path, body: str, error: str
+) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    (_operations_dir(project_yaml) / "selected.yaml").write_text(body, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=error):
+        _tasks(project_yaml)
+
+
 def test_artifact_tasks_load_configs(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
@@ -118,7 +363,7 @@ def test_artifact_tasks_load_configs(tmp_path):
         encoding="utf-8",
     )
     (config_dir / "scaler.yaml").write_text(
-        "kind: artifact\nentrypoint: core.artifact.scaler\ndataset: default\noutput: stats.pkl\n",
+        "product: scaler\ndataset: default\noutput: stats.pkl\n",
         encoding="utf-8",
     )
 
@@ -178,7 +423,7 @@ def test_legacy_series_override_is_not_a_core_operation(
 
     with pytest.raises(
         ValueError,
-        match=rf"Operation '{operation_id}' must declare an entrypoint",
+        match=rf"Operation '{operation_id}' must declare product",
     ):
         _tasks(project_yaml)
 
@@ -188,8 +433,7 @@ def test_schedule_artifact_task_loads_arbitrary_id(tmp_path):
     config_dir = _operations_dir(project_yaml)
     (config_dir / "dataset_schedule.yaml").write_text(
         (
-            "kind: artifact\n"
-            "entrypoint: core.artifact.schedule\n"
+            "product: schedule\n"
             "stream: reference.stream\n"
             "partition_by: []\n"
             "output: build/dataset_schedule.jsonl\n"
@@ -212,8 +456,7 @@ def test_schedule_artifact_task_loads_partition_by(tmp_path):
     config_dir = _operations_dir(project_yaml)
     (config_dir / "schedule.yaml").write_text(
         (
-            "kind: artifact\n"
-            "entrypoint: core.artifact.schedule\n"
+            "product: schedule\n"
             "stream: reference.stream\n"
             "partition_by: [security_id]\n"
             "output: build/schedule.jsonl\n"
@@ -231,12 +474,7 @@ def test_schedule_artifact_requires_explicit_partition_by(tmp_path) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "schedule.yaml").write_text(
-        (
-            "kind: artifact\n"
-            "entrypoint: core.artifact.schedule\n"
-            "stream: reference.stream\n"
-            "output: build/schedule.jsonl\n"
-        ),
+        ("product: schedule\nstream: reference.stream\noutput: build/schedule.jsonl\n"),
         encoding="utf-8",
     )
 
@@ -259,12 +497,7 @@ def test_schedule_artifact_rejects_invalid_identity_fields(
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "schedule.yaml").write_text(
-        (
-            "kind: artifact\n"
-            "entrypoint: core.artifact.schedule\n"
-            f"{body}"
-            "output: build/schedule.jsonl\n"
-        ),
+        (f"product: schedule\n{body}output: build/schedule.jsonl\n"),
         encoding="utf-8",
     )
 
@@ -326,7 +559,7 @@ def test_default_artifact_id_cannot_name_an_unrelated_operation(tmp_path):
     config_dir = _operations_dir(project_yaml)
     (config_dir / "dataset.default.metadata.yaml").write_text(
         (
-            "kind: artifact\nentrypoint: core.artifact.schedule\n"
+            "product: schedule\n"
             "stream: reference.stream\n"
             "partition_by: []\n"
             "output: build/metadata_schedule.jsonl\n"
@@ -342,7 +575,7 @@ def test_coverage_stats_task_loads_configs(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "coverage_stats.yaml").write_text(
-        "kind: artifact\nentrypoint: core.artifact.coverage_stats\ndataset: default\noutput: build/custom-coverage-stats.json\nstage: assembled\n",
+        "product: coverage_statistics\ndataset: default\noutput: build/custom-coverage-stats.json\nstage: assembled\n",
         encoding="utf-8",
     )
 
@@ -356,7 +589,7 @@ def test_coverage_stats_task_defaults_to_postprocessed_stage(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "coverage_stats.yaml").write_text(
-        "kind: artifact\nentrypoint: core.artifact.coverage_stats\ndataset: default\noutput: build/custom-coverage-stats.json\n",
+        "product: coverage_statistics\ndataset: default\noutput: build/custom-coverage-stats.json\n",
         encoding="utf-8",
     )
 
@@ -371,7 +604,7 @@ def test_coverage_stats_task_rejects_unknown_fields(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "coverage_stats.yaml").write_text(
-        "kind: artifact\nentrypoint: core.artifact.coverage_stats\ndataset: default\nunexpected: true\n",
+        "product: coverage_statistics\ndataset: default\nunexpected: true\n",
         encoding="utf-8",
     )
 
@@ -1010,7 +1243,7 @@ def test_artifact_operation_rejects_dependencies_field(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "metadata.yaml").write_text(
-        "kind: artifact\nentrypoint: core.artifact.metadata\ndataset: default\ndependencies:\n  - schema\n",
+        "product: dataset_metadata\ndataset: default\ndependencies:\n  - schema\n",
         encoding="utf-8",
     )
 
@@ -1021,7 +1254,7 @@ def test_artifact_operation_rejects_dependencies_field(tmp_path):
 def test_dataset_operation_loads(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     (_operations_dir(project_yaml) / "dataset.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.dataset\ndataset: default\n",
+        "product: dataset\ndataset: default\n",
         encoding="utf-8",
     )
 
@@ -1035,7 +1268,7 @@ def test_coverage_operation_options_are_typed(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "coverage.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.coverage\ndataset: default\noptions:\n  threshold: 0.8\n",
+        "product: coverage_report\ndataset: default\noptions:\n  threshold: 0.8\n",
         encoding="utf-8",
     )
 
@@ -1049,7 +1282,7 @@ def test_typed_runtime_options_accept_an_empty_mapping(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "runtime.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.matrix\ndataset: default\noptions: {}\n",
+        "product: availability_matrix\ndataset: default\noptions: {}\n",
         encoding="utf-8",
     )
 
@@ -1063,7 +1296,7 @@ def test_dataset_runtime_rejects_options(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "runtime.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.dataset\ndataset: default\noptions: {}\n",
+        "product: dataset\ndataset: default\noptions: {}\n",
         encoding="utf-8",
     )
 
@@ -1086,45 +1319,45 @@ def test_unknown_core_runtime_entrypoint_is_rejected_during_loading(
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="Unsupported core operation entrypoint"):
+    with pytest.raises(ValueError, match="product"):
         _all_tasks(project_yaml)
 
 
 @pytest.mark.parametrize(
-    ("entrypoint", "option", "error"),
+    ("product", "option", "error"),
     [
         (
-            "core.runtime.dataset",
+            "dataset",
             "  sort: missing\n",
             "Extra inputs are not permitted",
         ),
         (
-            "core.runtime.matrix",
+            "availability_matrix",
             "  rows: 10\n",
             "Extra inputs are not permitted",
         ),
         (
-            "core.runtime.coverage",
+            "coverage_report",
             "  sort: typo\n",
             "Extra inputs are not permitted",
         ),
         (
-            "core.runtime.coverage",
+            "coverage_report",
             "  threshold: 1.1\n",
             "less than or equal to 1",
         ),
         (
-            "core.runtime.coverage",
+            "coverage_report",
             "  threshold: true\n",
             "Input should be a valid number",
         ),
         (
-            "core.runtime.matrix",
+            "availability_matrix",
             "  max_cells: 0\n",
             "greater than 0",
         ),
         (
-            "core.runtime.matrix",
+            "availability_matrix",
             "  stage: raw\n",
             "Input should be 'assembled' or 'postprocessed'",
         ),
@@ -1132,14 +1365,14 @@ def test_unknown_core_runtime_entrypoint_is_rejected_during_loading(
 )
 def test_builtin_runtime_tasks_reject_invalid_options(
     tmp_path: Path,
-    entrypoint: str,
+    product: str,
     option: str,
     error: str,
 ) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "runtime.yaml").write_text(
-        (f"kind: runtime\nentrypoint: {entrypoint}\noptions:\n{option}"),
+        (f"product: {product}\ndataset: default\noptions:\n{option}"),
         encoding="utf-8",
     )
 
@@ -1151,7 +1384,7 @@ def test_coverage_options_default_to_current_threshold(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "runtime.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.coverage\ndataset: default\n",
+        "product: coverage_report\ndataset: default\n",
         encoding="utf-8",
     )
 
@@ -1198,22 +1431,22 @@ def test_plugin_runtime_options_default_to_an_empty_mapping(tmp_path: Path) -> N
 
 
 @pytest.mark.parametrize(
-    "entrypoint",
+    "product",
     [
-        "core.artifact.scaler",
-        "core.artifact.series",
-        "core.artifact.metadata",
-        "core.artifact.coverage_stats",
+        "scaler",
+        "dataset_series",
+        "dataset_metadata",
+        "coverage_statistics",
     ],
 )
-def test_custom_artifact_requires_dataset_binding(
+def test_dataset_artifact_requires_dataset_binding(
     tmp_path: Path,
-    entrypoint: str,
+    product: str,
 ) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "custom.yaml").write_text(
-        (f"kind: artifact\nentrypoint: {entrypoint}\noutput: build/custom.json\n"),
+        (f"product: {product}\noutput: build/custom.json\n"),
         encoding="utf-8",
     )
 
@@ -1227,7 +1460,7 @@ def test_custom_operation_rejects_entrypoint_outer_whitespace(tmp_path: Path) ->
     (config_dir / "custom.yaml").write_text(
         (
             "kind: runtime\n"
-            "entrypoint: ' core.runtime.coverage '\n"
+            "entrypoint: ' plugin.runtime.report '\n"
             "options:\n"
             "  typo: true\n"
         ),
@@ -1278,7 +1511,7 @@ def test_runtime_operation_rejects_dependencies_field(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "dataset.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.dataset\ndataset: default\ndependencies:\n  - missing_artifact\n",
+        "product: dataset\ndataset: default\ndependencies:\n  - missing_artifact\n",
         encoding="utf-8",
     )
 
@@ -1290,7 +1523,7 @@ def test_runtime_operation_rejects_output_formats_field(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "dataset.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.dataset\ndataset: default\noutput_formats:\n  - jsonl\n",
+        "product: dataset\ndataset: default\noutput_formats:\n  - jsonl\n",
         encoding="utf-8",
     )
 
@@ -1384,7 +1617,7 @@ def test_legacy_config_directory_is_not_loaded(tmp_path):
     tasks_root = project_yaml.parent / "tasks"
     tasks_root.mkdir(parents=True, exist_ok=True)
     (tasks_root / "report.yaml").write_text(
-        "id: report\nkind: runtime\nentrypoint: core.runtime.dataset\ndataset: default\n",
+        "id: report\nproduct: dataset\ndataset: default\n",
         encoding="utf-8",
     )
 
@@ -1476,9 +1709,7 @@ def test_operation_task_rejects_unknown_fields(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "dataset.yaml").write_text(
-        (
-            "kind: runtime\nentrypoint: core.runtime.dataset\ndataset: default\nruntime_kind: inspect\n"
-        ),
+        ("product: dataset\ndataset: default\nruntime_kind: inspect\n"),
         encoding="utf-8",
     )
 

@@ -197,7 +197,7 @@ without `--result-json`. See [saved runs](research.md#read-a-saved-run).
 - `jerry materialize --project <alias|folder|project.yaml> [--profile <name>] [--output-file <path.jsonl|path.jsonl.gz>] [--result-json] [--overwrite|--no-overwrite] [--artifact-mode auto|rebuild|require_current] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
   - Runs every enabled `profiles/materialize.<name>.yaml` file in configured
     order, or one profile selected by `--profile`.
-  - Each profile selects a `core.runtime.stream` operation by `operation`.
+  - Each profile selects a `product: records` operation by `operation`.
   - Checks every selected output before the first profile starts writing.
   - Collects the selected streams' artifact requirements and prepares their
     union once. `--artifact-mode` overrides `materialize.defaults.yaml`; the

@@ -17,7 +17,7 @@ from jerrythomas.profiles.request_builder import (
 
 def _materialize(root, stream="metrics.linear", name="linear"):
     (root / "operations" / f"raw-{name}.yaml").write_text(
-        f"kind: runtime\nentrypoint: core.runtime.stream\nstream: {stream}\n"
+        f"product: records\nstream: {stream}\n"
     )
     (root / "profiles" / f"materialize.{name}.yaml").write_text(
         f"operation: raw-{name}\noutput: exports/{name}.jsonl\n"
@@ -255,7 +255,7 @@ def test_materialize_batch_captures_inputs_after_previous_job_finishes(copy_fixt
         "operation: raw-linear\norder: 1\noutput: exports/linear.jsonl\n"
     )
     (root / "operations" / "raw-imported.yaml").write_text(
-        "kind: runtime\nentrypoint: core.runtime.stream\nstream: imported\n"
+        "product: records\nstream: imported\n"
     )
     (root / "profiles" / "materialize.second.yaml").write_text(
         "operation: raw-imported\norder: 2\noutput: exports/second.jsonl\n"
