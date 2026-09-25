@@ -19,7 +19,7 @@ from jerrythomas.services.path_policy import resolve_workspace_path, workspace_c
 
 
 logger = logging.getLogger(__name__)
-_PROFILE_COMMANDS = {"build", "inspect", "materialize", "serve"}
+_PROFILE_COMMANDS = {"build", "inspect", "export", "serve"}
 
 
 def _resolve_project_arguments(

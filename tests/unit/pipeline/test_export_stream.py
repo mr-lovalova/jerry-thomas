@@ -13,9 +13,9 @@ from jerrythomas.io.output import OutputTarget
 from jerrythomas.operations.runtime import execution
 from jerrythomas.operations.runtime.execution import OutputOptions
 from jerrythomas.runtime import Runtime, SourceRuntimeStream
-from jerrythomas.services.materialize import (
-    materialize_stream,
-    resolve_materialize_output,
+from jerrythomas.services.export import (
+    export_stream,
+    resolve_export_output,
 )
 
 
@@ -61,12 +61,12 @@ def _runtime(
 
 
 def _output(path: Path) -> OutputTarget:
-    return resolve_materialize_output(path)
+    return resolve_export_output(path)
 
 
-def test_materialize_output_requires_jsonl_suffix(tmp_path: Path) -> None:
+def test_export_output_requires_jsonl_suffix(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match=r"\.jsonl or \.jsonl\.gz"):
-        resolve_materialize_output(tmp_path / "prices.csv")
+        resolve_export_output(tmp_path / "prices.csv")
 
 
 @pytest.fixture
@@ -77,7 +77,7 @@ def one_row_runtime(tmp_path: Path) -> Runtime:
     )
 
 
-def test_materialize_stream_uses_registered_operation_and_writes_jsonl(
+def test_export_stream_uses_registered_operation_and_writes_jsonl(
     tmp_path: Path, monkeypatch
 ) -> None:
     rows = [
@@ -85,7 +85,7 @@ def test_materialize_stream_uses_registered_operation_and_writes_jsonl(
         {"time": _ts(1), "security_id": "AAPL", "close": 10.0},
     ]
     runtime = _runtime(tmp_path, rows)
-    output = tmp_path / "interim" / "prices.materialized.jsonl"
+    output = tmp_path / "interim" / "prices.exported.jsonl"
 
     task = StreamTask(id="export-prices", stream="prices.raw", requires=("schedule",))
     load_entrypoint = execution.load_entrypoint
@@ -104,7 +104,7 @@ def test_materialize_stream_uses_registered_operation_and_writes_jsonl(
         return run
 
     monkeypatch.setattr(execution, "load_entrypoint", load_runner)
-    result = materialize_stream(runtime=runtime, task=task, output=_output(output))
+    result = export_stream(runtime=runtime, task=task, output=_output(output))
     assert calls == [OutputOptions(output_format="jsonl")]
 
     payloads = [
@@ -118,14 +118,14 @@ def test_materialize_stream_uses_registered_operation_and_writes_jsonl(
     assert result.row_count == len(payloads)
 
 
-def test_materialize_stream_writes_gzip_jsonl(tmp_path: Path) -> None:
+def test_export_stream_writes_gzip_jsonl(tmp_path: Path) -> None:
     runtime = _runtime(
         tmp_path,
         [{"time": _ts(1), "security_id": "AAPL", "close": 10.0}],
     )
-    output = tmp_path / "interim" / "prices.materialized.jsonl.gz"
+    output = tmp_path / "interim" / "prices.exported.jsonl.gz"
 
-    result = materialize_stream(
+    result = export_stream(
         runtime=runtime,
         task=StreamTask(id="prices", stream="prices.raw"),
         output=_output(output),
@@ -138,14 +138,14 @@ def test_materialize_stream_writes_gzip_jsonl(tmp_path: Path) -> None:
     assert result.row_count == len(payloads)
 
 
-def test_materialize_stream_normalizes_nan_as_null(tmp_path: Path) -> None:
+def test_export_stream_normalizes_nan_as_null(tmp_path: Path) -> None:
     runtime = _runtime(
         tmp_path,
         [{"time": _ts(1), "security_id": "AAPL", "close": float("nan")}],
     )
     output = tmp_path / "prices.jsonl"
 
-    materialize_stream(
+    export_stream(
         runtime=runtime,
         task=StreamTask(id="prices", stream="prices.raw"),
         output=_output(output),
@@ -155,7 +155,7 @@ def test_materialize_stream_normalizes_nan_as_null(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("value", [float("inf"), float("-inf")])
-def test_materialize_stream_rejects_infinity_atomically(
+def test_export_stream_rejects_infinity_atomically(
     tmp_path: Path,
     value: float,
 ) -> None:
@@ -167,7 +167,7 @@ def test_materialize_stream_rejects_infinity_atomically(
     output.write_text("previous\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="must not contain infinity"):
-        materialize_stream(
+        export_stream(
             runtime=runtime,
             task=StreamTask(id="prices", stream="prices.raw"),
             output=_output(output),
@@ -177,7 +177,7 @@ def test_materialize_stream_rejects_infinity_atomically(
     assert output.read_text(encoding="utf-8") == "previous\n"
 
 
-def test_materialize_stream_refuses_existing_output_without_overwrite(
+def test_export_stream_refuses_existing_output_without_overwrite(
     tmp_path: Path,
     one_row_runtime: Runtime,
     monkeypatch,
@@ -191,14 +191,14 @@ def test_materialize_stream_refuses_existing_output_without_overwrite(
     output.write_text("", encoding="utf-8")
 
     with pytest.raises(FileExistsError, match="--overwrite"):
-        materialize_stream(
+        export_stream(
             runtime=one_row_runtime,
             task=StreamTask(id="prices", stream="prices.raw"),
             output=_output(output),
         )
 
 
-def test_materialize_stream_refuses_managed_artifact_paths(
+def test_export_stream_refuses_managed_artifact_paths(
     tmp_path: Path,
     one_row_runtime: Runtime,
     monkeypatch,
@@ -211,7 +211,7 @@ def test_materialize_stream_refuses_managed_artifact_paths(
     output = tmp_path / "artifacts" / "schedule.jsonl"
 
     with pytest.raises(ValueError, match="outside the managed artifacts root"):
-        materialize_stream(
+        export_stream(
             runtime=one_row_runtime,
             task=StreamTask(id="prices", stream="prices.raw"),
             output=_output(output),
@@ -222,7 +222,7 @@ def test_materialize_stream_refuses_managed_artifact_paths(
 
 
 @pytest.mark.parametrize("filename", ["prices.jsonl", "prices.jsonl.gz"])
-def test_materialize_stream_does_not_clobber_output_created_during_stream(
+def test_export_stream_does_not_clobber_output_created_during_stream(
     tmp_path: Path,
     monkeypatch,
     one_row_runtime: Runtime,
@@ -244,7 +244,7 @@ def test_materialize_stream_does_not_clobber_output_created_during_stream(
     )
 
     with pytest.raises(FileExistsError, match="already exists"):
-        materialize_stream(
+        export_stream(
             runtime=one_row_runtime,
             task=StreamTask(id="prices", stream="prices.raw"),
             output=_output(output),
@@ -253,7 +253,7 @@ def test_materialize_stream_does_not_clobber_output_created_during_stream(
     assert output.read_bytes() == concurrent_output
 
 
-def test_materialize_stream_closes_rows_after_writer_failure(
+def test_export_stream_closes_rows_after_writer_failure(
     tmp_path: Path,
     monkeypatch,
     one_row_runtime: Runtime,
@@ -274,7 +274,7 @@ def test_materialize_stream_closes_rows_after_writer_failure(
 
     output = tmp_path / "prices.jsonl"
     with pytest.raises(TypeError, match="Unsupported output value type"):
-        materialize_stream(
+        export_stream(
             runtime=one_row_runtime,
             task=StreamTask(id="prices", stream="prices.raw"),
             output=_output(output),
@@ -284,7 +284,7 @@ def test_materialize_stream_closes_rows_after_writer_failure(
     assert not output.exists()
 
 
-def test_materialize_stream_aborts_when_rows_fail_to_close(
+def test_export_stream_aborts_when_rows_fail_to_close(
     tmp_path, monkeypatch, one_row_runtime
 ):
     class Rows:
@@ -302,7 +302,7 @@ def test_materialize_stream_aborts_when_rows_fail_to_close(
     output.write_text("previous\n")
 
     with pytest.raises(OSError, match="input close failed"):
-        materialize_stream(
+        export_stream(
             one_row_runtime,
             StreamTask(id="prices", stream="prices.raw"),
             _output(output),
@@ -313,9 +313,9 @@ def test_materialize_stream_aborts_when_rows_fail_to_close(
     assert list(tmp_path.iterdir()) == [output]
 
 
-def test_materialize_stream_reports_committed_empty_file(tmp_path):
+def test_export_stream_reports_committed_empty_file(tmp_path):
     output = tmp_path / "empty.jsonl"
-    result = materialize_stream(
+    result = export_stream(
         _runtime(tmp_path, []),
         StreamTask(id="prices", stream="prices.raw"),
         _output(output),

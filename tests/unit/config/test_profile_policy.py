@@ -6,7 +6,7 @@ from jerrythomas.config.profiles.build import BuildProfile
 from jerrythomas.config.profiles.defaults import (
     BuildProfileDefaults,
     InspectProfileDefaults,
-    MaterializeProfileDefaults,
+    ExportProfileDefaults,
     ServeProfileDefaults,
 )
 from jerrythomas.profiles.loader import apply_profile_defaults
@@ -30,7 +30,7 @@ def test_build_mode_is_rejected_with_migration_guidance(config) -> None:
         (BuildProfileDefaults, "build"),
         (ServeProfileDefaults, "serve"),
         (InspectProfileDefaults, "inspect"),
-        (MaterializeProfileDefaults, "materialize"),
+        (ExportProfileDefaults, "export"),
     ],
 )
 @pytest.mark.parametrize(

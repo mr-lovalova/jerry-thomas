@@ -70,7 +70,7 @@ def create_project(root: Path, *, datasets: bool = True) -> Path:
         },
     )
     write_config(
-        root / "profiles" / "materialize.raw.yaml",
+        root / "profiles" / "export.raw.yaml",
         {
             "operation": "raw",
             "output": "exports/rows.jsonl.gz",

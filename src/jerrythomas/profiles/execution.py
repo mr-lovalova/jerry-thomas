@@ -20,7 +20,7 @@ from jerrythomas.operations.persistence import (
 from jerrythomas.operations.runtime.execution import OutputOptions, run_output_operation
 from jerrythomas.services.definitions import ProjectDefinition
 
-from .models import MaterializeJob, RuntimeJob
+from .models import ExportJob, RuntimeJob
 
 logger = logging.getLogger(__name__)
 
@@ -32,17 +32,17 @@ class RuntimeJobPlan:
 
 
 @dataclass(frozen=True)
-class MaterializeJobPlan:
-    job: MaterializeJob
+class ExportJobPlan:
+    job: ExportJob
     required_artifacts: tuple[str, ...]
 
 
-def plan_materialize_job(
-    job: MaterializeJob,
+def plan_export_job(
+    job: ExportJob,
     definition: ProjectDefinition,
-) -> MaterializeJobPlan:
+) -> ExportJobPlan:
     graph = definition.artifact_graph
-    return MaterializeJobPlan(
+    return ExportJobPlan(
         job=job,
         required_artifacts=graph.runtime_dependency_closure(job.task, preview=None),
     )

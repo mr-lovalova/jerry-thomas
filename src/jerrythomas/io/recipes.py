@@ -14,7 +14,7 @@ class RunRecipe(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal[2] = 2
-    command: Literal["serve", "materialize"]
+    command: Literal["serve", "export"]
     project: str
     dataset_id: str | None = None
     dataset_version: str | None = None

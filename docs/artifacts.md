@@ -92,7 +92,7 @@ invalidating the artifact. Permission and other metadata-only changes therefore
 do not invalidate unchanged bytes. Unchanged timestamps use the fast stat check;
 files with changed `ctime` are rehashed on each validation without updating state.
 Build-state version 9 requires one rebuild of older managed artifacts to record
-checksums; exported materializations are unaffected.
+checksums; exported files are unaffected.
 
 Jerry 10.0.2 advances the core artifact-cache revision to isolate mutable plugin
 configuration between runtimes. It includes the numerical corrections from
@@ -213,7 +213,7 @@ The v7 Python layer replaces the following types under the former
 `variables` is now `series`. Series ID encoding and final sample values are
 unchanged; the internal artifact rows are grouped by sample key.
 
-Serve, inspect, and materialize use one command-wide `artifact_mode` for their
+Serve, inspect, and export use one command-wide `artifact_mode` for their
 prerequisite phase. Its precedence is CLI `--artifact-mode`, then the matching
 `<command>.defaults.yaml`, then the built-in `auto`:
 
@@ -228,11 +228,11 @@ Concrete profiles do not carry individual artifact modes. Custom artifact
 dependencies must have a configured producer; core artifact producers are
 always available.
 
-Before any selected materialize profile runs, Jerry similarly unions the
+Before any selected export profile runs, Jerry similarly unions the
 artifact requirements of its selected streams and prepares them once.
 For built-in transforms, these are schedule IDs referenced by `ensure_schedule`
 operations on the selected or upstream streams. Dependencies
-hidden inside plugin code are not inferred. Materialize profiles do not carry
+hidden inside plugin code are not inferred. Export profiles do not carry
 individual artifact modes.
 
 The shared prerequisite phase has its own visual and logging envelope. Its
@@ -248,7 +248,7 @@ command-default heartbeat applies to the shared prerequisite build; heartbeat
 values defined on individual profiles apply only when those profiles run.
 
 Build profiles remain explicit roots for `jerry build` and retain their own
-`mode`. They are not consulted by `serve`, `inspect`, or `materialize`.
+`mode`. They are not consulted by `serve`, `inspect`, or `export`.
 
 ---
 

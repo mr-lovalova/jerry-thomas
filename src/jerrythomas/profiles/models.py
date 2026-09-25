@@ -50,7 +50,7 @@ class RuntimeJob:
 
 
 @dataclass(frozen=True)
-class MaterializeJob:
+class ExportJob:
     name: str
     task: StreamTask
     output: OutputTarget
@@ -81,13 +81,13 @@ class RuntimeRunRequest:
 
 
 @dataclass(frozen=True, kw_only=True)
-class MaterializeRunRequest:
+class ExportRunRequest:
     definition: ProjectDefinition
-    jobs: Sequence[MaterializeJob]
+    jobs: Sequence[ExportJob]
     execution: ExecutionConfig
     artifact_settings: BuildSettings
     runtime: Runtime
-    command: Literal["materialize"] = field(default="materialize", init=False)
+    command: Literal["export"] = field(default="export", init=False)
 
 
-ProfileRunRequest = BuildRunRequest | RuntimeRunRequest | MaterializeRunRequest
+ProfileRunRequest = BuildRunRequest | RuntimeRunRequest | ExportRunRequest

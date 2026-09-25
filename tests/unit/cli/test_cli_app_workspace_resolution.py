@@ -116,7 +116,7 @@ def test_project_path_resolves_relative_to_workspace_root(monkeypatch, tmp_path)
     assert Path(resolved) == project_file.resolve()
 
 
-@pytest.mark.parametrize("command", ["serve", "build", "inspect", "materialize"])
+@pytest.mark.parametrize("command", ["serve", "build", "inspect", "export"])
 @pytest.mark.parametrize("flag", ["--dataset", "-d"])
 def test_commands_reject_removed_dataset_selector(command, flag):
     with pytest.raises(SystemExit) as error:

@@ -9,15 +9,15 @@ from jerrythomas.operations.persistence import (
     persist_runtime_output,
 )
 from jerrythomas.io.output import OutputTarget
-from jerrythomas.io.runs import materialize_receipt_path
+from jerrythomas.io.runs import export_receipt_path
 from jerrythomas.io.recipes import recipe_path
 from jerrythomas.operations.runtime.execution import OutputOptions, run_output_operation
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.execution_lock import output_lock_path
 
 
-def resolve_materialize_output(output: Path) -> OutputTarget:
-    compression = _materialize_compression(output)
+def resolve_export_output(output: Path) -> OutputTarget:
+    compression = _export_compression(output)
     return OutputTarget(
         transport="fs",
         format="jsonl",
@@ -28,7 +28,7 @@ def resolve_materialize_output(output: Path) -> OutputTarget:
     )
 
 
-def materialize_stream(
+def export_stream(
     runtime: Runtime,
     task: StreamTask,
     output: OutputTarget,
@@ -41,11 +41,11 @@ def materialize_stream(
         or output.view != "raw"
         or output_path is None
     ):
-        raise ValueError("materialize requires a raw JSONL filesystem output")
+        raise ValueError("export requires a raw JSONL filesystem output")
     artifacts_root = runtime.artifacts_root.resolve()
     if output_path.is_relative_to(artifacts_root):
         raise ValueError(
-            f"materialize output must be outside the managed artifacts root: {output_path}"
+            f"export output must be outside the managed artifacts root: {output_path}"
         )
     _check_data_destination(output_path, overwrite)
 
@@ -65,20 +65,18 @@ def materialize_stream(
     return WrittenOutput(output_path.resolve(), None, row_count)
 
 
-def check_materialize_destination(
+def check_export_destination(
     path: Path,
     overwrite: bool,
 ) -> None:
     _check_data_destination(path, overwrite)
     lock = output_lock_path(path)
     if lock.is_symlink() or (lock.exists() and not lock.is_file()):
-        raise ValueError(f"Materialize lock must be a regular file: {lock}")
-    receipt = materialize_receipt_path(path)
+        raise ValueError(f"Export lock must be a regular file: {lock}")
+    receipt = export_receipt_path(path)
     for sidecar in (receipt, recipe_path(receipt)):
         if sidecar.is_symlink() or (sidecar.exists() and not sidecar.is_file()):
-            raise ValueError(
-                f"Materialize receipt/recipe must be a regular file: {sidecar}"
-            )
+            raise ValueError(f"Export receipt/recipe must be a regular file: {sidecar}")
         if not overwrite and sidecar.exists():
             raise FileExistsError(
                 f"{sidecar} already exists; pass --overwrite to replace it"
@@ -90,9 +88,9 @@ def _check_data_destination(path: Path, overwrite: bool) -> None:
         raise FileExistsError(f"{path} already exists; pass --overwrite to replace it")
 
 
-def _materialize_compression(path: Path) -> Compression | None:
+def _export_compression(path: Path) -> Compression | None:
     if path.name.endswith(".jsonl.gz"):
         return "gzip"
     if path.suffix == ".jsonl":
         return None
-    raise ValueError("materialize output must use a .jsonl or .jsonl.gz path")
+    raise ValueError("export output must use a .jsonl or .jsonl.gz path")

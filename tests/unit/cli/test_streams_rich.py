@@ -964,7 +964,7 @@ def test_rich_renderer_renders_operation_sequence_once_and_in_order() -> None:
     renderer = _RichExecutionRenderer(logging.DEBUG, console, progress_renderer)
 
     events = (
-        OperationStarted("materialize:adv.20"),
+        OperationStarted("export:adv.20"),
         ExecutionMessage(
             message='Config:\n{"stream": "adv.20"}', log_level=logging.DEBUG
         ),
@@ -977,26 +977,26 @@ def test_rich_renderer_renders_operation_sequence_once_and_in_order() -> None:
         ),
         RowsWritten("Output", 10),
         FileResult("Output", Path("/tmp/adv.20.jsonl")),
-        OperationFinished("materialize:adv.20", "success", 1),
+        OperationFinished("export:adv.20", "success", 1),
     )
     for event in events:
         renderer.render(event)
 
     rendered = output.getvalue()
     markers = [
-        "Operation materialize:adv.20",
+        "Operation export:adv.20",
         "Config:",
         "[stream:adv.20] started",
         "[stream:adv.20] finished",
         "Output rows: 10",
         "Output:",
-        "Operation materialize:adv.20 finished",
+        "Operation export:adv.20 finished",
     ]
     positions = [rendered.index(marker) for marker in markers]
     assert positions == sorted(positions)
-    assert rendered.count("Operation materialize:adv.20") == 2
+    assert rendered.count("Operation export:adv.20") == 2
     assert rendered.count("Config:") == 1
-    assert "Operation materialize:adv.20 started" not in rendered
+    assert "Operation export:adv.20 started" not in rendered
     assert progress_renderer.events == [
         events[0],
         events[2],
@@ -1009,9 +1009,9 @@ def test_rich_renderer_renders_operation_header_and_keeps_progress_live() -> Non
     console, output = _console()
     progress_renderer = _CaptureRenderer()
     renderer = _RichExecutionRenderer(logging.INFO, console, progress_renderer)
-    started = OperationStarted("materialize:adv.20")
+    started = OperationStarted("export:adv.20")
     progress = OperationProgress(
-        name="materialize:adv.20",
+        name="export:adv.20",
         step="write_output",
         reported_at_seconds=60,
         completed=100,
@@ -1022,15 +1022,15 @@ def test_rich_renderer_renders_operation_header_and_keeps_progress_live() -> Non
     renderer.render(progress)
 
     assert progress_renderer.events == [started, progress]
-    assert "Operation materialize:adv.20" in output.getvalue()
-    assert "Operation materialize:adv.20 started" not in output.getvalue()
+    assert "Operation export:adv.20" in output.getvalue()
+    assert "Operation export:adv.20 started" not in output.getvalue()
 
 
 def test_rich_renderer_hides_plain_operation_start_at_warning() -> None:
     console, output = _console()
     renderer = _RichExecutionRenderer(logging.WARNING, console)
 
-    renderer.render(OperationStarted("materialize:adv.20"))
+    renderer.render(OperationStarted("export:adv.20"))
 
     assert output.getvalue() == ""
 
@@ -1039,12 +1039,12 @@ def test_rich_renderer_keeps_live_operation_header_at_warning() -> None:
     console, output = _console()
     progress_renderer = _CaptureRenderer()
     renderer = _RichExecutionRenderer(logging.WARNING, console, progress_renderer)
-    event = OperationStarted("materialize:adv.20")
+    event = OperationStarted("export:adv.20")
 
     renderer.render(event)
 
     assert progress_renderer.events == [event]
-    assert "Operation materialize:adv.20" in output.getvalue()
+    assert "Operation export:adv.20" in output.getvalue()
 
 
 def test_rich_renderer_styles_only_final_status() -> None:
@@ -1060,7 +1060,7 @@ def test_rich_renderer_styles_only_final_status() -> None:
     )
     operation_error = renderer._render_event(
         OperationFinished(
-            name="materialize:adv.20",
+            name="export:adv.20",
             status="error",
             elapsed_seconds=1,
             error_type="ValueError",

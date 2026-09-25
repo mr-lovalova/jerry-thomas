@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Sequence
 
-from jerrythomas.config.profiles.materialize import MaterializeProfile
+from jerrythomas.config.profiles.export import ExportProfile
 from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.execution.settings import (
     CommandObservability,
@@ -16,7 +16,7 @@ from jerrythomas.execution.observability import (
     operation_scope,
 )
 from jerrythomas.profiles.destinations import validate_command_destinations
-from jerrythomas.profiles.models import MaterializeJob
+from jerrythomas.profiles.models import ExportJob
 from jerrythomas.io.runs import (
     RunOutput,
     SavedRun,
@@ -24,14 +24,14 @@ from jerrythomas.io.runs import (
     finish_run_success,
     finish_run_failed,
     load_run,
-    materialize_receipt_path,
+    export_receipt_path,
 )
 from jerrythomas.services.execution_lock import output_execution_lock, output_lock_path
 from jerrythomas.runtime import Runtime
-from jerrythomas.services.materialize import (
-    check_materialize_destination,
-    materialize_stream,
-    resolve_materialize_output,
+from jerrythomas.services.export import (
+    check_export_destination,
+    export_stream,
+    resolve_export_output,
 )
 from jerrythomas.services.path_policy import sanitize_path_segment
 from jerrythomas.io.recipes import RunRecipe, recipe_path
@@ -39,25 +39,25 @@ from jerrythomas.services.definitions import ProjectDefinition
 from jerrythomas.profiles.recipes import validate_recipe_inputs, output_identity
 
 
-def resolve_materialize_jobs(
-    profiles: Sequence[MaterializeProfile],
+def resolve_export_jobs(
+    profiles: Sequence[ExportProfile],
     definition: ProjectDefinition,
     execution_dir: Path,
     overwrite: bool | None,
     cli_output: Path | None,
     command_observability: CommandObservability,
-) -> list[MaterializeJob]:
+) -> list[ExportJob]:
     if cli_output is not None and len(profiles) != 1:
-        raise ValueError("A materialize output override requires one selected profile.")
+        raise ValueError("An export output override requires one selected profile.")
 
     project_path = definition.project.path
     operations = {task.id: task for task in definition.runtime_operations}
-    jobs: list[MaterializeJob] = []
+    jobs: list[ExportJob] = []
     for profile in profiles:
         task = operations.get(profile.operation)
         if not isinstance(task, StreamTask):
             raise ValueError(
-                f"Materialize profile '{profile.name}' must reference a stream "
+                f"Export profile '{profile.name}' must reference a stream "
                 f"operation; got '{profile.operation}'."
             )
         observability = resolve_observability_settings(
@@ -71,8 +71,7 @@ def resolve_materialize_jobs(
                 observability.log_output,
                 execution_dir,
                 default_path=(
-                    Path("logs")
-                    / f"materialize.{sanitize_path_segment(profile.name)}.log"
+                    Path("logs") / f"export.{sanitize_path_segment(profile.name)}.log"
                 ),
             ),
         )
@@ -80,10 +79,10 @@ def resolve_materialize_jobs(
         if not output.is_absolute():
             output = project_path.parent / output
         jobs.append(
-            MaterializeJob(
+            ExportJob(
                 name=profile.name,
                 task=task.model_copy(deep=True),
-                output=resolve_materialize_output(output),
+                output=resolve_export_output(output),
                 overwrite=profile.overwrite if overwrite is None else overwrite,
                 observability=observability,
             )
@@ -91,41 +90,40 @@ def resolve_materialize_jobs(
     return jobs
 
 
-def materialize_reserved_paths(jobs: Sequence[MaterializeJob]) -> tuple[Path, ...]:
+def export_reserved_paths(jobs: Sequence[ExportJob]) -> tuple[Path, ...]:
     return tuple(
         path
         for job in jobs
         if job.output.destination is not None
         for path in (
-            materialize_receipt_path(job.output.destination),
-            recipe_path(materialize_receipt_path(job.output.destination)),
+            export_receipt_path(job.output.destination),
+            recipe_path(export_receipt_path(job.output.destination)),
             output_lock_path(job.output.destination),
         )
     )
 
 
-def preflight_materialize_jobs(
+def preflight_export_jobs(
     runtime: Runtime,
-    jobs: Sequence[MaterializeJob],
+    jobs: Sequence[ExportJob],
 ) -> None:
-    destinations: list[tuple[MaterializeJob, Path]] = []
+    destinations: list[tuple[ExportJob, Path]] = []
     available_streams = set(runtime.streams)
     artifacts_root = runtime.artifacts_root.resolve()
     for job in jobs:
         if job.stream not in available_streams:
             raise ValueError(
-                f"Materialize profile '{job.name}' references unknown "
-                f"stream '{job.stream}'."
+                f"Export profile '{job.name}' references unknown stream '{job.stream}'."
             )
         path = job.output.destination
         if job.output.transport != "fs" or path is None:
             raise ValueError(
-                f"Materialize profile '{job.name}' requires a filesystem output."
+                f"Export profile '{job.name}' requires a filesystem output."
             )
         destinations.append((job, path))
         if path.is_relative_to(artifacts_root):
             raise ValueError(
-                f"Materialize profile '{job.name}' writes inside the managed "
+                f"Export profile '{job.name}' writes inside the managed "
                 f"artifacts root: {path}"
             )
     validate_command_destinations(
@@ -133,21 +131,21 @@ def preflight_materialize_jobs(
         [job.output for job in jobs],
         [job.observability.log_output for job in jobs],
         (),
-        reserved_paths=materialize_reserved_paths(jobs),
+        reserved_paths=export_reserved_paths(jobs),
     )
     for job, path in destinations:
-        check_materialize_destination(path, job.overwrite)
+        check_export_destination(path, job.overwrite)
 
 
-def execute_materialize_job(
-    job: MaterializeJob,
+def execute_export_job(
+    job: ExportJob,
     runtime: Runtime,
     *,
     recipe: RunRecipe,
     definition: ProjectDefinition,
     run_id: str | None = None,
 ) -> SavedRun:
-    with operation_scope(f"materialize:{job.name}"):
+    with operation_scope(f"export:{job.name}"):
         emit_execution_message(
             "Config:\n"
             + json.dumps(
@@ -165,18 +163,18 @@ def execute_materialize_job(
         )
         destination = job.output.destination
         assert destination is not None
-        receipt = materialize_receipt_path(destination)
+        receipt = export_receipt_path(destination)
         with output_execution_lock(destination):
-            check_materialize_destination(destination, job.overwrite)
+            check_export_destination(destination, job.overwrite)
             start_run(
                 receipt,
                 run_id=run_id,
-                command="materialize",
+                command="export",
                 overwrite=job.overwrite,
                 recipe=recipe,
             )
             try:
-                output = materialize_stream(
+                output = export_stream(
                     runtime=runtime,
                     task=job.task,
                     output=job.output,

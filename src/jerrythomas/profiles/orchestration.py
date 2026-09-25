@@ -20,9 +20,9 @@ from jerrythomas.io.runs import (
 )
 from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.profiles.executor import execution_scope
-from jerrythomas.profiles.materialize import (
-    execute_materialize_job,
-    preflight_materialize_jobs,
+from jerrythomas.profiles.export import (
+    execute_export_job,
+    preflight_export_jobs,
 )
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.execution_lock import (
@@ -40,14 +40,14 @@ from jerrythomas.profiles.recipes import (
 from .execution import (
     RuntimeJobPlan,
     execute_runtime_job,
-    plan_materialize_job,
+    plan_export_job,
     plan_runtime_job,
     validate_build_job,
 )
 from .models import (
     BuildJob,
     BuildRunRequest,
-    MaterializeRunRequest,
+    ExportRunRequest,
     ProfileRunRequest,
     RuntimeRunRequest,
     ServeRunPlan,
@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_profiles(request: ProfileRunRequest) -> tuple[SavedRun, ...]:
-    """Return completed serve runs or a completed materialize invocation.
+    """Return completed serve runs or a completed export invocation.
 
     Build, inspect, and unmanaged runtime outputs return an empty tuple.
     Execution or publication failures raise; no results are returned.
@@ -70,8 +70,8 @@ def run_profiles(request: ProfileRunRequest) -> tuple[SavedRun, ...]:
                 results = ()
             elif isinstance(request, RuntimeRunRequest):
                 results = _run_runtime_profiles(request)
-            elif isinstance(request, MaterializeRunRequest):
-                results = _run_materialize_profiles(request)
+            elif isinstance(request, ExportRunRequest):
+                results = _run_export_profiles(request)
             else:
                 raise TypeError(
                     f"Unsupported profile request: {type(request).__name__}"
@@ -234,8 +234,8 @@ def _run_runtime_profiles(request: RuntimeRunRequest) -> tuple[SavedRun, ...]:
     return tuple(load_run(plan.paths.metadata_path) for plan in started_runs)
 
 
-def _run_materialize_profiles(
-    request: MaterializeRunRequest,
+def _run_export_profiles(
+    request: ExportRunRequest,
 ) -> tuple[SavedRun, ...]:
     jobs = list(request.jobs)
     if not jobs:
@@ -243,8 +243,8 @@ def _run_materialize_profiles(
     run_id = make_run_id()
     request.runtime.execution = request.execution
     try:
-        preflight_materialize_jobs(request.runtime, jobs)
-        plans = [plan_materialize_job(job, request.definition) for job in jobs]
+        preflight_export_jobs(request.runtime, jobs)
+        plans = [plan_export_job(job, request.definition) for job in jobs]
     except (OSError, ValueError) as exc:
         raise ProfileCommandError(str(exc)) from exc
 
@@ -261,14 +261,14 @@ def _run_materialize_profiles(
         with execution_scope(request.runtime, job.observability):
             recipe = capture_recipe(
                 request.definition,
-                "materialize",
+                "export",
                 [job],
                 request.execution,
                 plan.required_artifacts,
             )
             recipe = capture_artifacts(recipe, request.definition)
             results.append(
-                execute_materialize_job(
+                execute_export_job(
                     job,
                     request.runtime,
                     recipe=recipe,
@@ -345,7 +345,7 @@ def _prepare_runtime_artifacts(
 
 
 def _build_prerequisites(
-    request: RuntimeRunRequest | MaterializeRunRequest,
+    request: RuntimeRunRequest | ExportRunRequest,
     required_artifacts: set[str],
     runtime: Runtime,
 ) -> None:

@@ -73,7 +73,7 @@ Both commands emit the same versioned structure:
     {
       "receipt": "/research/interim/volatility.jsonl.gz.run.json",
       "schema_version": 4,
-      "command": "materialize",
+      "command": "export",
       "dataset_id": null,
       "dataset_version": null,
       "run_id": "2026-09-15T10-00-00-000000Z",
@@ -100,7 +100,7 @@ Both commands emit the same versioned structure:
 Each entry contains the saved receipt fields plus its absolute `receipt` path.
 Dataset-bound runs record `dataset_id` and `dataset_version`; stream runs use null.
 Output paths are relative to the receipt's directory. Serve emits one entry per
-run directory; materialize emits one per output, in profile order. No enabled
+run directory; export emits one per output, in profile order. No enabled
 profiles produces `{"schema_version": 3, "runs": []}`. Failure emits no result
 object; callers must check the exit code. Saved receipts are automatic even
 without `--result-json`. See [saved runs](research.md#read-a-saved-run).
@@ -194,18 +194,18 @@ without `--result-json`. See [saved runs](research.md#read-a-saved-run).
     profile order. The graph orders only the internal dependency jobs needed by
     each root; it never reorders the profiles. A selected dependency profile
     must be ordered before a selected dependent profile.
-- `jerry materialize --project <alias|folder|project.yaml> [--profile <name>] [--output-file <path.jsonl|path.jsonl.gz>] [--result-json] [--overwrite|--no-overwrite] [--artifact-mode auto|rebuild|require_current] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
-  - Runs every enabled `profiles/materialize.<name>.yaml` file in configured
+- `jerry export --project <alias|folder|project.yaml> [--profile <name>] [--output-file <path.jsonl|path.jsonl.gz>] [--result-json] [--overwrite|--no-overwrite] [--artifact-mode auto|rebuild|require_current] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
+  - Runs every enabled `profiles/export.<name>.yaml` file in configured
     order, or one profile selected by `--profile`.
   - Each profile selects a `kind: output`, `entrypoint: core.records` operation.
   - Checks every selected output before the first profile starts writing.
   - Collects the selected streams' artifact requirements and prepares their
-    union once. `--artifact-mode` overrides `materialize.defaults.yaml`; the
+    union once. `--artifact-mode` overrides `export.defaults.yaml`; the
     built-in mode is `auto`.
   - Shared prerequisite visuals and logs use CLI settings, then
-    `materialize.defaults.yaml`; concrete profile overrides begin afterward.
+    `export.defaults.yaml`; concrete profile overrides begin afterward.
   - A CLI overwrite choice applies to every selected profile. Without it, each
-    profile uses its own `overwrite` setting or `materialize.defaults.yaml`.
+    profile uses its own `overwrite` setting or `export.defaults.yaml`.
   - `--output-file` overrides one selected profile and therefore requires
     `--profile`.
   - The concrete output suffix selects compression: `.jsonl` writes plain

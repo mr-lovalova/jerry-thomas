@@ -10,19 +10,19 @@ from jerrythomas.execution.settings import CommandObservability
 from jerrythomas.io.runs import load_run
 from jerrythomas.profiles.orchestration import run_profiles
 from jerrythomas.profiles.request_builder import (
-    build_materialize_run_request,
+    build_export_run_request,
     build_runtime_run_request,
 )
 
 
-def _materialize(root, stream="metrics.linear", name="linear"):
+def _export(root, stream="metrics.linear", name="linear"):
     (root / "operations" / f"raw-{name}.yaml").write_text(
         f"kind: output\nentrypoint: core.records\nstream: {stream}\n"
     )
-    (root / "profiles" / f"materialize.{name}.yaml").write_text(
+    (root / "profiles" / f"export.{name}.yaml").write_text(
         f"operation: raw-{name}\noutput: exports/{name}.jsonl\n"
     )
-    return build_materialize_run_request(
+    return build_export_run_request(
         str(root / "project.yaml"),
         profile_name=name,
         overwrite=None,
@@ -32,7 +32,7 @@ def _materialize(root, stream="metrics.linear", name="linear"):
     )
 
 
-def test_materialize_recipe_preserves_resolved_external_config_not_unused_catalog(
+def test_export_recipe_preserves_resolved_external_config_not_unused_catalog(
     copy_fixture,
     tmp_path,
 ):
@@ -46,7 +46,7 @@ def test_materialize_recipe_preserves_resolved_external_config_not_unused_catalo
         .replace("sources: sources", "sources: [sources, ../shared]")
         .replace("globals:", "globals:\n  unused_setting: do-not-preserve")
     )
-    request = _materialize(root)
+    request = _export(root)
     # The execution request already owns resolved configuration. Later edits
     # must not leak into either execution or its saved recipe.
     (shared / "metrics.linear.yaml").write_text("now: invalid")
@@ -157,7 +157,7 @@ def test_shared_serve_root_saves_only_its_own_jobs(copy_fixture):
 
 def test_recipe_checksum_detects_tampering(copy_fixture):
     root = copy_fixture("regression_project")
-    (saved,) = run_profiles(_materialize(root))
+    (saved,) = run_profiles(_export(root))
     saved.recipe_path.write_text("{}")
     with pytest.raises(ValueError, match="checksum mismatch"):
         saved.load_recipe()
@@ -174,7 +174,7 @@ def test_recipe_saves_the_null_argument_actually_passed_to_a_plugin(copy_fixture
         "freshness: opaque\nloader:\n  entrypoint: core.synthetic.ticks\n"
         "  args: {start: '${start_time}', end: '${end_time}', frequency: '${frequency}'}\n"
     )
-    (saved,) = run_profiles(_materialize(root))
+    (saved,) = run_profiles(_export(root))
     loader = saved.load_recipe().configuration["sources"]["regression.linear"]["loader"]
     assert loader["args"]["frequency"] is None
     assert saved.output("linear").row_count == 6
@@ -186,7 +186,7 @@ def test_git_unavailable_does_not_block_recipe_or_execution(copy_fixture, monkey
 
     monkeypatch.setattr("jerrythomas.profiles.recipes.subprocess.run", unavailable)
     root = copy_fixture("regression_project")
-    (saved,) = run_profiles(_materialize(root))
+    (saved,) = run_profiles(_export(root))
     assert all(
         value is None
         for value in saved.load_recipe().implementation["repositories"].values()
@@ -198,7 +198,7 @@ def test_git_records_commit_and_dirty_state_without_requiring_a_clean_tree(
     copy_fixture,
 ):
     root = copy_fixture("regression_project")
-    request = _materialize(root)
+    request = _export(root)
 
     def git(*args):
         return subprocess.run(
@@ -231,11 +231,11 @@ def test_git_records_commit_and_dirty_state_without_requiring_a_clean_tree(
 
 
 def test_changed_input_does_not_publish_successful_run(copy_fixture, monkeypatch):
-    from jerrythomas.profiles import materialize
+    from jerrythomas.profiles import export
 
     root = copy_fixture("regression_project")
-    request = _materialize(root)
-    execute = materialize.materialize_stream
+    request = _export(root)
+    execute = export.export_stream
 
     def change_input(**kwargs):
         output = execute(**kwargs)
@@ -243,7 +243,7 @@ def test_changed_input_does_not_publish_successful_run(copy_fixture, monkeypatch
             source.write("\n")
         return output
 
-    monkeypatch.setattr(materialize, "materialize_stream", change_input)
+    monkeypatch.setattr(export, "export_stream", change_input)
     with pytest.raises(RuntimeError, match="inputs changed"):
         run_profiles(request)
     receipt = root / "exports" / "linear.jsonl.run.json"
@@ -251,14 +251,14 @@ def test_changed_input_does_not_publish_successful_run(copy_fixture, monkeypatch
     assert receipt.with_name("linear.jsonl.recipe.json").exists()
 
 
-def test_materialized_input_records_upstream_receipt_reference(copy_fixture):
+def test_exported_input_records_upstream_receipt_reference(copy_fixture):
     root = copy_fixture("regression_project")
-    (upstream,) = run_profiles(_materialize(root))
+    (upstream,) = run_profiles(_export(root))
     (root / "sources" / "metrics.linear.yaml").write_text(
         "id: regression.linear\nparser: {entrypoint: core.record}\n"
         "loader: {transport: fs, path: exports/linear.jsonl, reader: {format: jsonl}}\n"
     )
-    (downstream,) = run_profiles(_materialize(root, name="second"))
+    (downstream,) = run_profiles(_export(root, name="second"))
     snapshot = downstream.load_recipe().inputs["regression.linear"]
     (file,) = next(iter(snapshot["patterns"].values()))
     assert file["upstream_receipt"]["path"] == str(upstream.metadata_path)
@@ -268,16 +268,16 @@ def test_materialized_input_records_upstream_receipt_reference(copy_fixture):
     )
 
 
-def test_materialize_batch_captures_inputs_after_previous_job_finishes(copy_fixture):
+def test_export_batch_captures_inputs_after_previous_job_finishes(copy_fixture):
     root = copy_fixture("regression_project")
-    _materialize(root)
-    (root / "profiles" / "materialize.linear.yaml").write_text(
+    _export(root)
+    (root / "profiles" / "export.linear.yaml").write_text(
         "operation: raw-linear\norder: 1\noutput: exports/linear.jsonl\n"
     )
     (root / "operations" / "raw-imported.yaml").write_text(
         "kind: output\nentrypoint: core.records\nstream: imported\n"
     )
-    (root / "profiles" / "materialize.second.yaml").write_text(
+    (root / "profiles" / "export.second.yaml").write_text(
         "operation: raw-imported\norder: 2\noutput: exports/second.jsonl\n"
     )
     (root / "sources" / "imported.yaml").write_text(
@@ -287,7 +287,7 @@ def test_materialize_batch_captures_inputs_after_previous_job_finishes(copy_fixt
     (root / "streams" / "imported.yaml").write_text(
         "id: imported\nfrom: {source: imported}\nmap: {entrypoint: core.identity}\n"
     )
-    request = build_materialize_run_request(
+    request = build_export_run_request(
         str(root / "project.yaml"),
         profile_name=None,
         overwrite=None,
@@ -302,14 +302,14 @@ def test_materialize_batch_captures_inputs_after_previous_job_finishes(copy_fixt
     assert file["upstream_receipt"]["path"] == str(first.metadata_path)
 
 
-@pytest.mark.parametrize("command", ["serve", "materialize"])
+@pytest.mark.parametrize("command", ["serve", "export"])
 def test_recipe_write_failure_never_publishes_success(
     copy_fixture, monkeypatch, command
 ):
     root = copy_fixture("regression_project")
     request = (
-        _materialize(root)
-        if command == "materialize"
+        _export(root)
+        if command == "export"
         else build_runtime_run_request("serve", str(root / "project.yaml"))
     )
 
@@ -321,7 +321,7 @@ def test_recipe_write_failure_never_publishes_success(
         run_profiles(request)
     receipt = (
         (root / "exports" / "linear.jsonl.run.json")
-        if command == "materialize"
+        if command == "export"
         else request.serve_run_plans[0].paths.metadata_path
     )
     with pytest.raises(ValueError, match="successfully finished"):

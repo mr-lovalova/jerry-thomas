@@ -45,7 +45,7 @@ configured postprocess policy.
 ### Consume completed runs from Python
 
 `run_profiles()` returns a tuple of `SavedRun` objects after execution and
-publication succeed, for both serve and materialize:
+publication succeed, for both serve and export:
 
 ```python
 from jerrythomas.profiles.orchestration import run_profiles
@@ -66,14 +66,14 @@ shared `metadata` model, and absolute `outputs` paths. `output()` selects an
 output descriptor; `output_path()` validates and resolves its file.
 
 Serve profiles sharing a run directory must select the same dataset and contribute
-to one result. Materialize
+to one result. Export
 returns one result per profile in execution order, with a shared invocation ID.
 It automatically saves `<output filename>.run.json` beside each output. Receipts
 record dataset ID/version for dataset runs, command, timestamps, status, profile,
 stream or operation, file format, compression, and row count. Preview and split metadata apply to serve.
 
 Build, inspect, and stdout-only execution return an empty tuple. Execution or
-publication failures raise instead of returning partial results. Materialize
+publication failures raise instead of returning partial results. Export
 profiles commit independently: earlier completed files and receipts remain valid
 if a later profile fails.
 
@@ -168,21 +168,21 @@ manifests, manifests missing `split`, and unknown schema versions are rejected.
 Produce a new run with v11 to use this reader; there is no legacy filename
 discovery fallback.
 
-For a materialized file, pass its receipt directly:
+For an exported file, pass its receipt directly:
 
 ```python
 saved = load_run("interim/volatility.jsonl.gz.run.json")
 path = saved.output_path("volatility")
 ```
 
-Materialize destinations are mutable. `output_path()` rejects a loaded receipt
+Export destinations are mutable. `output_path()` rejects a loaded receipt
 if Jerry has since replaced it; reload it to select the current output. Data and
 receipt and recipe files can be copied together and loaded independently of the project.
 
 
 ### Saved execution recipes
 
-Every managed serve run saves `recipe.json` beside `run.json`. Materialize saves
+Every managed serve run saves `recipe.json` beside `run.json`. Export saves
 `<output>.recipe.json` beside `<output>.run.json`. No flag is required:
 
 ```python
@@ -197,7 +197,7 @@ the full catalog. No configuration files are reread to capture the recipe.
 
 Recipes record Python and Jerry/plugin versions, optional Git commit/dirty state
 for the project and editable packages, local input filesystem fingerprints, and
-required artifact identities. Adjacent upstream materialize receipts are linked
+required artifact identities. Adjacent upstream export receipts are linked
 by path and checksum; this alone does not verify their output content. Cached
 artifacts with no producer recipe are explicitly marked as such. Completed output
 descriptors contain SHA-256 hashes and byte sizes. `output_path()` remains a

@@ -14,9 +14,9 @@ from jerrythomas.config.streams import SourceStreamConfig
 from jerrythomas.config.tasks.base import PluginRuntimeTask
 from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.io.recipes import RunRecipe
-from jerrythomas.io.runs import materialize_receipt_path
+from jerrythomas.io.runs import export_receipt_path
 from jerrythomas.plugins import plugin_distributions
-from jerrythomas.profiles.models import MaterializeJob, RuntimeJob
+from jerrythomas.profiles.models import ExportJob, RuntimeJob
 from jerrythomas.services.definitions import ProjectDefinition
 from jerrythomas.services.path_policy import resolve_relative_fs_loader_path
 from jerrythomas.services.streams.validation import stream_dependency_closure
@@ -24,8 +24,8 @@ from jerrythomas.services.streams.validation import stream_dependency_closure
 
 def capture_recipe(
     definition: ProjectDefinition,
-    command: Literal["serve", "materialize"],
-    jobs: Sequence[RuntimeJob] | Sequence[MaterializeJob],
+    command: Literal["serve", "export"],
+    jobs: Sequence[RuntimeJob] | Sequence[ExportJob],
     execution: ExecutionConfig,
     required_artifacts: Sequence[str],
 ) -> RunRecipe:
@@ -151,7 +151,7 @@ def output_identity(path: Path) -> dict[str, Any]:
     return {"sha256": fingerprint.sha256, "size_bytes": fingerprint.size}
 
 
-def _job_configuration(job: RuntimeJob | MaterializeJob) -> dict[str, Any]:
+def _job_configuration(job: RuntimeJob | ExportJob) -> dict[str, Any]:
     output = job.output
     config: dict[str, Any] = {
         "profile": job.name,
@@ -164,7 +164,7 @@ def _job_configuration(job: RuntimeJob | MaterializeJob) -> dict[str, Any]:
             "destination": str(output.destination) if output.destination else None,
         },
     }
-    if isinstance(job, MaterializeJob):
+    if isinstance(job, ExportJob):
         config.update(
             operation=job.task.model_dump(mode="json", by_alias=True),
             stream=job.stream,
@@ -199,7 +199,7 @@ def _file_snapshot(path: Path) -> dict[str, Any]:
     result.update(
         size=stat.st_size, mtime_ns=stat.st_mtime_ns, ctime_ns=stat.st_ctime_ns
     )
-    receipt = materialize_receipt_path(path)
+    receipt = export_receipt_path(path)
     if receipt.is_file():
         result["upstream_receipt"] = {
             "path": str(receipt),

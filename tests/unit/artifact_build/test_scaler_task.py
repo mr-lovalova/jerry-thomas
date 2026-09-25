@@ -115,7 +115,7 @@ def _dataset(
     )
 
 
-def test_materialize_standard_scaler_uses_all_scalar_observations(
+def test_export_standard_scaler_uses_all_scalar_observations(
     tmp_path,
 ) -> None:
     runtime = _runtime(
@@ -138,7 +138,7 @@ def test_materialize_standard_scaler_uses_all_scalar_observations(
     }
 
 
-def test_materialize_standard_scaler_fits_intrinsic_list_positions(
+def test_export_standard_scaler_fits_intrinsic_list_positions(
     tmp_path,
 ) -> None:
     runtime = _runtime(
@@ -214,7 +214,7 @@ def test_folded_scaler_fits_list_positions_from_training_rows_only(
     assert second == ScalerStatistics(mean=100.0, std=1e-12, count=1)
 
 
-def test_materialize_standard_scaler_persists_feature_scaling(
+def test_export_standard_scaler_persists_feature_scaling(
     tmp_path,
 ) -> None:
     settings = ScalingConfig(with_mean=False, with_std=False, epsilon=0.5)
@@ -388,7 +388,7 @@ def test_target_horizon_trims_pre_sequence_feature_scaler_origins(tmp_path) -> N
     assert scaler.scalers["x"].statistics.mean == 2.0
 
 
-def test_materialize_folded_scaler_uses_dataset_owned_expanding_train_roles(
+def test_export_folded_scaler_uses_dataset_owned_expanding_train_roles(
     tmp_path,
 ) -> None:
     runtime = _runtime(
@@ -747,7 +747,7 @@ def test_folded_scaler_excludes_placeholder_only_wide_ids(
     assert tuple(scaler.scalers) == ("x__@bucket:known",)
 
 
-def test_materialize_folded_scaler_supports_hash_splits(tmp_path) -> None:
+def test_export_folded_scaler_supports_hash_splits(tmp_path) -> None:
     runtime = _runtime(
         tmp_path,
         _dataset(

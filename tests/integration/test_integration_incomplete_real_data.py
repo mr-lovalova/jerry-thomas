@@ -23,7 +23,7 @@ def _dataset_samples(project_yaml):
     runtime = compile_runtime(definition, dataset_id="default")
     hydrate_runtime_artifacts_for_pipeline(runtime, definition)
 
-    # Ensure artifacts are materialized for the test run.
+    # Ensure artifacts are exported for the test run.
     scaler_task = ScalerTask(id="scaler", output="scaler.json")
     build_scaler_artifact(runtime, scaler_task)
     runtime.artifacts.register(

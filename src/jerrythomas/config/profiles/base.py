@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from jerrythomas.config.observability import ObservabilityConfig
 
-ProfileCommand = Literal["serve", "build", "inspect", "materialize"]
+ProfileCommand = Literal["serve", "build", "inspect", "export"]
 
 
 class Profile(BaseModel):

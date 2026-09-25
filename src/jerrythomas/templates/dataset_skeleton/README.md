@@ -49,8 +49,8 @@ YAML config (project root):
   - `sources/*.yaml` (raw source definitions)
   - `streams/*.yaml` (source-backed, derived, exact/as-of fan-in, and aligned streams)
   - `datasets/default.yaml` (features, targets, split, and postprocess policy)
-  - `profiles/{serve,build,inspect,materialize}.<name>.yaml` (profiles; optional overrides)
-  - `profiles/{serve,build,inspect,materialize}.defaults.yaml` (optional per-kind defaults)
+  - `profiles/{serve,build,inspect,export}.<name>.yaml` (profiles; optional overrides)
+  - `profiles/{serve,build,inspect,export}.defaults.yaml` (optional per-kind defaults)
   - `operations/*.yaml` (explicit operations bound to datasets or streams)
 
 Profile sequencing:

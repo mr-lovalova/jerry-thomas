@@ -116,7 +116,7 @@ def test_common_options_survive_before_or_after_command(argv) -> None:
     assert args.log_output == ["stdout"]
 
 
-@pytest.mark.parametrize("command", ["serve", "build", "inspect", "materialize"])
+@pytest.mark.parametrize("command", ["serve", "build", "inspect", "export"])
 def test_execution_commands_accept_observability_flags(command) -> None:
     args = build_parser().parse_args(
         [command, "--no-visuals", "--heartbeat-interval", "5"]
@@ -200,7 +200,7 @@ def test_runtime_limit_accepts_a_positive_integer() -> None:
     assert args.limit == 1
 
 
-@pytest.mark.parametrize("command", ["serve", "build", "inspect", "materialize"])
+@pytest.mark.parametrize("command", ["serve", "build", "inspect", "export"])
 def test_profile_flag_selects_a_profile(command) -> None:
     args = build_parser().parse_args([command, "--profile", "disabled-profile"])
 
@@ -294,7 +294,7 @@ def test_plugin_discovery_lists_use_configured_root(
     assert seen == [plugin_root]
 
 
-@pytest.mark.parametrize("command", ["serve", "inspect", "materialize"])
+@pytest.mark.parametrize("command", ["serve", "inspect", "export"])
 @pytest.mark.parametrize("value", ["AUTO", "FORCE", "OFF", "force", "off"])
 def test_artifact_mode_cli_rejects_legacy_values(command, value) -> None:
     with pytest.raises(SystemExit) as exc:
@@ -302,7 +302,7 @@ def test_artifact_mode_cli_rejects_legacy_values(command, value) -> None:
     assert exc.value.code == 2
 
 
-@pytest.mark.parametrize("command", ["serve", "inspect", "materialize", "build"])
+@pytest.mark.parametrize("command", ["serve", "inspect", "export", "build"])
 @pytest.mark.parametrize("value", ["on", "off"])
 def test_visuals_cli_rejects_legacy_value_arguments(command, value) -> None:
     with pytest.raises(SystemExit) as exc:

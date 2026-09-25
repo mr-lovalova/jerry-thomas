@@ -13,7 +13,7 @@ from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.io.runs import SavedRun, load_run
 from jerrythomas.services.execution_lock import output_lock_path
 from jerrythomas.profiles.orchestration import run_profiles
-from jerrythomas.profiles.request_builder import build_materialize_run_request
+from jerrythomas.profiles.request_builder import build_export_run_request
 
 
 def _profiles(root):
@@ -21,7 +21,7 @@ def _profiles(root):
         "kind: output\nentrypoint: core.records\nstream: metrics.linear\n"
     )
     for order, name, suffix in [(2, "first", ".jsonl"), (1, "second", ".jsonl.gz")]:
-        (root / "profiles" / f"materialize.{name}.yaml").write_text(
+        (root / "profiles" / f"export.{name}.yaml").write_text(
             f"operation: raw-linear\norder: {order}\noutput: exports/{name}{suffix}\n"
         )
 
@@ -29,7 +29,7 @@ def _profiles(root):
 def _execute(root, *extra, result_json=True):
     args = build_parser().parse_args(
         [
-            "materialize",
+            "export",
             "--project",
             str(root / "project.yaml"),
             "--no-visuals",
@@ -46,10 +46,10 @@ def _execute(root, *extra, result_json=True):
     )
 
 
-def test_materialize_returns_completed_invocation_in_profile_order(copy_fixture):
+def test_export_returns_completed_invocation_in_profile_order(copy_fixture):
     root = copy_fixture("regression_project")
     _profiles(root)
-    request = build_materialize_run_request(
+    request = build_export_run_request(
         str(root / "project.yaml"),
         profile_name=None,
         overwrite=None,
@@ -91,7 +91,7 @@ def test_materialize_returns_completed_invocation_in_profile_order(copy_fixture)
     }
 
 
-def test_materialize_cli_result_json(copy_fixture, capsys):
+def test_export_cli_result_json(copy_fixture, capsys):
     root = copy_fixture("regression_project")
     _profiles(root)
     _execute(root)
@@ -103,29 +103,25 @@ def test_materialize_cli_result_json(copy_fixture, capsys):
         receipt = run.pop("receipt")
         saved = load_run(receipt)
         assert run == saved.metadata.model_dump(mode="json")
-        assert run["command"] == "materialize"
+        assert run["command"] == "export"
         assert run["status"] == "success"
     assert payload["runs"][0]["outputs"][0]["path"] == "second.jsonl.gz"
 
 
-def test_materialize_cli_empty_selection(copy_fixture, capsys):
+def test_export_cli_empty_selection(copy_fixture, capsys):
     root = copy_fixture("regression_project")
     (root / "operations" / "raw-linear.yaml").write_text(
         "kind: output\nentrypoint: core.records\nstream: metrics.linear\n"
     )
-    (root / "profiles" / "materialize.disabled.yaml").write_text(
+    (root / "profiles" / "export.disabled.yaml").write_text(
         "operation: raw-linear\noutput: exports/disabled.jsonl\nenabled: false\n"
     )
     _execute(root)
     assert json.loads(capsys.readouterr().out) == {"schema_version": 3, "runs": []}
 
 
-@pytest.mark.parametrize(
-    "config", ["materialize.defaults.yaml", "materialize.first.yaml"]
-)
-def test_materialize_cli_rejects_stdout_logs_before_writing(
-    copy_fixture, capsys, config
-):
+@pytest.mark.parametrize("config", ["export.defaults.yaml", "export.first.yaml"])
+def test_export_cli_rejects_stdout_logs_before_writing(copy_fixture, capsys, config):
     root = copy_fixture("regression_project")
     _profiles(root)
     path = root / "profiles" / config
@@ -138,21 +134,21 @@ def test_materialize_cli_rejects_stdout_logs_before_writing(
     assert not (root / "exports").exists()
 
 
-def test_materialize_cli_does_not_report_success_after_partial_failure(
+def test_export_cli_does_not_report_success_after_partial_failure(
     copy_fixture, capsys, monkeypatch
 ):
     from jerrythomas.profiles import orchestration
 
     root = copy_fixture("regression_project")
     _profiles(root)
-    execute = orchestration.execute_materialize_job
+    execute = orchestration.execute_export_job
 
     def fail_second(job, runtime, **kwargs):
         if job.name == "first":
             raise OSError("write failed")
         return execute(job, runtime, **kwargs)
 
-    monkeypatch.setattr(orchestration, "execute_materialize_job", fail_second)
+    monkeypatch.setattr(orchestration, "execute_export_job", fail_second)
     with pytest.raises(OSError, match="write failed"):
         _execute(root)
     assert capsys.readouterr().out == ""
@@ -162,7 +158,7 @@ def test_materialize_cli_does_not_report_success_after_partial_failure(
     assert saved.metadata.status == "success"
 
 
-def test_materialize_saves_receipt_without_result_json(copy_fixture, capsys, tmp_path):
+def test_export_saves_receipt_without_result_json(copy_fixture, capsys, tmp_path):
     root = copy_fixture("regression_project")
     _profiles(root)
     _execute(root, "--profile", "first", result_json=False)
@@ -178,12 +174,10 @@ def test_materialize_saves_receipt_without_result_json(copy_fixture, capsys, tmp
     copied = load_run(archive / receipt.name)
     assert copied.output_path("first").read_bytes()
     assert copied.metadata == saved.metadata
-    assert copied.load_recipe().command == "materialize"
+    assert copied.load_recipe().command == "export"
 
 
-def test_materialize_empty_output_has_successful_zero_row_receipt(
-    copy_fixture, monkeypatch
-):
+def test_export_empty_output_has_successful_zero_row_receipt(copy_fixture, monkeypatch):
     root = copy_fixture("regression_project")
     _profiles(root)
     monkeypatch.setattr(
@@ -196,7 +190,7 @@ def test_materialize_empty_output_has_successful_zero_row_receipt(
     assert saved.output_path("first").read_bytes() == b""
 
 
-def test_materialize_overwrite_replaces_receipt_and_invalidates_loaded_result(
+def test_export_overwrite_replaces_receipt_and_invalidates_loaded_result(
     copy_fixture, capsys
 ):
     root = copy_fixture("regression_project")
@@ -213,10 +207,10 @@ def test_materialize_overwrite_replaces_receipt_and_invalidates_loaded_result(
 
 
 @pytest.mark.parametrize("failure", ["start", "data", "finish"])
-def test_materialize_overwrite_failure_never_leaves_old_success_with_new_data(
+def test_export_overwrite_failure_never_leaves_old_success_with_new_data(
     copy_fixture, capsys, monkeypatch, failure
 ):
-    from jerrythomas.profiles import materialize
+    from jerrythomas.profiles import export
 
     root = copy_fixture("regression_project")
     _profiles(root)
@@ -227,14 +221,14 @@ def test_materialize_overwrite_failure_never_leaves_old_success_with_new_data(
     old_data, old_receipt = output.read_bytes(), receipt.read_bytes()
     function = {
         "start": "start_run",
-        "data": "materialize_stream",
+        "data": "export_stream",
         "finish": "finish_run_success",
     }[failure]
 
     def fail(*_args, **_kwargs):
         raise OSError("publication failed")
 
-    monkeypatch.setattr(materialize, function, fail)
+    monkeypatch.setattr(export, function, fail)
     with pytest.raises(OSError, match="publication failed"):
         _execute(root, "--profile", "first", "--overwrite")
     assert capsys.readouterr().out == ""
@@ -249,7 +243,7 @@ def test_materialize_overwrite_failure_never_leaves_old_success_with_new_data(
             assert output.read_bytes() == old_data
 
 
-def test_materialize_no_overwrite_preserves_data_and_receipt(copy_fixture, capsys):
+def test_export_no_overwrite_preserves_data_and_receipt(copy_fixture, capsys):
     root = copy_fixture("regression_project")
     _profiles(root)
     _execute(root, "--profile", "first")
@@ -264,7 +258,7 @@ def test_materialize_no_overwrite_preserves_data_and_receipt(copy_fixture, capsy
     assert capsys.readouterr().out == ""
 
 
-def test_materialize_receipt_commit_failure_leaves_running_receipt(
+def test_export_receipt_commit_failure_leaves_running_receipt(
     copy_fixture, capsys, monkeypatch
 ):
     root = copy_fixture("regression_project")
@@ -297,12 +291,10 @@ def test_materialize_receipt_commit_failure_leaves_running_receipt(
 
 
 @pytest.mark.parametrize("reserved", ["first.jsonl.run.json", ".first.jsonl.lock"])
-def test_materialize_rejects_log_conflicts_with_receipt_and_lock(
-    copy_fixture, reserved
-):
+def test_export_rejects_log_conflicts_with_receipt_and_lock(copy_fixture, reserved):
     root = copy_fixture("regression_project")
     _profiles(root)
-    with (root / "profiles" / "materialize.defaults.yaml").open("w") as f:
+    with (root / "profiles" / "export.defaults.yaml").open("w") as f:
         f.write(
             f"observability:\n  logging:\n    outputs: [{{transport: fs, path: exports/{reserved}}}]\n"
         )
@@ -312,7 +304,7 @@ def test_materialize_rejects_log_conflicts_with_receipt_and_lock(
 
 
 @pytest.mark.parametrize("reserved", ["first.jsonl.run.json", ".first.jsonl.lock"])
-def test_materialize_rejects_symlink_receipts_and_locks_before_writing(
+def test_export_rejects_symlink_receipts_and_locks_before_writing(
     copy_fixture, tmp_path, reserved
 ):
     root = copy_fixture("regression_project")

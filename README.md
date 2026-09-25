@@ -21,7 +21,7 @@ for custom loaders, parsers, mappers, and stream combiners.
 
 ## Why You Might Use It
 
-- Materialize canonical time-series datasets from disparate sources.
+- Build canonical time-series datasets from disparate sources.
 - Preview and debug each stage of the pipeline without writing ad-hoc scripts.
 - Export schema-aware Parquet tables for fast Pandas, Polars, and Arrow research,
   then reingest derived Parquet series through Jerry's normal validation.
@@ -100,9 +100,9 @@ that profile explicitly, including one configured with `enabled: false`.
   metadata.
 - `jerry inspect`: run coverage, matrix, or custom inspection profiles.
 - `jerry list datasets|streams|profiles --project <alias>`: inspect a project catalog.
-- `jerry materialize`: write configured streams to durable `.jsonl` or
+- `jerry export`: write configured streams to durable `.jsonl` or
   gzip-compressed `.jsonl.gz` files.
-- `jerry clean [--yes] [--older-than <age>]`: lists or removes stale sort spill directories. It does not delete materialized outputs.
+- `jerry clean [--yes] [--older-than <age>]`: lists or removes stale sort spill directories. It does not delete exported outputs.
 
 Use `jerry <command> --help` for current flags and the
 [CLI reference](docs/cli.md) for command behavior.

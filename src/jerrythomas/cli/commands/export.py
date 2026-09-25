@@ -5,7 +5,7 @@ from jerrythomas.cli.logging_setup import configure_profile_logging
 from jerrythomas.cli.run_results import validate_result_json_outputs, write_run_results
 from jerrythomas.cli.workspace import WorkspaceContext
 from jerrythomas.execution.settings import CommandObservability, LogOutputTarget
-from jerrythomas.profiles.request_builder import build_materialize_run_request
+from jerrythomas.profiles.request_builder import build_export_run_request
 from jerrythomas.services.path_policy import resolve_workspace_path
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ def handle(
         else None
     )
 
-    request = build_materialize_run_request(
+    request = build_export_run_request(
         project=project,
         profile_name=profile_name,
         overwrite=overwrite,
@@ -54,7 +54,7 @@ def handle(
         if result_json:
             write_run_results(())
         else:
-            logger.info("No enabled materialize profiles; skipping materialize.")
+            logger.info("No enabled export profiles; skipping export.")
         return
     if result_json:
         validate_result_json_outputs(request)

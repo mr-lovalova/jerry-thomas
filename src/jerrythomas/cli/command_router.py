@@ -9,7 +9,7 @@ from jerrythomas.cli.commands.inflow import handle as handle_inflow
 from jerrythomas.cli.commands.list_ import handle as handle_list
 from jerrythomas.cli.commands.loader import handle as handle_loader
 from jerrythomas.cli.commands.mapper import handle as handle_mapper
-from jerrythomas.cli.commands.materialize import handle as handle_materialize
+from jerrythomas.cli.commands.export import handle as handle_export
 from jerrythomas.cli.commands.parser import handle as handle_parser
 from jerrythomas.cli.commands.plugin import handle as handle_plugin
 from jerrythomas.cli.commands.profile_runner import (
@@ -59,8 +59,8 @@ def execute_command(
             )
         case "clean":
             handle_clean(yes=args.yes, older_than=args.older_than)
-        case "materialize":
-            handle_materialize(
+        case "export":
+            handle_export(
                 project=args.project,
                 profile_name=args.profile,
                 output=args.output,

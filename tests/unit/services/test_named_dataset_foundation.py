@@ -7,7 +7,7 @@ from jerrythomas.artifacts.fingerprints import calculate_artifact_hashes
 from jerrythomas.artifacts.planning import build_artifact_graph
 from jerrythomas.artifacts.registry import SERIES_SPEC
 from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
-from jerrythomas.config.profiles.materialize import MaterializeProfile
+from jerrythomas.config.profiles.export import ExportProfile
 from jerrythomas.config.tasks.base import ArtifactTask, RuntimeTask
 from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.profiles.errors import ProfileCommandError
@@ -341,18 +341,18 @@ def test_project_globals_cannot_shadow_selected_dataset_identity(tmp_path, key):
         load_project(path)
 
 
-def test_materialize_profile_selects_operation_instead_of_stream():
-    profile = MaterializeProfile(
-        cmd="materialize",
+def test_export_profile_selects_operation_instead_of_stream():
+    profile = ExportProfile(
+        cmd="export",
         name="prices",
         operation="prices",
         output=Path("prices.jsonl"),
     )
     assert profile.operation == "prices"
     with pytest.raises(ValueError):
-        MaterializeProfile.model_validate(
+        ExportProfile.model_validate(
             {
-                "cmd": "materialize",
+                "cmd": "export",
                 "name": "prices",
                 "stream": "prices",
                 "output": "prices.jsonl",

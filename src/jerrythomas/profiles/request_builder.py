@@ -17,12 +17,12 @@ from jerrythomas.config.profiles.build import (
 from jerrythomas.config.profiles.defaults import (
     BuildProfileDefaults,
     InspectProfileDefaults,
-    MaterializeProfileDefaults,
+    ExportProfileDefaults,
     ProfileDefaults,
     ServeProfileDefaults,
 )
 from jerrythomas.config.profiles.inspect import InspectProfile
-from jerrythomas.config.profiles.materialize import MaterializeProfile
+from jerrythomas.config.profiles.export import ExportProfile
 from jerrythomas.config.profiles.output import ServeOutputConfig
 from jerrythomas.config.profiles.serve import ServeProfile
 from jerrythomas.execution.settings import (
@@ -39,14 +39,14 @@ from jerrythomas.profiles.loader import (
     bind_profile,
     profile_specs_with_defaults,
 )
-from jerrythomas.profiles.materialize import (
-    resolve_materialize_jobs,
-    materialize_reserved_paths,
+from jerrythomas.profiles.export import (
+    resolve_export_jobs,
+    export_reserved_paths,
 )
 from jerrythomas.profiles.models import (
     BuildJob,
     BuildRunRequest,
-    MaterializeRunRequest,
+    ExportRunRequest,
     RuntimeJob,
     RuntimeRunRequest,
     ServeRunPlan,
@@ -427,36 +427,34 @@ def build_runtime_run_request(
     )
 
 
-def build_materialize_run_request(
+def build_export_run_request(
     project: str,
     profile_name: str | None,
     overwrite: bool | None,
     output: Path | None,
     artifact_mode: str | None,
     command_observability: CommandObservability = CommandObservability(),
-) -> MaterializeRunRequest | None:
+) -> ExportRunRequest | None:
     definition = _load_definition(project)
     loaded_profiles, defaults = _select_profiles(
         definition,
-        "materialize",
+        "export",
         profile_name,
     )
-    materialize_profiles = [
-        profile
-        for profile in loaded_profiles
-        if isinstance(profile, MaterializeProfile)
+    export_profiles = [
+        profile for profile in loaded_profiles if isinstance(profile, ExportProfile)
     ]
-    if len(materialize_profiles) != len(loaded_profiles):
-        raise TypeError("Materialize profile loading returned the wrong profile type")
-    if not isinstance(defaults, MaterializeProfileDefaults):
-        raise TypeError("Materialize profile loading returned the wrong defaults type")
-    if not materialize_profiles:
+    if len(export_profiles) != len(loaded_profiles):
+        raise TypeError("Export profile loading returned the wrong profile type")
+    if not isinstance(defaults, ExportProfileDefaults):
+        raise TypeError("Export profile loading returned the wrong defaults type")
+    if not export_profiles:
         return None
 
     try:
         execution_dir = _execution_root(definition.project.artifacts_root)
-        jobs = resolve_materialize_jobs(
-            profiles=materialize_profiles,
+        jobs = resolve_export_jobs(
+            profiles=export_profiles,
             definition=definition,
             execution_dir=execution_dir,
             overwrite=overwrite,
@@ -465,7 +463,7 @@ def build_materialize_run_request(
         )
         artifact_settings = _prerequisite_settings(
             definition,
-            "materialize",
+            "export",
             defaults.artifact_mode,
             artifact_mode,
             defaults.observability,
@@ -481,12 +479,12 @@ def build_materialize_run_request(
             [job.output for job in jobs],
             log_outputs,
             (),
-            reserved_paths=materialize_reserved_paths(jobs),
+            reserved_paths=export_reserved_paths(jobs),
         )
         runtime = compile_runtime(definition)
     except (OSError, TypeError, ValueError) as exc:
-        raise ProfileCommandError(f"Invalid materialize configuration: {exc}") from exc
-    return MaterializeRunRequest(
+        raise ProfileCommandError(f"Invalid export configuration: {exc}") from exc
+    return ExportRunRequest(
         definition=definition,
         jobs=jobs,
         execution=defaults.execution,

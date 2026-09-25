@@ -14,14 +14,14 @@ These live under the project root directory (the folder containing `project.yaml
 - `profiles/serve.<name>.yaml`: serve profiles.
 - `profiles/build.<name>.yaml`: build profiles.
 - `profiles/inspect.<name>.yaml`: inspect profiles.
-- `profiles/materialize.<name>.yaml`: durable stream-output profiles.
+- `profiles/export.<name>.yaml`: durable stream-output profiles.
 - `operations/*.yaml`: explicit operations bound to datasets or streams.
 
 ### Configuration & Resolution Order
 
 Defaults are layered so you can set global preferences once, keep dataset/run
 files focused on per-project behavior, and still override anything from the CLI.
-For `jerry serve`, `jerry inspect`, `jerry build`, and `jerry materialize`,
+For `jerry serve`, `jerry inspect`, `jerry build`, and `jerry export`,
 options are merged in the following order (highest precedence first):
 
 1. **CLI flags** – anything you pass on the command line always wins.
@@ -90,10 +90,10 @@ globals:
   Output operations are declared explicitly.
 - `paths.profiles` points to profile specs grouped by type:
   `profiles/serve.<name>.yaml`, `profiles/build.<name>.yaml`,
-  `profiles/inspect.<name>.yaml`, and `profiles/materialize.<name>.yaml`.
+  `profiles/inspect.<name>.yaml`, and `profiles/export.<name>.yaml`.
   Optional defaults files may also be declared once per kind:
   `profiles/serve.defaults.yaml`, `profiles/build.defaults.yaml`,
-  `profiles/inspect.defaults.yaml`, and `profiles/materialize.defaults.yaml`.
+  `profiles/inspect.defaults.yaml`, and `profiles/export.defaults.yaml`.
   Each concrete file contains one mapping. Its `<kind>.<name>.yaml` filename is
   the profile identity; `cmd` and `name` are not repeated in the YAML body.
   When multiple profiles exist, `--profile <name>` selects one by filename.
@@ -194,12 +194,12 @@ throttle_ms: null # milliseconds to sleep between emitted samples
   serve profiles in a project. CLI flags and concrete profiles still take
   precedence for profile-level settings.
 
-### Materialize Profiles (`profiles/materialize.<name>.yaml`)
+### Export Profiles (`profiles/export.<name>.yaml`)
 
 ```yaml
-# profiles/materialize.adv.20.yaml
+# profiles/export.adv.20.yaml
 order: 10
-operation: materialize_adv
+operation: export_adv
 output: ${data_root}/features/liquidity/adv/20.jsonl
 overwrite: true
 # observability:
@@ -207,24 +207,24 @@ overwrite: true
 #   heartbeat_interval_seconds: 60
 ```
 
-- `jerry materialize` runs all enabled materialize profiles in `order`;
+- `jerry export` runs all enabled export profiles in `order`;
   `--profile` selects one. Each profile references a `core.records` output
   operation whose `stream` identifies the input.
 - CLI `--output-file` overrides the selected profile and requires `--profile`.
 - Relative profile outputs resolve from `project.yaml`; relative CLI `--output-file`
   values resolve from the workspace root, or the current directory without a
   workspace. A `.jsonl` path writes plain JSONL; `.jsonl.gz` writes gzip JSONL.
-  The concrete path is the complete materialize output contract.
+  The concrete path is the complete export output contract.
 - Before execution, Jerry validates every selected stream and checks the full
   destination set for duplicates and existing files. No profile writes until
   the whole selected batch passes this preflight.
 - `overwrite: false` is the built-in default. `--overwrite` and
   `--no-overwrite` override every selected profile; shared defaults belong in
-  `profiles/materialize.defaults.yaml`.
+  `profiles/export.defaults.yaml`.
 - Output paths must be outside `project.paths.artifacts`; that directory is
   reserved for managed artifacts and build state.
 - `artifact_mode` is command-wide and belongs only in
-  `profiles/materialize.defaults.yaml`. `auto` prepares missing or stale stream
+  `profiles/export.defaults.yaml`. `auto` prepares missing or stale stream
   prerequisites, `rebuild` rebuilds them, and `require_current` requires them to be current.
   CLI `--artifact-mode` takes precedence; the built-in mode is `auto`.
 
@@ -268,7 +268,7 @@ artifact_mode: auto # auto | rebuild | require_current
 - They must not include execution identity fields such as `name`, `operation`,
   `enabled`, or `order`.
 - `execution` is command-wide and is not accepted in concrete profiles.
-  Serve, inspect, and materialize `artifact_mode` is likewise defaults-only.
+  Serve, inspect, and export `artifact_mode` is likewise defaults-only.
 - Defaults-level `observability` configures the shared prerequisite phase as
   well as providing profile defaults. Shared prerequisite logs have no selected
   dataset, so their paths cannot use `${dataset_id}` or `${dataset_version}`.
@@ -304,7 +304,7 @@ buffer, interpreted as MiB (1024² bytes). When another item would exceed a
 non-empty buffer, that buffer is sorted and spilled as a temporary run. One item
 larger than the target occupies a buffer by itself. Python and sort-key overhead
 are additional, so this is not a process memory limit. Sorted items must be
-pickle-serializable. The built-in default is `128`. Build, materialize, serve,
+pickle-serializable. The built-in default is `128`. Build, export, serve,
 and inspect resolve their execution settings independently.
 
 `workers` is a positive integer, defaulting to `1`. During series artifact
@@ -332,7 +332,7 @@ aggregate preparation progress. The final series merge has shared progress.
 Every operation declares `kind` and `entrypoint`, whether built-in or custom:
 
 - `kind: output` produces records, samples, or a report using the profile's
-  output settings. `serve` and `inspect` run output operations; `materialize`
+  output settings. `serve` and `inspect` run output operations; `export`
   runs the `core.records` output operation.
 - `kind: artifact` builds a managed, reusable input at its artifact `path`.
   `build` runs artifact operations; output commands also prepare required
@@ -441,7 +441,7 @@ options: {}
   options nor results choose output paths. See the
   [plugin contract](extending.md#entry-points) for the Python interface.
 
-For example, a serve operation and a materialize operation are explicit:
+For example, a serve operation and an export operation are explicit:
 
 ```yaml
 # operations/dataset.yaml
@@ -449,7 +449,7 @@ kind: output
 entrypoint: core.dataset
 dataset: default
 
-# operations/materialize_adv.yaml
+# operations/export_adv.yaml
 kind: output
 entrypoint: core.records
 stream: adv.20
@@ -1124,7 +1124,7 @@ There is no dataset-level `scaling` block. Targets use the same `scale` syntax.
   or build profiles.
 - Profiles select operations by ID through `operation`.
 - Build profiles reference `kind: artifact` operations. Serve, inspect, and
-  materialize profiles reference `kind: output` operations.
+  export profiles reference `kind: output` operations.
 - Observability defaults (visuals/logging outputs) belong in profile files (`serve.<name>.yaml`, `build.<name>.yaml`, `inspect.<name>.yaml`) or per-kind defaults (`<kind>.defaults.yaml`).
 
 ---

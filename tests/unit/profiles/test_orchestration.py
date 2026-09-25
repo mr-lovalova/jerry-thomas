@@ -65,8 +65,8 @@ from jerrythomas.profiles.execution import (
 from jerrythomas.profiles.models import (
     BuildJob,
     BuildRunRequest,
-    MaterializeJob,
-    MaterializeRunRequest,
+    ExportJob,
+    ExportRunRequest,
     RuntimeJob,
     RuntimeRunRequest,
     ServeRunPlan,
@@ -77,7 +77,7 @@ from jerrythomas.profiles.orchestration import (
     _validate_build_order,
     run_profiles,
 )
-from jerrythomas.services.materialize import resolve_materialize_output
+from jerrythomas.services.export import resolve_export_output
 from tests.unit.profiles.helpers import project_definition
 from tests.run_helpers import empty_recipe
 
@@ -172,8 +172,8 @@ def _output() -> OutputTarget:
     )
 
 
-def _materialize_output(path: Path) -> OutputTarget:
-    return resolve_materialize_output(path)
+def _export_output(path: Path) -> OutputTarget:
+    return resolve_export_output(path)
 
 
 def _runtime_job(
@@ -244,14 +244,14 @@ def _runtime_request(
     )
 
 
-def _materialize_request(
+def _export_request(
     tmp_path: Path,
     artifact_tasks,
     jobs,
     runtime,
     execution: ExecutionConfig | None = None,
-) -> MaterializeRunRequest:
-    return MaterializeRunRequest(
+) -> ExportRunRequest:
+    return ExportRunRequest(
         definition=project_definition(
             tmp_path / "project.yaml",
             dataset=_dataset(),
@@ -1449,7 +1449,7 @@ def test_later_run_start_failure_fails_only_started_run(
     assert failed == [first]
 
 
-def test_materialize_uses_shared_artifact_and_execution_lifecycle(
+def test_export_uses_shared_artifact_and_execution_lifecycle(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -1457,7 +1457,7 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
 
     def capture(definition, command, jobs, execution, required_artifacts):
         captured_dependencies[jobs[0].name] = set(required_artifacts)
-        return empty_recipe("materialize")
+        return empty_recipe("export")
 
     monkeypatch.setattr("jerrythomas.profiles.orchestration.capture_recipe", capture)
     schedule = ScheduleTask(
@@ -1480,22 +1480,22 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
         artifacts_root=tmp_path / "artifacts",
     )
     jobs = [
-        MaterializeJob(
+        ExportJob(
             name="adv-20",
             task=StreamTask(id="adv.20", stream="adv.20"),
-            output=_materialize_output(tmp_path / "adv-20.jsonl"),
+            output=_export_output(tmp_path / "adv-20.jsonl"),
             overwrite=False,
             observability=_observability(10),
         ),
-        MaterializeJob(
+        ExportJob(
             name="adv-63",
             task=StreamTask(id="adv.63", stream="adv.63"),
-            output=_materialize_output(tmp_path / "adv-63.jsonl"),
+            output=_export_output(tmp_path / "adv-63.jsonl"),
             overwrite=False,
             observability=_observability(20),
         ),
     ]
-    request = _materialize_request(
+    request = _export_request(
         tmp_path,
         [schedule, secondary_schedule],
         jobs,
@@ -1511,7 +1511,7 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
         ),
     )
     build_calls: list[dict] = []
-    materialized: list[tuple[str, float | None]] = []
+    exported: list[tuple[str, float | None]] = []
 
     def build(project_path, **kwargs):
         assert runtime.execution == execution
@@ -1526,8 +1526,8 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "jerrythomas.profiles.orchestration.execute_materialize_job",
-        lambda job, active_runtime, **_kwargs: materialized.append(
+        "jerrythomas.profiles.orchestration.execute_export_job",
+        lambda job, active_runtime, **_kwargs: exported.append(
             (job.name, active_runtime.heartbeat_interval_seconds)
         ),
     )
@@ -1543,18 +1543,18 @@ def test_materialize_uses_shared_artifact_and_execution_lifecycle(
         "adv-20": {"market_schedule"},
         "adv-63": {"market_schedule", "secondary_schedule"},
     }
-    assert materialized == [("adv-20", 10), ("adv-63", 20)]
+    assert exported == [("adv-20", 10), ("adv-63", 20)]
 
 
 @pytest.mark.parametrize("mode", ["auto", "require_current"])
-def test_materialize_hydrates_current_schedule_when_build_skips(
+def test_export_hydrates_current_schedule_when_build_skips(
     monkeypatch,
     tmp_path: Path,
     mode: str,
 ) -> None:
     monkeypatch.setattr(
         "jerrythomas.profiles.orchestration.capture_recipe",
-        lambda *args: empty_recipe("materialize"),
+        lambda *args: empty_recipe("export"),
     )
     schedule = ScheduleTask(
         id="market_schedule",
@@ -1562,10 +1562,10 @@ def test_materialize_hydrates_current_schedule_when_build_skips(
         partition_by=[],
         output="schedule.jsonl",
     )
-    job = MaterializeJob(
+    job = ExportJob(
         name="adv-20",
         task=StreamTask(id="adv.20", stream="adv.20"),
-        output=_materialize_output(tmp_path / "adv-20.jsonl"),
+        output=_export_output(tmp_path / "adv-20.jsonl"),
         overwrite=False,
         observability=_observability(),
     )
@@ -1596,7 +1596,7 @@ def test_materialize_hydrates_current_schedule_when_build_skips(
         artifacts=ArtifactRegistry(artifacts_root),
         artifacts_root=artifacts_root,
     )
-    request = MaterializeRunRequest(
+    request = ExportRunRequest(
         definition=definition,
         jobs=[job],
         execution=ExecutionConfig(),
@@ -1612,7 +1612,7 @@ def test_materialize_hydrates_current_schedule_when_build_skips(
         _passthrough_execution_scope,
     )
     monkeypatch.setattr(
-        "jerrythomas.profiles.orchestration.execute_materialize_job",
+        "jerrythomas.profiles.orchestration.execute_export_job",
         lambda job, active_runtime, **_kwargs: active_runtime.artifacts.require(
             "market_schedule"
         ),
@@ -1639,7 +1639,7 @@ def test_materialize_hydrates_current_schedule_when_build_skips(
         ),
     ],
 )
-def test_materialize_rejects_invalid_schedule_artifact_producer(
+def test_export_rejects_invalid_schedule_artifact_producer(
     monkeypatch,
     tmp_path: Path,
     artifact_tasks,
@@ -1651,14 +1651,14 @@ def test_materialize_rejects_invalid_schedule_artifact_producer(
         streams={"adv.20": object()},
         artifacts_root=tmp_path / "artifacts",
     )
-    job = MaterializeJob(
+    job = ExportJob(
         name="adv-20",
         task=StreamTask(id="adv.20", stream="adv.20"),
-        output=_materialize_output(tmp_path / "adv-20.jsonl"),
+        output=_export_output(tmp_path / "adv-20.jsonl"),
         overwrite=False,
         observability=_observability(),
     )
-    request = _materialize_request(tmp_path, artifact_tasks, [job], runtime)
+    request = _export_request(tmp_path, artifact_tasks, [job], runtime)
     monkeypatch.setattr(
         "jerrythomas.artifacts.planning.stream_schedule_artifacts",
         lambda stream, streams: {"market_schedule"},

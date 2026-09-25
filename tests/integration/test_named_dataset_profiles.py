@@ -10,7 +10,7 @@ from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.profiles.orchestration import run_profiles
 from jerrythomas.profiles.request_builder import (
     build_build_run_request,
-    build_materialize_run_request,
+    build_export_run_request,
     build_runtime_run_request,
 )
 from jerrythomas.services.saved_runs import load_dataset_run
@@ -103,7 +103,7 @@ def test_build_profiles_fit_only_their_bound_dataset(tmp_path):
     assert artifact.scalers["x"].statistics.mean == 20.0
 
 
-def test_stream_operations_serve_and_materialize_without_any_dataset(tmp_path):
+def test_stream_operations_serve_and_export_without_any_dataset(tmp_path):
     project = _project(tmp_path, datasets=False)
     _write(
         tmp_path / "profiles" / "serve.raw.yaml",
@@ -125,7 +125,7 @@ def test_stream_operations_serve_and_materialize_without_any_dataset(tmp_path):
     assert run.metadata.dataset_id is None
     assert run.metadata.outputs[0].stream == "rows"
     assert run.metadata.outputs[0].row_count == 1
-    request = build_materialize_run_request(str(project), None, None, None, None, QUIET)
+    request = build_export_run_request(str(project), None, None, None, None, QUIET)
     assert request is not None
     (saved,) = run_profiles(request)
     assert saved.metadata.dataset_id is None
@@ -135,17 +135,17 @@ def test_stream_operations_serve_and_materialize_without_any_dataset(tmp_path):
     assert saved.load_recipe().configuration["datasets"] == {}
 
 
-def test_materialize_rejects_dataset_operations(tmp_path):
+def test_export_rejects_dataset_operations(tmp_path):
     project = _project(tmp_path)
     _write(
-        tmp_path / "profiles" / "materialize.raw.yaml",
+        tmp_path / "profiles" / "export.raw.yaml",
         {
             "operation": "serve-alpha",
             "output": "exports/rows.jsonl",
         },
     )
     with pytest.raises(ProfileCommandError, match="must reference a stream operation"):
-        build_materialize_run_request(str(project), None, None, None, None, QUIET)
+        build_export_run_request(str(project), None, None, None, None, QUIET)
     assert not (tmp_path / "exports").exists()
 
 
@@ -182,7 +182,7 @@ def test_dataset_run_lookup_uses_requested_archived_version_and_checks_identity(
         load_dataset_run(project, "alpha", "v1", saved.metadata.run_id)
 
 
-def test_materialize_rejects_explicitly_required_inactive_artifact(tmp_path):
+def test_export_rejects_explicitly_required_inactive_artifact(tmp_path):
     project = _project(tmp_path)
     dataset_path = tmp_path / "datasets" / "beta.yaml"
     dataset = yaml.safe_load(dataset_path.read_text())
@@ -197,7 +197,7 @@ def test_materialize_rejects_explicitly_required_inactive_artifact(tmp_path):
             "requires": ["dataset.beta.scaler"],
         },
     )
-    request = build_materialize_run_request(str(project), None, None, None, None, QUIET)
+    request = build_export_run_request(str(project), None, None, None, None, QUIET)
     assert request is not None
 
     with pytest.raises(ProfileCommandError, match="inactive for this dataset"):

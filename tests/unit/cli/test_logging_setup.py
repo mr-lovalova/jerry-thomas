@@ -39,9 +39,9 @@ def _flush_root_handlers() -> None:
         handler.flush()
 
 
-def _emit_materialize_outputs(logger: logging.Logger) -> None:
+def _emit_export_outputs(logger: logging.Logger) -> None:
     with execution_observer(make_execution_observer(logger)):
-        with operation_scope("materialize:adv.20"):
+        with operation_scope("export:adv.20"):
             emit_file_result("Output", Path("/tmp/adv.20.jsonl"))
 
 
@@ -57,13 +57,13 @@ def test_operation_and_output_events_render_as_flat_plain_logs_without_visuals(
     )
 
     logger = logging.getLogger("jerrythomas.tests.logging_setup.plain_result")
-    _emit_materialize_outputs(logger)
+    _emit_export_outputs(logger)
     _flush_root_handlers()
 
     assert stream.getvalue().splitlines() == [
-        "Operation materialize:adv.20 started",
+        "Operation export:adv.20 started",
         "Output: /tmp/adv.20.jsonl",
-        "Operation materialize:adv.20 finished status=success elapsed=0ms",
+        "Operation export:adv.20 finished status=success elapsed=0ms",
     ]
 
 
@@ -80,7 +80,7 @@ def test_operation_and_output_logs_do_not_depend_on_visual_handler(
         ),
     )
     logger = logging.getLogger("jerrythomas.tests.logging_setup.file_result")
-    _emit_materialize_outputs(logger)
+    _emit_export_outputs(logger)
     _flush_root_handlers()
 
     with_visuals = tmp_path / "with-visuals.log"
@@ -101,7 +101,7 @@ def test_operation_and_output_logs_do_not_depend_on_visual_handler(
     handler = _CaptureHandler()
     token = set_current_execution_event_handler(handler)
     try:
-        _emit_materialize_outputs(logger)
+        _emit_export_outputs(logger)
     finally:
         reset_current_execution_event_handler(token)
         _flush_root_handlers()
@@ -110,9 +110,9 @@ def test_operation_and_output_logs_do_not_depend_on_visual_handler(
     visual_content = with_visuals.read_text(encoding="utf-8")
     assert visual_content == plain_content
     for expected in (
-        "Operation materialize:adv.20 started",
+        "Operation export:adv.20 started",
         "Output: /tmp/adv.20.jsonl",
-        "Operation materialize:adv.20 finished status=success elapsed=0ms",
+        "Operation export:adv.20 finished status=success elapsed=0ms",
     ):
         assert visual_content.count(expected) == 1
     assert len(handler.events) == 3
@@ -170,7 +170,7 @@ def test_operation_and_output_logs_obey_warning_threshold(monkeypatch, tmp_path)
     )
 
     logger = logging.getLogger("jerrythomas.tests.logging_setup.warning_result")
-    _emit_materialize_outputs(logger)
+    _emit_export_outputs(logger)
     _flush_root_handlers()
 
     assert not log_path.exists()

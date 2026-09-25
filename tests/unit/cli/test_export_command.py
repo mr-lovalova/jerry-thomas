@@ -18,10 +18,10 @@ def _execute(args, workspace=None) -> None:
     )
 
 
-def test_materialize_parser_accepts_profile_overrides() -> None:
+def test_export_parser_accepts_profile_overrides() -> None:
     args = build_parser().parse_args(
         [
-            "materialize",
+            "export",
             "--project",
             "project.yaml",
             "--profile",
@@ -39,7 +39,7 @@ def test_materialize_parser_accepts_profile_overrides() -> None:
     )
 
     assert args.result_json is True
-    assert args.cmd == "materialize"
+    assert args.cmd == "export"
     assert args.profile == "adv-20"
     assert args.output == "adv-20.jsonl.gz"
     assert args.overwrite is True
@@ -48,15 +48,15 @@ def test_materialize_parser_accepts_profile_overrides() -> None:
     assert args.heartbeat_interval_seconds == 10
 
 
-def test_materialize_dispatches_one_profile_execution_path(monkeypatch) -> None:
+def test_export_dispatches_one_profile_execution_path(monkeypatch) -> None:
     captured = {}
     monkeypatch.setattr(
-        "jerrythomas.cli.command_router.handle_materialize",
+        "jerrythomas.cli.command_router.handle_export",
         lambda **kwargs: captured.update(kwargs),
     )
     args = build_parser().parse_args(
         [
-            "materialize",
+            "export",
             "--project",
             "project.yaml",
             "--profile",
@@ -85,13 +85,13 @@ def test_materialize_dispatches_one_profile_execution_path(monkeypatch) -> None:
     }
 
 
-def test_materialize_output_override_requires_profile(monkeypatch, caplog) -> None:
+def test_export_output_override_requires_profile(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
-        "jerrythomas.cli.commands.materialize.build_materialize_run_request",
+        "jerrythomas.cli.commands.export.build_export_run_request",
         lambda **kwargs: pytest.fail("profiles should not run"),
     )
     args = build_parser().parse_args(
-        ["materialize", "--project", "project.yaml", "--output-file", "out.jsonl"]
+        ["export", "--project", "project.yaml", "--output-file", "out.jsonl"]
     )
 
     with pytest.raises(SystemExit) as exc_info:
@@ -101,24 +101,22 @@ def test_materialize_output_override_requires_profile(monkeypatch, caplog) -> No
     assert "--output-file requires --profile" in caplog.text
 
 
-def test_materialize_resolves_profile_output_from_workspace(
-    monkeypatch, tmp_path
-) -> None:
+def test_export_resolves_profile_output_from_workspace(monkeypatch, tmp_path) -> None:
     captured = {}
     request = object()
     monkeypatch.setattr(
-        "jerrythomas.cli.commands.materialize.build_materialize_run_request",
+        "jerrythomas.cli.commands.export.build_export_run_request",
         lambda **kwargs: captured.update(kwargs) or request,
     )
     executed = []
     monkeypatch.setattr(
-        "jerrythomas.cli.commands.materialize.execute_profile_request",
+        "jerrythomas.cli.commands.export.execute_profile_request",
         executed.append,
     )
     workspace = SimpleNamespace(root=tmp_path)
     args = build_parser().parse_args(
         [
-            "materialize",
+            "export",
             "--project",
             "project.yaml",
             "--profile",
@@ -137,20 +135,20 @@ def test_materialize_resolves_profile_output_from_workspace(
     assert executed == [request]
 
 
-def test_materialize_passes_gzip_output_to_profile_resolution(monkeypatch) -> None:
+def test_export_passes_gzip_output_to_profile_resolution(monkeypatch) -> None:
     captured = {}
     request = object()
     monkeypatch.setattr(
-        "jerrythomas.cli.commands.materialize.build_materialize_run_request",
+        "jerrythomas.cli.commands.export.build_export_run_request",
         lambda **kwargs: captured.update(kwargs) or request,
     )
     monkeypatch.setattr(
-        "jerrythomas.cli.commands.materialize.execute_profile_request",
+        "jerrythomas.cli.commands.export.execute_profile_request",
         lambda selected: None,
     )
     args = build_parser().parse_args(
         [
-            "materialize",
+            "export",
             "--project",
             "project.yaml",
             "--profile",
@@ -165,20 +163,20 @@ def test_materialize_passes_gzip_output_to_profile_resolution(monkeypatch) -> No
     assert captured["output"].name == "adv-20.jsonl.gz"
 
 
-def test_materialize_allows_global_overrides_without_profile(monkeypatch) -> None:
+def test_export_allows_global_overrides_without_profile(monkeypatch) -> None:
     captured = {}
     request = object()
     monkeypatch.setattr(
-        "jerrythomas.cli.commands.materialize.build_materialize_run_request",
+        "jerrythomas.cli.commands.export.build_export_run_request",
         lambda **kwargs: captured.update(kwargs) or request,
     )
     monkeypatch.setattr(
-        "jerrythomas.cli.commands.materialize.execute_profile_request",
+        "jerrythomas.cli.commands.export.execute_profile_request",
         lambda selected: None,
     )
     args = build_parser().parse_args(
         [
-            "materialize",
+            "export",
             "--project",
             "project.yaml",
             "--overwrite",
@@ -196,17 +194,17 @@ def test_materialize_allows_global_overrides_without_profile(monkeypatch) -> Non
     )
 
 
-def test_materialize_profile_validation_error_reaches_cli_boundary(monkeypatch) -> None:
+def test_export_profile_validation_error_reaches_cli_boundary(monkeypatch) -> None:
     def fail(**kwargs):
-        raise ProfileCommandError("Unknown materialize profile 'missing'")
+        raise ProfileCommandError("Unknown export profile 'missing'")
 
     monkeypatch.setattr(
-        "jerrythomas.cli.commands.materialize.build_materialize_run_request",
+        "jerrythomas.cli.commands.export.build_export_run_request",
         fail,
     )
     args = build_parser().parse_args(
         [
-            "materialize",
+            "export",
             "--project",
             "project.yaml",
             "--profile",
@@ -214,5 +212,5 @@ def test_materialize_profile_validation_error_reaches_cli_boundary(monkeypatch) 
         ]
     )
 
-    with pytest.raises(ProfileCommandError, match="Unknown materialize profile"):
+    with pytest.raises(ProfileCommandError, match="Unknown export profile"):
         _execute(args)

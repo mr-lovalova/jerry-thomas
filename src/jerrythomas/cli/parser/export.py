@@ -9,14 +9,14 @@ from .common import (
 )
 
 
-def add_materialize_command(sub) -> None:
+def add_export_command(sub) -> None:
     parser = sub.add_parser(
-        "materialize",
-        help="materialize reusable stream outputs",
-        description="Run configured materialize profiles.",
+        "export",
+        help="export reusable stream outputs",
+        description="Run configured export profiles.",
     )
     add_project_flag(parser)
-    add_profile_flag(parser, "materialize")
+    add_profile_flag(parser, "export")
     parser.add_argument(
         "--output-file",
         dest="output",
@@ -26,12 +26,12 @@ def add_materialize_command(sub) -> None:
         "--overwrite",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="overwrite existing materialized outputs",
+        help="overwrite existing exported outputs",
     )
     parser.add_argument(
         "--result-json",
         action="store_true",
-        help="write completed materialize results as JSON to stdout",
+        help="write completed export results as JSON to stdout",
     )
     add_artifact_mode_flag(parser)
     add_logging_flags(parser)

@@ -64,7 +64,7 @@ class InspectProfileDefaults(ProfileDefaults):
     artifact_mode: ArtifactMode | None = Field(default=None)
 
 
-class MaterializeProfileDefaults(ProfileDefaults):
-    cmd: Literal["materialize"]
+class ExportProfileDefaults(ProfileDefaults):
+    cmd: Literal["export"]
     artifact_mode: ArtifactMode | None = Field(default=None)
     overwrite: StrictBool | None = None

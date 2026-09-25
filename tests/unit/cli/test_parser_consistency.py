@@ -5,7 +5,7 @@ from jerrythomas.config.options import OUTPUT_FORMATS, OUTPUT_INSPECT_FORMATS
 from jerrythomas.config.profiles.build import ARTIFACT_MODES
 
 
-@pytest.mark.parametrize("command", ["serve", "build", "inspect", "materialize"])
+@pytest.mark.parametrize("command", ["serve", "build", "inspect", "export"])
 @pytest.mark.parametrize("mode", ARTIFACT_MODES)
 def test_execution_commands_accept_the_same_artifact_modes(command, mode):
     args = build_parser().parse_args([command, "--artifact-mode", mode])
@@ -25,7 +25,7 @@ def test_build_rejects_invalid_artifact_modes(mode):
     "argv",
     [
         ["build", "--force"],
-        ["materialize", "--output", "out.jsonl"],
+        ["export", "--output", "out.jsonl"],
         ["serve", "--pro", "training"],
         ["stream", "create", "--proj", "equities"],
     ],

@@ -6,8 +6,8 @@ from pydantic import StrictBool, field_validator
 from .base import OperationProfile
 
 
-class MaterializeProfile(OperationProfile):
-    cmd: Literal["materialize"]
+class ExportProfile(OperationProfile):
+    cmd: Literal["export"]
     output: Path
     overwrite: StrictBool = False
 

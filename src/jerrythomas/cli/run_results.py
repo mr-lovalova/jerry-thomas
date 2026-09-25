@@ -6,13 +6,13 @@ from typing import Sequence
 from jerrythomas.io.runs import SavedRun
 from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.profiles.models import (
-    MaterializeRunRequest,
+    ExportRunRequest,
     RuntimeRunRequest,
 )
 
 
 def validate_result_json_outputs(
-    request: RuntimeRunRequest | MaterializeRunRequest,
+    request: RuntimeRunRequest | ExportRunRequest,
 ) -> None:
     if any(job.output.transport == "stdout" for job in request.jobs):
         raise ProfileCommandError(

@@ -10,7 +10,7 @@ from jerrythomas.execution.settings import CommandObservability, LogOutputTarget
 from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.profiles.request_builder import (
     build_build_run_request,
-    build_materialize_run_request,
+    build_export_run_request,
     build_runtime_run_request,
 )
 
@@ -234,7 +234,7 @@ def test_custom_validation_message_does_not_log_resolved_secret(
     assert "Invalid configuration value" in message
 
 
-def test_inspect_request_materializes_execution_scoped_log_output(
+def test_inspect_request_exports_execution_scoped_log_output(
     tmp_path: Path, monkeypatch
 ):
     execution_dir = tmp_path / "execution"
@@ -333,7 +333,7 @@ split:
     assert request.jobs[0].output_ids == ("default.train", "default.test")
 
 
-def test_materialize_request_uses_shared_resolution_snapshot(
+def test_export_request_uses_shared_resolution_snapshot(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -341,11 +341,11 @@ def test_materialize_request_uses_shared_resolution_snapshot(
     (tmp_path / "operations").mkdir(parents=True, exist_ok=True)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
-    (profiles / "materialize.defaults.yaml").write_text(
+    (profiles / "export.defaults.yaml").write_text(
         "artifact_mode: rebuild\nexecution:\n  sort_buffer_mb: 32\n",
         encoding="utf-8",
     )
-    (profiles / "materialize.adv-20.yaml").write_text(
+    (profiles / "export.adv-20.yaml").write_text(
         "operation: adv-20\noutput: outputs/adv-20.jsonl.gz\n",
         encoding="utf-8",
     )
@@ -376,7 +376,7 @@ def test_materialize_request_uses_shared_resolution_snapshot(
         "jerrythomas.profiles.request_builder._execution_root",
         shared_execution_root,
     )
-    request = build_materialize_run_request(
+    request = build_export_run_request(
         project=str(project_yaml),
         profile_name=None,
         overwrite=None,
@@ -400,20 +400,20 @@ def test_materialize_request_uses_shared_resolution_snapshot(
     )
     assert request.jobs[0].output.compression == "gzip"
     assert request.jobs[0].observability.log_output.outputs[0].destination == (
-        execution_dir / "logs" / "materialize.adv-20.log"
+        execution_dir / "logs" / "export.adv-20.log"
     )
     assert (
         request.artifact_settings.observability.log_output.outputs[0].destination
-        == execution_dir / "logs" / "materialize.artifacts.log"
+        == execution_dir / "logs" / "export.artifacts.log"
     )
     assert execution_root_calls == [tmp_path / "artifacts"]
 
 
-def test_materialize_request_rejects_output_log_collision(tmp_path: Path) -> None:
+def test_export_request_rejects_output_log_collision(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path)
     profiles = tmp_path / "profiles"
     profiles.mkdir(parents=True, exist_ok=True)
-    (profiles / "materialize.adv.yaml").write_text(
+    (profiles / "export.adv.yaml").write_text(
         (
             "operation: adv\n"
             "output: output/adv.jsonl\n"
@@ -433,7 +433,7 @@ def test_materialize_request_rejects_output_log_collision(tmp_path: Path) -> Non
     )
 
     with pytest.raises(ProfileCommandError, match="same path"):
-        build_materialize_run_request(
+        build_export_run_request(
             project=str(project_yaml),
             profile_name=None,
             overwrite=None,

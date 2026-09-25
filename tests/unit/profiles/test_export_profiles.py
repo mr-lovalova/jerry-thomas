@@ -7,7 +7,7 @@ import pytest
 
 from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.config.tasks.stream import StreamTask
-from jerrythomas.config.profiles.materialize import MaterializeProfile
+from jerrythomas.config.profiles.export import ExportProfile
 from jerrythomas.execution.settings import (
     CommandObservability,
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
@@ -16,9 +16,9 @@ from jerrythomas.execution.settings import (
     ObservabilitySettings,
 )
 from jerrythomas.operations.persistence import WrittenOutput
-from jerrythomas.profiles import materialize
-from jerrythomas.profiles.models import MaterializeJob
-from jerrythomas.services.materialize import resolve_materialize_output
+from jerrythomas.profiles import export
+from jerrythomas.profiles.models import ExportJob
+from jerrythomas.services.export import resolve_export_output
 from tests.run_helpers import empty_recipe
 
 
@@ -31,9 +31,9 @@ def _observability() -> ObservabilitySettings:
     )
 
 
-def _profile(name: str, stream: str, output: str) -> MaterializeProfile:
-    return MaterializeProfile(
-        cmd="materialize",
+def _profile(name: str, stream: str, output: str) -> ExportProfile:
+    return ExportProfile(
+        cmd="export",
         name=name,
         operation=stream,
         output=output,
@@ -46,16 +46,16 @@ def _job(
     output: Path,
     overwrite: bool = False,
 ):
-    return MaterializeJob(
+    return ExportJob(
         name=name,
         task=StreamTask(id=stream, stream=stream),
-        output=resolve_materialize_output(output),
+        output=resolve_export_output(output),
         overwrite=overwrite,
         observability=_observability(),
     )
 
 
-def test_resolve_materialize_jobs_applies_command_overrides(
+def test_resolve_export_jobs_applies_command_overrides(
     tmp_path,
 ) -> None:
     profiles = [
@@ -63,7 +63,7 @@ def test_resolve_materialize_jobs_applies_command_overrides(
         _profile("adv-63", "adv.63", "adv-63.jsonl"),
     ]
 
-    jobs = materialize.resolve_materialize_jobs(
+    jobs = export.resolve_export_jobs(
         profiles=profiles,
         definition=SimpleNamespace(
             project=SimpleNamespace(path=tmp_path / "project.yaml"),
@@ -87,8 +87,8 @@ def test_resolve_materialize_jobs_applies_command_overrides(
     assert all(job.overwrite for job in jobs)
 
 
-def test_resolve_materialize_jobs_derives_gzip_from_profile_output(tmp_path) -> None:
-    jobs = materialize.resolve_materialize_jobs(
+def test_resolve_export_jobs_derives_gzip_from_profile_output(tmp_path) -> None:
+    jobs = export.resolve_export_jobs(
         profiles=[_profile("adv-20", "adv.20", "adv-20.jsonl.gz")],
         definition=SimpleNamespace(
             project=SimpleNamespace(path=tmp_path / "project.yaml"),
@@ -106,8 +106,8 @@ def test_resolve_materialize_jobs_derives_gzip_from_profile_output(tmp_path) -> 
     assert jobs[0].output.compression == "gzip"
 
 
-def test_resolve_materialize_jobs_derives_gzip_from_output_override(tmp_path) -> None:
-    jobs = materialize.resolve_materialize_jobs(
+def test_resolve_export_jobs_derives_gzip_from_output_override(tmp_path) -> None:
+    jobs = export.resolve_export_jobs(
         profiles=[_profile("adv-20", "adv.20", "profile.jsonl")],
         definition=SimpleNamespace(
             project=SimpleNamespace(path=tmp_path / "project.yaml"),
@@ -132,7 +132,7 @@ def test_output_override_requires_one_selected_profile(tmp_path) -> None:
     ]
 
     with pytest.raises(ValueError, match="one selected profile"):
-        materialize.resolve_materialize_jobs(
+        export.resolve_export_jobs(
             profiles=profiles,
             definition=SimpleNamespace(
                 project=SimpleNamespace(path=tmp_path / "project.yaml"),
@@ -152,7 +152,7 @@ def test_preflight_rejects_unknown_stream(tmp_path) -> None:
     runtime = SimpleNamespace(streams={}, artifacts_root=tmp_path / "artifacts")
 
     with pytest.raises(ValueError, match="unknown stream 'adv.20'"):
-        materialize.preflight_materialize_jobs(
+        export.preflight_export_jobs(
             runtime,
             [_job("adv-20", "adv.20", tmp_path / "adv-20.jsonl")],
         )
@@ -168,7 +168,7 @@ def test_preflight_rejects_duplicate_destinations(tmp_path, filenames) -> None:
         artifacts_root=tmp_path / "artifacts",
     )
     with pytest.raises(ValueError, match="resolve to the same path"):
-        materialize.preflight_materialize_jobs(
+        export.preflight_export_jobs(
             runtime,
             [
                 _job("adv-20", "adv.20", tmp_path / filenames[0]),
@@ -186,7 +186,7 @@ def test_preflight_checks_every_destination_before_execution(tmp_path) -> None:
     )
 
     with pytest.raises(FileExistsError, match="--overwrite"):
-        materialize.preflight_materialize_jobs(
+        export.preflight_export_jobs(
             runtime,
             [
                 _job("first", "adv.20", tmp_path / "first.jsonl"),
@@ -204,7 +204,7 @@ def test_preflight_rejects_output_nested_under_receipt_or_lock(tmp_path, reserve
         artifacts_root=tmp_path / "artifacts",
     )
     with pytest.raises(ValueError, match="overlaps data output"):
-        materialize.preflight_materialize_jobs(
+        export.preflight_export_jobs(
             runtime,
             [
                 _job("first", "adv.20", tmp_path / "first.jsonl"),
@@ -221,13 +221,13 @@ def test_preflight_rejects_managed_artifact_destination(tmp_path) -> None:
     )
 
     with pytest.raises(ValueError, match="inside the managed artifacts root"):
-        materialize.preflight_materialize_jobs(
+        export.preflight_export_jobs(
             runtime,
             [_job("adv-20", "adv.20", artifacts / "adv-20.jsonl", True)],
         )
 
 
-def test_execute_materialize_job_emits_config_and_returns_output(
+def test_execute_export_job_emits_config_and_returns_output(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -236,24 +236,24 @@ def test_execute_materialize_job_emits_config_and_returns_output(
     messages: list[tuple[str, int]] = []
     calls: list[dict] = []
     monkeypatch.setattr(
-        materialize,
+        export,
         "emit_execution_message",
         lambda message, level: messages.append((message, level)),
     )
 
-    def materialize_stream(**kwargs):
+    def export_stream(**kwargs):
         calls.append(kwargs)
         job.output.destination.write_text("{}\n")
         return WrittenOutput(job.output.destination, None, 3)
 
     monkeypatch.setattr(
-        materialize,
-        "materialize_stream",
-        materialize_stream,
+        export,
+        "export_stream",
+        export_stream,
     )
 
-    result = materialize.execute_materialize_job(
-        job, runtime, recipe=empty_recipe("materialize"), definition=SimpleNamespace()
+    result = export.execute_export_job(
+        job, runtime, recipe=empty_recipe("export"), definition=SimpleNamespace()
     )
 
     assert calls == [

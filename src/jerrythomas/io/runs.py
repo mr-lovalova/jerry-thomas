@@ -100,7 +100,7 @@ class RunMetadata(BaseModel):
     schema_version: Literal[4]
     dataset_id: str | None
     dataset_version: str | None
-    command: Literal["serve", "materialize"]
+    command: Literal["serve", "export"]
     run_id: str
     started_at: str
     finished_at: str | None = None
@@ -126,17 +126,17 @@ class RunMetadata(BaseModel):
             assert self.dataset_version is not None
             if not self.dataset_id.strip() or not self.dataset_version.strip():
                 raise ValueError("dataset identity must not be empty")
-        if self.command == "materialize":
+        if self.command == "export":
             if (
                 self.preview is not None
                 or self.split is not None
                 or self.dataset_id is not None
             ):
                 raise ValueError(
-                    "materialize receipts must not declare dataset, preview, or split"
+                    "export receipts must not declare dataset, preview, or split"
                 )
             if self.status == "success" and len(self.outputs) != 1:
-                raise ValueError("successful materialize receipts require one output")
+                raise ValueError("successful export receipts require one output")
             for output in self.outputs:
                 if (
                     not output.stream
@@ -145,7 +145,7 @@ class RunMetadata(BaseModel):
                     or PurePosixPath(output.path).name != output.path
                 ):
                     raise ValueError(
-                        "materialize receipts require one adjacent stream output"
+                        "export receipts require one adjacent stream output"
                     )
         identities = [(output.profile, output.output_id) for output in self.outputs]
         if len(identities) != len(set(identities)):
@@ -200,9 +200,9 @@ class SavedRun:
 
     def load_recipe(self) -> RunRecipe:
         """Read and verify the saved recipe without reopening project configuration."""
-        if self.metadata.command == "materialize":
+        if self.metadata.command == "export":
             if _load_run_metadata(self.metadata_path) != self.metadata:
-                raise ValueError("materialize receipt changed; reload the saved run")
+                raise ValueError("export receipt changed; reload the saved run")
         return load_recipe(self.directory, self.metadata.recipe)
 
     def output(self, profile: str, output_id: str | None = None) -> RunOutput:
@@ -216,9 +216,9 @@ class SavedRun:
 
     def output_path(self, profile: str, output_id: str | None = None) -> Path:
         """Resolve a selected file without opening any output data."""
-        if self.metadata.command == "materialize":
+        if self.metadata.command == "export":
             if _load_run_metadata(self.metadata_path) != self.metadata:
-                raise ValueError("materialize receipt changed; reload the saved run")
+                raise ValueError("export receipt changed; reload the saved run")
         output = self.output(profile, output_id)
         path = (self.directory / output.path).resolve(strict=True)
         if not path.is_relative_to(self.directory):
@@ -287,7 +287,7 @@ def start_run(
     *,
     recipe: RunRecipe,
     run_id: str | None = None,
-    command: Literal["serve", "materialize"] = "serve",
+    command: Literal["serve", "export"] = "serve",
     overwrite: bool = True,
     preview: PreviewStage | None = None,
     split: SplitConfig | None = None,
@@ -388,5 +388,5 @@ def set_latest_run(paths: RunPaths) -> None:
             pending_root.unlink()
 
 
-def materialize_receipt_path(output: Path) -> Path:
+def export_receipt_path(output: Path) -> Path:
     return output.with_name(f"{output.name}.run.json")

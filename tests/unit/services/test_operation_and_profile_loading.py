@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from jerrythomas.config.profiles.materialize import MaterializeProfile
+from jerrythomas.config.profiles.export import ExportProfile
 from jerrythomas.config.tasks.base import (
     ArtifactTask,
     PluginRuntimeTask,
@@ -58,16 +58,16 @@ def _inspect_profiles(project_yaml: Path):
     return profile_specs_with_defaults(load_project(project_yaml), cmd="inspect")[0]
 
 
-def _materialize_profiles(project_yaml: Path):
-    return profile_specs_with_defaults(load_project(project_yaml), cmd="materialize")[0]
+def _export_profiles(project_yaml: Path):
+    return profile_specs_with_defaults(load_project(project_yaml), cmd="export")[0]
 
 
 def _serve_defaults(project_yaml: Path):
     return profile_specs_with_defaults(load_project(project_yaml), cmd="serve")[1]
 
 
-def _materialize_defaults(project_yaml: Path):
-    return profile_specs_with_defaults(load_project(project_yaml), cmd="materialize")[1]
+def _export_defaults(project_yaml: Path):
+    return profile_specs_with_defaults(load_project(project_yaml), cmd="export")[1]
 
 
 def _write_project(tmp_path: Path, operations_ref: str | None = None) -> Path:
@@ -1041,10 +1041,10 @@ def test_inspect_profiles_load_and_respect_enabled(tmp_path):
     assert tasks[1].enabled is False
 
 
-def test_materialize_profiles_load_and_normalize_fields(tmp_path):
+def test_export_profiles_load_and_normalize_fields(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
-    (profiles_dir / "materialize.adv-20.yaml").write_text(
+    (profiles_dir / "export.adv-20.yaml").write_text(
         (
             "order: 20\n"
             "operation: ' adv.20 '\n"
@@ -1056,11 +1056,11 @@ def test_materialize_profiles_load_and_normalize_fields(tmp_path):
         encoding="utf-8",
     )
 
-    profiles = _materialize_profiles(project_yaml)
+    profiles = _export_profiles(project_yaml)
 
     assert len(profiles) == 1
     profile = profiles[0]
-    assert isinstance(profile, MaterializeProfile)
+    assert isinstance(profile, ExportProfile)
     assert profile.operation == "adv.20"
     assert profile.output == Path("data/features/adv/20.jsonl")
     assert profile.overwrite is True
@@ -1068,74 +1068,74 @@ def test_materialize_profiles_load_and_normalize_fields(tmp_path):
     assert profile.observability.visuals is True
 
 
-def test_materialize_profile_accepts_gzip_output(tmp_path):
+def test_export_profile_accepts_gzip_output(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
-    (profiles_dir / "materialize.adv-20.yaml").write_text(
+    (profiles_dir / "export.adv-20.yaml").write_text(
         "operation: adv.20\noutput: data/features/adv/20.jsonl.gz\n",
         encoding="utf-8",
     )
 
-    profile = _materialize_profiles(project_yaml)[0]
+    profile = _export_profiles(project_yaml)[0]
 
     assert profile.output == Path("data/features/adv/20.jsonl.gz")
 
 
-def test_materialize_profile_rejects_compression_field(tmp_path):
+def test_export_profile_rejects_compression_field(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
-    (profiles_dir / "materialize.adv-20.yaml").write_text(
+    (profiles_dir / "export.adv-20.yaml").write_text(
         "operation: adv.20\noutput: data/features/adv/20.jsonl.gz\ncompression: gzip\n",
         encoding="utf-8",
     )
 
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
-        _materialize_profiles(project_yaml)
+        _export_profiles(project_yaml)
 
 
 @pytest.mark.parametrize("field", ["operation", "output"])
-def test_materialize_profile_requires_nonempty_paths(tmp_path, field):
+def test_export_profile_requires_nonempty_paths(tmp_path, field):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
     values = {"operation": "adv.20", "output": "adv-20.jsonl"}
     values[field] = "   "
-    (profiles_dir / "materialize.adv-20.yaml").write_text(
+    (profiles_dir / "export.adv-20.yaml").write_text(
         (f"operation: '{values['operation']}'\noutput: '{values['output']}'\n"),
         encoding="utf-8",
     )
 
     with pytest.raises(ValueError, match=f"{field} must be set"):
-        _materialize_profiles(project_yaml)
+        _export_profiles(project_yaml)
 
 
-def test_materialize_profile_requires_jsonl_output(tmp_path):
+def test_export_profile_requires_jsonl_output(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
-    (profiles_dir / "materialize.adv-20.yaml").write_text(
+    (profiles_dir / "export.adv-20.yaml").write_text(
         ("operation: adv.20\noutput: data/features/adv/20.csv\n"),
         encoding="utf-8",
     )
 
     with pytest.raises(ValueError, match="output must use a .jsonl or .jsonl.gz path"):
-        _materialize_profiles(project_yaml)
+        _export_profiles(project_yaml)
 
 
-def test_materialize_profile_requires_boolean_overwrite(tmp_path):
+def test_export_profile_requires_boolean_overwrite(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
-    (profiles_dir / "materialize.adv-20.yaml").write_text(
+    (profiles_dir / "export.adv-20.yaml").write_text(
         ("operation: adv.20\noutput: data/features/adv/20.jsonl\noverwrite: 'false'\n"),
         encoding="utf-8",
     )
 
     with pytest.raises(ValueError, match="valid boolean"):
-        _materialize_profiles(project_yaml)
+        _export_profiles(project_yaml)
 
 
-def test_materialize_defaults_apply_overwrite_and_observability(tmp_path):
+def test_export_defaults_apply_overwrite_and_observability(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
-    (profiles_dir / "materialize.defaults.yaml").write_text(
+    (profiles_dir / "export.defaults.yaml").write_text(
         (
             "artifact_mode: rebuild\n"
             "overwrite: true\n"
@@ -1144,7 +1144,7 @@ def test_materialize_defaults_apply_overwrite_and_observability(tmp_path):
         ),
         encoding="utf-8",
     )
-    (profiles_dir / "materialize.adv-20.yaml").write_text(
+    (profiles_dir / "export.adv-20.yaml").write_text(
         (
             "operation: adv.20\n"
             "output: data/features/adv/20.jsonl\n"
@@ -1154,12 +1154,12 @@ def test_materialize_defaults_apply_overwrite_and_observability(tmp_path):
         encoding="utf-8",
     )
 
-    profile = _materialize_profiles(project_yaml)[0]
-    defaults = _materialize_defaults(project_yaml)
+    profile = _export_profiles(project_yaml)[0]
+    defaults = _export_defaults(project_yaml)
     merged = apply_profile_defaults(profile, defaults)
 
     assert defaults.artifact_mode == "rebuild"
-    assert isinstance(merged, MaterializeProfile)
+    assert isinstance(merged, ExportProfile)
     assert not hasattr(merged, "artifact_mode")
     assert merged.overwrite is True
     assert merged.observability is not None
@@ -1167,22 +1167,22 @@ def test_materialize_defaults_apply_overwrite_and_observability(tmp_path):
     assert merged.observability.heartbeat_interval_seconds == 30
 
 
-def test_materialize_defaults_reject_compression_field(tmp_path):
+def test_export_defaults_reject_compression_field(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
-    (profiles_dir / "materialize.defaults.yaml").write_text(
+    (profiles_dir / "export.defaults.yaml").write_text(
         "compression: gzip\n",
         encoding="utf-8",
     )
 
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
-        _materialize_defaults(project_yaml)
+        _export_defaults(project_yaml)
 
 
-def test_materialize_artifact_mode_is_defaults_only(tmp_path):
+def test_export_artifact_mode_is_defaults_only(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
-    (profiles_dir / "materialize.adv-20.yaml").write_text(
+    (profiles_dir / "export.adv-20.yaml").write_text(
         (
             "operation: adv.20\noutput: data/features/adv/20.jsonl\nartifact_mode: auto\n"
         ),
@@ -1190,13 +1190,13 @@ def test_materialize_artifact_mode_is_defaults_only(tmp_path):
     )
 
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
-        _materialize_profiles(project_yaml)
+        _export_profiles(project_yaml)
 
 
-def test_materialize_defaults_reject_unknown_artifact_mode(tmp_path):
+def test_export_defaults_reject_unknown_artifact_mode(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     profiles_dir = _profile_kind_dir(project_yaml)
-    (profiles_dir / "materialize.defaults.yaml").write_text(
+    (profiles_dir / "export.defaults.yaml").write_text(
         "artifact_mode: SOMETIMES\n",
         encoding="utf-8",
     )
@@ -1204,7 +1204,7 @@ def test_materialize_defaults_reject_unknown_artifact_mode(tmp_path):
     with pytest.raises(
         ValueError, match="Input should be.*auto.*rebuild.*require_current"
     ):
-        _materialize_defaults(project_yaml)
+        _export_defaults(project_yaml)
 
 
 def test_profile_order_overrides_file_order(tmp_path):
@@ -1782,7 +1782,7 @@ def test_profile_filename_prefix_is_required(tmp_path):
 
     with pytest.raises(
         ValueError,
-        match="must use \\{serve,build,inspect,materialize\\}",
+        match="must use \\{serve,build,inspect,export\\}",
     ):
         _serve_profiles(project_yaml)
 

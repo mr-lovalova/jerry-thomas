@@ -9,18 +9,18 @@ from jerrythomas.config.profiles.build import BuildProfile
 from jerrythomas.config.profiles.defaults import (
     BuildProfileDefaults,
     InspectProfileDefaults,
-    MaterializeProfileDefaults,
+    ExportProfileDefaults,
     ProfileDefaults,
     ServeProfileDefaults,
 )
 from jerrythomas.config.profiles.inspect import InspectProfile
-from jerrythomas.config.profiles.materialize import MaterializeProfile
+from jerrythomas.config.profiles.export import ExportProfile
 from jerrythomas.config.profiles.serve import ServeProfile
 from jerrythomas.services.definitions import ProjectDefinition, ProjectManifest
 from jerrythomas.io.yaml import read_yaml_document
 
 ProfileModel = Annotated[
-    ServeProfile | BuildProfile | InspectProfile | MaterializeProfile,
+    ServeProfile | BuildProfile | InspectProfile | ExportProfile,
     Field(discriminator="cmd"),
 ]
 
@@ -28,14 +28,14 @@ PROFILE_KINDS: tuple[ProfileCommand, ...] = (
     "serve",
     "build",
     "inspect",
-    "materialize",
+    "export",
 )
 PROFILE_ADAPTER: TypeAdapter[ProfileModel] = TypeAdapter(ProfileModel)
 ProfileDefaultsModel = Annotated[
     ServeProfileDefaults
     | BuildProfileDefaults
     | InspectProfileDefaults
-    | MaterializeProfileDefaults,
+    | ExportProfileDefaults,
     Field(discriminator="cmd"),
 ]
 PROFILE_DEFAULTS_ADAPTER: TypeAdapter[ProfileDefaultsModel] = TypeAdapter(
@@ -83,7 +83,7 @@ def _validate_profile_layout(root: Path) -> None:
         listed = ", ".join(str(path.relative_to(root)) for path in nested_files)
         raise ValueError(
             "Profile files must be flat under profiles/ using "
-            "{serve,build,inspect,materialize}.<name|defaults>.yaml naming; "
+            "{serve,build,inspect,export}.<name|defaults>.yaml naming; "
             f"found nested profile files: {listed}"
         )
 
@@ -96,7 +96,7 @@ def _validate_profile_layout(root: Path) -> None:
         return
     listed = ", ".join(str(path.relative_to(root)) for path in invalid)
     raise ValueError(
-        "Profile files must use {serve,build,inspect,materialize}.<name|defaults>.yaml "
+        "Profile files must use {serve,build,inspect,export}.<name|defaults>.yaml "
         "naming under profiles/; "
         f"found invalid profile locations: {listed}"
     )

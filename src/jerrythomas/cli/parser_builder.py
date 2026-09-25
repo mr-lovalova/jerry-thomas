@@ -9,7 +9,7 @@ from jerrythomas.cli.parser.domain import add_domain_command
 from jerrythomas.cli.parser.inflow import add_inflow_command
 from jerrythomas.cli.parser.inspect import add_inspect_command
 from jerrythomas.cli.parser.list_ import add_list_command
-from jerrythomas.cli.parser.materialize import add_materialize_command
+from jerrythomas.cli.parser.export import add_export_command
 from jerrythomas.cli.parser.plugin import add_plugin_command
 from jerrythomas.cli.parser.scaffold import add_simple_scaffold_command
 from jerrythomas.cli.parser.serve import add_serve_command
@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_serve_command(sub)
     add_inspect_command(sub)
     add_build_command(sub)
-    add_materialize_command(sub)
+    add_export_command(sub)
     add_clean_command(sub)
     add_demo_command(sub)
     add_list_command(sub)
