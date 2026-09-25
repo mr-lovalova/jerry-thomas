@@ -185,8 +185,8 @@ def test_custom_transform_clone_keeps_placeholders_out_of_training_domain(
 
     series_task = SeriesTask()
     result = build_series_artifact(runtime, series_task)
-    runtime.artifacts.register(SERIES, series_task.output, meta=result.meta)
-    build_metadata_artifact(runtime, MetadataTask(output="metadata.json"))
+    runtime.artifacts.register(SERIES, series_task.path, meta=result.meta)
+    build_metadata_artifact(runtime, MetadataTask(path="metadata.json"))
 
     payload = json.loads((tmp_path / "metadata.json").read_text())
     fold = payload["layout"]["folds"][0]

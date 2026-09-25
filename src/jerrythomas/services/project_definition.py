@@ -2,7 +2,7 @@ from pathlib import Path
 
 from jerrythomas.artifacts.fingerprints import calculate_artifact_hashes
 from jerrythomas.artifacts.planning import build_artifact_graph
-from jerrythomas.config.tasks.base import ArtifactTask, RuntimeTask
+from jerrythomas.config.tasks.base import ArtifactTask, OutputTask
 from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.services.dataset import load_datasets, validate_dataset_streams
 from jerrythomas.services.definitions import ProjectDefinition
@@ -37,8 +37,8 @@ def load_project_definition(project_yaml: Path) -> ProjectDefinition:
     artifact_operations = tuple(
         operation for operation in operations if isinstance(operation, ArtifactTask)
     )
-    runtime_operations = tuple(
-        operation for operation in operations if isinstance(operation, RuntimeTask)
+    output_operations = tuple(
+        operation for operation in operations if isinstance(operation, OutputTask)
     )
     artifact_graph = build_artifact_graph(artifact_operations, datasets, streams)
     artifact_hashes = calculate_artifact_hashes(
@@ -49,6 +49,6 @@ def load_project_definition(project_yaml: Path) -> ProjectDefinition:
         datasets=datasets,
         streams=streams,
         artifact_graph=artifact_graph,
-        runtime_operations=runtime_operations,
+        output_operations=output_operations,
         artifact_hashes=artifact_hashes,
     )

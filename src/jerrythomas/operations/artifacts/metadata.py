@@ -756,7 +756,7 @@ def build_metadata_artifact(
         layout=layout,
     )
 
-    relative_path = Path(task_cfg.output)
+    relative_path = Path(task_cfg.path)
     destination = (runtime.artifacts_root / relative_path).resolve()
     write_json_object(
         destination,

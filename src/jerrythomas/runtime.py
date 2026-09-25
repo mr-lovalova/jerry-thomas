@@ -129,7 +129,8 @@ class Runtime:
     heartbeat_interval_seconds: float | None = None
     observe_node_events: bool = True
     artifacts: ArtifactRegistry = field(init=False)
-    _stream_configs: StreamsConfig | None = field(default=None, repr=False)
+    # Resolved stream catalog this runtime was compiled from; worker snapshots use it.
+    stream_configs: StreamsConfig | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.artifacts = ArtifactRegistry(

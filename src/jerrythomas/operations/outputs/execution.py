@@ -2,14 +2,14 @@ from dataclasses import dataclass
 
 from jerrythomas.config.preview import PreviewStage
 from jerrythomas.config.profiles.output import Format
-from jerrythomas.config.tasks.base import PluginRuntimeTask, RuntimeTask
-from jerrythomas.config.tasks.registry import CORE_OPERATION_MODELS
+from jerrythomas.config.tasks.base import OutputTask, PluginOutputTask
+from jerrythomas.config.tasks.registry import operation_model
 from jerrythomas.operations.persistence import (
     RuntimeOutput,
     RuntimeOutputBatch,
     RuntimeOutputItem,
 )
-from jerrythomas.plugins import RUNTIME_OPERATIONS_EP, load_entrypoint
+from jerrythomas.plugins import OUTPUT_OPERATIONS_EP, load_entrypoint
 from jerrythomas.runtime import Runtime
 
 
@@ -24,23 +24,19 @@ class OutputOptions:
 
 def run_output_operation(
     runtime: Runtime,
-    task: RuntimeTask,
+    task: OutputTask,
     options: OutputOptions,
 ) -> RuntimeOutputItem | RuntimeOutputBatch | None:
-    if not isinstance(task, RuntimeTask):
-        raise TypeError("Output operations require a RuntimeTask.")
-    model = CORE_OPERATION_MODELS.get(task.entrypoint)
-    if model is None:
-        if task.entrypoint.startswith("core."):
-            raise ValueError(f"Unknown built-in output entrypoint '{task.entrypoint}'.")
-        model = PluginRuntimeTask
+    if not isinstance(task, OutputTask):
+        raise TypeError("Output operations require an OutputTask.")
+    model = operation_model("output", task.entrypoint)
     if not isinstance(task, model):
         raise TypeError(
             f"Output entrypoint '{task.entrypoint}' requires {model.__name__}."
         )
-    runner = load_entrypoint(RUNTIME_OPERATIONS_EP, task.entrypoint)
+    runner = load_entrypoint(OUTPUT_OPERATIONS_EP, task.entrypoint)
     result = runner(runtime, task, options)
-    if isinstance(task, PluginRuntimeTask) and result is not None:
+    if isinstance(task, PluginOutputTask) and result is not None:
         if not isinstance(result, RuntimeOutput):
             raise TypeError(
                 "Custom output operation must return RuntimeOutput or None."

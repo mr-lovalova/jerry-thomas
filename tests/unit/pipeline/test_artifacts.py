@@ -29,7 +29,7 @@ from jerrythomas.config.preview import PreviewStage
 from jerrythomas.config.streams import StreamsConfig
 from jerrythomas.config.tasks.base import (
     ArtifactTask,
-    PluginRuntimeTask,
+    PluginOutputTask,
 )
 from jerrythomas.config.tasks.coverage import CoverageTask
 from jerrythomas.config.tasks.coverage_stats import CoverageStatsTask
@@ -39,7 +39,7 @@ from jerrythomas.config.tasks.metadata import MetadataTask
 from jerrythomas.config.tasks.scaler import ScalerTask
 from jerrythomas.config.tasks.series import SeriesTask
 from jerrythomas.config.tasks.schedule import ScheduleTask
-from jerrythomas.plugins import BUILD_OPERATIONS_EP, load_entrypoint
+from jerrythomas.plugins import ARTIFACT_OPERATIONS_EP, load_entrypoint
 from jerrythomas.services.definitions import ArtifactHashes
 
 
@@ -153,7 +153,7 @@ def test_schedule_task_uses_task_id_as_artifact_key():
                 entrypoint="core.schedule",
                 stream="reference.stream",
                 partition_by=[],
-                output="build/schedule.jsonl",
+                path="build/schedule.jsonl",
             )
         ],
         {"default": _empty_dataset()},
@@ -167,7 +167,7 @@ def test_schedule_artifacts_feed_scaler_and_series() -> None:
         id="schedule",
         stream="reference.stream",
         partition_by=[],
-        output="build/schedule.jsonl",
+        path="build/schedule.jsonl",
     )
     dataset = DatasetConfig(
         sample=SampleConfig(rounding="ceil", cadence="1h"),
@@ -207,7 +207,7 @@ def test_schedule_artifacts_feed_scaler_and_series() -> None:
         streams,
     )
 
-    assert graph.definition(SCALER_STATISTICS).dependencies == ("schedule",)
+    assert graph.definition(SCALER_STATISTICS).dependencies == (SERIES, "schedule")
     assert graph.definition(SERIES).dependencies == ("schedule",)
     assert graph.dependents_of({"schedule"}) == {
         SCALER_STATISTICS,
@@ -222,7 +222,7 @@ def test_schedule_artifact_rejects_nested_schedule_in_upstream_stream() -> None:
         id="derived_schedule",
         stream="derived",
         partition_by=[],
-        output="build/derived-schedule.jsonl",
+        path="build/derived-schedule.jsonl",
     )
     graph = build_artifact_graph([schedule_task], {"default": _empty_dataset()})
     streams = StreamsConfig.model_validate(
@@ -280,7 +280,7 @@ def test_schedule_artifact_allows_duration_cadence() -> None:
         id="hourly_schedule",
         stream="hourly",
         partition_by=[],
-        output="build/hourly-schedule.jsonl",
+        path="build/hourly-schedule.jsonl",
     )
     graph = build_artifact_graph([schedule_task], {"default": _empty_dataset()})
     streams = StreamsConfig.model_validate(
@@ -333,7 +333,7 @@ def test_generic_artifact_task_is_a_dependency_free_leaf():
             ArtifactTask(
                 id="custom_snapshot",
                 entrypoint="plugin.snapshot",
-                output="build/custom.json",
+                path="build/custom.json",
             )
         ],
         {"default": _empty_dataset()},
@@ -351,18 +351,18 @@ def test_generic_artifact_task_is_a_dependency_free_leaf():
     ],
 )
 def test_artifact_graph_rejects_duplicate_output_paths(outputs):
-    with pytest.raises(ValueError, match="write the same output"):
+    with pytest.raises(ValueError, match="write the same path"):
         build_artifact_graph(
             [
                 ArtifactTask(
                     id="first",
                     entrypoint="plugin.first",
-                    output=outputs[0],
+                    path=outputs[0],
                 ),
                 ArtifactTask(
                     id="second",
                     entrypoint="plugin.second",
-                    output=outputs[1],
+                    path=outputs[1],
                 ),
             ],
             {"default": _empty_dataset()},
@@ -385,11 +385,11 @@ def test_artifact_graph_rejects_outputs_owned_by_series_cache(
     with pytest.raises(ValueError, match="inside series cache directory"):
         build_artifact_graph(
             [
-                SeriesTask(dataset="default", output=series_output),
+                SeriesTask(dataset="default", path=series_output),
                 ArtifactTask(
                     id="custom",
                     entrypoint="plugin.custom",
-                    output=output,
+                    path=output,
                 ),
             ],
             {"default": _empty_dataset()},
@@ -405,7 +405,7 @@ def test_artifact_graph_allows_similarly_prefixed_series_sibling():
             ArtifactTask(
                 id="custom",
                 entrypoint="plugin.custom",
-                output="build/series/manifest.data.json",
+                path="build/series/manifest.data.json",
             ),
         ],
         {"default": _empty_dataset()},
@@ -415,18 +415,18 @@ def test_artifact_graph_allows_similarly_prefixed_series_sibling():
 
 
 def test_artifact_graph_rejects_nested_primary_output_paths():
-    with pytest.raises(ValueError, match="nested output paths"):
+    with pytest.raises(ValueError, match="nested paths"):
         build_artifact_graph(
             [
                 ArtifactTask(
                     id="parent",
                     entrypoint="plugin.parent",
-                    output="build/result.json",
+                    path="build/result.json",
                 ),
                 ArtifactTask(
                     id="child",
                     entrypoint="plugin.child",
-                    output="build/result.json/child.json",
+                    path="build/result.json/child.json",
                 ),
             ],
             {"default": _empty_dataset()},
@@ -450,7 +450,7 @@ def test_artifact_graph_rejects_task_without_matching_definition():
     task = ArtifactTask(
         id="snapshot",
         entrypoint="plugin.snapshot",
-        output="snapshot.json",
+        path="snapshot.json",
     )
 
     with pytest.raises(ValueError, match="has no matching artifact definition"):
@@ -461,7 +461,7 @@ def test_artifact_graph_rejects_task_mapping_key_that_differs_from_id():
     task = ArtifactTask(
         id="snapshot",
         entrypoint="plugin.snapshot",
-        output="snapshot.json",
+        path="snapshot.json",
     )
 
     with pytest.raises(ValueError, match="does not match operation id 'snapshot'"):
@@ -606,7 +606,7 @@ def test_artifact_at_path_other_than_declared_output_is_stale(tmp_path):
     task = ArtifactTask(
         id="snapshot",
         entrypoint="plugin.snapshot",
-        output="declared.json",
+        path="declared.json",
     )
     graph = build_artifact_graph([task], {"default": _empty_dataset()})
     (tmp_path / "legacy.json").write_text("{}", encoding="utf-8")
@@ -825,7 +825,7 @@ def test_plugin_task_cannot_claim_core_requirements_by_entrypoint(
     entrypoint: str,
 ) -> None:
     graph = build_artifact_graph([], {"default": _empty_dataset()})
-    task = PluginRuntimeTask(
+    task = PluginOutputTask(
         id="plugin",
         entrypoint=entrypoint,
         requires=("declared",),
@@ -842,13 +842,13 @@ def test_record_and_series_previews_require_declared_schedule(
         id="schedule",
         stream="reference.stream",
         partition_by=[],
-        output="build/schedule.jsonl",
+        path="build/schedule.jsonl",
     )
     unused_schedule = ScheduleTask(
         id="unused_schedule",
         stream="unused.stream",
         partition_by=[],
-        output="build/unused_schedule.jsonl",
+        path="build/unused_schedule.jsonl",
     )
     dataset = DatasetConfig(
         sample=SampleConfig(rounding="ceil", cadence="1h"),
@@ -981,7 +981,7 @@ def test_scaled_dataset_runtime_requires_scaler_beside_vector_artifacts() -> Non
     assert graph.runtime_dependency_closure(
         DatasetTask(dataset="default", id="dataset"),
         preview=None,
-    ) == (SCALER_STATISTICS, SERIES, VECTOR_METADATA)
+    ) == (SERIES, SCALER_STATISTICS, VECTOR_METADATA)
 
 
 def test_empty_dataset_has_no_runtime_artifact_requirements():
@@ -1006,7 +1006,7 @@ def test_empty_dataset_has_no_runtime_artifact_requirements():
 
 def test_custom_runtime_task_has_no_inferred_artifact_dependencies():
     graph = build_artifact_graph([], {"default": _empty_dataset()})
-    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime.pipeline")
+    task = PluginOutputTask(id="pipeline", entrypoint="plugin.runtime.pipeline")
 
     assert graph.runtime_requirements(task, preview=None) == set()
 
@@ -1015,10 +1015,10 @@ def test_custom_runtime_task_uses_declared_artifact_dependencies():
     snapshot = ArtifactTask(
         id="custom_snapshot",
         entrypoint="plugin.snapshot",
-        output="build/custom.json",
+        path="build/custom.json",
     )
     graph = build_artifact_graph([snapshot], {"default": _empty_dataset()})
-    task = PluginRuntimeTask(
+    task = PluginOutputTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("custom_snapshot",),
@@ -1034,7 +1034,7 @@ def test_empty_dataset_keeps_explicit_artifact_dependencies():
     snapshot = ArtifactTask(
         id="custom_snapshot",
         entrypoint="plugin.snapshot",
-        output="build/custom.json",
+        path="build/custom.json",
     )
     graph = build_artifact_graph([snapshot], {"default": _empty_dataset()})
     task = DatasetTask(dataset="default", id="dataset", requires=("custom_snapshot",))
@@ -1047,7 +1047,7 @@ def test_empty_dataset_keeps_explicit_artifact_dependencies():
 
 def test_runtime_task_rejects_unknown_declared_artifact_dependency():
     graph = build_artifact_graph([], {"default": _empty_dataset()})
-    task = PluginRuntimeTask(
+    task = PluginOutputTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("missing",),
@@ -1069,7 +1069,7 @@ def test_runtime_task_rejects_inactive_declared_artifact_dependency():
     graph = build_artifact_graph(
         [ScalerTask(dataset="default", id="scaler")], {"default": _empty_dataset()}
     )
-    task = PluginRuntimeTask(
+    task = PluginOutputTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("scaler",),
@@ -1083,7 +1083,7 @@ def test_runtime_task_rejects_inactive_declared_artifact_dependency():
 
 
 def test_artifact_definitions_have_runner_bound_entrypoints():
-    declared = _declared_entrypoints(BUILD_OPERATIONS_EP)
+    declared = _declared_entrypoints(ARTIFACT_OPERATIONS_EP)
     task_by_id = {
         "metadata": MetadataTask(dataset="default", id="metadata"),
         "scaler": ScalerTask(dataset="default", id="scaler"),
@@ -1097,12 +1097,12 @@ def test_artifact_definitions_have_runner_bound_entrypoints():
     for definition in ARTIFACT_DEFINITIONS:
         task = task_by_id[definition.key]
         assert task.entrypoint in declared
-        runner = load_entrypoint(BUILD_OPERATIONS_EP, task.entrypoint)
+        runner = load_entrypoint(ARTIFACT_OPERATIONS_EP, task.entrypoint)
         assert f"{runner.__module__}:{runner.__name__}" == declared[task.entrypoint]
 
 
 def test_schedule_entrypoint_is_declared():
-    declared = _declared_entrypoints(BUILD_OPERATIONS_EP)
+    declared = _declared_entrypoints(ARTIFACT_OPERATIONS_EP)
     assert "core.schedule" in declared
-    runner = load_entrypoint(BUILD_OPERATIONS_EP, "core.schedule")
+    runner = load_entrypoint(ARTIFACT_OPERATIONS_EP, "core.schedule")
     assert f"{runner.__module__}:{runner.__name__}" == declared["core.schedule"]

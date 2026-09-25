@@ -181,7 +181,7 @@ def test_export_empty_output_has_successful_zero_row_receipt(copy_fixture, monke
     root = copy_fixture("regression_project")
     _profiles(root)
     monkeypatch.setattr(
-        "jerrythomas.operations.runtime.records.run_stream_pipeline",
+        "jerrythomas.operations.outputs.records.run_stream_pipeline",
         lambda *_args: iter(()),
     )
     _execute(root, "--profile", "first", result_json=False)

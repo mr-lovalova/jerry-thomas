@@ -67,7 +67,7 @@ def test_resolve_export_jobs_applies_command_overrides(
         profiles=profiles,
         definition=SimpleNamespace(
             project=SimpleNamespace(path=tmp_path / "project.yaml"),
-            runtime_operations=tuple(
+            output_operations=tuple(
                 StreamTask(id=stream, stream=stream) for stream in ("adv.20", "adv.63")
             ),
         ),
@@ -92,7 +92,7 @@ def test_resolve_export_jobs_derives_gzip_from_profile_output(tmp_path) -> None:
         profiles=[_profile("adv-20", "adv.20", "adv-20.jsonl.gz")],
         definition=SimpleNamespace(
             project=SimpleNamespace(path=tmp_path / "project.yaml"),
-            runtime_operations=tuple(
+            output_operations=tuple(
                 StreamTask(id=stream, stream=stream) for stream in ("adv.20", "adv.63")
             ),
         ),
@@ -111,7 +111,7 @@ def test_resolve_export_jobs_derives_gzip_from_output_override(tmp_path) -> None
         profiles=[_profile("adv-20", "adv.20", "profile.jsonl")],
         definition=SimpleNamespace(
             project=SimpleNamespace(path=tmp_path / "project.yaml"),
-            runtime_operations=tuple(
+            output_operations=tuple(
                 StreamTask(id=stream, stream=stream) for stream in ("adv.20", "adv.63")
             ),
         ),
@@ -136,7 +136,7 @@ def test_output_override_requires_one_selected_profile(tmp_path) -> None:
             profiles=profiles,
             definition=SimpleNamespace(
                 project=SimpleNamespace(path=tmp_path / "project.yaml"),
-                runtime_operations=tuple(
+                output_operations=tuple(
                     StreamTask(id=stream, stream=stream)
                     for stream in ("adv.20", "adv.63")
                 ),

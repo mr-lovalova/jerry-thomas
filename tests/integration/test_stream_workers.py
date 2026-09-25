@@ -43,18 +43,23 @@ def _manifest_path(root: Path) -> Path:
     return root / "build" / "datasets/default/series/manifest.json"
 
 
-def _series_snapshot(root: Path) -> tuple[dict, bytes]:
+def _series_snapshot(root: Path) -> tuple[dict, bytes, bytes | None]:
     path = _manifest_path(root)
     manifest = load_series_manifest(path)
     return (
-        manifest.model_dump(mode="json", exclude={"path"}),
+        manifest.model_dump(mode="json", exclude={"path", "scaler_fits"}),
         (path.parent / manifest.path).read_bytes(),
+        (
+            (path.parent / manifest.scaler_fits).read_bytes()
+            if manifest.scaler_fits is not None
+            else None
+        ),
     )
 
 
 def _publication_snapshot(
     root: Path,
-) -> tuple[bytes, tuple[dict, bytes], bytes, set[Path]]:
+) -> tuple[bytes, tuple[dict, bytes, bytes | None], bytes, set[Path]]:
     manifest_path = _manifest_path(root)
     return (
         manifest_path.read_bytes(),

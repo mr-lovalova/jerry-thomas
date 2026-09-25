@@ -27,11 +27,11 @@ def register_series(
         split=current.split,
         postprocess=current.postprocess,
     )
-    shutil.rmtree(runtime.artifacts_root / "build/series", ignore_errors=True)
     task = SeriesTask()
+    shutil.rmtree((runtime.artifacts_root / task.path).parent, ignore_errors=True)
     result = build_series_artifact(runtime, task)
     runtime.artifacts.register(
         runtime.artifact_aliases.get(SERIES, SERIES),
-        relative_path=task.output,
+        relative_path=task.path,
         meta=result.meta,
     )

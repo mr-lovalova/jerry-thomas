@@ -10,8 +10,8 @@ from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.domain.record import TemporalRecord
 from jerrythomas.io.output import OutputTarget
-from jerrythomas.operations.runtime import execution
-from jerrythomas.operations.runtime.execution import OutputOptions
+from jerrythomas.operations.outputs import execution
+from jerrythomas.operations.outputs.execution import OutputOptions
 from jerrythomas.runtime import Runtime, SourceRuntimeStream
 from jerrythomas.services.export import (
     export_stream,
@@ -92,7 +92,7 @@ def test_export_stream_uses_registered_operation_and_writes_jsonl(
     calls = []
 
     def load_runner(group, entrypoint):
-        assert (group, entrypoint) == ("jerrythomas.operations.runtime", "core.records")
+        assert (group, entrypoint) == ("jerrythomas.operations.output", "core.records")
         runner = load_entrypoint(group, entrypoint)
 
         def run(operation_runtime, operation_task, options):
@@ -239,7 +239,7 @@ def test_export_stream_does_not_clobber_output_created_during_stream(
         return rows()
 
     monkeypatch.setattr(
-        "jerrythomas.operations.runtime.records.run_stream_pipeline",
+        "jerrythomas.operations.outputs.records.run_stream_pipeline",
         racing_rows,
     )
 
@@ -268,7 +268,7 @@ def test_export_stream_closes_rows_after_writer_failure(
             rows_closed = True
 
     monkeypatch.setattr(
-        "jerrythomas.operations.runtime.records.run_stream_pipeline",
+        "jerrythomas.operations.outputs.records.run_stream_pipeline",
         lambda _context, _stream_id: rows(),
     )
 
@@ -295,7 +295,7 @@ def test_export_stream_aborts_when_rows_fail_to_close(
             raise OSError("input close failed")
 
     monkeypatch.setattr(
-        "jerrythomas.operations.runtime.records.run_stream_pipeline",
+        "jerrythomas.operations.outputs.records.run_stream_pipeline",
         lambda _runtime, _stream_id: Rows(),
     )
     output = tmp_path / "prices.jsonl"

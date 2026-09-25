@@ -51,7 +51,7 @@ def handle(
                 else:
                     operations = {
                         **definition.artifact_graph.tasks_by_id,
-                        **{task.id: task for task in definition.runtime_operations},
+                        **{task.id: task for task in definition.output_operations},
                     }
                     for command in PROFILE_KINDS:
                         profiles, defaults = profile_specs_with_defaults(

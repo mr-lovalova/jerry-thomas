@@ -2,7 +2,7 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Collection, Mapping
 
 from jerrythomas.config.interpolation import (
     MissingInterpolation,
@@ -116,18 +116,29 @@ def _resolve_project_globals(
     return resolved
 
 
-def interpolate_config_vars(obj: Any, vars_: Mapping[str, Any]) -> Any:
-    """Recursively substitute ${var} in strings using vars_ map."""
+def interpolate_config_vars(
+    obj: Any,
+    vars_: Mapping[str, Any],
+    deferred: Collection[str] = (),
+) -> Any:
+    """Recursively substitute ${var} in strings using vars_ map.
+
+    Variables named in ``deferred`` and absent from ``vars_`` are left in place
+    for a later pass, such as dataset variables resolved after operation binding.
+    """
     if isinstance(obj, dict):
         return {
-            key: interpolate_config_vars(value, vars_) for key, value in obj.items()
+            key: interpolate_config_vars(value, vars_, deferred)
+            for key, value in obj.items()
         }
     if isinstance(obj, list):
-        return [interpolate_config_vars(value, vars_) for value in obj]
+        return [interpolate_config_vars(value, vars_, deferred) for value in obj]
     if isinstance(obj, str):
         match = _INTERPOLATION_RE.fullmatch(obj)
         if match:
             key = match.group(1)
+            if key in deferred and key not in vars_:
+                return obj
             if key in vars_:
                 value = vars_[key]
                 if value is None or is_missing_interpolation(value):
@@ -137,6 +148,8 @@ def interpolate_config_vars(obj: Any, vars_: Mapping[str, Any]) -> Any:
 
         def repl(match: re.Match[str]) -> str:
             key = match.group(1)
+            if key in deferred and key not in vars_:
+                return match.group(0)
             if key not in vars_:
                 raise ConfigRefError(f"Unknown interpolation variable '{key}'.")
             value = vars_[key]
@@ -149,6 +162,17 @@ def interpolate_config_vars(obj: Any, vars_: Mapping[str, Any]) -> Any:
 
         return _INTERPOLATION_RE.sub(repl, obj)
     return obj
+
+
+def referenced_variables(obj: Any) -> set[str]:
+    """Names of every ${var} referenced anywhere in obj."""
+    if isinstance(obj, dict):
+        return set().union(*(referenced_variables(value) for value in obj.values()))
+    if isinstance(obj, list):
+        return set().union(*(referenced_variables(value) for value in obj))
+    if isinstance(obj, str):
+        return {match.group(1) for match in _INTERPOLATION_RE.finditer(obj)}
+    return set()
 
 
 def resolve_config_refs(

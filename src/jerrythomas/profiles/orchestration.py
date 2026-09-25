@@ -96,7 +96,7 @@ def _prune_series_caches(request: ProfileRunRequest) -> None:
     root = request.definition.project.artifacts_root
     for task in request.definition.artifact_graph.tasks_by_id.values():
         if isinstance(task, SeriesTask):
-            prune_series_cache(root / task.output, root)
+            prune_series_cache(root / task.path, root)
 
 
 def _run_build_profiles(request: BuildRunRequest) -> None:

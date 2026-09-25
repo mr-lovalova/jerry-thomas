@@ -98,7 +98,7 @@ def build_schedule_artifact(
         )
     rows = 0
     try:
-        relative_path = Path(task_cfg.output)
+        relative_path = Path(task_cfg.path)
         destination = (runtime.artifacts_root / relative_path).resolve()
         write_progress = OperationProgressTracker(
             "write_artifact",

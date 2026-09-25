@@ -28,7 +28,7 @@ air_density = "my_datapipeline.combiners.air_density:combine_air_density"
 [project.entry-points."jerrythomas.transforms"]
 previous_value = "my_datapipeline.transforms:PreviousValueTransform"
 
-[project.entry-points."jerrythomas.operations.runtime"]
+[project.entry-points."jerrythomas.operations.output"]
 "demo.report" = "my_datapipeline.operations:run_report"
 ```
 
@@ -51,7 +51,7 @@ processing.
 
 Every operation YAML declares `kind: output|artifact` and an `entrypoint`.
 Built-in and custom output operations are registered in
-`jerrythomas.operations.runtime` and run through the same lookup and calling
+`jerrythomas.operations.output` and run through the same lookup and calling
 contract. Jerry registers `core.records`, `core.dataset`,
 `core.availability_matrix`, and `core.coverage_report` in its `pyproject.toml`.
 For the custom example above:
@@ -65,21 +65,21 @@ options: {}
 A custom output operation receives exactly three positional arguments:
 
 ```python
-from jerrythomas.config.tasks.base import PluginRuntimeTask
+from jerrythomas.config.tasks.base import PluginOutputTask
 from jerrythomas.operations.persistence import RuntimeOutput
-from jerrythomas.operations.runtime.execution import OutputOptions
+from jerrythomas.operations.outputs.execution import OutputOptions
 from jerrythomas.runtime import Runtime
 
 
 def run_report(
     runtime: Runtime,
-    task: PluginRuntimeTask,
+    task: PluginOutputTask,
     options: OutputOptions,
 ) -> RuntimeOutput | None: ...
 ```
 
 `runtime` is the compiled `Runtime`, and `task` is the configured
-`PluginRuntimeTask`; `task.options` holds the plugin-defined YAML settings.
+`PluginOutputTask`; `task.options` holds the plugin-defined YAML settings.
 The frozen `OutputOptions` carries execution settings: `limit` (default `None`),
 `output_format` (default `"jsonl"`), `throttle_ms` and `preview` (default `None`),
 and `output_ids` (default `()`). Read the record cap from `options.limit`.
@@ -96,10 +96,10 @@ Jerry 10 removes result-owned `target`/`targets` fields and custom
 that used those Python APIs must return one `RuntimeOutput`; built-in dataset
 fanout remains available through dataset profiles.
 
-Custom artifact operations use the `jerrythomas.operations.build` group. Their
+Custom artifact operations use the `jerrythomas.operations.artifact` group. Their
 configuration accepts `kind: artifact`, `entrypoint`, and `path`; the filename
 supplies the operation ID. `path` is relative to `paths.artifacts` and is exposed
-as `task.output` in the existing Python contract. They do not accept `options`
+as `task.path` to the build function. They do not accept `options`
 or `requires`. Their cache hashes cover the bound dataset and complete stream
 catalog. Output plugins can declare prerequisite artifacts with `requires`
 and plugin settings with `options`; those capabilities do not extend to custom

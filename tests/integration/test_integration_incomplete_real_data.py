@@ -24,23 +24,23 @@ def _dataset_samples(project_yaml):
     hydrate_runtime_artifacts_for_pipeline(runtime, definition)
 
     # Ensure artifacts are exported for the test run.
-    scaler_task = ScalerTask(id="scaler", output="scaler.json")
+    scaler_task = ScalerTask(id="scaler", path="scaler.json")
     build_scaler_artifact(runtime, scaler_task)
     runtime.artifacts.register(
         runtime.artifact_aliases.get(SCALER_STATISTICS, SCALER_STATISTICS),
-        relative_path=scaler_task.output,
+        relative_path=scaler_task.path,
     )
-    series_task = SeriesTask(id="series", output="series/manifest.json")
+    series_task = SeriesTask(id="series", path="series/manifest.json")
     build_series_artifact(runtime, series_task)
     runtime.artifacts.register(
         runtime.artifact_aliases.get(SERIES, SERIES),
-        relative_path=series_task.output,
+        relative_path=series_task.path,
     )
-    metadata_task = MetadataTask(id="metadata", output="metadata.json")
+    metadata_task = MetadataTask(id="metadata", path="metadata.json")
     build_metadata_artifact(runtime, metadata_task)
     runtime.artifacts.register(
         runtime.artifact_aliases.get(VECTOR_METADATA, VECTOR_METADATA),
-        relative_path=metadata_task.output,
+        relative_path=metadata_task.path,
     )
     metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     return list(

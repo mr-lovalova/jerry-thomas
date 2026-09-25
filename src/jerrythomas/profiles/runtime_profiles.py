@@ -10,7 +10,7 @@ from jerrythomas.config.profiles.output import (
     merge_output_overrides,
 )
 from jerrythomas.config.profiles.serve import ServeProfile
-from jerrythomas.config.tasks.base import RuntimeTask
+from jerrythomas.config.tasks.base import OutputTask
 from jerrythomas.config.tasks.dataset import DatasetTask
 from jerrythomas.execution.settings import (
     CommandObservability,
@@ -43,7 +43,7 @@ def _resolve_serve_output_ids(
     definition: ProjectDefinition,
     profile: ServeProfile,
     preview: PreviewStage | None,
-    operation: RuntimeTask,
+    operation: OutputTask,
 ) -> tuple[str, ...]:
     include_outputs = tuple(profile.include_outputs or ())
     if include_outputs and preview is not None:
@@ -110,15 +110,15 @@ def resolve_serve_profiles(
     command_observability: CommandObservability = CommandObservability(),
 ) -> list[ResolvedRuntimeProfile]:
     project_path = definition.project.path
-    runtime_operations = {
-        operation.id: operation for operation in definition.runtime_operations
+    output_operations = {
+        operation.id: operation for operation in definition.output_operations
     }
     shared_runs: dict[Path, RunPaths] = {}
     identities_by_root: dict[Path, tuple[str | None, PreviewStage | None]] = {}
 
     resolved: list[ResolvedRuntimeProfile] = []
     for profile in profiles:
-        operation = runtime_operations[profile.operation]
+        operation = output_operations[profile.operation]
         resolved_preview = preview if preview is not None else profile.preview
         resolved_limit = limit if limit is not None else profile.limit
         output_ids = _resolve_serve_output_ids(

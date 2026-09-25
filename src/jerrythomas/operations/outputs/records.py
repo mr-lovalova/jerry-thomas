@@ -4,7 +4,7 @@ from typing import TypeVar
 
 from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.operations.persistence import RuntimeOutput
-from jerrythomas.operations.runtime.execution import OutputOptions
+from jerrythomas.operations.outputs.execution import OutputOptions
 from jerrythomas.pipelines.stream.pipeline import run_stream_pipeline
 from jerrythomas.runtime import Runtime
 

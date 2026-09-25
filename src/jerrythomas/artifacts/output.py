@@ -19,7 +19,7 @@ def fingerprint_artifact_output(
     task: ArtifactTask,
     artifacts_root: Path,
 ) -> tuple[ArtifactFileFingerprint, ...]:
-    relative_paths = (task.output, *output.companion_paths)
+    relative_paths = (task.path, *output.companion_paths)
     normalized_paths = tuple(Path(relative_path) for relative_path in relative_paths)
     path_keys = {output_destination_key(path) for path in normalized_paths}
     if len(normalized_paths) != len(path_keys):

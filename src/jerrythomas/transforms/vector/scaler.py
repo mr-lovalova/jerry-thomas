@@ -39,6 +39,27 @@ class _RunningStatistics:
         self.total += numerator
         self.squared_total += numerator * numerator
 
+    def to_json(self) -> dict[str, int]:
+        return {
+            "count": self.count,
+            "total": self.total,
+            "squared_total": self.squared_total,
+            "denominator": self.denominator,
+        }
+
+    @classmethod
+    def from_json(cls, data: object) -> "_RunningStatistics":
+        fields = ("count", "total", "squared_total", "denominator")
+        if not isinstance(data, dict) or set(data) != set(fields):
+            raise ValueError(
+                "Running statistics must list exactly " + ", ".join(fields)
+            )
+        if any(type(data[name]) is not int for name in fields):
+            raise ValueError("Running statistics must be exact integers.")
+        if data["count"] < 0 or data["denominator"] < 1:
+            raise ValueError("Running statistics have an invalid count or denominator.")
+        return cls(**{name: data[name] for name in fields})
+
     def finish(self, epsilon: float) -> ScalerStatistics:
         denominator = self.denominator * self.count
         variance = Fraction(
@@ -122,6 +143,42 @@ class ScalerAccumulator:
             }
         )
         self.observations += other.observations
+
+    def to_json(self) -> dict[str, object]:
+        """Serialize exact moments; list-valued vectors keep one entry per position."""
+        return {
+            "observations": self.observations,
+            "statistics": {
+                vector_id: (
+                    [position.to_json() for position in running]
+                    if isinstance(running, tuple)
+                    else running.to_json()
+                )
+                for vector_id, running in self._statistics.items()
+            },
+        }
+
+    @classmethod
+    def from_json(cls, data: object) -> "ScalerAccumulator":
+        if not isinstance(data, dict) or set(data) != {"observations", "statistics"}:
+            raise ValueError(
+                "Scaler accumulator must list observations and statistics."
+            )
+        observations = data["observations"]
+        statistics = data["statistics"]
+        if type(observations) is not int or observations < 0:
+            raise ValueError("Scaler accumulator observations must be a count.")
+        if not isinstance(statistics, dict):
+            raise ValueError("Scaler accumulator statistics must be a mapping.")
+        accumulator = cls()
+        for vector_id, running in statistics.items():
+            accumulator._statistics[vector_id] = (
+                tuple(_RunningStatistics.from_json(entry) for entry in running)
+                if isinstance(running, list)
+                else _RunningStatistics.from_json(running)
+            )
+        accumulator.observations = observations
+        return accumulator
 
     def artifact(self, settings: Mapping[str, ScalingConfig]) -> StandardScalerArtifact:
         if not self._statistics:

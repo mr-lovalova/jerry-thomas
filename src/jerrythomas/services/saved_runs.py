@@ -25,7 +25,7 @@ def load_dataset_run(
     # Apply the same version validation as a dataset declaration, without changing
     # the resolved definition or using its current version to locate older runs.
     type(config).model_validate({**config.model_dump(), "version": version})
-    operations = {task.id: task for task in definition.runtime_operations}
+    operations = {task.id: task for task in definition.output_operations}
     profiles, defaults = profile_specs_with_defaults(definition.project, "serve")
     selected = []
     for profile in profiles:

@@ -288,7 +288,7 @@ def test_full_regression_project_through_serve(copy_fixture) -> None:
         "cadence": "1h",
         "format": "jsonl.gz",
         "sample_keys": [],
-        "version": 13,
+        "version": 14,
         "rounding": "floor",
         "features": [
             {"id": "linear_scaled", "samples": 6},

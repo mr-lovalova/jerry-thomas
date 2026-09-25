@@ -136,6 +136,7 @@ def _compile_runtime(
     dataset_id: str | None = None,
     artifact_aliases: dict[str, str] | None = None,
 ) -> Runtime:
+    # Keep one untouched copy for worker snapshots; compilation consumes its own.
     blueprint = configuration.model_copy(deep=True)
     streams = blueprint.model_copy(deep=True)
     stream_configs = streams.streams
@@ -172,7 +173,7 @@ def _compile_runtime(
         dataset_id=dataset_id,
         artifact_aliases=dict(artifact_aliases or {}),
         streams=runtime_streams,
-        _stream_configs=blueprint,
+        stream_configs=blueprint,
     )
 
 
@@ -195,12 +196,12 @@ def compile_runtime(
 
 def snapshot_runtime(runtime: Runtime, stream_ids: Iterable[str]) -> RuntimeSnapshot:
     """Capture selected streams without carrying live loaders into another process."""
-    if runtime._stream_configs is None:
+    if runtime.stream_configs is None:
         raise ValueError(
             "Parallel stream execution requires a runtime created by compile_runtime; "
             "use compile_runtime or execution.workers=1 for manually assembled runtimes."
         )
-    streams = runtime._stream_configs.model_copy(deep=True)
+    streams = runtime.stream_configs.model_copy(deep=True)
     selected = stream_dependency_closure(streams.streams, stream_ids)
     streams.streams = {
         stream_id: config

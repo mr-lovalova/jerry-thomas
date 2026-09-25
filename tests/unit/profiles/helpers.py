@@ -5,7 +5,7 @@ from jerrythomas.artifacts.planning import build_artifact_graph
 from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
 from jerrythomas.config.project import ProjectConfig
 from jerrythomas.config.streams import StreamsConfig
-from jerrythomas.config.tasks.base import ArtifactTask, RuntimeTask
+from jerrythomas.config.tasks.base import ArtifactTask, OutputTask
 from jerrythomas.config.tasks.coverage import CoverageTask
 from jerrythomas.config.tasks.dataset import DatasetTask
 from jerrythomas.config.tasks.matrix import MatrixTask
@@ -23,7 +23,7 @@ def project_definition(
     dataset: DatasetConfig | None = None,
     streams: StreamsConfig | None = None,
     artifact_operations: Sequence[ArtifactTask] = (),
-    runtime_operations: Sequence[RuntimeTask] = (),
+    output_operations: Sequence[OutputTask] = (),
     artifact_hash: str = "artifact-hash",
 ) -> ProjectDefinition:
     project_path = project_path.resolve()
@@ -74,12 +74,12 @@ def project_definition(
         datasets={"default": resolved_dataset},
         streams=resolved_streams,
         artifact_graph=artifact_graph,
-        runtime_operations=tuple(
+        output_operations=tuple(
             operation.model_copy(update={"dataset": "default"})
             if operation.dataset is None
             and isinstance(operation, (DatasetTask, CoverageTask, MatrixTask))
             else operation
-            for operation in runtime_operations
+            for operation in output_operations
         ),
         artifact_hashes=ArtifactHashes(
             {operation_id: artifact_hash for operation_id in artifact_graph.tasks_by_id}

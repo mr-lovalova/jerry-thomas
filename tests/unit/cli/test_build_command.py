@@ -173,7 +173,7 @@ def _build_state_path(definition: ProjectDefinition) -> Path:
 
 
 def _write_artifact(root: Path, task: ArtifactTask) -> None:
-    destination = root / task.output
+    destination = root / task.path
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text("{}", encoding="utf-8")
 
@@ -188,7 +188,7 @@ def _register_artifact(
     state.register(
         task.id,
         artifact_hash=artifact_hash,
-        files=(ArtifactFileFingerprint.from_path(task.output, root / task.output),),
+        files=(ArtifactFileFingerprint.from_path(task.path, root / task.path),),
     )
 
 
@@ -199,7 +199,7 @@ def _build_artifact(runtime, task: ArtifactTask) -> ArtifactOutput:
 
 def _patch_artifact_build(monkeypatch, build) -> None:
     def load_entrypoint(operation_group, entrypoint):
-        assert operation_group == "jerrythomas.operations.build"
+        assert operation_group == "jerrythomas.operations.artifact"
 
         def run(*, runtime, task_cfg):
             assert task_cfg.entrypoint == entrypoint
@@ -371,7 +371,7 @@ def test_plan_builds_only_requested_generic_artifact(
     task = ArtifactTask(
         id="custom_snapshot",
         entrypoint="plugin.snapshot",
-        output="build/custom.json",
+        path="build/custom.json",
     )
     graph = build_artifact_graph(
         [task, ScalerTask(dataset="default", id="scaler")],
@@ -439,7 +439,7 @@ def test_v5_vector_inputs_state_is_not_reused(tmp_path: Path) -> None:
         ArtifactTask(
             id="vector_inputs",
             entrypoint="core.artifact.vector_inputs",
-            output="build/vector_inputs/manifest.json",
+            path="build/vector_inputs/manifest.json",
         ),
         "current",
     )
@@ -525,7 +525,7 @@ def test_runtime_operation_change_keeps_artifact_plan_current(
         mode="auto",
     )
 
-    assert second.runtime_operations != first.runtime_operations
+    assert second.output_operations != first.output_operations
     assert second.artifact_hashes == first.artifact_hashes
     assert plan == build_exec.SkippedBuild(
         reason="up_to_date",
@@ -540,12 +540,12 @@ def test_plan_rejects_resolved_artifact_that_became_stale(
     first = ArtifactTask(
         id="first_snapshot",
         entrypoint="plugin.first",
-        output="build/first.json",
+        path="build/first.json",
     )
     second = ArtifactTask(
         id="second_snapshot",
         entrypoint="plugin.second",
-        output="build/second.json",
+        path="build/second.json",
     )
     graph = build_artifact_graph(
         [first, second], datasets=definition.datasets, streams=definition.streams
@@ -658,7 +658,7 @@ def test_mode_off_rejects_missing_artifact(tmp_path: Path) -> None:
     task = ArtifactTask(
         id="snapshot",
         entrypoint="plugin.snapshot",
-        output="build/snapshot.json",
+        path="build/snapshot.json",
     )
     graph = build_artifact_graph(
         [task], datasets=definition.datasets, streams=definition.streams
@@ -692,7 +692,7 @@ def test_execute_build_rejects_invalid_operation_result(
     task = ArtifactTask(
         id="snapshot",
         entrypoint="plugin.snapshot",
-        output="build/snapshot.json",
+        path="build/snapshot.json",
     )
     graph = build_artifact_graph(
         [task], datasets=definition.datasets, streams=definition.streams
@@ -746,7 +746,7 @@ def test_execute_build_jobs_persists_completed_job_before_failure(
         artifact_hash="artifact-hash-1",
         files=(
             ArtifactFileFingerprint(
-                relative_path=metadata.output,
+                relative_path=metadata.path,
                 size=0,
                 mtime_ns=0,
                 ctime_ns=0,
@@ -796,7 +796,7 @@ def test_execute_build_jobs_persists_completed_job_before_failure(
     assert outputs == [
         (
             "Series",
-            (runtime.artifacts_root / series.output).resolve(),
+            (runtime.artifacts_root / series.path).resolve(),
         )
     ]
 
@@ -828,7 +828,7 @@ def test_execute_build_failure_preserves_previous_persisted_state(
         artifact_hash="artifact-hash-1",
         files=(
             ArtifactFileFingerprint(
-                relative_path=metadata.output,
+                relative_path=metadata.path,
                 size=0,
                 mtime_ns=0,
                 ctime_ns=0,
@@ -870,11 +870,11 @@ def test_execute_build_failure_preserves_previous_persisted_state(
 @pytest.mark.parametrize(
     "task",
     [
-        MetadataTask(dataset="default", output="linked/metadata.json"),
+        MetadataTask(dataset="default", path="linked/metadata.json"),
         ArtifactTask(
             id="snapshot",
             entrypoint="plugin.snapshot",
-            output="linked/snapshot.json",
+            path="linked/snapshot.json",
         ),
     ],
     ids=("core", "plugin"),
@@ -890,7 +890,7 @@ def test_execute_build_rejects_symlink_escape_before_calling_runner(
     artifacts_root.mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
-    victim = outside / Path(task.output).name
+    victim = outside / Path(task.path).name
     victim.write_text("keep", encoding="utf-8")
     (artifacts_root / "linked").symlink_to(outside, target_is_directory=True)
     runner_calls: list[str] = []
@@ -942,12 +942,12 @@ def test_execute_build_preflights_every_output_before_running_any_job(
     first = ArtifactTask(
         id="first",
         entrypoint="plugin.first",
-        output="build/first.json",
+        path="build/first.json",
     )
     second = ArtifactTask(
         id="second",
         entrypoint="plugin.second",
-        output="linked/second.json",
+        path="linked/second.json",
     )
     runner_calls: list[str] = []
 
@@ -986,7 +986,7 @@ def test_execute_build_preflights_every_output_before_running_any_job(
         )
 
     assert runner_calls == []
-    assert not (artifacts_root / first.output).exists()
+    assert not (artifacts_root / first.path).exists()
 
 
 def test_execute_build_job_invalidates_only_graph_descendants(
@@ -999,7 +999,7 @@ def test_execute_build_job_invalidates_only_graph_descendants(
     custom = ArtifactTask(
         id="custom_snapshot",
         entrypoint="plugin.snapshot",
-        output="build/custom.json",
+        path="build/custom.json",
     )
     series = SeriesTask(dataset="default", id="series")
     graph = build_artifact_graph(
@@ -1272,7 +1272,7 @@ def test_run_build_keeps_loaded_definition_when_config_changes(
     task = ArtifactTask(
         id="snapshot",
         entrypoint="plugin.snapshot",
-        output="build/snapshot.json",
+        path="build/snapshot.json",
     )
     graph = build_artifact_graph(
         [task], datasets=definition.datasets, streams=definition.streams

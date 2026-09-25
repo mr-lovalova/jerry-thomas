@@ -57,7 +57,7 @@ def build_coverage_stats_artifact(
         features=feature_accumulator.finish(),
         targets=target_accumulator.finish(),
     )
-    relative_path = Path(task_cfg.output)
+    relative_path = Path(task_cfg.path)
     destination = (runtime.artifacts_root / relative_path).resolve()
     write_json_object(destination, artifact.model_dump(mode="json"))
 

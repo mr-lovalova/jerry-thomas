@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from jerrythomas.artifacts.series import load_series_manifest
 from jerrythomas.artifacts.scaler import (
     FoldedScalerArtifact,
     PositionalScalerStatistics,
@@ -23,7 +24,9 @@ from jerrythomas.execution.observability import (
     ScopedExecutionEvent,
     execution_observer,
 )
+import jerrythomas.operations.artifacts.scaler as scaler_module
 from jerrythomas.operations.artifacts.scaler import build_scaler_artifact
+from jerrythomas.operations.artifacts.series import build_series_artifact
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.project_definition import load_project_definition
 from jerrythomas.services.runtime_compiler import compile_runtime
@@ -111,10 +114,50 @@ def _runtime(
     return compile_runtime(load_project_definition(root / "project.yaml"), "default")
 
 
-def _build(runtime: Runtime, workers: int, task: ScalerTask) -> tuple[bytes, dict]:
+def _build_from_streams(
+    runtime: Runtime, workers: int, task: ScalerTask
+) -> tuple[bytes, dict]:
     runtime.execution = ExecutionConfig(workers=workers, sort_buffer_mb=1)
     result = build_scaler_artifact(runtime, task)
-    return (runtime.artifacts_root / task.output).read_bytes(), result.meta
+    return (runtime.artifacts_root / task.path).read_bytes(), result.meta
+
+
+def _build_series(runtime: Runtime) -> tuple[str, str, dict]:
+    definition = load_project_definition(runtime.project_yaml)
+    series_task = definition.artifact_graph.tasks_by_id["dataset.default.series"]
+    output = build_series_artifact(runtime, series_task)
+    return series_task.id, series_task.path, output.meta
+
+
+def _register_series(runtime: Runtime, series: tuple[str, str, dict]) -> None:
+    key, relative_path, meta = series
+    runtime.artifacts.register(key, relative_path=relative_path, meta=meta)
+
+
+def _build_from_series(
+    runtime: Runtime, workers: int, task: ScalerTask
+) -> tuple[bytes, dict]:
+    """Build the series first, then the scaler from the fits that pass stored."""
+    runtime.execution = ExecutionConfig(workers=workers, sort_buffer_mb=1)
+    _register_series(runtime, _build_series(runtime))
+
+    def refit_from_streams(*args: object) -> None:
+        pytest.fail("The scaler must reuse fits stored by the series pass")
+
+    try:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(scaler_module, "_fit_from_streams", refit_from_streams)
+            result = build_scaler_artifact(runtime, task)
+    finally:
+        runtime.artifacts.clear()
+    return (runtime.artifacts_root / task.path).read_bytes(), result.meta
+
+
+def _build(runtime: Runtime, workers: int, task: ScalerTask) -> tuple[bytes, dict]:
+    """Fit from streams, and check that stored series-pass fits agree exactly."""
+    refitted = _build_from_streams(runtime, workers, task)
+    assert _build_from_series(runtime, workers, task) == refitted
+    return refitted
 
 
 @pytest.fixture(autouse=True)
@@ -170,12 +213,12 @@ def test_scaler_workers_preserve_positions_nulls_and_filled_domain_rows(
             {"id": "empty", "stream": "empty", "field": "value", "scale": True},
         ],
     )
-    task = ScalerTask(output="scaler.json")
+    task = ScalerTask(path="scaler.json")
     expected = _build(runtime, 1, task)
     for workers in (2, 8):
         assert _build(runtime, workers, task) == expected
 
-    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.path)
     assert isinstance(artifact, StandardScalerArtifact)
     assert artifact.scalers["a"].settings == ScalingConfig(
         with_mean=False, epsilon=0.25
@@ -255,12 +298,12 @@ def test_scaler_workers_preserve_two_folds_horizon_and_empty_partial_fold(
             ],
         },
     )
-    task = ScalerTask(output="scaler.json")
+    task = ScalerTask(path="scaler.json")
     expected = _build(runtime, 1, task)
     for workers in (2, 8):
         assert _build(runtime, workers, task) == expected
 
-    artifact = load_scaler_artifact(runtime.artifacts_root / task.output)
+    artifact = load_scaler_artifact(runtime.artifacts_root / task.path)
     assert isinstance(artifact, FoldedScalerArtifact)
     early = artifact.for_fold("early")
     assert tuple(early.scalers) == ("a", "target")
@@ -405,27 +448,32 @@ def test_scaler_workers_validate_sample_key_types_across_streams(
         tmp_path / "project",
         {"a": [_row(1, 1.0)], "b": [_row(1, 2.0, id_=123)]},
     )
-    task = ScalerTask(output="scaler.json")
+    task = ScalerTask(path="scaler.json")
     events: list[ExecutionEvent] = []
     with execution_observer(events.append):
         with pytest.raises(TypeError, match="Sample key field 'id_'.*string.*integer"):
             _build(runtime, workers, task)
-    assert not (runtime.artifacts_root / task.output).exists()
+    assert not (runtime.artifacts_root / task.path).exists()
     assert [
         event.status
         for event in events
         if isinstance(event, PipelineFinished)
         and event.pipeline_name == "scaler:artifact"
     ] == ["error"]
+    with pytest.raises(TypeError, match="Sample key field 'id_'.*string.*integer"):
+        _build_from_series(runtime, workers, task)
 
 
 @pytest.mark.parametrize("workers", [1, 2])
 def test_scaler_workers_require_global_observations(tmp_path, workers) -> None:
     runtime = _runtime(tmp_path / "project", {"a": [], "b": []})
-    task = ScalerTask(output="scaler.json")
+    task = ScalerTask(path="scaler.json")
     with pytest.raises(RuntimeError, match="produced no observations for dataset"):
-        _build(runtime, workers, task)
-    assert not (runtime.artifacts_root / task.output).exists()
+        _build_from_streams(runtime, workers, task)
+    # A full build stops earlier: the series it now depends on has no rows at all.
+    with pytest.raises(ValueError, match="Sample key fields produced no values"):
+        _build_from_series(runtime, workers, task)
+    assert not (runtime.artifacts_root / task.path).exists()
 
 
 @pytest.mark.parametrize("workers", [1, 2])
@@ -444,12 +492,13 @@ def test_scaler_workers_reject_series_seen_only_outside_training(
             "folds": [{"id": "fold", "train": ["train"], "validation": ["validation"]}],
         },
     )
-    task = ScalerTask(output="scaler.json")
-    with pytest.raises(
-        (RuntimeError, StreamWorkerError), match="no training observations.*b"
-    ):
-        _build(runtime, workers, task)
-    assert not (runtime.artifacts_root / task.output).exists()
+    task = ScalerTask(path="scaler.json")
+    for build in (_build_from_streams, _build_from_series):
+        with pytest.raises(
+            (RuntimeError, StreamWorkerError), match="no training observations.*b"
+        ):
+            build(runtime, workers, task)
+    assert not (runtime.artifacts_root / task.path).exists()
 
 
 def test_scaler_workers_reject_unobserved_list_position_despite_other_stream(
@@ -458,10 +507,13 @@ def test_scaler_workers_reject_unobserved_list_position_despite_other_stream(
     runtime = _runtime(
         tmp_path / "project", {"a": [_row(1, [None, None])], "b": [_row(1, 2.0)]}
     )
-    task = ScalerTask(output="scaler.json")
-    with pytest.raises(RuntimeError, match="no numeric observations.*positions: 0, 1"):
-        _build(runtime, 2, task)
-    assert not (runtime.artifacts_root / task.output).exists()
+    task = ScalerTask(path="scaler.json")
+    for build in (_build_from_streams, _build_from_series):
+        with pytest.raises(
+            RuntimeError, match="no numeric observations.*positions: 0, 1"
+        ):
+            build(runtime, 2, task)
+    assert not (runtime.artifacts_root / task.path).exists()
 
 
 def test_scaler_worker_failure_preserves_published_artifact_and_cleans_spills(
@@ -469,7 +521,7 @@ def test_scaler_worker_failure_preserves_published_artifact_and_cleans_spills(
 ) -> None:
     rows = [_row(day, float(day), padding="x" * 600_000) for day in (4, 3, 2, 1)]
     runtime = _runtime(tmp_path / "project", {"a": rows, "b": rows})
-    task = ScalerTask(output="scaler.json")
+    task = ScalerTask(path="scaler.json")
     expected, _ = _build(runtime, 1, task)
     rows[-1]["value"] = "invalid numeric value"
     _write_rows(tmp_path / "project" / "data" / "b.jsonl", rows)
@@ -477,14 +529,14 @@ def test_scaler_worker_failure_preserves_published_artifact_and_cleans_spills(
     with pytest.raises(StreamWorkerError, match="Stream 'b' failed:.*numeric or None"):
         _build(runtime, 2, task)
 
-    assert (runtime.artifacts_root / task.output).read_bytes() == expected
+    assert (runtime.artifacts_root / task.path).read_bytes() == expected
 
 
 def test_scaler_workers_report_each_stream_in_its_own_scope(tmp_path) -> None:
     runtime = _runtime(tmp_path / "project", {"a": [_row(1, 1.0)], "b": [_row(1, 2.0)]})
     events: list[ExecutionEvent] = []
     with execution_observer(events.append):
-        _build(runtime, 2, ScalerTask(output="scaler.json"))
+        _build(runtime, 2, ScalerTask(path="scaler.json"))
 
     starts = {
         event.event.pipeline_name: event.scope
@@ -519,5 +571,82 @@ def test_scaler_runs_inline_for_one_worker_or_one_stream(
         pytest.fail("One-worker or one-stream scaler builds must run inline")
 
     monkeypatch.setattr(multiprocessing.process.BaseProcess, "start", fail_start)
-    _, meta = _build(runtime, workers, ScalerTask(output="scaler.json"))
+    _, meta = _build(runtime, workers, ScalerTask(path="scaler.json"))
     assert meta == {"series": len(streams), "observations": len(streams)}
+
+
+def test_scaler_refits_from_streams_when_series_fits_used_other_settings(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "project"
+    split = {
+        "mode": "time",
+        "intervals": [
+            {"id": "train", "until": "2024-01-03T00:00:00Z"},
+            {"id": "validation"},
+        ],
+        "folds": [{"id": "fold", "train": ["train"], "validation": ["validation"]}],
+    }
+    runtime = _runtime(
+        root, {"a": [_row(day, float(day)) for day in (1, 2, 3, 4)]}, split=split
+    )
+    task = ScalerTask(path="scaler.json")
+    series = _build_series(runtime)
+
+    # Move the training boundary; the series itself does not depend on the split.
+    dataset_path = root / "datasets" / "default.yaml"
+    dataset_path.write_text(
+        dataset_path.read_text(encoding="utf-8").replace(
+            "2024-01-03T00:00:00Z", "2024-01-04T00:00:00Z"
+        ),
+        encoding="utf-8",
+    )
+    moved = compile_runtime(load_project_definition(root / "project.yaml"), "default")
+    expected = _build_from_streams(moved, 1, task)
+
+    refits: list[str] = []
+    fit_from_streams = scaler_module._fit_from_streams
+
+    def count_refit(*args):
+        refits.append(args[1].split.intervals[0].until)
+        return fit_from_streams(*args)
+
+    monkeypatch.setattr(scaler_module, "_fit_from_streams", count_refit)
+    _register_series(moved, series)
+    result = build_scaler_artifact(moved, task)
+
+    assert refits == ["2024-01-04T00:00:00Z"]
+    assert (moved.artifacts_root / task.path).read_bytes() == expected[0]
+    assert result.meta == expected[1]
+    fold = load_scaler_artifact(moved.artifacts_root / task.path).folds["fold"]
+    assert fold.scalers["a"].statistics.count == 3
+
+
+def test_series_survives_values_the_scaler_cannot_fit(tmp_path) -> None:
+    runtime = _runtime(tmp_path / "project", {"a": [_row(1, 1.0), _row(2, "n/a")]})
+    series = _build_series(runtime)
+
+    # Series consumers such as coverage keep working; only the scaler fails.
+    manifest = load_series_manifest(runtime.artifacts_root / series[1])
+    assert manifest.rows == 2
+    assert manifest.scaler_fits is None
+    _register_series(runtime, series)
+    with pytest.raises(TypeError, match="numeric or None, got 'n/a'"):
+        build_scaler_artifact(runtime, ScalerTask(path="scaler.json"))
+
+
+@pytest.mark.parametrize("stored", ['{"format": 999}', "not json"])
+def test_unreadable_series_fits_fall_back_to_refitting(tmp_path, stored) -> None:
+    runtime = _runtime(tmp_path / "project", {"a": [_row(1, 1.0), _row(2, 3.0)]})
+    task = ScalerTask(path="scaler.json")
+    expected = _build_from_streams(runtime, 1, task)
+    series = _build_series(runtime)
+    manifest_path = runtime.artifacts_root / series[1]
+    fits_path = manifest_path.parent / load_series_manifest(manifest_path).scaler_fits
+    fits_path.write_text(stored, encoding="utf-8")
+    _register_series(runtime, series)
+
+    result = build_scaler_artifact(runtime, task)
+
+    assert (runtime.artifacts_root / task.path).read_bytes() == expected[0]
+    assert result.meta == expected[1]

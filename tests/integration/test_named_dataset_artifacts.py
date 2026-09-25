@@ -122,7 +122,7 @@ def test_explicit_operations_reuse_default_artifacts_and_preserve_dataset_output
                 "dataset": "alpha",
                 "path": implicit.definition.artifact_graph.tasks_by_id[
                     f"dataset.alpha.{kind}"
-                ].output,
+                ].path,
             },
         )
     explicit = build_runtime_run_request(

@@ -314,13 +314,13 @@ missing or stale series artifact. Equal-key rows retain their original stream
 and record order. Runs are written even when a stream fits in memory.
 With `workers: 1` or a single selected stream, preparation runs inline. Larger
 values allow up to that many stream pipelines to run in separate processes,
-including their source sorting, transforms, and final sample ordering.
-Scaler artifact builds use the same worker limit: each worker processes a scaled
-stream and fits all its folds in one pass. Exact statistics are combined and
-validated before writing the scaler artifact; no additional sorted output runs
-are needed for fitting. Other operations remain sequential. Each subprocess
-constructs fresh plugin instances from the resolved configuration; plugins must be installed and available to
-child processes. Increasing workers can increase memory and disk use:
+including their source sorting, transforms, and final sample ordering. The same
+series pass fits the scaler, so a scaled dataset reads each stream once per
+build. When the scaler must refit from streams (see [Artifacts](artifacts.md)),
+it uses the same worker limit. Other operations remain sequential. Each
+subprocess constructs fresh plugin instances from the resolved configuration;
+plugins must be installed and available to child processes. Workers stop when
+the parent process exits, including after `SIGTERM` or `SIGKILL`. Increasing workers can increase memory and disk use:
 `sort_buffer_mb` still applies to each active sort, and a stream can contain
 multiple sorts. Start with `workers: 2` and measure your workload before
 increasing it.
@@ -408,10 +408,10 @@ options: {}
 - Artifact operations use `path` for their file relative to `paths.artifacts`.
   Dataset artifacts keep their default paths when omitted. Schedule and custom
   artifact operations require `path`. Profile output settings remain `output`.
-- All output entrypoints resolve in `jerrythomas.operations.runtime`; all
-  artifact entrypoints resolve in `jerrythomas.operations.build`. Built-ins and
+- All output entrypoints resolve in `jerrythomas.operations.output`; all
+  artifact entrypoints resolve in `jerrythomas.operations.artifact`. Built-ins and
   plugins use the same registration lookup. Jerry registers its built-ins in
-  `pyproject.toml`. These Python group names are unchanged by the YAML kind names.
+  `pyproject.toml`. The group names match the YAML `kind` values.
 - `requires` declares additional prerequisite artifact operation IDs for custom or
   built-in output operations. Each referenced artifact and its dependency chain must
   have available producer operations.

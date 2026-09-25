@@ -17,7 +17,7 @@ from jerrythomas.operations.persistence import (
     WrittenOutput,
     persist_runtime_result,
 )
-from jerrythomas.operations.runtime.execution import OutputOptions, run_output_operation
+from jerrythomas.operations.outputs.execution import OutputOptions, run_output_operation
 from jerrythomas.services.definitions import ProjectDefinition
 
 from .models import ExportJob, RuntimeJob

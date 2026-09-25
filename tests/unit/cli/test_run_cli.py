@@ -18,7 +18,7 @@ from jerrythomas.config.profiles.inspect import InspectProfile
 from jerrythomas.config.profiles.output import ServeOutputConfig
 from jerrythomas.config.profiles.serve import ServeProfile
 from jerrythomas.config.streams import SourceStreamConfig, StreamsConfig
-from jerrythomas.config.tasks.base import PluginRuntimeTask, RuntimeTask
+from jerrythomas.config.tasks.base import PluginOutputTask, OutputTask
 from jerrythomas.config.tasks.dataset import DatasetTask
 from jerrythomas.config.tasks.coverage import CoverageTask
 from jerrythomas.config.tasks.matrix import MatrixTask
@@ -33,10 +33,10 @@ from tests.unit.profiles.helpers import project_definition
 def _definition(
     project_path: Path,
     split: HashSplitConfig | TimeSplitConfig | None = None,
-    runtime_operations: tuple[RuntimeTask, ...] | None = None,
+    output_operations: tuple[OutputTask, ...] | None = None,
 ):
-    if runtime_operations is None:
-        runtime_operations = (
+    if output_operations is None:
+        output_operations = (
             DatasetTask(id="serve", dataset="default"),
             DatasetTask(id="dataset", dataset="default"),
             CoverageTask(id="coverage", dataset="default"),
@@ -48,7 +48,7 @@ def _definition(
             sample=SampleConfig(rounding="ceil", cadence="1h"),
             split=split,
         ),
-        runtime_operations=runtime_operations,
+        output_operations=output_operations,
     )
 
 
@@ -61,10 +61,10 @@ def _resolve_serve(
     cli_log_outputs: list[LogOutputTarget] | None = None,
     cli_heartbeat_interval_seconds: float | None = None,
     split: HashSplitConfig | TimeSplitConfig | None = None,
-    runtime_operations: tuple[RuntimeTask, ...] | None = None,
+    output_operations: tuple[OutputTask, ...] | None = None,
 ):
     return resolve_serve_profiles(
-        definition=_definition(project_path, split, runtime_operations),
+        definition=_definition(project_path, split, output_operations),
         profiles=profiles,
         preview=preview,
         limit=limit,
@@ -214,7 +214,7 @@ def test_dataset_serve_defaults_to_dataset_output_ids(tmp_path):
         tmp_path / "project.yaml",
         [profile],
         split=split,
-        runtime_operations=(DatasetTask(id="dataset"),),
+        output_operations=(DatasetTask(id="dataset"),),
     )[0]
 
     assert resolved.output_ids == ("default.train", "default.validation")
@@ -258,7 +258,7 @@ def test_dataset_serve_defaults_to_every_walk_forward_output(tmp_path):
         tmp_path / "project.yaml",
         [profile],
         split=split,
-        runtime_operations=(DatasetTask(id="dataset"),),
+        output_operations=(DatasetTask(id="dataset"),),
     )[0]
 
     assert resolved.output_ids == (
@@ -277,7 +277,7 @@ def test_dataset_serve_without_dataset_split_emits_combined_output(tmp_path):
     resolved = _resolve_serve(
         tmp_path / "project.yaml",
         [profile],
-        runtime_operations=(DatasetTask(id="dataset"),),
+        output_operations=(DatasetTask(id="dataset"),),
     )[0]
 
     assert resolved.output_ids == ()
@@ -305,7 +305,7 @@ def test_dataset_preview_bypasses_default_routed_outputs(tmp_path):
             ratios={"train": 0.8, "test": 0.2},
             folds=[DatasetFold(id="default", train=["train"], test=["test"])],
         ),
-        runtime_operations=(DatasetTask(id="dataset"),),
+        output_operations=(DatasetTask(id="dataset"),),
     )[0]
 
     assert resolved.preview == "postprocess"
@@ -351,7 +351,7 @@ def test_dataset_preview_plans_every_output_id(
             ],
         ),
         streams=streams,
-        runtime_operations=(DatasetTask(id="dataset"),),
+        output_operations=(DatasetTask(id="dataset"),),
     )
     profile = ServeProfile.model_validate(
         {"cmd": "serve", "name": "dataset", "operation": "dataset"}
@@ -387,7 +387,7 @@ def test_dataset_preview_rejects_explicit_include_outputs(tmp_path):
                 ratios={"train": 1.0},
                 folds=[DatasetFold(id="default", train=["train"])],
             ),
-            runtime_operations=(DatasetTask(id="dataset"),),
+            output_operations=(DatasetTask(id="dataset"),),
         )
 
 
@@ -403,8 +403,8 @@ def test_non_dataset_serve_profile_does_not_inherit_routed_outputs(tmp_path):
             ratios={"train": 1.0},
             folds=[DatasetFold(id="default", train=["train"])],
         ),
-        runtime_operations=(
-            PluginRuntimeTask(id="custom", entrypoint="plugin.runtime.custom"),
+        output_operations=(
+            PluginOutputTask(id="custom", entrypoint="plugin.runtime.custom"),
         ),
     )
 
@@ -536,7 +536,7 @@ def test_include_outputs_cannot_publish_internal_dataset_label(tmp_path):
             tmp_path / "project.yaml",
             [profile],
             split=split,
-            runtime_operations=(DatasetTask(id="dataset"),),
+            output_operations=(DatasetTask(id="dataset"),),
         )
 
 
@@ -573,7 +573,7 @@ def test_default_split_output_rejects_stdout(tmp_path):
                 ratios={"train": 1.0},
                 folds=[DatasetFold(id="default", train=["train"])],
             ),
-            runtime_operations=(DatasetTask(id="dataset"),),
+            output_operations=(DatasetTask(id="dataset"),),
         )
 
 
@@ -629,7 +629,7 @@ def test_default_split_output_uses_explicit_filename_as_base(tmp_path):
             ratios={"train": 1.0},
             folds=[DatasetFold(id="default", train=["train"])],
         ),
-        runtime_operations=(DatasetTask(id="dataset"),),
+        output_operations=(DatasetTask(id="dataset"),),
     )[0]
 
     assert (

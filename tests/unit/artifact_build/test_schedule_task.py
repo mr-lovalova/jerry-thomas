@@ -94,7 +94,7 @@ def test_schedule_task_rejects_time_as_partition_field() -> None:
             id="schedule",
             stream="source.stream",
             partition_by=["time"],
-            output="build/schedule.jsonl",
+            path="build/schedule.jsonl",
         )
 
 
@@ -106,11 +106,11 @@ def test_build_schedule_artifact_writes_sorted_unique_rows(tmp_path) -> None:
         entrypoint="core.schedule",
         stream="source.stream",
         partition_by=[],
-        output="build/schedule.jsonl",
+        path="build/schedule.jsonl",
     )
     result = build_schedule_artifact(runtime, task)
 
-    path = runtime.artifacts_root / task.output
+    path = runtime.artifacts_root / task.path
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows == [
         {"time": "2024-01-01T00:00:00Z"},
@@ -139,11 +139,11 @@ def test_build_schedule_artifact_writes_partitioned_rows(tmp_path) -> None:
         entrypoint="core.schedule",
         stream="source.stream",
         partition_by=["security_id"],
-        output="build/schedule.jsonl",
+        path="build/schedule.jsonl",
     )
     result = build_schedule_artifact(runtime, task)
 
-    path = runtime.artifacts_root / task.output
+    path = runtime.artifacts_root / task.path
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows == [
         {"time": "2024-01-01T00:00:00Z", "security_id": "AAPL"},
@@ -181,11 +181,11 @@ def test_build_schedule_artifact_reuses_matching_stream_order(
         entrypoint="core.schedule",
         stream="source.stream",
         partition_by=["security_id"],
-        output="build/schedule.jsonl",
+        path="build/schedule.jsonl",
     )
     build_schedule_artifact(runtime, task)
 
-    path = runtime.artifacts_root / task.output
+    path = runtime.artifacts_root / task.path
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows == [
         {"time": "2024-01-01T00:00:00Z", "security_id": "AAPL"},
@@ -227,11 +227,11 @@ def test_build_schedule_artifact_reuses_aligned_stream_order(
         entrypoint="core.schedule",
         stream="aligned.stream",
         partition_by=["security_id"],
-        output="build/schedule.jsonl",
+        path="build/schedule.jsonl",
     )
     build_schedule_artifact(runtime, task)
 
-    path = runtime.artifacts_root / task.output
+    path = runtime.artifacts_root / task.path
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows == [
         {"time": "2024-01-01T00:00:00Z", "security_id": "AAPL"},
@@ -266,7 +266,7 @@ def test_build_schedule_artifact_rejects_broken_matching_order_atomically(
                 entrypoint="core.schedule",
                 stream="source.stream",
                 partition_by=["security_id"],
-                output="build/schedule.jsonl",
+                path="build/schedule.jsonl",
             ),
         )
 
@@ -288,7 +288,7 @@ def test_build_schedule_artifact_rejects_missing_partition_field(tmp_path) -> No
                 entrypoint="core.schedule",
                 stream="source.stream",
                 partition_by=["security_id"],
-                output="build/schedule.jsonl",
+                path="build/schedule.jsonl",
             ),
         )
 
@@ -321,7 +321,7 @@ def test_build_schedule_artifact_rejects_non_finite_partition_values_atomically(
                 entrypoint="core.schedule",
                 stream="source.stream",
                 partition_by=["security_id"],
-                output="build/schedule.jsonl",
+                path="build/schedule.jsonl",
             ),
         )
 
@@ -357,7 +357,7 @@ def test_build_schedule_artifact_rejects_mixed_partition_types_atomically(
                 entrypoint="core.schedule",
                 stream="source.stream",
                 partition_by=["security_id"],
-                output="build/schedule.jsonl",
+                path="build/schedule.jsonl",
             ),
         )
 
@@ -383,11 +383,11 @@ def test_build_schedule_artifact_uses_stream_transforms(
         entrypoint="core.schedule",
         stream="derived.stream",
         partition_by=[],
-        output="build/derived_schedule.jsonl",
+        path="build/derived_schedule.jsonl",
     )
     build_schedule_artifact(runtime, task)
 
-    path = runtime.artifacts_root / task.output
+    path = runtime.artifacts_root / task.path
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows == [
         {"time": "2024-01-01T00:30:00Z"},

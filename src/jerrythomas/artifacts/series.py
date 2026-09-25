@@ -30,7 +30,7 @@ from jerrythomas.io.sinks.files import GzipBinarySink
 from jerrythomas.services.path_policy import resolve_artifact_output_path
 from jerrythomas.utils.time import CADENCE_PATTERN, TimeRounding, parse_datetime
 
-SERIES_MANIFEST_VERSION: Final = 13
+SERIES_MANIFEST_VERSION: Final = 14
 _SERIES_COMPRESSION_LEVEL: Final = 3
 _NonEmptyString = Annotated[
     str,
@@ -55,13 +55,15 @@ class SeriesEntry(BaseModel):
 class SeriesManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    version: Literal[13] = SERIES_MANIFEST_VERSION
+    version: Literal[14] = SERIES_MANIFEST_VERSION
     format: Literal["jsonl.gz"] = "jsonl.gz"
     cadence: str = Field(pattern=CADENCE_PATTERN)
     rounding: TimeRounding
     sample_keys: tuple[_NonEmptyString, ...] = ()
     sample_key_types: tuple[SampleKeyValueType, ...] = ()
     path: _NonEmptyString
+    # Scaler fits from the same stream pass; see operations/artifacts/scaler_fit.py.
+    scaler_fits: _NonEmptyString | None = None
     rows: int = Field(strict=True, ge=0)
     sha256: _Sha256
     features: tuple[SeriesEntry, ...] = ()
@@ -74,12 +76,14 @@ class SeriesManifest(BaseModel):
             raise ValueError("sample keys must be unique")
         return keys
 
-    @field_validator("path")
+    @field_validator("path", "scaler_fits")
     @classmethod
-    def validate_relative_path(cls, value: str) -> str:
+    def validate_relative_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         path = Path(value)
         if path.is_absolute() or ".." in path.parts:
-            raise ValueError("series data path must be relative to the manifest")
+            raise ValueError("series data paths must be relative to the manifest")
         return str(path)
 
     @model_validator(mode="after")
@@ -203,12 +207,15 @@ def load_series_manifest(path: Path) -> SeriesManifest:
         ) from exc
 
     root = path.parent.resolve()
-    try:
-        (root / manifest.path).resolve().relative_to(root)
-    except ValueError as exc:
-        raise ValueError(
-            f"Series data '{manifest.path}' escapes manifest directory '{root}'."
-        ) from exc
+    for relative in (manifest.path, manifest.scaler_fits):
+        if relative is None:
+            continue
+        try:
+            (root / relative).resolve().relative_to(root)
+        except ValueError as exc:
+            raise ValueError(
+                f"Series data '{relative}' escapes manifest directory '{root}'."
+            ) from exc
     return manifest
 
 

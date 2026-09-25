@@ -16,7 +16,11 @@ from jerrythomas.config.profiles.defaults import (
 from jerrythomas.config.profiles.inspect import InspectProfile
 from jerrythomas.config.profiles.export import ExportProfile
 from jerrythomas.config.profiles.serve import ServeProfile
-from jerrythomas.services.definitions import ProjectDefinition, ProjectManifest
+from jerrythomas.services.definitions import (
+    DATASET_VARIABLES,
+    ProjectDefinition,
+    ProjectManifest,
+)
 from jerrythomas.io.yaml import read_yaml_document
 
 ProfileModel = Annotated[
@@ -45,13 +49,7 @@ PROFILE_DEFAULTS_ADAPTER: TypeAdapter[ProfileDefaultsModel] = TypeAdapter(
 
 def _load_profile_doc(path: Path, project: ProjectManifest):
     document = read_yaml_document(path, require_mapping=False)
-    return project.resolve_config(
-        document.data,
-        variables={
-            "dataset_id": "${dataset_id}",
-            "dataset_version": "${dataset_version}",
-        },
-    )
+    return project.resolve_config(document.data, deferred=DATASET_VARIABLES)
 
 
 def _profile_identity_from_filename(
@@ -226,7 +224,7 @@ def bind_profile(
         raise TypeError("Profiles must select an operation")
     operations = {
         **definition.artifact_graph.tasks_by_id,
-        **{task.id: task for task in definition.runtime_operations},
+        **{task.id: task for task in definition.output_operations},
     }
     operation = operations.get(profile.operation)
     if operation is None:

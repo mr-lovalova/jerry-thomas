@@ -93,13 +93,13 @@ check_untyped_defs = true
 "core.identity" = "jerrythomas.parsers.identity:IdentityParser"
 "core.record" = "jerrythomas.parsers.temporal_record:TemporalRecordParser"
 
-[project.entry-points."jerrythomas.operations.runtime"]
-"core.records" = "jerrythomas.operations.runtime.records:run_records_operation"
-"core.dataset" = "jerrythomas.operations.runtime.dataset:run_dataset_operation"
-"core.availability_matrix" = "jerrythomas.operations.runtime.matrix:run_matrix_operation"
-"core.coverage_report" = "jerrythomas.operations.runtime.coverage:run_coverage_operation"
+[project.entry-points."jerrythomas.operations.output"]
+"core.records" = "jerrythomas.operations.outputs.records:run_records_operation"
+"core.dataset" = "jerrythomas.operations.outputs.dataset:run_dataset_operation"
+"core.availability_matrix" = "jerrythomas.operations.outputs.matrix:run_matrix_operation"
+"core.coverage_report" = "jerrythomas.operations.outputs.coverage:run_coverage_operation"
 
-[project.entry-points."jerrythomas.operations.build"]
+[project.entry-points."jerrythomas.operations.artifact"]
 "core.dataset_series" = "jerrythomas.operations.artifacts.series:build_series_artifact"
 "core.dataset_metadata" = "jerrythomas.operations.artifacts.metadata:build_metadata_artifact"
 "core.scaler" = "jerrythomas.operations.artifacts.scaler:build_scaler_artifact"

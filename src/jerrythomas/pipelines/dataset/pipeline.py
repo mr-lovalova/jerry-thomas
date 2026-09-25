@@ -55,7 +55,7 @@ def resolve_fold_output_plans(
     metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     if not isinstance(metadata.layout, FoldedMetadataLayout):
         raise RuntimeError(
-            "Split dataset requires folded metadata. Rebuild build/metadata.json."
+            "Split dataset requires folded metadata. Rebuild the dataset metadata artifact."
         )
     metadata_by_fold = {fold.id: fold for fold in metadata.layout.folds}
     selected: dict[
@@ -77,7 +77,7 @@ def resolve_fold_output_plans(
         if output_metadata is None or output_metadata.labels != labels:
             raise RuntimeError(
                 f"Metadata contract for dataset output {output_id!r} does not "
-                "match the configured fold. Rebuild build/metadata.json."
+                "match the configured fold. Rebuild the dataset metadata artifact."
             )
         entry = selected.get(fold.id)
         if entry is None:

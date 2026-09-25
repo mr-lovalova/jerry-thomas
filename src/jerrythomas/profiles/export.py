@@ -51,7 +51,7 @@ def resolve_export_jobs(
         raise ValueError("An export output override requires one selected profile.")
 
     project_path = definition.project.path
-    operations = {task.id: task for task in definition.runtime_operations}
+    operations = {task.id: task for task in definition.output_operations}
     jobs: list[ExportJob] = []
     for profile in profiles:
         task = operations.get(profile.operation)

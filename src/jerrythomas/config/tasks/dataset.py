@@ -2,8 +2,8 @@ from typing import Literal
 
 from pydantic import Field
 
-from .base import RuntimeTask
+from .base import OutputTask
 
 
-class DatasetTask(RuntimeTask):
+class DatasetTask(OutputTask):
     entrypoint: Literal["core.dataset"] = Field(default="core.dataset")

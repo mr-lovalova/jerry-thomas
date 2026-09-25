@@ -11,7 +11,7 @@ from jerrythomas.operations.persistence import (
 from jerrythomas.io.output import OutputTarget
 from jerrythomas.io.runs import export_receipt_path
 from jerrythomas.io.recipes import recipe_path
-from jerrythomas.operations.runtime.execution import OutputOptions, run_output_operation
+from jerrythomas.operations.outputs.execution import OutputOptions, run_output_operation
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.execution_lock import output_lock_path
 

@@ -4,6 +4,7 @@ import pytest
 
 from jerrythomas.artifacts import fingerprints
 from jerrythomas.artifacts.fingerprints import calculate_artifact_hashes
+from jerrythomas.operations.artifacts.scaler_fit import scaler_fit_identity
 from jerrythomas.artifacts.planning import build_artifact_graph
 from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
 from jerrythomas.config.dataset.series import (
@@ -388,7 +389,7 @@ def test_runtime_operation_change_does_not_change_artifact_hashes(
     )
     second = load_project_definition(project_yaml)
 
-    assert second.runtime_operations != first.runtime_operations
+    assert second.output_operations != first.output_operations
     assert second.artifact_hashes == first.artifact_hashes
 
 
@@ -417,9 +418,9 @@ def test_custom_artifact_change_does_not_change_core_artifact_hashes(
     first_task = ArtifactTask(
         id="snapshot",
         entrypoint="plugin.snapshot",
-        output="build/first.json",
+        path="build/first.json",
     )
-    second_task = first_task.model_copy(update={"output": "build/second.json"})
+    second_task = first_task.model_copy(update={"path": "build/second.json"})
     base_tasks = tuple(definition.artifact_graph.tasks_by_id.values())
 
     first = calculate_artifact_hashes(
@@ -636,7 +637,7 @@ def test_feature_and_target_scaling_settings_only_invalidate_scaler(
     )
 
 
-def test_collection_policy_invalidates_series_but_not_scaler(
+def test_collection_policy_invalidates_series_and_reuses_scaler_fits(
     tmp_path: Path,
 ) -> None:
     definition = load_project_definition(_write_project(tmp_path))
@@ -678,11 +679,12 @@ def test_collection_policy_invalidates_series_but_not_scaler(
         build_artifact_graph(operations, {"default": collected}, streams),
     )
 
-    assert collected_hashes.for_artifact("dataset.default.scaler") == (
-        scalar_hashes.for_artifact("dataset.default.scaler")
-    )
+    # The scaler follows its series dependency, but finishes from the stored fits:
+    # collection does not change what the series pass fits.
+    assert scaler_fit_identity(collected) == scaler_fit_identity(scalar)
     for artifact in (
         "dataset.default.series",
+        "dataset.default.scaler",
         "dataset.default.metadata",
         "dataset.default.coverage_stats",
     ):
@@ -965,7 +967,10 @@ def test_target_horizon_does_not_change_standard_scaler_fingerprint(
         {"default": baseline},
         streams,
         build_artifact_graph(
-            (ScalerTask(id="dataset.default.scaler", dataset="default"),),
+            (
+                ScalerTask(id="dataset.default.scaler", dataset="default"),
+                SeriesTask(id="dataset.default.series", dataset="default"),
+            ),
             {"default": baseline},
             streams,
         ),
@@ -975,7 +980,10 @@ def test_target_horizon_does_not_change_standard_scaler_fingerprint(
         {"default": changed},
         streams,
         build_artifact_graph(
-            (ScalerTask(id="dataset.default.scaler", dataset="default"),),
+            (
+                ScalerTask(id="dataset.default.scaler", dataset="default"),
+                SeriesTask(id="dataset.default.series", dataset="default"),
+            ),
             {"default": changed},
             streams,
         ),

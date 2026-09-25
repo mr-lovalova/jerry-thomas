@@ -11,11 +11,20 @@ from jerrythomas.artifacts.state import ArtifactFileFingerprint, load_build_stat
 from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.config.sources import FsLoaderConfig
 from jerrythomas.config.streams import SourceStreamConfig
-from jerrythomas.config.tasks.base import PluginRuntimeTask
+from jerrythomas.config.tasks.base import PluginOutputTask
 from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.io.recipes import RunRecipe
 from jerrythomas.io.runs import export_receipt_path
-from jerrythomas.plugins import plugin_distributions
+from jerrythomas.plugins import (
+    ARTIFACT_OPERATIONS_EP,
+    COMBINERS_EP,
+    LOADERS_EP,
+    MAPPERS_EP,
+    OUTPUT_OPERATIONS_EP,
+    PARSERS_EP,
+    TRANSFORMS_EP,
+    plugin_distributions,
+)
 from jerrythomas.profiles.models import ExportJob, RuntimeJob
 from jerrythomas.services.definitions import ProjectDefinition
 from jerrythomas.services.path_policy import resolve_relative_fs_loader_path
@@ -51,7 +60,7 @@ def capture_recipe(
         "Package versions and Git state do not prove which code was loaded.",
     ]
     if any(
-        isinstance(job, RuntimeJob) and isinstance(job.task, PluginRuntimeTask)
+        isinstance(job, RuntimeJob) and isinstance(job.task, PluginOutputTask)
         for job in jobs
     ):
         roots.update(streams.streams)
@@ -238,20 +247,20 @@ def _implementation(project_dir: Path, configuration: dict[str, Any]) -> dict[st
 
     def include(group: str, value: dict[str, Any]) -> None:
         if "entrypoint" in value:
-            selected.add((f"jerrythomas.{group}", value["entrypoint"]))
+            selected.add((group, value["entrypoint"]))
 
     for source in configuration["sources"].values():
-        include("parsers", source["parser"])
-        include("loaders", source["loader"])
+        include(PARSERS_EP, source["parser"])
+        include(LOADERS_EP, source["loader"])
     for stream in configuration["streams"].values():
-        include("mappers", stream.get("map", {}))
-        include("combiners", stream.get("combine", {}))
+        include(MAPPERS_EP, stream.get("map", {}))
+        include(COMBINERS_EP, stream.get("combine", {}))
         for transform in stream["transforms"]:
-            include("transforms", transform)
+            include(TRANSFORMS_EP, transform)
     for task in configuration["artifacts"].values():
-        include("operations.build", task)
+        include(ARTIFACT_OPERATIONS_EP, task)
     for job in configuration["jobs"]:
-        include("operations.runtime", job.get("operation", {}))
+        include(OUTPUT_OPERATIONS_EP, job.get("operation", {}))
 
     packages = {}
     repositories = {str(project_dir): _git_identity(project_dir)}

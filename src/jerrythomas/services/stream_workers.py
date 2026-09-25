@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
+import os
 import signal
 import tempfile
 import threading
@@ -28,6 +29,11 @@ from jerrythomas.services.runtime_compiler import (
     compile_runtime_snapshot,
     snapshot_runtime,
 )
+
+logger = logging.getLogger(__name__)
+
+# How long a process may take to exit after its stream completed before it is stopped.
+_EXIT_TIMEOUT_SECONDS = 5.0
 
 
 class StreamJob(Protocol):
@@ -94,8 +100,26 @@ class _WorkerLogHandler(logging.Handler):
         self.send_lock = lock
 
     def emit(self, record: logging.LogRecord) -> None:
-        with self.send_lock:
-            self.connection.send(_Log(record.name, record.levelno, self.format(record)))
+        # Like any handler, a bad log call must be reported, never fail the stream.
+        try:
+            message = _Log(record.name, record.levelno, self.format(record))
+            with self.send_lock:
+                self.connection.send(message)
+        except Exception:
+            self.handleError(record)
+
+
+def _exit_with_parent() -> None:
+    """Stop this worker when its parent dies, for example after SIGTERM or SIGKILL."""
+    parent = multiprocessing.parent_process()
+    if parent is None:
+        return
+
+    def watch() -> None:
+        parent.join()
+        os._exit(1)
+
+    threading.Thread(target=watch, name="jerry-parent-watch", daemon=True).start()
 
 
 def _run_stream(
@@ -108,10 +132,12 @@ def _run_stream(
     observe_events: bool,
 ) -> None:
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+    _exit_with_parent()
     tempfile.tempdir = str(temp_root)
     send_lock = threading.Lock()
     root_logger = logging.getLogger()
-    root_logger.handlers = [_WorkerLogHandler(control, send_lock)]
+    handler = _WorkerLogHandler(control, send_lock)
+    root_logger.handlers = [handler]
     root_logger.setLevel(log_level)
 
     def observe(event: ExecutionEvent) -> None:
@@ -135,6 +161,7 @@ def _run_stream(
         with send_lock:
             control.send(failure)
     finally:
+        root_logger.removeHandler(handler)
         control.close()
 
 
@@ -213,11 +240,7 @@ def run_stream_jobs(
                 for worker in tuple(active):
                     if worker.complete is None:
                         continue
-                    worker.process.join(timeout=5)
-                    if worker.process.is_alive() or worker.process.exitcode != 0:
-                        raise StreamWorkerError(
-                            f"Stream '{worker.stream_id}' did not exit successfully."
-                        )
+                    _join_completed(worker)
                     completed[worker.index] = worker.complete.result
                     # Remove before close so cancellation cannot revisit a closed process.
                     active.remove(worker)
@@ -266,6 +289,27 @@ def _check_workers(workers: Sequence[_Worker[_R]]) -> None:
                 f"Stream '{worker.stream_id}' exited without completing "
                 f"(exit code {exitcode})."
             )
+
+
+def _join_completed(worker: _Worker[_R]) -> None:
+    """Wait for a process whose result arrived; a lingering one is stopped, not failed."""
+    worker.process.join(timeout=_EXIT_TIMEOUT_SECONDS)
+    if worker.process.is_alive():
+        logger.warning(
+            "Stream '%s' finished but its process did not exit within %.0fs; "
+            "stopping it.",
+            worker.stream_id,
+            _EXIT_TIMEOUT_SECONDS,
+        )
+        worker.process.terminate()
+        worker.process.join(timeout=_EXIT_TIMEOUT_SECONDS)
+        if worker.process.is_alive():
+            worker.process.kill()
+            worker.process.join()
+    elif worker.process.exitcode != 0:
+        raise StreamWorkerError(
+            f"Stream '{worker.stream_id}' did not exit successfully."
+        )
 
 
 def _close_worker(worker: _Worker[_R]) -> None:

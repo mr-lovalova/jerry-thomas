@@ -13,7 +13,7 @@ def test_fingerprint_artifact_output_requires_declared_file(tmp_path: Path) -> N
     task = ArtifactTask(
         id="snapshot",
         entrypoint="plugin.snapshot",
-        output="snapshot.json",
+        path="snapshot.json",
     )
 
     with pytest.raises(RuntimeError, match="did not create its declared output"):
@@ -32,7 +32,7 @@ def test_fingerprint_artifact_output_snapshots_declared_file(
     task = ArtifactTask(
         id="snapshot",
         entrypoint="plugin.snapshot",
-        output="snapshot.json",
+        path="snapshot.json",
     )
 
     result = ArtifactOutput(meta={"rows": 1})
@@ -57,7 +57,7 @@ def test_fingerprint_artifact_output_validates_companion_files(
     task = ArtifactTask(
         id="series",
         entrypoint="plugin.series",
-        output="manifest.json",
+        path="manifest.json",
     )
 
     files = fingerprint_artifact_output(
@@ -81,7 +81,7 @@ def test_fingerprint_artifact_output_rejects_escaping_companion(
     task = ArtifactTask(
         id="series",
         entrypoint="plugin.series",
-        output="manifest.json",
+        path="manifest.json",
     )
 
     with pytest.raises(ValueError, match="must be relative"):
@@ -101,7 +101,7 @@ def test_fingerprint_artifact_output_rejects_case_colliding_companion(
     task = ArtifactTask(
         id="series",
         entrypoint="plugin.series",
-        output="manifest.json",
+        path="manifest.json",
     )
 
     with pytest.raises(ValueError, match="output paths must be unique"):

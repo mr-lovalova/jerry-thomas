@@ -4,7 +4,7 @@ from jerrythomas.analysis.vector.matrix import MatrixBuilder, render_matrix_html
 from jerrythomas.artifacts.registry import VECTOR_METADATA_SPEC
 from jerrythomas.config.tasks.matrix import MatrixTask
 from jerrythomas.operations.persistence import RuntimeOutput
-from jerrythomas.operations.runtime.execution import OutputOptions
+from jerrythomas.operations.outputs.execution import OutputOptions
 from jerrythomas.pipelines.dataset.pipeline import (
     run_dataset_pipeline,
     run_sample_pipeline,

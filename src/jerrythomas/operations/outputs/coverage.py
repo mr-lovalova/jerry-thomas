@@ -9,7 +9,7 @@ from jerrythomas.artifacts.models import (
 from jerrythomas.artifacts.registry import COVERAGE_STATS_SPEC
 from jerrythomas.config.tasks.coverage import CoverageTask
 from jerrythomas.operations.persistence import RuntimeOutput
-from jerrythomas.operations.runtime.execution import OutputOptions
+from jerrythomas.operations.outputs.execution import OutputOptions
 from jerrythomas.runtime import Runtime
 
 

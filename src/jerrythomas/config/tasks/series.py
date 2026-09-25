@@ -1,9 +1,12 @@
+from typing import ClassVar
+
 from pydantic import Field
 
-from .base import ArtifactTask
+from .base import DatasetArtifactTask
 
 
-class SeriesTask(ArtifactTask):
+class SeriesTask(DatasetArtifactTask):
+    default_filename: ClassVar[str] = "series/manifest.json"
+
     id: str = Field(default="series")
     entrypoint: str = Field(default="core.dataset_series")
-    output: str = Field(default="build/series/manifest.json", validation_alias="path")

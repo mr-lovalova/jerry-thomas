@@ -70,19 +70,19 @@ def test_implementation_identifies_plugins_by_group_and_ignores_argument_payload
     [
         (
             "core.records",
-            "jerrythomas.operations.runtime.records:run_records_operation",
+            "jerrythomas.operations.outputs.records:run_records_operation",
         ),
         (
             "core.dataset",
-            "jerrythomas.operations.runtime.dataset:run_dataset_operation",
+            "jerrythomas.operations.outputs.dataset:run_dataset_operation",
         ),
         (
             "core.availability_matrix",
-            "jerrythomas.operations.runtime.matrix:run_matrix_operation",
+            "jerrythomas.operations.outputs.matrix:run_matrix_operation",
         ),
         (
             "core.coverage_report",
-            "jerrythomas.operations.runtime.coverage:run_coverage_operation",
+            "jerrythomas.operations.outputs.coverage:run_coverage_operation",
         ),
     ],
 )
@@ -102,11 +102,11 @@ def test_recipe_identifies_loadable_builtin_output_registrations(
     assert result["unidentified_entrypoints"] == []
     assert result["entrypoints"] == [
         {
-            "group": plugins.RUNTIME_OPERATIONS_EP,
+            "group": plugins.OUTPUT_OPERATIONS_EP,
             "name": entrypoint,
             "value": target,
             "distribution": "jerry-thomas",
         }
     ]
-    runner = plugins.load_entrypoint(plugins.RUNTIME_OPERATIONS_EP, entrypoint)
+    runner = plugins.load_entrypoint(plugins.OUTPUT_OPERATIONS_EP, entrypoint)
     assert f"{runner.__module__}:{runner.__name__}" == target

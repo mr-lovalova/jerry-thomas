@@ -24,7 +24,7 @@ from jerrythomas.execution.observability import (
     emit_file_result,
     operation_scope,
 )
-from jerrythomas.plugins import BUILD_OPERATIONS_EP, load_entrypoint
+from jerrythomas.plugins import ARTIFACT_OPERATIONS_EP, load_entrypoint
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.definitions import ProjectDefinition
 from jerrythomas.services.runtime_compiler import compile_runtime
@@ -192,7 +192,7 @@ def _execute_build_jobs(
     settings: BuildSettings,
 ) -> BuildState:
     for job in plan.jobs:
-        resolve_artifact_output_path(job.task.output, runtime.artifacts_root)
+        resolve_artifact_output_path(job.task.path, runtime.artifacts_root)
 
     current_state = (
         plan.previous_state.model_copy(deep=True)
@@ -242,7 +242,7 @@ def _execute_build_jobs(
                 artifact_keys=plan.artifacts,
             )
 
-            runner = load_entrypoint(BUILD_OPERATIONS_EP, job.task.entrypoint)
+            runner = load_entrypoint(ARTIFACT_OPERATIONS_EP, job.task.entrypoint)
             operation_result = runner(
                 runtime=runtime,
                 task_cfg=job.task,
@@ -269,11 +269,11 @@ def _execute_build_jobs(
             save_build_state(current_state, runtime.artifacts_root)
             runtime.artifacts.register(
                 job.task.id,
-                relative_path=job.task.output,
+                relative_path=job.task.path,
                 meta=output.meta,
             )
             label = job.task.id.replace("_", " ").capitalize()
-            path = (runtime.artifacts_root / job.task.output).resolve()
+            path = (runtime.artifacts_root / job.task.path).resolve()
             emit_file_result(label, path)
     return current_state
 

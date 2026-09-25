@@ -1,9 +1,8 @@
 import logging
 import shutil
-from collections import Counter, defaultdict
-from collections.abc import Generator, Iterable, Iterator, Sequence
-from dataclasses import dataclass
-from datetime import datetime, timedelta
+from collections import Counter
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from datetime import timedelta
 from functools import partial
 from itertools import groupby
 from pathlib import Path
@@ -19,63 +18,37 @@ from jerrythomas.artifacts.series import (
     series_cache_root,
     write_series_rows,
 )
+from jerrythomas.artifacts.specs import dataset_requires_scaler
 from jerrythomas.config.dataset.series import SeriesConfig
 from jerrythomas.config.tasks.series import SeriesTask
 from jerrythomas.domain.sample_key import SampleKeyContract
-from jerrythomas.domain.series import SeriesSequence
 from jerrythomas.domain.series_id import base_id
-from jerrythomas.execution.pipeline import Input, Pipeline, Stage
+from jerrythomas.execution.pipeline import Input, Pipeline
 from jerrythomas.execution.runner import run_pipeline
 from jerrythomas.io.json_file import write_json_object
+from jerrythomas.operations.artifacts.scaler_fit import (
+    ScalerFits,
+    scaler_fit_identity,
+    write_scaler_fits,
+)
+from jerrythomas.operations.artifacts.series_projection import (
+    ProjectedRow,
+    ProjectedSequence,
+    ProjectedValue,
+    StreamPlan,
+    stream_plans,
+)
 from jerrythomas.operations.artifacts.series_workers import (
     SeriesWorkerProgress,
     order_streams,
 )
-from jerrythomas.pipelines.series.projector import SeriesProjector
-from jerrythomas.pipelines.series.stages import SeriesSequencer
-from jerrythomas.pipelines.stream.pipeline import build_stream_pipeline
-from jerrythomas.runtime import Runtime, require_runtime_stream
+from jerrythomas.runtime import Runtime
 from jerrythomas.services.path_policy import resolve_artifact_output_path
-from jerrythomas.transforms.utils import record_establishes_domain
-from jerrythomas.utils.time import round_time_to_cadence, parse_cadence
+from jerrythomas.utils.time import parse_cadence
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass(frozen=True)
-class _StreamPlan:
-    stream_id: str
-    features: tuple[SeriesConfig, ...]
-    targets: tuple[SeriesConfig, ...]
-
-
-@dataclass(frozen=True)
-class _ProjectedScalar:
-    id: str
-    value: Any
-    establishes_domain: bool
-
-
-@dataclass(frozen=True)
-class _ProjectedSequence:
-    id: str
-    values: list[Any]
-    establishes_domain: bool
-
-
-_ProjectedValue = _ProjectedScalar | _ProjectedSequence
-
-
-@dataclass(frozen=True)
-class _ProjectedRow:
-    key: tuple[Any, ...]
-    time: datetime
-    features: tuple[_ProjectedValue, ...]
-    targets: tuple[_ProjectedValue, ...]
-
-
-def _projected_row_key(row: _ProjectedRow) -> tuple[tuple[Any, ...], datetime]:
-    return row.key, row.time
+SCALER_FITS_FILENAME = "scaler_fits.json"
 
 
 def build_series_artifact(
@@ -83,7 +56,7 @@ def build_series_artifact(
     task_cfg: SeriesTask,
 ) -> ArtifactOutput:
     dataset = runtime.require_dataset()
-    relative_path = Path(task_cfg.output)
+    relative_path = Path(task_cfg.path)
     destination = resolve_artifact_output_path(relative_path, runtime.artifacts_root)
     cache_root = series_cache_root(destination)
     if cache_root.is_symlink():
@@ -96,14 +69,18 @@ def build_series_artifact(
     sample_keys = SampleKeyContract(dataset.sample.keys)
     feature_counts: Counter[str] = Counter()
     target_counts: Counter[str] = Counter()
+    # The scaler reuses fits from this pass instead of reading its streams again.
+    scaler_fits: list[ScalerFits] = []
+    fit_scaler = dataset_requires_scaler(dataset)
 
     try:
         staging_root.mkdir(parents=True)
         projected = _ordered_projected_rows(
             runtime,
-            _stream_plans(dataset.features, dataset.targets),
+            stream_plans(dataset.features, dataset.targets),
             sample_keys,
             parse_cadence(dataset.sample.cadence),
+            scaler_fits.append if fit_scaler else None,
         )
         try:
             rows = _group_series_rows(
@@ -117,14 +94,23 @@ def build_series_artifact(
         finally:
             _close_iterator(projected)
 
-        relative_data_path = Path(cache_root.name) / generation / data_path.name
+        fits_path: Path | None = None
+        if scaler_fits:
+            (fits,) = scaler_fits
+            fits_path = staging_root / SCALER_FITS_FILENAME
+            write_scaler_fits(fits_path, scaler_fit_identity(dataset), fits)
+
+        generation_path = Path(cache_root.name) / generation
         manifest = SeriesManifest(
             version=SERIES_MANIFEST_VERSION,
             cadence=dataset.sample.cadence,
             rounding=dataset.sample.rounding,
             sample_keys=tuple(dataset.sample.keys),
             sample_key_types=sample_keys.types,
-            path=str(relative_data_path),
+            path=str(generation_path / data_path.name),
+            scaler_fits=(
+                str(generation_path / fits_path.name) if fits_path is not None else None
+            ),
             rows=written.rows,
             sha256=written.sha256,
             features=tuple(
@@ -147,9 +133,13 @@ def build_series_artifact(
         _remove_failed_generation(generation_root)
         raise
 
-    companion_path = relative_path.parent / manifest.path
+    companions = (manifest.path, manifest.scaler_fits)
     return ArtifactOutput(
-        companion_paths=(str(companion_path),),
+        companion_paths=tuple(
+            str(relative_path.parent / companion)
+            for companion in companions
+            if companion is not None
+        ),
         meta={
             "features": len(manifest.features),
             "targets": len(manifest.targets),
@@ -159,33 +149,13 @@ def build_series_artifact(
     )
 
 
-def _stream_plans(
-    features: Sequence[SeriesConfig],
-    targets: Sequence[SeriesConfig],
-) -> tuple[_StreamPlan, ...]:
-    feature_configs: dict[str, list[SeriesConfig]] = defaultdict(list)
-    target_configs: dict[str, list[SeriesConfig]] = defaultdict(list)
-    for config in features:
-        feature_configs[config.stream].append(config)
-    for config in targets:
-        target_configs[config.stream].append(config)
-
-    return tuple(
-        _StreamPlan(
-            stream_id=stream_id,
-            features=tuple(feature_configs[stream_id]),
-            targets=tuple(target_configs[stream_id]),
-        )
-        for stream_id in dict.fromkeys((*feature_configs, *target_configs))
-    )
-
-
 def _ordered_projected_rows(
     runtime: Runtime,
-    plans: Sequence[_StreamPlan],
+    plans: Sequence[StreamPlan],
     sample_keys: SampleKeyContract,
     cadence: timedelta,
-) -> Iterator[_ProjectedRow]:
+    on_scaler_fits: Callable[[ScalerFits], None] | None,
+) -> Iterator[ProjectedRow]:
     progress = SeriesWorkerProgress()
     return run_pipeline(
         runtime,
@@ -200,6 +170,7 @@ def _ordered_projected_rows(
                     sample_keys,
                     cadence,
                     progress,
+                    on_scaler_fits,
                 ),
                 progress=progress.snapshot,
             ),
@@ -207,97 +178,8 @@ def _ordered_projected_rows(
     )
 
 
-def _project_stream(
-    runtime: Runtime,
-    plan: _StreamPlan,
-    sample_keys: SampleKeyContract,
-    cadence: timedelta,
-) -> Generator[_ProjectedRow, None, None]:
-    stream = require_runtime_stream(runtime, plan.stream_id)
-    configs = (*plan.features, *plan.targets)
-    feature_ids = {config.id for config in plan.features}
-    projector = SeriesProjector(stream.partition_by, sample_keys, configs)
-    sequencers = {
-        config.id: SeriesSequencer(config.sequence)
-        for config in configs
-        if config.sequence is not None
-    }
-
-    def project(records: Iterator[Any]) -> Iterator[_ProjectedRow]:
-        for record in records:
-            features: list[_ProjectedValue] = []
-            targets: list[_ProjectedValue] = []
-            row_key: tuple[Any, ...] | None = None
-            row_time: datetime | None = None
-            sample_time = round_time_to_cadence(
-                record.time, cadence, runtime.require_dataset().sample.rounding
-            )
-
-            for config, projected in zip(
-                configs,
-                projector.project(record),
-                strict=True,
-            ):
-                sequencer = sequencers.get(config.id)
-                result = projected if sequencer is None else sequencer.append(projected)
-                if result is None:
-                    continue
-
-                key = (sample_time, *result.entity_key)
-                if row_key is None:
-                    row_key = key
-                    row_time = result.time
-                elif key != row_key or result.time != row_time:
-                    raise RuntimeError(
-                        f"Stream '{plan.stream_id}' projected one record into different "
-                        "sample keys."
-                    )
-
-                value: _ProjectedValue
-                if isinstance(result, SeriesSequence):
-                    value = _ProjectedSequence(
-                        result.id,
-                        result.values,
-                        record_establishes_domain(result),
-                    )
-                else:
-                    value = _ProjectedScalar(
-                        result.id,
-                        result.value,
-                        record_establishes_domain(result),
-                    )
-                if config.id in feature_ids:
-                    features.append(value)
-                else:
-                    targets.append(value)
-
-            if row_key is not None and row_time is not None:
-                yield _ProjectedRow(
-                    key=row_key,
-                    time=row_time,
-                    features=tuple(features),
-                    targets=tuple(targets),
-                )
-
-    record_pipeline = build_stream_pipeline(runtime, plan.stream_id)
-    pipeline = Pipeline(
-        name=f"series:{plan.stream_id}",
-        input=record_pipeline.input,
-        stages=(
-            *record_pipeline.stages,
-            Stage(name="project_series", apply=project),
-        ),
-        summary=record_pipeline.summary,
-    )
-    projected = run_pipeline(runtime, pipeline)
-    try:
-        yield from projected
-    finally:
-        _close_iterator(projected)
-
-
 def _group_series_rows(
-    projected: Iterator[_ProjectedRow],
+    projected: Iterator[ProjectedRow],
     feature_configs: Sequence[SeriesConfig],
     target_configs: Sequence[SeriesConfig],
     feature_counts: Counter[str],
@@ -312,8 +194,8 @@ def _group_series_rows(
     }
 
     for key, group in groupby(projected, key=lambda row: row.key):
-        feature_records: list[_ProjectedValue] = []
-        target_records: list[_ProjectedValue] = []
+        feature_records: list[ProjectedValue] = []
+        target_records: list[ProjectedValue] = []
         for row in group:
             feature_records.extend(row.features)
             target_records.extend(row.targets)
@@ -340,7 +222,7 @@ def _group_series_rows(
 
 
 def _assemble_values(
-    records: Iterable[_ProjectedValue],
+    records: Iterable[ProjectedValue],
     config_order: dict[str, int],
     collection_sizes: dict[str, int],
 ) -> tuple[dict[str, Any], frozenset[str]]:
@@ -348,7 +230,7 @@ def _assemble_values(
     collections: dict[str, list[Any]] = {}
     established: set[str] = set()
     for record in records:
-        if isinstance(record, _ProjectedSequence):
+        if isinstance(record, ProjectedSequence):
             if record.id in values_by_id:
                 raise ValueError(
                     f"Series {record.id!r} emits multiple sequences in one "

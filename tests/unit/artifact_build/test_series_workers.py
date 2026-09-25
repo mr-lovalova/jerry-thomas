@@ -1,7 +1,10 @@
 import logging
 import multiprocessing
 import os
+import subprocess
+import sys
 import tempfile
+import threading
 import time
 from collections.abc import Iterator
 from datetime import timedelta
@@ -15,7 +18,6 @@ import yaml
 from rich.console import Console
 from rich.progress import Progress
 
-import jerrythomas.operations.artifacts.series as series_module
 import jerrythomas.operations.artifacts.series_workers as series_worker_module
 import jerrythomas.services.stream_workers as worker_module
 from jerrythomas.config.execution import ExecutionConfig
@@ -37,7 +39,7 @@ from jerrythomas.execution.observability import (
     emit_execution_message,
     execution_observer,
 )
-from jerrythomas.operations.artifacts.series import _stream_plans
+from jerrythomas.operations.artifacts.series_projection import stream_plans
 from jerrythomas.operations.artifacts.series_workers import (
     SeriesWorkerProgress,
     order_streams,
@@ -78,6 +80,23 @@ class _LifecycleLoader(BaseDataLoader):
             if self.mode == "finite":
                 yield {"time": "2024-01-01T00:00:00Z", "id_": "A", "value": 1}
                 return
+            if self.mode == "bad_log":
+                # A malformed log call is reported by logging, not raised.
+                logging.getLogger("tests.stream_workers").warning(
+                    "bad format %d", "not-a-number"
+                )
+                yield {"time": "2024-01-01T00:00:00Z", "id_": "A", "value": 1}
+                return
+            if self.mode == "linger":
+                threading.Thread(target=time.sleep, args=(30,), daemon=False).start()
+                yield {"time": "2024-01-01T00:00:00Z", "id_": "A", "value": 1}
+                return
+            if self.mode == "pid":
+                self.marker.with_suffix(".pid").write_text(
+                    str(os.getpid()), encoding="utf-8"
+                )
+                time.sleep(30)
+                raise TimeoutError("Orphaned worker was not stopped")
             if self.mode == "observed":
                 from jerrythomas.execution.pipeline import Input, Pipeline
                 from jerrythomas.execution.runner import run_pipeline
@@ -244,7 +263,7 @@ def lifecycle_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def _project(runtime: Runtime):
     return order_streams(
         runtime,
-        _stream_plans(runtime.dataset.features, runtime.dataset.targets),
+        stream_plans(runtime.dataset.features, runtime.dataset.targets),
         SampleKeyContract(runtime.dataset.sample.keys),
         timedelta(hours=1),
         SeriesWorkerProgress(),
@@ -291,13 +310,15 @@ def test_inline_write_failure_closes_input_and_preserves_original_error(
         ("finite", "finite"), barriers=(None, None)
     )
     runtime.execution = ExecutionConfig(workers=1, sort_buffer_mb=1)
-    project_stream = series_module._project_stream
+    project_stream = series_worker_module.project_stream
     closed = []
     failure = OSError("intentional inline run write failure")
 
-    def project(runtime, plan, sample_keys, cadence):
+    def project(runtime, plan, sample_keys, cadence, scaler_fitter=None):
         try:
-            yield from project_stream(runtime, plan, sample_keys, cadence)
+            yield from project_stream(
+                runtime, plan, sample_keys, cadence, scaler_fitter
+            )
         finally:
             closed.append(plan.stream_id)
 
@@ -306,7 +327,7 @@ def test_inline_write_failure_closes_input_and_preserves_original_error(
         (directory / "partial-run").write_bytes(b"partial sorted run")
         raise failure
 
-    monkeypatch.setattr(series_module, "_project_stream", project)
+    monkeypatch.setattr(series_worker_module, "project_stream", project)
     monkeypatch.setattr(series_worker_module, "write_sort_runs", fail_write)
     projected = _project(runtime)
     try:
@@ -698,5 +719,136 @@ def test_interrupt_after_finished_worker_close_still_reaps_active_peer(
         projected.close()
 
     assert interrupted
+    assert _child_pids() == baseline
+    assert list(temporary.iterdir()) == []
+
+
+def test_malformed_worker_log_call_does_not_fail_the_stream(
+    lifecycle_project, capfd: pytest.CaptureFixture[str]
+) -> None:
+    runtime, temporary, _ = lifecycle_project(
+        ("bad_log", "finite"), barriers=(None, None)
+    )
+    baseline = _child_pids()
+
+    rows = list(_project(runtime))
+
+    assert [row.features[0].id for row in rows] == ["first", "second"]
+    assert "--- Logging error ---" in capfd.readouterr().err
+    assert _child_pids() == baseline
+    assert list(temporary.iterdir()) == []
+
+
+def test_lingering_worker_thread_does_not_fail_finished_streams(
+    lifecycle_project,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    runtime, temporary, _ = lifecycle_project(
+        ("linger", "finite"), barriers=(None, None)
+    )
+    monkeypatch.setattr(worker_module, "_EXIT_TIMEOUT_SECONDS", 0.5)
+    baseline = _child_pids()
+
+    with caplog.at_level(logging.WARNING, logger=worker_module.__name__):
+        rows = list(_project(runtime))
+
+    assert [row.features[0].id for row in rows] == ["first", "second"]
+    assert "Stream 'first' finished but its process did not exit" in caplog.text
+    assert _child_pids() == baseline
+    assert list(temporary.iterdir()) == []
+
+
+def _process_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    status = Path(f"/proc/{pid}/stat")
+    if status.exists():
+        # An exited orphan may stay a zombie when nothing reaps it.
+        return status.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+    return True
+
+
+def test_workers_exit_when_their_parent_is_killed(
+    lifecycle_project, tmp_path: Path
+) -> None:
+    runtime, temporary, markers = lifecycle_project(
+        ("pid", "pid"), barriers=(None, None)
+    )
+    script = f"""
+import sys, tempfile
+from datetime import timedelta
+from pathlib import Path
+sys.path.insert(0, {str(tmp_path / "plugins")!r})
+tempfile.tempdir = {str(temporary)!r}
+from jerrythomas.config.execution import ExecutionConfig
+from jerrythomas.domain.sample_key import SampleKeyContract
+from jerrythomas.operations.artifacts.series_projection import stream_plans
+from jerrythomas.operations.artifacts.series_workers import (
+    SeriesWorkerProgress,
+    order_streams,
+)
+from jerrythomas.services.project_definition import load_project_definition
+from jerrythomas.services.runtime_compiler import compile_runtime
+
+runtime = compile_runtime(
+    load_project_definition(Path({str(runtime.project_yaml)!r})), "default"
+)
+runtime.execution = ExecutionConfig(workers=2, sort_buffer_mb=1)
+dataset = runtime.dataset
+list(order_streams(
+    runtime,
+    stream_plans(dataset.features, dataset.targets),
+    SampleKeyContract(dataset.sample.keys),
+    timedelta(hours=1),
+    SeriesWorkerProgress(),
+))
+"""
+    parent = subprocess.Popen(
+        [sys.executable, "-c", script], cwd=Path(__file__).parents[3]
+    )
+    pid_files = [marker.with_suffix(".pid") for marker in markers]
+    try:
+        deadline = time.monotonic() + 30
+        while not all(path.exists() for path in pid_files):
+            assert parent.poll() is None, "parent exited before its workers started"
+            assert time.monotonic() < deadline, "workers did not start"
+            time.sleep(0.05)
+        worker_pids = [int(path.read_text(encoding="utf-8")) for path in pid_files]
+    finally:
+        parent.kill()
+        parent.wait()
+
+    deadline = time.monotonic() + 10
+    while any(_process_running(pid) for pid in worker_pids):
+        assert time.monotonic() < deadline, "orphaned workers kept running"
+        time.sleep(0.05)
+
+
+def _unpicklable_result(runtime: Runtime, plan: object, job_dir: Path) -> object:
+    return threading.Lock()
+
+
+def test_unpicklable_worker_result_reports_the_pickling_error(
+    lifecycle_project,
+) -> None:
+    runtime, temporary, _ = lifecycle_project(
+        ("finite", "finite"), barriers=(None, None)
+    )
+    baseline = _child_pids()
+    plans = stream_plans(runtime.dataset.features, runtime.dataset.targets)
+
+    with sort_spill_directory() as temp_root:
+        with pytest.raises(StreamWorkerError, match="cannot pickle"):
+            worker_module.run_stream_jobs(
+                runtime,
+                plans,
+                _unpicklable_result,
+                temp_root,
+                worker_module.StreamWorkerProgress(),
+            )
+
     assert _child_pids() == baseline
     assert list(temporary.iterdir()) == []

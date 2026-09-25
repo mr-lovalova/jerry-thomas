@@ -272,7 +272,7 @@ VectorMetadataLayout = Annotated[
 
 
 class VectorMetadata(BaseModel):
-    """Typed contract for build/metadata.json."""
+    """Typed contract for a dataset's metadata artifact (metadata.json)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

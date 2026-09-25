@@ -24,8 +24,8 @@ from jerrythomas.operations.persistence import (
     RuntimeOutputBatch,
     RuntimeOutputItem,
 )
-from jerrythomas.operations.runtime.execution import OutputOptions
-from jerrythomas.operations.runtime.records import limit_items
+from jerrythomas.operations.outputs.execution import OutputOptions
+from jerrythomas.operations.outputs.records import limit_items
 from jerrythomas.pipelines.dataset.pipeline import (
     resolve_fold_output_plans,
     run_dataset_pipeline,
@@ -167,7 +167,7 @@ def _serve_dataset(
     metadata = runtime.artifacts.load(VECTOR_METADATA_SPEC)
     if not isinstance(metadata.layout, UnsplitMetadataLayout):
         raise RuntimeError(
-            "Unsplit dataset requires unsplit metadata. Rebuild build/metadata.json."
+            "Unsplit dataset requires unsplit metadata. Rebuild the dataset metadata artifact."
         )
     key_plan = require_metadata_key_plan(
         metadata.catalog.window,

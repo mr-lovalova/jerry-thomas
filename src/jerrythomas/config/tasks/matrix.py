@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
-from .base import RuntimeTask
+from .base import OutputTask
 
 
 class MatrixOptions(BaseModel):
@@ -12,7 +12,7 @@ class MatrixOptions(BaseModel):
     max_cells: StrictInt = Field(default=1_000_000, gt=0)
 
 
-class MatrixTask(RuntimeTask):
+class MatrixTask(OutputTask):
     entrypoint: Literal["core.availability_matrix"] = Field(
         default="core.availability_matrix"
     )

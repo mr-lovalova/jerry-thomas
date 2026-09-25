@@ -160,7 +160,7 @@ def require_metadata_key_plan(
     plan = metadata_key_plan(window, sample, cadence, sample_keys)
     if plan is None:
         raise RuntimeError(
-            "Metadata has no rectangular sample window. Rebuild build/metadata.json."
+            "Metadata has no rectangular sample window. Rebuild the dataset metadata artifact."
         )
     return plan
 

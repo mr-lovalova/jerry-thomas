@@ -18,7 +18,7 @@ from jerrythomas.artifacts.state import ArtifactFileFingerprint, BuildState
 from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.preview import PREVIEW_STAGES, PreviewStage
 from jerrythomas.config.streams import StreamsConfig
-from jerrythomas.config.tasks.base import ArtifactTask, RuntimeTask
+from jerrythomas.config.tasks.base import ArtifactTask, OutputTask
 from jerrythomas.config.tasks.coverage import CoverageTask
 from jerrythomas.config.tasks.dataset import DatasetTask
 from jerrythomas.config.tasks.matrix import MatrixTask
@@ -135,7 +135,7 @@ class ArtifactGraph:
 
     def runtime_requirements(
         self,
-        task: RuntimeTask,
+        task: OutputTask,
         *,
         preview: PreviewStage | None,
     ) -> set[str]:
@@ -173,7 +173,7 @@ class ArtifactGraph:
 
     def runtime_dependency_closure(
         self,
-        task: RuntimeTask,
+        task: OutputTask,
         *,
         preview: PreviewStage | None,
     ) -> tuple[str, ...]:
@@ -287,9 +287,7 @@ class ArtifactGraph:
                 missing.add(key)
                 continue
             producer = self.tasks_by_id.get(key)
-            if producer is not None and Path(info.relative_path) != Path(
-                producer.output
-            ):
+            if producer is not None and Path(info.relative_path) != Path(producer.path):
                 stale.add(key)
                 continue
             if info.artifact_hash != artifact_hashes.for_artifact(key):
@@ -414,7 +412,8 @@ def build_artifact_graph(
             identity = (task.dataset, kind)
             if identity in producers:
                 raise ValueError(
-                    f"Multiple producers for dataset artifact {identity!r}."
+                    f"Dataset '{task.dataset}' has multiple {kind} producers: "
+                    f"'{producers[identity]}' and '{task.id}'."
                 )
             producers[identity] = task.id
     _validate_artifact_output_paths(tasks)
@@ -457,27 +456,25 @@ def build_artifact_graph(
 
 
 def _validate_artifact_output_paths(tasks: tuple[ArtifactTask, ...]) -> None:
-    outputs = [
-        (task, Path(output_destination_key(Path(task.output)))) for task in tasks
-    ]
+    outputs = [(task, Path(output_destination_key(Path(task.path)))) for task in tasks]
     for index, (task, output) in enumerate(outputs):
         for previous_task, previous_output in outputs[:index]:
             if output == previous_output:
                 raise ValueError(
                     f"Artifact operations '{previous_task.id}' and '{task.id}' write "
-                    f"the same output '{task.output}'."
+                    f"the same path '{task.path}'."
                 )
             if output.is_relative_to(previous_output) or previous_output.is_relative_to(
                 output
             ):
                 raise ValueError(
                     f"Artifact operations '{previous_task.id}' and '{task.id}' declare "
-                    f"nested output paths '{previous_task.output}' and '{task.output}'."
+                    f"nested paths '{previous_task.path}' and '{task.path}'."
                 )
 
     for series_task in (task for task in tasks if isinstance(task, SeriesTask)):
         cache_root = Path(
-            output_destination_key(series_cache_root(Path(series_task.output)))
+            output_destination_key(series_cache_root(Path(series_task.path)))
         )
         for task, output in outputs:
             if task is series_task:
@@ -485,6 +482,6 @@ def _validate_artifact_output_paths(tasks: tuple[ArtifactTask, ...]) -> None:
             if output.is_relative_to(cache_root):
                 raise ValueError(
                     f"Artifact operation '{task.id}' writes inside series cache directory "
-                    f"'{series_cache_root(Path(series_task.output))}' owned by artifact "
+                    f"'{series_cache_root(Path(series_task.path))}' owned by artifact "
                     f"operation '{series_task.id}'."
                 )

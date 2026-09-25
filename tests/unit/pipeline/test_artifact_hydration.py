@@ -40,7 +40,7 @@ def test_hydration_replaces_registry_with_dependency_current_artifacts(
     custom = ArtifactTask(
         id="custom_snapshot",
         entrypoint="plugin.snapshot",
-        output="build/custom.json",
+        path="build/custom.json",
     )
     graph = build_artifact_graph(
         [
@@ -120,7 +120,7 @@ def test_hydration_skips_incomplete_unrelated_artifact_chain(tmp_path) -> None:
     custom = ArtifactTask(
         id="custom_snapshot",
         entrypoint="plugin.snapshot",
-        output="build/custom.json",
+        path="build/custom.json",
     )
     metadata = MetadataTask(dataset="default", id="metadata")
     graph = build_artifact_graph(
@@ -179,16 +179,16 @@ def test_project_hydration_excludes_inactive_scaler(
         dataset_id="default",
         dataset=graph.datasets["default"],
     )
-    output = runtime.artifacts_root / scaler.output
+    output = runtime.artifacts_root / scaler.path
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("{}", encoding="utf-8")
     state = BuildState()
     state.register(
         SCALER_STATISTICS,
         artifact_hash="current",
-        files=(ArtifactFileFingerprint.from_path(scaler.output, output),),
+        files=(ArtifactFileFingerprint.from_path(scaler.path, output),),
     )
-    runtime.artifacts.register(SCALER_STATISTICS, scaler.output)
+    runtime.artifacts.register(SCALER_STATISTICS, scaler.path)
     monkeypatch.setattr(
         "jerrythomas.artifacts.hydration.load_build_state",
         lambda _state_path: state,
@@ -218,7 +218,7 @@ def test_project_hydration_excludes_nested_schedule_and_dependents(
         id="derived_schedule",
         stream="derived",
         partition_by=[],
-        output="build/derived-schedule.jsonl",
+        path="build/derived-schedule.jsonl",
     )
     series = SeriesTask(dataset="default", id="series")
     dataset = DatasetConfig(
@@ -251,8 +251,8 @@ def test_project_hydration_excludes_nested_schedule_and_dependents(
     )
     state = BuildState()
     for key, relative_path in (
-        ("derived_schedule", schedule.output),
-        (SERIES, series.output),
+        ("derived_schedule", schedule.path),
+        (SERIES, series.path),
     ):
         destination = runtime.artifacts_root / relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -262,8 +262,8 @@ def test_project_hydration_excludes_nested_schedule_and_dependents(
             artifact_hash="current",
             files=(ArtifactFileFingerprint.from_path(relative_path, destination),),
         )
-    runtime.artifacts.register("derived_schedule", schedule.output)
-    runtime.artifacts.register(SERIES, series.output)
+    runtime.artifacts.register("derived_schedule", schedule.path)
+    runtime.artifacts.register(SERIES, series.path)
     monkeypatch.setattr(
         "jerrythomas.artifacts.hydration.load_build_state",
         lambda _state_path: state,

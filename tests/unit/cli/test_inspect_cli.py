@@ -13,9 +13,9 @@ from jerrythomas.domain.sample import Sample
 from jerrythomas.domain.vector import Vector
 from jerrythomas.io.output import OutputTarget
 from jerrythomas.operations.persistence import persist_runtime_result
-from jerrythomas.operations.runtime import coverage as coverage_ops
-from jerrythomas.operations.runtime import matrix as matrix_ops
-from jerrythomas.operations.runtime.execution import OutputOptions
+from jerrythomas.operations.outputs import coverage as coverage_ops
+from jerrythomas.operations.outputs import matrix as matrix_ops
+from jerrythomas.operations.outputs.execution import OutputOptions
 
 
 def _coverage_stats() -> CoverageStatsArtifact:

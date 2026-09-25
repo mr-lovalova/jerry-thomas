@@ -11,7 +11,7 @@ from jerrythomas.artifacts.models import (
     CoverageStatsArtifact,
 )
 from jerrythomas.artifacts.registry import COVERAGE_STATS_SPEC
-from jerrythomas.operations.runtime.coverage import _section_report
+from jerrythomas.operations.outputs.coverage import _section_report
 
 
 def _scalar(identifier: str, base_id: str):

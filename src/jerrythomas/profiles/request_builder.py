@@ -55,7 +55,8 @@ from jerrythomas.profiles.runtime_profiles import (
     resolve_inspect_profiles,
     resolve_serve_profiles,
 )
-from jerrythomas.services.definitions import ProjectDefinition
+from jerrythomas.services.config_refs import referenced_variables
+from jerrythomas.services.definitions import DATASET_VARIABLES, ProjectDefinition
 from jerrythomas.services.path_policy import sanitize_path_segment
 from jerrythomas.services.project_definition import load_project_definition
 from jerrythomas.services.runtime_compiler import compile_runtime
@@ -154,19 +155,15 @@ def _prerequisite_settings(
     mode = _artifact_mode(configured_mode, cli_mode)
     try:
         if observability is not None:
-            logging = observability.logging
-            if logging is not None and any(
-                token in (output.path or "")
-                for output in logging.outputs or ()
-                for token in ("${dataset_id}", "${dataset_version}")
-            ):
+            configured = observability.model_dump(mode="json")
+            if referenced_variables(configured) & DATASET_VARIABLES:
                 raise ValueError(
                     "Shared prerequisite logs have no selected dataset. Put "
                     "dataset-specific log paths in concrete profiles instead of "
                     f"{command}.defaults.yaml."
                 )
             observability = ObservabilityConfig.model_validate(
-                definition.project.resolve_config(observability.model_dump(mode="json"))
+                definition.project.resolve_config(configured)
             )
         settings = resolve_observability_settings(
             definition.project.path, observability, command_observability
@@ -221,14 +218,14 @@ def build_build_run_request(
         raise TypeError("Build profile loading returned the wrong defaults type")
 
     artifact_tasks_by_id = definition.artifact_graph.tasks_by_id
-    runtime_task_ids = {task.id for task in definition.runtime_operations}
+    output_task_ids = {task.id for task in definition.output_operations}
     build_profiles: list[BuildProfile] = []
     for profile in loaded_profiles:
         if not isinstance(profile, BuildProfile):
             raise TypeError("Build profile loading returned the wrong profile type")
         task = artifact_tasks_by_id.get(profile.operation)
         if task is None:
-            if profile.operation in runtime_task_ids:
+            if profile.operation in output_task_ids:
                 raise ProfileCommandError(
                     f"Build profile '{profile.name}' must reference an artifact "
                     f"operation; '{profile.operation}' is an output operation."
@@ -327,10 +324,10 @@ def build_runtime_run_request(
             raise TypeError("Inspect profile loading returned the wrong profile type")
         runtime_profiles = inspect_profiles
 
-    runtime_tasks_by_id = {task.id: task for task in definition.runtime_operations}
+    output_tasks_by_id = {task.id: task for task in definition.output_operations}
     artifact_task_ids = set(definition.artifact_graph.tasks_by_id)
     for profile in runtime_profiles:
-        task = runtime_tasks_by_id.get(profile.operation)
+        task = output_tasks_by_id.get(profile.operation)
         if task is None:
             if profile.operation in artifact_task_ids:
                 raise ProfileCommandError(
@@ -377,9 +374,9 @@ def build_runtime_run_request(
         jobs = [
             RuntimeJob(
                 name=profile.name,
-                task=runtime_tasks_by_id[profile.operation_id].model_copy(deep=True),
+                task=output_tasks_by_id[profile.operation_id].model_copy(deep=True),
                 runtime=compile_runtime(
-                    definition, runtime_tasks_by_id[profile.operation_id].dataset
+                    definition, output_tasks_by_id[profile.operation_id].dataset
                 ),
                 output=profile.output,
                 observability=replace(

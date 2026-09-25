@@ -21,7 +21,14 @@ are relative to `paths.artifacts`:
 - `datasets/<id>/scaler.json`: managed scaler statistics. Unsplit datasets store one
   standard scaler; split datasets store one scaler fitted from each fold's
   training labels. Each scaler stores settings and statistics together for
-  every concrete series.
+  every concrete series. The series build fits exact scaler moments during its
+  own pass over each stream and stores them in its generation as
+  `scaler_fits.json`, keyed by the dataset settings that affect fitting (sample,
+  split, target horizon, and which series are scaled). The scaler build finishes
+  from those fits when the key matches, so changing only `with_mean`, `with_std`,
+  or `epsilon` rebuilds the scaler without reading streams. Otherwise, for
+  example after a split change, it refits from the scaled streams with the same
+  code and produces the same statistics.
 - `datasets/<id>/metadata.json`: the typed feature/target contract used during
   postprocess, including identifiers, scalar/list kinds, fixed list lengths,
   coverage counts, value types, sample domain, and resolved dataset window.
@@ -33,8 +40,9 @@ are relative to `paths.artifacts`:
   `ensure_schedule` transforms. Their output paths are operation-defined.
 
 The dependency graph is explicit: schedule artifacts referenced by configured
-dataset streams feed the scaler and series artifacts; series feeds metadata;
-`coverage_stats` depends on metadata. Matrix inspection reads series directly
+dataset streams feed the scaler and series artifacts; series feeds the scaler
+and metadata; `coverage_stats` depends on metadata. Build profiles must order
+series before the scaler. Matrix inspection reads series directly
 and enforces a configured cell bound instead of expanding the `coverage_stats`
 artifact. Nested schedule artifacts are rejected because that dependency is not
 yet representable safely.

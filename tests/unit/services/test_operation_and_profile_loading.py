@@ -6,8 +6,8 @@ from pydantic import ValidationError
 from jerrythomas.config.profiles.export import ExportProfile
 from jerrythomas.config.tasks.base import (
     ArtifactTask,
-    PluginRuntimeTask,
-    RuntimeTask,
+    PluginOutputTask,
+    OutputTask,
     Task,
 )
 from jerrythomas.config.tasks.coverage import CoverageTask
@@ -111,7 +111,7 @@ def _profile_kind_dir(project_yaml: Path) -> Path:
 
 def test_plugin_runtime_task_rejects_non_serializable_options() -> None:
     with pytest.raises(ValueError, match="JSON-serializable"):
-        PluginRuntimeTask(
+        PluginOutputTask(
             id="plugin",
             entrypoint="plugin.runtime",
             options={"value": object()},
@@ -156,7 +156,7 @@ def test_plugin_runtime_task_rejects_non_serializable_options() -> None:
             SeriesTask(
                 id="selected",
                 dataset="default",
-                output="datasets/default/series/manifest.json",
+                path="datasets/default/series/manifest.json",
             ),
         ),
         (
@@ -164,7 +164,7 @@ def test_plugin_runtime_task_rejects_non_serializable_options() -> None:
             "core.scaler",
             "dataset: default\n",
             ScalerTask(
-                id="selected", dataset="default", output="datasets/default/scaler.json"
+                id="selected", dataset="default", path="datasets/default/scaler.json"
             ),
         ),
         (
@@ -174,7 +174,7 @@ def test_plugin_runtime_task_rejects_non_serializable_options() -> None:
             MetadataTask(
                 id="selected",
                 dataset="default",
-                output="datasets/default/metadata.json",
+                path="datasets/default/metadata.json",
             ),
         ),
         (
@@ -184,7 +184,7 @@ def test_plugin_runtime_task_rejects_non_serializable_options() -> None:
             CoverageStatsTask(
                 id="selected",
                 dataset="default",
-                output="datasets/default/coverage_stats.json",
+                path="datasets/default/coverage_stats.json",
                 stage="assembled",
             ),
         ),
@@ -196,7 +196,7 @@ def test_plugin_runtime_task_rejects_non_serializable_options() -> None:
                 id="selected",
                 stream="calendar",
                 partition_by=[],
-                output="calendars/exchange.jsonl",
+                path="calendars/exchange.jsonl",
             ),
         ),
     ],
@@ -300,7 +300,7 @@ def test_builtin_entrypoints_reject_wrong_kind(
         (
             "kind: output\nentrypoint: research.report\ndataset: default\n"
             "requires: [snapshot]\noptions: {threshold: 3}\n",
-            PluginRuntimeTask(
+            PluginOutputTask(
                 id="selected",
                 entrypoint="research.report",
                 dataset="default",
@@ -315,7 +315,7 @@ def test_builtin_entrypoints_reject_wrong_kind(
                 id="selected",
                 entrypoint="research.snapshot",
                 dataset="default",
-                output="research/snapshot.json",
+                path="research/snapshot.json",
             ),
         ),
     ],
@@ -434,9 +434,9 @@ def test_artifact_tasks_load_configs(tmp_path):
     schema = next(task for task in tasks if task.id == "schema")
     assert type(schema) is ArtifactTask
     assert schema.entrypoint == "plugin.artifact.schema"
-    assert schema.output == "schema.json"
+    assert schema.path == "schema.json"
     scaler = next(task for task in tasks if task.id == "scaler")
-    assert scaler.output == "stats.pkl"
+    assert scaler.path == "stats.pkl"
 
 
 @pytest.mark.parametrize(
@@ -447,7 +447,7 @@ def test_artifact_tasks_load_configs(tmp_path):
     ],
 )
 @pytest.mark.parametrize("path_field", ["", "path: chosen.json\n"])
-def test_artifact_operations_reject_legacy_output_field(
+def test_artifact_operations_reject_output_field(
     tmp_path: Path, selector: str, path_field: str
 ) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
@@ -455,9 +455,7 @@ def test_artifact_operations_reject_legacy_output_field(
         f"{selector}{path_field}output: legacy.json\n", encoding="utf-8"
     )
 
-    with pytest.raises(
-        ValueError, match="Artifact operation 'selected' uses path instead of output"
-    ):
+    with pytest.raises(ValueError, match=r"(?s)\boutput\b.*Extra inputs are not"):
         _tasks(project_yaml)
 
 
@@ -495,7 +493,7 @@ def test_core_artifacts_are_defaults_but_runtime_operations_are_explicit(tmp_pat
 
     tasks = _tasks(project_yaml)
     artifact_tasks = [task for task in tasks if isinstance(task, ArtifactTask)]
-    runtime_tasks = [task for task in tasks if isinstance(task, RuntimeTask)]
+    runtime_tasks = [task for task in tasks if isinstance(task, OutputTask)]
 
     assert [task.id for task in artifact_tasks] == [
         "dataset.default.scaler",
@@ -507,12 +505,12 @@ def test_core_artifacts_are_defaults_but_runtime_operations_are_explicit(tmp_pat
     task = next(task for task in artifact_tasks if task.id == "dataset.default.series")
     assert task.entrypoint == "core.dataset_series"
     assert task.dataset == "default"
-    assert task.output == "datasets/default/series/manifest.json"
+    assert task.path == "datasets/default/series/manifest.json"
     coverage_stats = next(
         task for task in artifact_tasks if task.id == "dataset.default.coverage_stats"
     )
     assert coverage_stats.entrypoint == "core.coverage_statistics"
-    assert coverage_stats.output == "datasets/default/coverage_stats.json"
+    assert coverage_stats.path == "datasets/default/coverage_stats.json"
 
 
 @pytest.mark.parametrize("operation_id", ["vector_inputs", "variable_records"])
@@ -554,7 +552,7 @@ def test_schedule_artifact_task_loads_arbitrary_id(tmp_path):
     assert task.entrypoint == "core.schedule"
     assert task.stream == "reference.stream"
     assert task.partition_by == []
-    assert task.output == "build/dataset_schedule.jsonl"
+    assert task.path == "build/dataset_schedule.jsonl"
 
 
 def test_schedule_artifact_task_loads_partition_by(tmp_path):
@@ -647,7 +645,7 @@ def test_artifact_operation_rejects_reserved_system_output(output: str) -> None:
         ArtifactTask(
             id="snapshot",
             entrypoint="plugin.artifact.snapshot",
-            output=output,
+            path=output,
         )
 
 
@@ -659,10 +657,10 @@ def test_artifact_operation_allows_non_reserved_system_names(output: str) -> Non
     task = ArtifactTask(
         id="snapshot",
         entrypoint="plugin.artifact.snapshot",
-        output=output,
+        path=output,
     )
 
-    assert task.output == output
+    assert task.path == output
 
 
 def test_default_artifact_id_cannot_name_an_unrelated_operation(tmp_path):
@@ -692,7 +690,7 @@ def test_coverage_stats_task_loads_configs(tmp_path):
 
     tasks = _artifact_tasks(project_yaml)
     coverage_stats = next(task for task in tasks if task.id == "coverage_stats")
-    assert coverage_stats.output == "build/custom-coverage-stats.json"
+    assert coverage_stats.path == "build/custom-coverage-stats.json"
     assert coverage_stats.stage == "assembled"
 
 
@@ -1505,7 +1503,7 @@ def test_plugin_runtime_options_remain_plugin_owned(tmp_path: Path) -> None:
 
     task = next(task for task in _all_tasks(project_yaml) if task.id == "custom")
 
-    assert type(task) is PluginRuntimeTask
+    assert type(task) is PluginOutputTask
     assert task.requires == ("custom_snapshot",)
     assert task.options == {"nested": {"value": 3}}
 
@@ -1520,7 +1518,7 @@ def test_plugin_runtime_options_default_to_an_empty_mapping(tmp_path: Path) -> N
 
     task = next(task for task in _all_tasks(project_yaml) if task.id == "custom")
 
-    assert type(task) is PluginRuntimeTask
+    assert type(task) is PluginOutputTask
     assert task.options == {}
 
 

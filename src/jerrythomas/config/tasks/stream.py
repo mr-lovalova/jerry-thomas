@@ -4,10 +4,10 @@ from pydantic import Field, model_validator
 
 from jerrythomas.config.constraints import NonEmptyString
 
-from .base import RuntimeTask
+from .base import OutputTask
 
 
-class StreamTask(RuntimeTask):
+class StreamTask(OutputTask):
     entrypoint: Literal["core.records"] = Field(default="core.records")
     stream: NonEmptyString
 

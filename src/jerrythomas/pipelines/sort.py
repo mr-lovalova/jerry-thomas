@@ -121,6 +121,7 @@ def batch_sort(
 
     if final:
         progress.emitting(len(first_run))
+        # Pop from the end so each emitted entry is released as soon as it is yielded.
         first_run.reverse()
         while first_run:
             _, payload = first_run.pop()

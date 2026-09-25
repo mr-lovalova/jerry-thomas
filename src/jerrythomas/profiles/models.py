@@ -4,7 +4,7 @@ from typing import Literal, Sequence
 from jerrythomas.artifacts.settings import BuildSettings
 from jerrythomas.config.execution import ExecutionConfig
 from jerrythomas.config.preview import PreviewStage
-from jerrythomas.config.tasks.base import ArtifactTask, RuntimeTask
+from jerrythomas.config.tasks.base import ArtifactTask, OutputTask
 from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.execution.settings import (
     ObservabilitySettings,
@@ -31,7 +31,7 @@ class BuildJob:
 @dataclass(frozen=True)
 class RuntimeJob:
     name: str
-    task: RuntimeTask
+    task: OutputTask
     runtime: Runtime
     output: OutputTarget
     observability: ObservabilitySettings

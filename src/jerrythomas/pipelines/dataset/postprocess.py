@@ -32,7 +32,7 @@ def build_postprocess_plan(
 ) -> PostprocessPlan:
     if not schema.features:
         raise RuntimeError(
-            "Metadata has no feature entries. Rebuild build/metadata.json."
+            "Metadata has no feature entries. Rebuild the dataset metadata artifact."
         )
 
     feature_entries = schema.features
@@ -95,6 +95,6 @@ def _reject_undeclared_targets(stream: Iterator[Sample]) -> Iterator[Sample]:
         if sample.targets is not None:
             raise RuntimeError(
                 "Metadata has no target entries, but the pipeline produced targets. "
-                "Rebuild build/metadata.json."
+                "Rebuild the dataset metadata artifact."
             )
         yield sample

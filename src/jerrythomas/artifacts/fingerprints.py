@@ -3,16 +3,14 @@ import hashlib
 import json
 import stat
 from collections.abc import Iterable, Mapping
-from datetime import timedelta
 from pathlib import Path
 
 from jerrythomas.artifacts.models import VECTOR_METADATA_VERSION
 from jerrythomas.artifacts.planning import ArtifactGraph
 from jerrythomas.artifacts.scaler import SCALER_ARTIFACT_VERSION
-from jerrythomas.artifacts.specs import dataset_requires_scaler
+from jerrythomas.artifacts.specs import dataset_requires_scaler, scaler_fit_inputs
 from jerrythomas.artifacts.series import SERIES_MANIFEST_VERSION
 from jerrythomas.config.dataset.dataset import DatasetConfig
-from jerrythomas.config.dataset.split import TimeSplitConfig
 from jerrythomas.config.sources import (
     FsLoaderConfig,
     SourceConfig,
@@ -159,33 +157,15 @@ def artifact_inputs(
             (config.stream for config in scaled),
             streams,
         )
-        dataset_inputs: dict[str, object] = {
-            "sample": dataset.sample.model_dump(
-                mode="json",
-                exclude={"window_mode"},
-            ),
-            "split": (
-                dataset.split.model_dump(mode="json")
-                if dataset.split is not None
-                else None
-            ),
-            "scaled_series": [
-                config.model_dump(
-                    mode="json",
-                    exclude={"collect", "horizon", "sequence"},
-                )
-                for config in scaled
-            ],
-        }
-        target_horizon = dataset.max_target_horizon
-        if isinstance(dataset.split, TimeSplitConfig) and target_horizon > timedelta():
-            dataset_inputs["target_horizon_seconds"] = int(
-                target_horizon.total_seconds()
-            )
         return (
             {
                 "scaler_format_version": SCALER_ARTIFACT_VERSION,
-                "dataset": dataset_inputs,
+                "dataset": scaler_fit_inputs(dataset),
+                "scaling": {
+                    config.id: config.scale.model_dump(mode="json")
+                    for config in scaled
+                    if config.scale is not None
+                },
                 "streams": stream_config,
             },
             source_ids,

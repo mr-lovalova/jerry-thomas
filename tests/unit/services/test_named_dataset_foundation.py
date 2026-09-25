@@ -8,7 +8,7 @@ from jerrythomas.artifacts.planning import build_artifact_graph
 from jerrythomas.artifacts.registry import SERIES_SPEC
 from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
 from jerrythomas.config.profiles.export import ExportProfile
-from jerrythomas.config.tasks.base import ArtifactTask, RuntimeTask
+from jerrythomas.config.tasks.base import ArtifactTask, OutputTask
 from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.profiles.errors import ProfileCommandError
 from jerrythomas.profiles.request_builder import build_runtime_run_request
@@ -65,7 +65,7 @@ def test_stream_only_project_needs_no_dataset_or_implicit_operations(tmp_path):
     definition = load_project_definition(_project(tmp_path))
     assert definition.datasets == {}
     assert definition.project.dataset_dirs == ()
-    assert definition.runtime_operations == ()
+    assert definition.output_operations == ()
     assert definition.artifact_graph.tasks_by_id == {}
     runtime = compile_runtime(definition)
     assert runtime.dataset_id is None
@@ -78,14 +78,14 @@ def test_stream_only_project_needs_no_dataset_or_implicit_operations(tmp_path):
 def test_dataset_catalog_owns_identity_and_generates_separate_artifacts(tmp_path):
     definition = load_project_definition(_project(tmp_path, ("alpha", "beta")))
     assert set(definition.datasets) == {"alpha", "beta"}
-    assert definition.runtime_operations == ()
+    assert definition.output_operations == ()
     tasks = tuple(definition.artifact_graph.tasks_by_id.values())
     assert len(tasks) == 8
-    assert len({task.output for task in tasks}) == 8
+    assert len({task.path for task in tasks}) == 8
     for task in tasks:
         kind = artifact_kind(task)
         assert task.id == f"dataset.{task.dataset}.{kind}"
-        assert task.output.startswith(f"datasets/{task.dataset}/")
+        assert task.path.startswith(f"datasets/{task.dataset}/")
 
 
 def test_legacy_artifact_entrypoints_have_different_cache_identities(tmp_path):
@@ -155,7 +155,7 @@ def test_explicit_core_producer_replaces_only_its_dataset_and_kind(tmp_path):
         task.dataset: task for task in operations if artifact_kind(task) == "scaler"
     }
     assert scalers["alpha"].id == "alpha-stats"
-    assert scalers["alpha"].output == "datasets/alpha/scaler.json"
+    assert scalers["alpha"].path == "datasets/alpha/scaler.json"
     assert scalers["beta"].id == "dataset.beta.scaler"
     assert len(operations) == 8
 
@@ -171,8 +171,10 @@ def test_multiple_core_producers_for_one_dataset_are_rejected(tmp_path):
                 "dataset": "alpha",
             },
         )
-    with pytest.raises(ValueError, match="multiple series producers"):
-        _operations(project_yaml)
+    with pytest.raises(
+        ValueError, match="multiple series producers: 'first' and 'second'"
+    ):
+        load_project_definition(project_yaml)
 
 
 @pytest.mark.parametrize(
@@ -212,7 +214,7 @@ def test_runtime_operations_are_explicit_and_stream_operations_have_no_dataset(
         {"kind": "output", "entrypoint": "core.records", "stream": "prices"},
     )
     runtime_tasks = [
-        task for task in _operations(project_yaml) if isinstance(task, RuntimeTask)
+        task for task in _operations(project_yaml) if isinstance(task, OutputTask)
     ]
     assert {task.id for task in runtime_tasks} == {"samples", "prices"}
     stream = next(task for task in runtime_tasks if isinstance(task, StreamTask))

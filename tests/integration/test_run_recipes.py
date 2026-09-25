@@ -69,13 +69,13 @@ def test_export_recipe_preserves_resolved_external_config_not_unused_catalog(
     assert "${" not in saved.recipe_path.read_text()
     assert saved.output("linear").row_count == 6
     assert not any(
-        item["group"] == "jerrythomas.operations.runtime"
+        item["group"] == "jerrythomas.operations.output"
         for item in recipe.implementation["unidentified_entrypoints"]
     )
     assert {
-        "group": "jerrythomas.operations.runtime",
+        "group": "jerrythomas.operations.output",
         "name": "core.records",
-        "value": "jerrythomas.operations.runtime.records:run_records_operation",
+        "value": "jerrythomas.operations.outputs.records:run_records_operation",
         "distribution": "jerry-thomas",
     } in recipe.implementation["entrypoints"]
     archive = tmp_path / "archive"
@@ -128,13 +128,13 @@ def test_serve_recipe_includes_overrides_and_selected_artifact_identities(copy_f
     )
     assert "jerry-thomas" in recipe.implementation["packages"]
     assert not any(
-        item["group"] == "jerrythomas.operations.runtime"
+        item["group"] == "jerrythomas.operations.output"
         for item in recipe.implementation["unidentified_entrypoints"]
     )
     assert {
-        "group": "jerrythomas.operations.runtime",
+        "group": "jerrythomas.operations.output",
         "name": "core.dataset",
-        "value": "jerrythomas.operations.runtime.dataset:run_dataset_operation",
+        "value": "jerrythomas.operations.outputs.dataset:run_dataset_operation",
         "distribution": "jerry-thomas",
     } in recipe.implementation["entrypoints"]
 

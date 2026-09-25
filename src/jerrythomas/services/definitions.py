@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Collection, Mapping
 
 from jerrythomas.config.dataset.dataset import DatasetConfig
 from jerrythomas.config.project import ProjectConfig
 from jerrythomas.config.streams import StreamsConfig
-from jerrythomas.config.tasks.base import RuntimeTask
+from jerrythomas.config.tasks.base import OutputTask
 from jerrythomas.services.config_refs import (
     interpolate_config_vars,
     resolve_config_refs,
@@ -16,6 +16,9 @@ from jerrythomas.services.config_refs import (
 
 if TYPE_CHECKING:
     from jerrythomas.artifacts.planning import ArtifactGraph
+
+# Resolved only once an operation binds a dataset; left as ${...} until then.
+DATASET_VARIABLES = frozenset({"dataset_id", "dataset_version"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,14 +35,20 @@ class ProjectManifest:
     profiles_dir: Path
 
     def resolve_config(
-        self, value: Any, *, variables: Mapping[str, Any] | None = None
+        self,
+        value: Any,
+        *,
+        variables: Mapping[str, Any] | None = None,
+        deferred: Collection[str] = (),
     ) -> Any:
         value = resolve_config_refs(
             value,
             project_yaml=self.path,
             env=self.environment,
         )
-        return interpolate_config_vars(value, {**self.variables, **(variables or {})})
+        return interpolate_config_vars(
+            value, {**self.variables, **(variables or {})}, deferred
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +68,7 @@ class ProjectDefinition:
     datasets: Mapping[str, DatasetConfig]
     streams: StreamsConfig
     artifact_graph: ArtifactGraph
-    runtime_operations: tuple[RuntimeTask, ...]
+    output_operations: tuple[OutputTask, ...]
     artifact_hashes: ArtifactHashes
 
     def __post_init__(self) -> None:

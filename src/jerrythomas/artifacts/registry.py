@@ -46,7 +46,13 @@ class ArtifactNotRegisteredError(RuntimeError):
 
 
 class ArtifactRegistry:
-    """Registered build artifacts available to a runtime."""
+    """Registered build artifacts available to a runtime.
+
+    Artifacts are registered under operation IDs. Lookups accept either an
+    operation ID (for example a schedule artifact) or a built-in ``ArtifactSpec``;
+    dataset-scoped specs resolve through ``aliases`` to the selected dataset's
+    producer, such as ``series`` -> ``dataset.default.series``.
+    """
 
     def __init__(self, root: Path, *, aliases: Mapping[str, str] | None = None) -> None:
         self._root = Path(root)
@@ -82,6 +88,7 @@ class ArtifactRegistry:
         }
 
     def _key(self, reference: str | ArtifactSpec[Any]) -> str:
+        """Operation ID for a lookup; see the class docstring."""
         if isinstance(reference, str):
             return reference
         return (

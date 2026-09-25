@@ -15,8 +15,8 @@ LOADERS_EP = "jerrythomas.loaders"
 MAPPERS_EP = "jerrythomas.mappers"
 COMBINERS_EP = "jerrythomas.combiners"
 TRANSFORMS_EP = "jerrythomas.transforms"
-BUILD_OPERATIONS_EP = "jerrythomas.operations.build"
-RUNTIME_OPERATIONS_EP = "jerrythomas.operations.runtime"
+ARTIFACT_OPERATIONS_EP = "jerrythomas.operations.artifact"
+OUTPUT_OPERATIONS_EP = "jerrythomas.operations.output"
 PLUGIN_GROUPS = frozenset(
     {
         PARSERS_EP,
@@ -24,8 +24,8 @@ PLUGIN_GROUPS = frozenset(
         MAPPERS_EP,
         COMBINERS_EP,
         TRANSFORMS_EP,
-        BUILD_OPERATIONS_EP,
-        RUNTIME_OPERATIONS_EP,
+        ARTIFACT_OPERATIONS_EP,
+        OUTPUT_OPERATIONS_EP,
     }
 )
 

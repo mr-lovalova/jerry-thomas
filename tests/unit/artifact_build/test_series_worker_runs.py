@@ -2,7 +2,10 @@ from datetime import datetime, timezone
 
 import pytest
 
-from jerrythomas.operations.artifacts.series import _ProjectedRow, _ProjectedScalar
+from jerrythomas.operations.artifacts.series_projection import (
+    ProjectedRow,
+    ProjectedScalar,
+)
 from jerrythomas.pipelines.sort import merge_sort_runs, write_sort_runs
 
 
@@ -14,10 +17,10 @@ def test_worker_runs_snapshot_reused_values_before_advancing(tmp_path, buffer_by
     def rows():
         for value in range(3):
             values[:] = [value, None]
-            yield _ProjectedRow(
+            yield ProjectedRow(
                 key=(time, "A"),
                 time=time,
-                features=(_ProjectedScalar("value", values, True),),
+                features=(ProjectedScalar("value", values, True),),
                 targets=(),
             )
         values.clear()

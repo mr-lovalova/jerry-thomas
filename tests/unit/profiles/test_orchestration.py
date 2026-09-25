@@ -27,8 +27,8 @@ from jerrythomas.config.preview import PreviewStage
 from jerrythomas.config.streams import StreamsConfig
 from jerrythomas.config.tasks.base import (
     ArtifactTask,
-    PluginRuntimeTask,
-    RuntimeTask,
+    PluginOutputTask,
+    OutputTask,
 )
 from jerrythomas.config.tasks.coverage import CoverageTask
 from jerrythomas.config.tasks.coverage_stats import CoverageStatsTask
@@ -56,7 +56,7 @@ from jerrythomas.operations.persistence import (
     RuntimeOutput,
     RuntimeOutputBatch,
 )
-from jerrythomas.operations.runtime.execution import OutputOptions, run_output_operation
+from jerrythomas.operations.outputs.execution import OutputOptions, run_output_operation
 from jerrythomas.profiles.execution import (
     RuntimeJobPlan,
     execute_runtime_job,
@@ -178,7 +178,7 @@ def _export_output(path: Path) -> OutputTarget:
 
 def _runtime_job(
     name: str,
-    task: RuntimeTask,
+    task: OutputTask,
     runtime,
     *,
     limit: int | None = None,
@@ -530,9 +530,9 @@ def test_custom_runtime_artifact_requirement_is_prepared(
     snapshot = ArtifactTask(
         id="snapshot",
         entrypoint="plugin.snapshot",
-        output="build/snapshot.json",
+        path="build/snapshot.json",
     )
-    report = PluginRuntimeTask(
+    report = PluginOutputTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("snapshot",),
@@ -571,7 +571,7 @@ def test_custom_runtime_artifact_requirement_is_prepared(
 def test_custom_runtime_missing_required_producer_is_rejected_before_execution(
     tmp_path: Path,
 ) -> None:
-    report = PluginRuntimeTask(
+    report = PluginOutputTask(
         id="report",
         entrypoint="plugin.runtime.report",
         requires=("custom_snapshot",),
@@ -702,7 +702,7 @@ def test_runtime_job_emits_resolved_config_at_debug(
 ) -> None:
     runtime = _runtime(tmp_path)
     runtime.execution = ExecutionConfig(sort_buffer_mb=24)
-    task = PluginRuntimeTask(id="report", entrypoint="plugin.runtime.report")
+    task = PluginOutputTask(id="report", entrypoint="plugin.runtime.report")
     job = _runtime_job("coverage", task, runtime)
     messages: list[tuple[str, int]] = []
 
@@ -715,7 +715,7 @@ def test_runtime_job_emits_resolved_config_at_debug(
         lambda message, level: messages.append((message, level)),
     )
     monkeypatch.setattr(
-        "jerrythomas.operations.runtime.execution.load_entrypoint",
+        "jerrythomas.operations.outputs.execution.load_entrypoint",
         lambda *_args: lambda *_runner_args: None,
     )
 
@@ -744,7 +744,7 @@ def test_runtime_job_emits_resolved_config_at_debug(
 def test_runtime_job_does_not_hide_plugin_value_errors(
     monkeypatch, tmp_path: Path
 ) -> None:
-    task = PluginRuntimeTask(id="report", entrypoint="plugin.runtime.report")
+    task = PluginOutputTask(id="report", entrypoint="plugin.runtime.report")
     job = _runtime_job("coverage", task, _runtime(tmp_path))
     monkeypatch.setattr(
         "jerrythomas.profiles.execution.hydrate_runtime_artifacts_for_pipeline",
@@ -758,7 +758,7 @@ def test_runtime_job_does_not_hide_plugin_value_errors(
         return run
 
     monkeypatch.setattr(
-        "jerrythomas.operations.runtime.execution.load_entrypoint", fail
+        "jerrythomas.operations.outputs.execution.load_entrypoint", fail
     )
 
     with pytest.raises(ValueError, match="plugin bug"):
@@ -770,7 +770,7 @@ def test_runtime_job_does_not_hide_plugin_value_errors(
 
 
 def test_runtime_job_reports_unavailable_artifacts(monkeypatch, tmp_path: Path) -> None:
-    task = PluginRuntimeTask(id="report", entrypoint="plugin.runtime.report")
+    task = PluginOutputTask(id="report", entrypoint="plugin.runtime.report")
     job = _runtime_job("report", task, _runtime(tmp_path))
     monkeypatch.setattr(
         "jerrythomas.profiles.execution.hydrate_runtime_artifacts_for_pipeline",
@@ -820,7 +820,7 @@ def test_runtime_job_reports_unavailable_artifacts(monkeypatch, tmp_path: Path) 
             RuntimeOutput(payload={"coverage": {}}),
         ),
         (
-            PluginRuntimeTask(id="report", entrypoint="research.report"),
+            PluginOutputTask(id="report", entrypoint="research.report"),
             OutputOptions(limit=7, output_format="txt"),
             RuntimeOutput(payload={"result": "ok"}),
         ),
@@ -848,7 +848,7 @@ def test_output_jobs_use_registered_runner_with_complete_execution_options(
     received = []
 
     def load_runner(group, entrypoint):
-        assert group == "jerrythomas.operations.runtime"
+        assert group == "jerrythomas.operations.output"
         assert entrypoint == task.entrypoint
 
         def run(runtime, operation_task, execution_options):
@@ -865,7 +865,7 @@ def test_output_jobs_use_registered_runner_with_complete_execution_options(
         lambda *_args, **_kwargs: (),
     )
     monkeypatch.setattr(
-        "jerrythomas.operations.runtime.execution.load_entrypoint", load_runner
+        "jerrythomas.operations.outputs.execution.load_entrypoint", load_runner
     )
     monkeypatch.setattr(
         "jerrythomas.profiles.execution.persist_runtime_result",
@@ -897,9 +897,9 @@ def test_runtime_plugin_rejects_unsupported_results(
     tmp_path: Path,
     result,
 ) -> None:
-    task = PluginRuntimeTask(id="report", entrypoint="research.report")
+    task = PluginOutputTask(id="report", entrypoint="research.report")
     monkeypatch.setattr(
-        "jerrythomas.operations.runtime.execution.load_entrypoint",
+        "jerrythomas.operations.outputs.execution.load_entrypoint",
         lambda *_args: lambda *_runner_args: result,
     )
 
@@ -913,15 +913,15 @@ def test_runtime_plugin_rejects_unsupported_results(
 @pytest.mark.parametrize(
     ("task", "expected_model"),
     [
-        (RuntimeTask(id="runtime", entrypoint="research.report"), "PluginRuntimeTask"),
-        (PluginRuntimeTask(id="records", entrypoint="core.records"), "StreamTask"),
-        (PluginRuntimeTask(id="dataset", entrypoint="core.dataset"), "DatasetTask"),
+        (OutputTask(id="runtime", entrypoint="research.report"), "PluginOutputTask"),
+        (PluginOutputTask(id="records", entrypoint="core.records"), "StreamTask"),
+        (PluginOutputTask(id="dataset", entrypoint="core.dataset"), "DatasetTask"),
         (
-            PluginRuntimeTask(id="matrix", entrypoint="core.availability_matrix"),
+            PluginOutputTask(id="matrix", entrypoint="core.availability_matrix"),
             "MatrixTask",
         ),
         (
-            PluginRuntimeTask(id="coverage", entrypoint="core.coverage_report"),
+            PluginOutputTask(id="coverage", entrypoint="core.coverage_report"),
             "CoverageTask",
         ),
     ],
@@ -930,7 +930,7 @@ def test_output_entrypoint_rejects_wrong_configuration_before_loading(
     monkeypatch, tmp_path, task, expected_model
 ):
     monkeypatch.setattr(
-        "jerrythomas.operations.runtime.execution.load_entrypoint",
+        "jerrythomas.operations.outputs.execution.load_entrypoint",
         lambda *_args: pytest.fail("Invalid configuration must not load an entrypoint"),
     )
     with pytest.raises(TypeError, match=f"requires {expected_model}"):
@@ -991,7 +991,7 @@ def test_parquet_output_rejects_record_preview_before_planning(
 
 
 def test_shared_serve_run_is_finalized_once(monkeypatch, tmp_path: Path) -> None:
-    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginOutputTask(id="pipeline", entrypoint="plugin.runtime")
     run_paths = _run_paths(tmp_path)
     request = _runtime_request(
         tmp_path,
@@ -1042,7 +1042,7 @@ def test_series_cache_filesystem_failure_does_not_fail_published_run(
     caplog,
 ) -> None:
     series = SeriesTask(id="series")
-    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginOutputTask(id="pipeline", entrypoint="plugin.runtime")
     run_paths = _run_paths(tmp_path)
     request = _runtime_request(
         tmp_path,
@@ -1109,7 +1109,7 @@ def test_series_cache_programming_error_remains_strict(
 
 
 def test_job_failure_marks_shared_run_failed(monkeypatch, tmp_path: Path) -> None:
-    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginOutputTask(id="pipeline", entrypoint="plugin.runtime")
     run_paths = _run_paths(tmp_path)
     request = _runtime_request(
         tmp_path,
@@ -1157,7 +1157,7 @@ def test_cleanup_failure_does_not_replace_job_failure(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginOutputTask(id="pipeline", entrypoint="plugin.runtime")
     run_paths = _run_paths(tmp_path)
     request = _runtime_request(
         tmp_path,
@@ -1200,7 +1200,7 @@ def test_latest_failure_still_finalizes_all_runs(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginOutputTask(id="pipeline", entrypoint="plugin.runtime")
     first = _run_paths(tmp_path / "first", "first")
     second = _run_paths(tmp_path / "second", "second")
     request = _runtime_request(
@@ -1415,7 +1415,7 @@ def test_later_run_start_failure_fails_only_started_run(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    task = PluginRuntimeTask(id="pipeline", entrypoint="plugin.runtime")
+    task = PluginOutputTask(id="pipeline", entrypoint="plugin.runtime")
     first = _run_paths(tmp_path / "first")
     second = _run_paths(tmp_path / "second")
     request = _runtime_request(
@@ -1464,13 +1464,13 @@ def test_export_uses_shared_artifact_and_execution_lifecycle(
         id="market_schedule",
         stream="prices",
         partition_by=[],
-        output="schedule.jsonl",
+        path="schedule.jsonl",
     )
     secondary_schedule = ScheduleTask(
         id="secondary_schedule",
         stream="prices",
         partition_by=[],
-        output="secondary-schedule.jsonl",
+        path="secondary-schedule.jsonl",
     )
     execution = ExecutionConfig(sort_buffer_mb=32)
     runtime = SimpleNamespace(
@@ -1560,7 +1560,7 @@ def test_export_hydrates_current_schedule_when_build_skips(
         id="market_schedule",
         stream="prices",
         partition_by=[],
-        output="schedule.jsonl",
+        path="schedule.jsonl",
     )
     job = ExportJob(
         name="adv-20",
@@ -1576,14 +1576,14 @@ def test_export_hydrates_current_schedule_when_build_skips(
         artifact_operations=[schedule],
     )
     artifacts_root = definition.project.artifacts_root
-    artifact_path = artifacts_root / schedule.output
+    artifact_path = artifacts_root / schedule.path
     artifact_path.parent.mkdir(parents=True)
     artifact_path.write_text("{}\n", encoding="utf-8")
     state = BuildState()
     state.register(
         schedule.id,
         artifact_hash=definition.artifact_hashes.for_artifact(schedule.id),
-        files=(ArtifactFileFingerprint.from_path(schedule.output, artifact_path),),
+        files=(ArtifactFileFingerprint.from_path(schedule.path, artifact_path),),
     )
     save_build_state(
         state,
@@ -1632,7 +1632,7 @@ def test_export_hydrates_current_schedule_when_build_skips(
                 ArtifactTask(
                     id="market_schedule",
                     entrypoint="plugin.snapshot",
-                    output="snapshot.json",
+                    path="snapshot.json",
                 )
             ],
             "not a schedule operation",

@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core import PydanticSerializationError
@@ -51,29 +51,46 @@ class Task(BaseModel):
 
 
 class ArtifactTask(Task):
-    # YAML uses path; Python callers and serialized artifact contracts retain output.
-    model_config = ConfigDict(populate_by_name=True)
-
     kind: Literal["artifact"] = Field(default="artifact")
-    output: str = Field(validation_alias="path")
+    # Relative to the project's artifacts root.
+    path: str
 
-    @field_validator("output")
+    @field_validator("path")
     @classmethod
-    def _validate_output(cls, output: str) -> str:
-        output = output.strip()
-        output_path = Path(output)
-        if not output or output_path == Path("."):
+    def _validate_path(cls, path: str) -> str:
+        path = path.strip()
+        relative = Path(path)
+        if not path or relative == Path("."):
             raise ValueError("path must name a file under the artifacts root")
-        if output_path.is_absolute():
+        if relative.is_absolute():
             raise ValueError("path must be a relative path under artifacts root")
-        if ".." in output_path.parts:
+        if ".." in relative.parts:
             raise ValueError("path must not traverse outside artifacts root")
-        if output_path.parts[0].rstrip(" .").casefold() == "_system":
+        if relative.parts[0].rstrip(" .").casefold() == "_system":
             raise ValueError("path must not use the reserved '_system' directory")
-        return output
+        return path
 
 
-class RuntimeTask(Task):
+class DatasetArtifactTask(ArtifactTask):
+    """A built-in artifact of one dataset, stored at datasets/<id>/<file> by default."""
+
+    default_filename: ClassVar[str]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_path(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("path") is None:
+            dataset = data.get("dataset")
+            path = (
+                f"datasets/{dataset}/{cls.default_filename}"
+                if isinstance(dataset, str) and dataset.strip()
+                else cls.default_filename
+            )
+            return {**data, "path": path}
+        return data
+
+
+class OutputTask(Task):
     kind: Literal["output"] = Field(default="output")
     requires: tuple[str, ...] = ()
 
@@ -97,7 +114,7 @@ class RuntimeTask(Task):
         return tuple(requires)
 
 
-class PluginRuntimeTask(RuntimeTask):
+class PluginOutputTask(OutputTask):
     options: dict[str, object] = Field(default_factory=dict)
 
     @field_validator("options", mode="before")

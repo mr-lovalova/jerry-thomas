@@ -101,7 +101,7 @@ class _SampleSource:
             if not isinstance(metadata.layout, UnsplitMetadataLayout):
                 raise RuntimeError(
                     "Unsplit dataset requires unsplit metadata. "
-                    "Rebuild build/metadata.json."
+                    "Rebuild the dataset metadata artifact."
                 )
             key_plan = require_metadata_key_plan(
                 metadata.catalog.window,
