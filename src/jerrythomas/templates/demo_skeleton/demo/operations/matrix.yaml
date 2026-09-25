@@ -1,2 +1,3 @@
-product: availability_matrix
+kind: output
+entrypoint: core.availability_matrix
 dataset: default

@@ -5,7 +5,7 @@ from .base import ArtifactTask
 
 
 class ScheduleTask(ArtifactTask):
-    entrypoint: str = Field(default="core.artifact.schedule")
+    entrypoint: str = Field(default="core.schedule")
     stream: FieldName
     partition_by: list[FieldName]
 

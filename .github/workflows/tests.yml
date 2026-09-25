@@ -142,21 +142,29 @@ jobs:
           cd "$smoke_root"
           jerry plugin create smoke-plugin --out .
           test -f smoke-plugin/jerry.yaml
-          test -f smoke-plugin/your-dataset/.env.example
-          test -f smoke-plugin/your-dataset/project.yaml
-          test -f smoke-plugin/your-dataset/dataset.yaml
-          test ! -e smoke-plugin/your-dataset/profiles/build.schema.yaml
-          test -f smoke-plugin/your-dataset/profiles/serve.defaults.yaml
-          test -f smoke-plugin/your-dataset/profiles/serve.dataset.yaml
+          test -f smoke-plugin/your-project/.env.example
+          test -f smoke-plugin/your-project/project.yaml
+          test -f smoke-plugin/your-project/datasets/default.yaml
+          test -f smoke-plugin/your-project/operations/dataset.yaml
+          test -f smoke-plugin/your-project/operations/coverage.yaml
+          test -f smoke-plugin/your-project/operations/matrix.yaml
+          test ! -e smoke-plugin/your-project/dataset.yaml
+          test ! -e smoke-plugin/your-dataset
+          test ! -e smoke-plugin/your-project/profiles/build.schema.yaml
+          test -f smoke-plugin/your-project/profiles/serve.defaults.yaml
+          test -f smoke-plugin/your-project/profiles/serve.dataset.yaml
           test ! -e smoke-plugin/your-interim-data-builder
-          test ! -e smoke-plugin/your-dataset/tasks
+          test ! -e smoke-plugin/your-project/tasks
           test ! -e smoke-plugin/_dataset_base
           jerry demo create --out .
           test -f demo/jerry.yaml
           test -f demo/demo/.env.example
+          test -f demo/demo/datasets/default.yaml
           test -f demo/demo/scripts/run_model_batches.py
           test ! -e demo/_dataset_base
           test ! -e jerry.yaml
+          jerry list datasets --project demo/demo/project.yaml
+          jerry list profiles --project demo/demo/project.yaml
           if find smoke-plugin demo \( -name __pycache__ -o -name '*.pyc' -o -name '.DS_Store' \) | grep -q .; then
             echo "Scaffolded output contains generated files"
             exit 1

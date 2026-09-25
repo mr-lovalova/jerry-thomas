@@ -6,4 +6,4 @@ from .base import RuntimeTask
 
 
 class DatasetTask(RuntimeTask):
-    entrypoint: Literal["core.runtime.dataset"] = Field(default="core.runtime.dataset")
+    entrypoint: Literal["core.dataset"] = Field(default="core.dataset")

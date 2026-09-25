@@ -10,7 +10,7 @@ def test_scaler_task_binds_dataset_and_output() -> None:
     assert task.model_dump() == {
         "kind": "artifact",
         "id": "scaler",
-        "entrypoint": "core.artifact.scaler",
+        "entrypoint": "core.scaler",
         "output": "build/scaler.json",
         "dataset": None,
     }

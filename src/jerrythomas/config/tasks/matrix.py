@@ -13,5 +13,7 @@ class MatrixOptions(BaseModel):
 
 
 class MatrixTask(RuntimeTask):
-    entrypoint: Literal["core.runtime.matrix"] = Field(default="core.runtime.matrix")
+    entrypoint: Literal["core.availability_matrix"] = Field(
+        default="core.availability_matrix"
+    )
     options: MatrixOptions = Field(default_factory=MatrixOptions)

@@ -16,7 +16,8 @@ def test_build_hydrates_callers_dataset_after_shared_schedule_context(tmp_path):
     write_config(
         tmp_path / "operations" / "calendar.yaml",
         {
-            "product": "schedule",
+            "kind": "artifact",
+            "entrypoint": "core.schedule",
             "stream": "rows",
             "partition_by": ["id_"],
             "path": "shared/calendar.jsonl",
@@ -70,14 +71,15 @@ def test_build_hydrates_callers_dataset_after_shared_schedule_context(tmp_path):
     assert not runtime.artifacts.has("dataset.beta.series")
 
 
-def test_explicit_products_reuse_default_artifacts_and_preserve_dataset_outputs(
+def test_explicit_operations_reuse_default_artifacts_and_preserve_dataset_outputs(
     tmp_path,
 ):
     project = create_project(tmp_path)
     write_config(
         tmp_path / "operations" / "serve-alpha.yaml",
         {
-            "product": "dataset",
+            "kind": "output",
+            "entrypoint": "core.dataset",
             "dataset": "alpha",
             "requires": ["dataset.alpha.coverage_stats"],
         },
@@ -90,21 +92,33 @@ def test_explicit_products_reuse_default_artifacts_and_preserve_dataset_outputs(
     (original,) = run_profiles(implicit)
     original_rows = [path.read_bytes() for path in original.outputs]
     original_recipe = original.load_recipe()
-    products = {
-        "series": "dataset_series",
-        "scaler": "scaler",
-        "metadata": "dataset_metadata",
-        "coverage_stats": "coverage_statistics",
+    entrypoints = {
+        "series": "core.dataset_series",
+        "scaler": "core.scaler",
+        "metadata": "core.dataset_metadata",
+        "coverage_stats": "core.coverage_statistics",
     }
     assert set(original_recipe.configuration["artifacts"]) == {
-        f"dataset.alpha.{kind}" for kind in products
+        f"dataset.alpha.{kind}" for kind in entrypoints
     }
+    assert {
+        key: config["entrypoint"]
+        for key, config in original_recipe.configuration["artifacts"].items()
+    } == {
+        f"dataset.alpha.{kind}": entrypoint for kind, entrypoint in entrypoints.items()
+    }
+    assert original_recipe.configuration["jobs"][0]["operation"]["kind"] == "output"
+    assert (
+        original_recipe.configuration["jobs"][0]["operation"]["entrypoint"]
+        == "core.dataset"
+    )
 
-    for kind, product in products.items():
+    for kind, entrypoint in entrypoints.items():
         write_config(
             tmp_path / "operations" / f"dataset.alpha.{kind}.yaml",
             {
-                "product": product,
+                "kind": "artifact",
+                "entrypoint": entrypoint,
                 "dataset": "alpha",
                 "path": implicit.definition.artifact_graph.tasks_by_id[
                     f"dataset.alpha.{kind}"

@@ -26,16 +26,16 @@ DATASET_ARTIFACT_MODELS: dict[str, type[ArtifactTask]] = {
     "metadata": MetadataTask,
     "coverage_stats": CoverageStatsTask,
 }
-PRODUCT_MODELS: dict[str, type[Task]] = {
-    "records": StreamTask,
-    "dataset": DatasetTask,
-    "availability_matrix": MatrixTask,
-    "coverage_report": CoverageTask,
-    "dataset_series": SeriesTask,
-    "scaler": ScalerTask,
-    "dataset_metadata": MetadataTask,
-    "coverage_statistics": CoverageStatsTask,
-    "schedule": ScheduleTask,
+CORE_OPERATION_MODELS: dict[str, type[Task]] = {
+    "core.records": StreamTask,
+    "core.dataset": DatasetTask,
+    "core.availability_matrix": MatrixTask,
+    "core.coverage_report": CoverageTask,
+    "core.dataset_series": SeriesTask,
+    "core.scaler": ScalerTask,
+    "core.dataset_metadata": MetadataTask,
+    "core.coverage_statistics": CoverageStatsTask,
+    "core.schedule": ScheduleTask,
 }
 
 
@@ -87,46 +87,29 @@ def _operation_from_document(
         raise ValueError(
             f"{path} must not define id; the filename supplies '{operation_id}'."
         )
-    model: type[Task]
-    if "product" in entry:
-        if "kind" in entry or "entrypoint" in entry:
-            raise ValueError(
-                f"Operation '{operation_id}' must not combine product with kind or entrypoint."
-            )
-        product = entry.pop("product")
-        if not isinstance(product, str) or product not in PRODUCT_MODELS:
-            raise ValueError(
-                f"Operation '{operation_id}' must select a supported product: "
-                + ", ".join(PRODUCT_MODELS)
-                + "."
-            )
-        model = PRODUCT_MODELS[product]
-    else:
-        kind = entry.get("kind")
-        if kind == "runtime":
-            model = PluginRuntimeTask
-        elif kind == "artifact":
-            model = ArtifactTask
-        else:
-            raise ValueError(
-                f"Operation '{operation_id}' must declare product, or set kind to "
-                "runtime or artifact for a custom operation."
-            )
-        entrypoint = entry.get("entrypoint")
-        if (
-            not isinstance(entrypoint, str)
-            or not entrypoint
-            or entrypoint != entrypoint.strip()
-        ):
-            raise ValueError(
-                f"Operation '{operation_id}' must declare a nonempty entrypoint "
-                "without outer whitespace."
-            )
+    kind = entry.get("kind")
+    if kind not in ("output", "artifact"):
+        raise ValueError(
+            f"Operation '{operation_id}' must set kind to output or artifact."
+        )
+    entrypoint = entry.get("entrypoint")
+    if (
+        not isinstance(entrypoint, str)
+        or not entrypoint
+        or entrypoint != entrypoint.strip()
+    ):
+        raise ValueError(
+            f"Operation '{operation_id}' must declare a nonempty entrypoint "
+            "without outer whitespace."
+        )
+    model = CORE_OPERATION_MODELS.get(entrypoint)
+    if model is None:
         if entrypoint.startswith("core."):
             raise ValueError(
-                f"Operation '{operation_id}' must select built-in operations with "
-                "product instead of kind and entrypoint."
+                f"Operation '{operation_id}' has unknown built-in entrypoint "
+                f"'{entrypoint}'."
             )
+        model = PluginRuntimeTask if kind == "output" else ArtifactTask
 
     if issubclass(model, ArtifactTask) and "output" in entry:
         raise ValueError(
@@ -201,11 +184,12 @@ def operations_from_documents(
                     f"{kind} producer of dataset '{dataset_id}'."
                 )
             defaults.append(
-                model(
-                    id=operation_id,
-                    entrypoint=f"core.artifact.{kind}",
-                    dataset=dataset_id,
-                    output=_artifact_output(dataset_id, kind),
+                model.model_validate(
+                    {
+                        "id": operation_id,
+                        "dataset": dataset_id,
+                        "output": _artifact_output(dataset_id, kind),
+                    }
                 )
             )
     return [*defaults, *operations]

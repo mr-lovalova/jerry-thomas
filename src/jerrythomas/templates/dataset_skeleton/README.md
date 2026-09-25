@@ -58,9 +58,10 @@ Profile sequencing:
 - Each concrete profile is one mapping in `<command>.<name>.yaml`; the filename
   supplies both command and name. Defaults use `<command>.defaults.yaml`.
 - Profiles execute by `order` (ascending); unset falls back to filename order.
-- Every concrete profile references an `operation`. Built-in operations select a
-  `product` and its dataset or stream; profiles select output and execution settings.
-- Dataset artifact operations are generated as `dataset.<id>.<kind>`. Runtime
+- Every concrete profile references an `operation`. Operations declare
+  `kind: output|artifact`, `entrypoint`, and a dataset or stream where required;
+  profiles select output and execution settings.
+- Dataset artifact operations are generated as `dataset.<id>.<artifact>`. Output
   operations are declared under `operations/`.
 - Before selected serve or inspect profiles run, their artifact requirements are
   combined and prepared once according to `artifact_mode: auto|rebuild|require_current`.
@@ -68,8 +69,8 @@ Profile sequencing:
   profile order; build profiles remain explicit artifact roots.
 - Selected build profiles must reference distinct operations.
 - A selected dependency build profile must precede a selected dependent profile.
-- Use multiple ordered profiles only when you want separate named build/runtime
-  steps or different per-profile output and observability settings.
+- Use multiple ordered profiles for separate named artifact builds or output
+  steps, or different per-profile output and observability settings.
 
 Python plugin code:
 

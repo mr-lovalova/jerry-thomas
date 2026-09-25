@@ -55,7 +55,7 @@ def capture_recipe(
         for job in jobs
     ):
         roots.update(streams.streams)
-        limitations.append("Plugin runtime operations can access the entire catalog.")
+        limitations.append("Plugin output operations can access the entire catalog.")
     for key in required_artifacts:
         task = graph.tasks_by_id[key]
         bound_dataset = (

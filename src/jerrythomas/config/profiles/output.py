@@ -32,7 +32,7 @@ OUTPUT_MATRIX_HELP = (
     "          parquet supports view=flat and uses internal compression\n"
     "          pickle supports view=raw\n"
     "          txt/html output does not support view\n"
-    "          html output support depends on the selected runtime operation\n"
+    "          html output support depends on the selected output operation\n"
 )
 
 

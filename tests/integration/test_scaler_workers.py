@@ -343,7 +343,7 @@ def test_mixed_feature_scaling_preserves_fold_outputs_across_workers(tmp_path) -
     _write_yaml(root / "project.yaml", project)
     _write_yaml(
         root / "operations" / "dataset.yaml",
-        {"product": "dataset", "dataset": "default"},
+        {"kind": "output", "entrypoint": "core.dataset", "dataset": "default"},
     )
     _write_yaml(
         root / "profiles" / "serve.dataset.yaml",

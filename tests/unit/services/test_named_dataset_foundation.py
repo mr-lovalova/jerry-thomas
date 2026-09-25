@@ -3,6 +3,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from jerrythomas.artifacts.fingerprints import calculate_artifact_hashes
+from jerrythomas.artifacts.planning import build_artifact_graph
 from jerrythomas.artifacts.registry import SERIES_SPEC
 from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
 from jerrythomas.config.profiles.materialize import MaterializeProfile
@@ -86,6 +88,28 @@ def test_dataset_catalog_owns_identity_and_generates_separate_artifacts(tmp_path
         assert task.output.startswith(f"datasets/{task.dataset}/")
 
 
+def test_legacy_artifact_entrypoints_have_different_cache_identities(tmp_path):
+    definition = load_project_definition(_project(tmp_path, ("alpha",)))
+    legacy_tasks = [
+        task.model_copy(update={"entrypoint": f"core.artifact.{artifact_kind(task)}"})
+        for task in definition.artifact_graph.tasks_by_id.values()
+    ]
+    legacy_graph = build_artifact_graph(
+        legacy_tasks, definition.datasets, definition.streams
+    )
+    legacy_hashes = calculate_artifact_hashes(
+        definition.project, definition.datasets, definition.streams, legacy_graph
+    )
+
+    current = definition.artifact_hashes.values
+    assert set(current) == {
+        f"dataset.alpha.{kind}"
+        for kind in ("series", "scaler", "metadata", "coverage_stats")
+    }
+    assert current.keys() == legacy_hashes.values.keys()
+    assert all(current[key] != legacy_hashes.values[key] for key in current)
+
+
 def test_compiling_selected_datasets_is_explicit_and_keeps_snapshots_isolated(tmp_path):
     definition = load_project_definition(_project(tmp_path, ("alpha", "beta")))
     alpha = compile_runtime(definition, "alpha")
@@ -124,7 +148,7 @@ def test_explicit_core_producer_replaces_only_its_dataset_and_kind(tmp_path):
     project_yaml = _project(tmp_path, ("alpha", "beta"))
     _write_yaml(
         tmp_path / "operations" / "alpha-stats.yaml",
-        {"product": "scaler", "dataset": "alpha"},
+        {"kind": "artifact", "entrypoint": "core.scaler", "dataset": "alpha"},
     )
     operations = _operations(project_yaml)
     scalers = {
@@ -142,7 +166,8 @@ def test_multiple_core_producers_for_one_dataset_are_rejected(tmp_path):
         _write_yaml(
             tmp_path / "operations" / f"{name}.yaml",
             {
-                "product": "dataset_series",
+                "kind": "artifact",
+                "entrypoint": "core.dataset_series",
                 "dataset": "alpha",
             },
         )
@@ -151,21 +176,21 @@ def test_multiple_core_producers_for_one_dataset_are_rejected(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "product",
+    "kind,entrypoint",
     [
-        "dataset",
-        "availability_matrix",
-        "coverage_report",
-        "scaler",
-        "dataset_series",
-        "dataset_metadata",
-        "coverage_statistics",
+        ("output", "core.dataset"),
+        ("output", "core.availability_matrix"),
+        ("output", "core.coverage_report"),
+        ("artifact", "core.scaler"),
+        ("artifact", "core.dataset_series"),
+        ("artifact", "core.dataset_metadata"),
+        ("artifact", "core.coverage_statistics"),
     ],
 )
-def test_dataset_operations_require_explicit_known_bindings(tmp_path, product):
+def test_dataset_operations_require_explicit_known_bindings(tmp_path, kind, entrypoint):
     project_yaml = _project(tmp_path, ("alpha",))
     operation_path = tmp_path / "operations" / "selected.yaml"
-    operation = {"product": product}
+    operation = {"kind": kind, "entrypoint": entrypoint}
     _write_yaml(operation_path, operation)
     with pytest.raises(ValueError, match="must bind a dataset"):
         _operations(project_yaml)
@@ -180,11 +205,11 @@ def test_runtime_operations_are_explicit_and_stream_operations_have_no_dataset(
     project_yaml = _project(tmp_path, ("alpha",))
     _write_yaml(
         tmp_path / "operations" / "samples.yaml",
-        {"product": "dataset", "dataset": "alpha"},
+        {"kind": "output", "entrypoint": "core.dataset", "dataset": "alpha"},
     )
     _write_yaml(
         tmp_path / "operations" / "prices.yaml",
-        {"product": "records", "stream": "prices"},
+        {"kind": "output", "entrypoint": "core.records", "stream": "prices"},
     )
     runtime_tasks = [
         task for task in _operations(project_yaml) if isinstance(task, RuntimeTask)
@@ -221,7 +246,8 @@ def test_scaling_policy_belongs_to_series_not_artifact_operation(tmp_path):
     _write_yaml(
         tmp_path / "operations" / "scaler.yaml",
         {
-            "product": "scaler",
+            "kind": "artifact",
+            "entrypoint": "core.scaler",
             "dataset": "alpha",
             "with_mean": False,
         },
@@ -235,7 +261,8 @@ def test_shared_artifacts_are_preserved_without_dataset_binding(tmp_path):
     _write_yaml(
         tmp_path / "operations" / "calendar.yaml",
         {
-            "product": "schedule",
+            "kind": "artifact",
+            "entrypoint": "core.schedule",
             "stream": "sessions",
             "partition_by": [],
             "path": "shared/calendar.jsonl",
@@ -338,7 +365,7 @@ def test_dataset_log_paths_must_be_configured_on_concrete_profiles(tmp_path, tok
     project = _project(tmp_path, ("alpha",))
     _write_yaml(
         tmp_path / "operations" / "samples.yaml",
-        {"product": "dataset", "dataset": "alpha"},
+        {"kind": "output", "entrypoint": "core.dataset", "dataset": "alpha"},
     )
     profile_path = tmp_path / "profiles" / "serve.alpha.yaml"
     defaults_path = tmp_path / "profiles" / "serve.defaults.yaml"

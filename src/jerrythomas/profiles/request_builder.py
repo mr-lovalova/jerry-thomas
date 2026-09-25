@@ -231,7 +231,7 @@ def build_build_run_request(
             if profile.operation in runtime_task_ids:
                 raise ProfileCommandError(
                     f"Build profile '{profile.name}' must reference an artifact "
-                    f"operation; '{profile.operation}' is a runtime operation."
+                    f"operation; '{profile.operation}' is an output operation."
                 )
             raise ProfileCommandError(
                 f"Build profile '{profile.name}' references unknown operation "
@@ -335,7 +335,7 @@ def build_runtime_run_request(
             if profile.operation in artifact_task_ids:
                 raise ProfileCommandError(
                     f"{command.capitalize()} profile '{profile.name}' must reference "
-                    f"a runtime operation; '{profile.operation}' is an artifact "
+                    f"an output operation; '{profile.operation}' is an artifact "
                     "operation."
                 )
             raise ProfileCommandError(

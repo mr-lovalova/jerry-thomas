@@ -8,7 +8,7 @@ from .base import RuntimeTask
 
 
 class StreamTask(RuntimeTask):
-    entrypoint: Literal["core.runtime.stream"] = Field(default="core.runtime.stream")
+    entrypoint: Literal["core.records"] = Field(default="core.records")
     stream: NonEmptyString
 
     @model_validator(mode="after")

@@ -1,7 +1,7 @@
 # Artifacts
 
 Core artifact operations are generated for each dataset as
-`dataset.<id>.<kind>`, where kind is `scaler`, `series`, `metadata`, or
+`dataset.<id>.<artifact>`, where artifact is `scaler`, `series`, `metadata`, or
 `coverage_stats`. Their registry keys are those operation IDs. Explicit operation
 IDs come from YAML filenames, such as `operations/schedule.yaml`. Default outputs
 are relative to `paths.artifacts`:
@@ -43,7 +43,8 @@ A schedule operation is explicit:
 
 ```yaml
 # operations/schedule.yaml
-product: schedule
+kind: artifact
+entrypoint: core.schedule
 stream: exchange.sessions
 partition_by: []
 path: build/schedule.jsonl
@@ -77,7 +78,7 @@ companion-file fingerprints, and dependency chain are all current. Each core
 artifact hash covers its typed configuration and dependency closure, including
 only streams and local source snapshots that can feed that artifact. Unrelated
 operations, streams, and sources therefore do not invalidate it. Every hash
-includes `project.yaml:artifact_revision`; runtime-operation settings do not
+includes `project.yaml:artifact_revision`; output-operation settings do not
 enter it. Plugin artifact operations receive the full runtime but cannot declare
 inputs, so their hashes conservatively cover the bound dataset and complete stream
 catalog. Runtime hydration registers only current artifacts;
@@ -240,7 +241,7 @@ settings on a concrete profile apply only while that profile runs. A bare
 execution-scoped log target writes the shared phase to
 `logs/<command>.artifacts.log`.
 
-Runtime operations may add `requires: [artifact_operation_id, ...]` when they
+Output operations may add `requires: [artifact_operation_id, ...]` when they
 need artifacts beyond the built-in operation requirements. These IDs enter the
 same dependency closure and must have declared, active producers. A CLI or
 command-default heartbeat applies to the shared prerequisite build; heartbeat

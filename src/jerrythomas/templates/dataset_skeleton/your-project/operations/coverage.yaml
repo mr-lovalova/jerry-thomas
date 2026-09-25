@@ -1,2 +1,3 @@
-product: coverage_report
+kind: output
+entrypoint: core.coverage_report
 dataset: default

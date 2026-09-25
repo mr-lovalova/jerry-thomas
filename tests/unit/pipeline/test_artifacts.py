@@ -39,7 +39,7 @@ from jerrythomas.config.tasks.metadata import MetadataTask
 from jerrythomas.config.tasks.scaler import ScalerTask
 from jerrythomas.config.tasks.series import SeriesTask
 from jerrythomas.config.tasks.schedule import ScheduleTask
-from jerrythomas.plugins import BUILD_OPERATIONS_EP
+from jerrythomas.plugins import BUILD_OPERATIONS_EP, load_entrypoint
 from jerrythomas.services.definitions import ArtifactHashes
 
 
@@ -150,7 +150,7 @@ def test_schedule_task_uses_task_id_as_artifact_key():
         [
             ScheduleTask(
                 id="schedule",
-                entrypoint="core.artifact.schedule",
+                entrypoint="core.schedule",
                 stream="reference.stream",
                 partition_by=[],
                 output="build/schedule.jsonl",
@@ -819,7 +819,7 @@ def test_dataset_runtime_requirements_follow_preview_stage(
 
 @pytest.mark.parametrize(
     "entrypoint",
-    ["core.runtime.dataset", "core.runtime.coverage"],
+    ["core.dataset", "core.coverage_report"],
 )
 def test_plugin_task_cannot_claim_core_requirements_by_entrypoint(
     entrypoint: str,
@@ -1097,8 +1097,12 @@ def test_artifact_definitions_have_runner_bound_entrypoints():
     for definition in ARTIFACT_DEFINITIONS:
         task = task_by_id[definition.key]
         assert task.entrypoint in declared
+        runner = load_entrypoint(BUILD_OPERATIONS_EP, task.entrypoint)
+        assert f"{runner.__module__}:{runner.__name__}" == declared[task.entrypoint]
 
 
 def test_schedule_entrypoint_is_declared():
     declared = _declared_entrypoints(BUILD_OPERATIONS_EP)
-    assert "core.artifact.schedule" in declared
+    assert "core.schedule" in declared
+    runner = load_entrypoint(BUILD_OPERATIONS_EP, "core.schedule")
+    assert f"{runner.__module__}:{runner.__name__}" == declared["core.schedule"]

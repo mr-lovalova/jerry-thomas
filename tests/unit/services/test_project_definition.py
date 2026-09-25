@@ -147,7 +147,7 @@ def test_load_project_definition_rejects_legacy_scaler_fold_config(
         encoding="utf-8",
     )
     (tmp_path / "operations" / "scaler.yaml").write_text(
-        "product: scaler\ndataset: default\nfolds:\n  - fit: [train]\n    apply: [train, validation]\n",
+        "kind: artifact\nentrypoint: core.scaler\ndataset: default\nfolds:\n  - fit: [train]\n    apply: [train, validation]\n",
         encoding="utf-8",
     )
 
@@ -377,13 +377,13 @@ def test_runtime_operation_change_does_not_change_artifact_hashes(
     project_yaml = _write_project(tmp_path)
     operation = tmp_path / "operations" / "custom.yaml"
     operation.write_text(
-        "kind: runtime\nentrypoint: plugin.runtime.custom\noptions: {threshold: 1}\n",
+        "kind: output\nentrypoint: plugin.runtime.custom\noptions: {threshold: 1}\n",
         encoding="utf-8",
     )
     first = load_project_definition(project_yaml)
 
     operation.write_text(
-        "kind: runtime\nentrypoint: plugin.runtime.custom\noptions: {threshold: 2}\n",
+        "kind: output\nentrypoint: plugin.runtime.custom\noptions: {threshold: 2}\n",
         encoding="utf-8",
     )
     second = load_project_definition(project_yaml)

@@ -149,7 +149,7 @@ class ArtifactGraph:
         if not isinstance(task, (DatasetTask, CoverageTask, MatrixTask)):
             return declared
         if task.dataset is None or task.dataset not in self.datasets:
-            raise ValueError(f"Runtime operation '{task.id}' requires a named dataset.")
+            raise ValueError(f"Output operation '{task.id}' requires a named dataset.")
         if isinstance(task, DatasetTask):
             if preview is not None and preview not in PREVIEW_STAGES:
                 raise ValueError(f"preview must be one of: {', '.join(PREVIEW_STAGES)}")
@@ -186,7 +186,7 @@ class ArtifactGraph:
         inactive = {key for key in task.requires if not self.is_active(key)}
         if inactive:
             raise ValueError(
-                f"Runtime operation '{task.id}' explicitly requires artifact(s) "
+                f"Output operation '{task.id}' explicitly requires artifact(s) "
                 f"that are inactive for this dataset: {', '.join(sorted(inactive))}."
             )
         return self.dependency_closure(roots)

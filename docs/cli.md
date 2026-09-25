@@ -166,10 +166,10 @@ without `--result-json`. See [saved runs](research.md#read-a-saved-run).
   - Use `--profile coverage` or `--profile matrix` to execute one profile.
   - Like `serve`, prepares the union of selected profiles' artifact requirements
     once, then executes the profiles in their exact configured order.
-  - Profiles select explicitly declared runtime operations. Coverage and matrix
+  - Profiles select explicitly declared output operations. Coverage and matrix
     operations bind a named dataset.
   - `--limit N` caps samples for the matrix operation and is passed to custom
-    runtime operations. Coverage is artifact-based and rejects `--limit`.
+    output operations. Coverage is artifact-based and rejects `--limit`.
   - `--output-compression gzip` is available for filesystem JSONL and CSV
     inspection outputs.
   - Artifact mode precedence is CLI `--artifact-mode`, then
@@ -197,7 +197,7 @@ without `--result-json`. See [saved runs](research.md#read-a-saved-run).
 - `jerry materialize --project <alias|folder|project.yaml> [--profile <name>] [--output-file <path.jsonl|path.jsonl.gz>] [--result-json] [--overwrite|--no-overwrite] [--artifact-mode auto|rebuild|require_current] [--visuals | --no-visuals] [--heartbeat-interval SECONDS]`
   - Runs every enabled `profiles/materialize.<name>.yaml` file in configured
     order, or one profile selected by `--profile`.
-  - Each profile selects a `product: records` operation by `operation`.
+  - Each profile selects a `kind: output`, `entrypoint: core.records` operation.
   - Checks every selected output before the first profile starts writing.
   - Collects the selected streams' artifact requirements and prepares their
     union once. `--artifact-mode` overrides `materialize.defaults.yaml`; the

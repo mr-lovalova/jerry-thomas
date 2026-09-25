@@ -448,7 +448,7 @@ def persist_runtime_result(
             logger,
         )
     else:
-        raise TypeError("Runtime operation returned an unsupported output type.")
+        raise TypeError("Output operation returned an unsupported output type.")
     if target.destination is None:
         return ()
     return (WrittenOutput(target.destination, None, row_count),)

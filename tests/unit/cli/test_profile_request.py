@@ -40,13 +40,13 @@ def _write_project(tmp_path: Path) -> Path:
     )
     for directory in ("streams", "sources", "operations"):
         (tmp_path / directory).mkdir(parents=True, exist_ok=True)
-    for operation, product in (
-        ("dataset", "dataset"),
-        ("coverage", "coverage_report"),
-        ("matrix", "availability_matrix"),
+    for operation, entrypoint in (
+        ("dataset", "core.dataset"),
+        ("coverage", "core.coverage_report"),
+        ("matrix", "core.availability_matrix"),
     ):
         (tmp_path / "operations" / f"{operation}.yaml").write_text(
-            f"product: {product}\ndataset: default\n",
+            f"kind: output\nentrypoint: {entrypoint}\ndataset: default\n",
             encoding="utf-8",
         )
     return project_yaml
@@ -248,7 +248,7 @@ def test_inspect_request_materializes_execution_scoped_log_output(
     ops.mkdir(parents=True, exist_ok=True)
     profiles.mkdir(parents=True, exist_ok=True)
     (ops / "coverage.yaml").write_text(
-        "product: coverage_report\ndataset: default\n",
+        "kind: output\nentrypoint: core.coverage_report\ndataset: default\n",
         encoding="utf-8",
     )
     (profiles / "inspect.coverage.yaml").write_text(
@@ -280,7 +280,7 @@ def test_disabled_profiles_do_not_create_execution_directory(tmp_path: Path):
     ops.mkdir(parents=True, exist_ok=True)
     profiles.mkdir(parents=True, exist_ok=True)
     (ops / "coverage.yaml").write_text(
-        "product: coverage_report\ndataset: default\n",
+        "kind: output\nentrypoint: core.coverage_report\ndataset: default\n",
         encoding="utf-8",
     )
     (profiles / "inspect.coverage.yaml").write_text(
@@ -351,7 +351,7 @@ def test_materialize_request_uses_shared_resolution_snapshot(
     )
     _write_stream(tmp_path, "adv.20")
     (tmp_path / "operations" / "adv-20.yaml").write_text(
-        "product: records\nstream: adv.20\n",
+        "kind: output\nentrypoint: core.records\nstream: adv.20\n",
         encoding="utf-8",
     )
     runtime = SimpleNamespace(execution=ExecutionConfig())
@@ -428,7 +428,7 @@ def test_materialize_request_rejects_output_log_collision(tmp_path: Path) -> Non
 
     _write_stream(tmp_path, "adv")
     (tmp_path / "operations" / "adv.yaml").write_text(
-        "product: records\nstream: adv\n",
+        "kind: output\nentrypoint: core.records\nstream: adv\n",
         encoding="utf-8",
     )
 

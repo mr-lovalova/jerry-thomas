@@ -64,7 +64,8 @@ def create_project(root: Path, *, datasets: bool = True) -> Path:
     write_config(
         root / "operations" / "raw.yaml",
         {
-            "product": "records",
+            "kind": "output",
+            "entrypoint": "core.records",
             "stream": "rows",
         },
     )
@@ -100,7 +101,8 @@ def create_project(root: Path, *, datasets: bool = True) -> Path:
             write_config(
                 root / "operations" / f"serve-{dataset}.yaml",
                 {
-                    "product": "dataset",
+                    "kind": "output",
+                    "entrypoint": "core.dataset",
                     "dataset": dataset,
                 },
             )

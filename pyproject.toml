@@ -94,11 +94,11 @@ identity = "jerrythomas.parsers.identity:IdentityParser"
 "core.temporal_record" = "jerrythomas.parsers.temporal_record:TemporalRecordParser"
 
 [project.entry-points."jerrythomas.operations.build"]
-"core.artifact.series" = "jerrythomas.operations.artifacts.series:build_series_artifact"
-"core.artifact.metadata" = "jerrythomas.operations.artifacts.metadata:build_metadata_artifact"
-"core.artifact.scaler" = "jerrythomas.operations.artifacts.scaler:build_scaler_artifact"
-"core.artifact.coverage_stats" = "jerrythomas.operations.artifacts.coverage_stats:build_coverage_stats_artifact"
-"core.artifact.schedule" = "jerrythomas.operations.artifacts.schedule:build_schedule_artifact"
+"core.dataset_series" = "jerrythomas.operations.artifacts.series:build_series_artifact"
+"core.dataset_metadata" = "jerrythomas.operations.artifacts.metadata:build_metadata_artifact"
+"core.scaler" = "jerrythomas.operations.artifacts.scaler:build_scaler_artifact"
+"core.coverage_statistics" = "jerrythomas.operations.artifacts.coverage_stats:build_coverage_stats_artifact"
+"core.schedule" = "jerrythomas.operations.artifacts.schedule:build_schedule_artifact"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

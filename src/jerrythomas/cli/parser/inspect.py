@@ -23,7 +23,7 @@ def add_inspect_command(sub) -> None:
         "-n",
         type=positive_integer,
         default=None,
-        help="sample cap for matrix and custom runtime operations; coverage does not support it",
+        help="sample cap for matrix and custom output operations; coverage does not support it",
     )
     add_runtime_output_flags(parser, formats=OUTPUT_INSPECT_FORMATS)
     add_artifact_mode_flag(parser)

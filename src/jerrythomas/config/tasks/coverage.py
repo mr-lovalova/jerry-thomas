@@ -12,7 +12,5 @@ class CoverageOptions(BaseModel):
 
 
 class CoverageTask(RuntimeTask):
-    entrypoint: Literal["core.runtime.coverage"] = Field(
-        default="core.runtime.coverage"
-    )
+    entrypoint: Literal["core.coverage_report"] = Field(default="core.coverage_report")
     options: CoverageOptions = Field(default_factory=CoverageOptions)

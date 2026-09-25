@@ -68,7 +68,7 @@ def _catalog_project(tmp_path: Path) -> Path:
             encoding="utf-8",
         )
         (tmp_path / "operations" / f"{name}.yaml").write_text(
-            f"product: dataset\ndataset: {name}\n",
+            f"kind: output\nentrypoint: core.dataset\ndataset: {name}\n",
             encoding="utf-8",
         )
         (tmp_path / "profiles" / f"serve.{name}.yaml").write_text(

@@ -49,10 +49,17 @@ belong to `jerrythomas.combiners`, not the iterator-oriented
 timezone-aware timestamps; Jerry normalizes them to UTC before downstream
 processing.
 
-Built-in operation YAML selects a `product`. Custom operations instead declare
-`kind: runtime|artifact` and a registered `entrypoint`, without `product`.
+Every operation YAML declares `kind: output|artifact` and an `entrypoint`.
+Custom output operations use the `jerrythomas.operations.runtime` registration
+group; its Python name is unchanged. For the registered example above:
 
-A custom runtime operation receives exactly three positional arguments:
+```yaml
+kind: output
+entrypoint: demo.report
+options: {}
+```
+
+A custom output operation receives exactly three positional arguments:
 
 ```python
 from jerrythomas.config.tasks.base import PluginRuntimeTask
@@ -85,9 +92,9 @@ configuration accepts `kind: artifact`, `entrypoint`, and `path`; the filename
 supplies the operation ID. `path` is relative to `paths.artifacts` and is exposed
 as `task.output` in the existing Python contract. They do not accept `options`
 or `requires`. Their cache hashes cover the bound dataset and complete stream
-catalog. Runtime plugins can declare prerequisite artifacts with `requires`
-and plugin settings with
-`options`; those capabilities do not extend to custom artifact operations.
+catalog. Output plugins can declare prerequisite artifacts with `requires`
+and plugin settings with `options`; those capabilities do not extend to custom
+artifact operations.
 
 ### Custom Stream Transforms
 

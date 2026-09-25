@@ -69,7 +69,8 @@ def _filled_fold_project(root: Path, fill_value: int | float) -> Path:
             ],
         },
         "operations/dataset.yaml": {
-            "product": "dataset",
+            "kind": "output",
+            "entrypoint": "core.dataset",
             "dataset": "default",
         },
         "profiles/serve.dataset.yaml": {

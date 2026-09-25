@@ -35,13 +35,13 @@ def _write_project(tmp_path: Path) -> Path:
     )
     for directory in ("streams", "sources", "operations"):
         (tmp_path / directory).mkdir(parents=True, exist_ok=True)
-    for operation, product in (
-        ("dataset", "dataset"),
-        ("coverage", "coverage_report"),
-        ("matrix", "availability_matrix"),
+    for operation, entrypoint in (
+        ("dataset", "core.dataset"),
+        ("coverage", "core.coverage_report"),
+        ("matrix", "core.availability_matrix"),
     ):
         (tmp_path / "operations" / f"{operation}.yaml").write_text(
-            f"product: {product}\ndataset: default\n",
+            f"kind: output\nentrypoint: {entrypoint}\ndataset: default\n",
             encoding="utf-8",
         )
     return project_yaml
@@ -407,7 +407,7 @@ def test_serve_profile_rejects_artifact_operation(tmp_path: Path):
         )
 
     assert (
-        "must reference a runtime operation; 'dataset.default.metadata' is an artifact operation"
+        "must reference an output operation; 'dataset.default.metadata' is an artifact operation"
         in str(exc.value)
     )
 
@@ -425,7 +425,7 @@ def test_inspect_profile_rejects_artifact_operation(tmp_path: Path):
         build_runtime_run_request(command="inspect", project=str(project_yaml))
 
     assert (
-        "must reference a runtime operation; 'dataset.default.coverage_stats' is an artifact operation"
+        "must reference an output operation; 'dataset.default.coverage_stats' is an artifact operation"
         in str(exc.value)
     )
 
@@ -443,7 +443,7 @@ def test_build_profile_rejects_runtime_operation(tmp_path: Path):
         build_build_run_request(project=str(project_yaml))
 
     assert (
-        "must reference an artifact operation; 'dataset' is a runtime operation"
+        "must reference an artifact operation; 'dataset' is an output operation"
         in str(exc.value)
     )
 

@@ -94,14 +94,14 @@ def _write_project(tmp_path: Path) -> Path:
         ),
         encoding="utf-8",
     )
-    for operation, product in (
-        ("series", "dataset_series"),
-        ("metadata", "dataset_metadata"),
-        ("scaler", "scaler"),
-        ("coverage_stats", "coverage_statistics"),
+    for operation, entrypoint in (
+        ("series", "core.dataset_series"),
+        ("metadata", "core.dataset_metadata"),
+        ("scaler", "core.scaler"),
+        ("coverage_stats", "core.coverage_statistics"),
     ):
         (tmp_path / "operations" / f"{operation}.yaml").write_text(
-            f"product: {product}\ndataset: default\n",
+            f"kind: artifact\nentrypoint: {entrypoint}\ndataset: default\n",
             encoding="utf-8",
         )
     (tmp_path / "sources" / "source.yaml").write_text(
@@ -496,7 +496,7 @@ def test_runtime_operation_change_keeps_artifact_plan_current(
     )
     runtime_operation = tmp_path / "operations" / "custom_report.yaml"
     runtime_operation.write_text(
-        "kind: runtime\nentrypoint: plugin.report\noptions: {threshold: 1}\n",
+        "kind: output\nentrypoint: plugin.report\noptions: {threshold: 1}\n",
         encoding="utf-8",
     )
     first = load_project_definition(project)
@@ -515,7 +515,7 @@ def test_runtime_operation_change_keeps_artifact_plan_current(
     save_build_state(state, first.project.artifacts_root)
 
     runtime_operation.write_text(
-        "kind: runtime\nentrypoint: plugin.report\noptions: {threshold: 2}\n",
+        "kind: output\nentrypoint: plugin.report\noptions: {threshold: 2}\n",
         encoding="utf-8",
     )
     second = load_project_definition(project)
@@ -1069,7 +1069,7 @@ def test_execute_build_job_invalidates_only_graph_descendants(
     assert level == logging.DEBUG
     assert message.startswith("Config:\n")
     config = json.loads(message[8:])
-    assert config["operation"]["entrypoint"] == "core.artifact.series"
+    assert config["operation"]["entrypoint"] == "core.dataset_series"
     assert config["mode"] == "rebuild"
     assert config["execution"] == {"sort_buffer_mb": 128, "workers": 1}
     assert config["observability"]["visuals"] is True

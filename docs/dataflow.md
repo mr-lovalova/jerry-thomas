@@ -10,7 +10,7 @@ jerry serve --profile dataset
   -> jerry.yaml: default_project -> projects.<alias> = <path/to/project.yaml>
     -> project.yaml: paths.sources / paths.streams / paths.datasets / paths.operations / paths.profiles
       -> profiles/serve.dataset.yaml: operation: dataset
-        -> operations/dataset.yaml: product: dataset, dataset: default
+        -> operations/dataset.yaml: kind: output, entrypoint: core.dataset, dataset: default
           -> datasets/default.yaml: version, features/targets with stream and field
             -> streams/*.yaml: id, from.source|from.stream, optional joins
               -> sources/*.yaml: id, loader, parser

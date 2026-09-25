@@ -121,7 +121,7 @@ def run_runtime_operation(job: RuntimeJob) -> object:
     plugin = load_entrypoint(RUNTIME_OPERATIONS_EP, task.entrypoint)
     result = plugin(job.runtime, task, job.limit)
     if result is not None and not isinstance(result, RuntimeOutput):
-        raise TypeError("Custom runtime operation must return RuntimeOutput or None.")
+        raise TypeError("Custom output operation must return RuntimeOutput or None.")
     return result
 
 
@@ -142,7 +142,7 @@ def execute_runtime_job(
     ]
     if unavailable:
         raise ArtifactResolutionError(
-            f"Runtime operation '{job.task.id}' requires missing or stale artifacts: "
+            f"Output operation '{job.task.id}' requires missing or stale artifacts: "
             f"{', '.join(unavailable)}."
         )
 

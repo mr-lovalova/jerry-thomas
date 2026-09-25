@@ -11,7 +11,7 @@ class Task(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["artifact", "runtime"]
+    kind: Literal["artifact", "output"]
     id: str
     entrypoint: str
     dataset: str | None = None
@@ -74,7 +74,7 @@ class ArtifactTask(Task):
 
 
 class RuntimeTask(Task):
-    kind: Literal["runtime"] = Field(default="runtime")
+    kind: Literal["output"] = Field(default="output")
     requires: tuple[str, ...] = ()
 
     @field_validator("requires", mode="before")

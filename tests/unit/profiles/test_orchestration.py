@@ -777,7 +777,7 @@ def test_runtime_job_reports_unavailable_artifacts(monkeypatch, tmp_path: Path) 
     with pytest.raises(
         ArtifactResolutionError,
         match=(
-            "Runtime operation 'report' requires missing or stale artifacts: snapshot"
+            "Output operation 'report' requires missing or stale artifacts: snapshot"
         ),
     ):
         execute_runtime_job(
@@ -835,7 +835,7 @@ def test_runtime_plugin_rejects_multi_output_results(
 
     with pytest.raises(
         TypeError,
-        match="Custom runtime operation must return RuntimeOutput or None",
+        match="Custom output operation must return RuntimeOutput or None",
     ):
         run_runtime_operation(job)
 

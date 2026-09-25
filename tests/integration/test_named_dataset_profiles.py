@@ -191,7 +191,8 @@ def test_materialize_rejects_explicitly_required_inactive_artifact(tmp_path):
     _write(
         tmp_path / "operations" / "raw.yaml",
         {
-            "product": "records",
+            "kind": "output",
+            "entrypoint": "core.records",
             "stream": "rows",
             "requires": ["dataset.beta.scaler"],
         },
