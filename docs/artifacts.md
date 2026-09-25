@@ -46,12 +46,12 @@ A schedule operation is explicit:
 product: schedule
 stream: exchange.sessions
 partition_by: []
-output: build/schedule.jsonl
+path: build/schedule.jsonl
 ```
 
-`partition_by` is required. An empty list declares one global schedule; named
-fields declare one schedule per partition. A stream opts into that schedule
-where timestamp completion belongs:
+`path` is relative to `paths.artifacts`. `partition_by` is required. An empty
+list declares one global schedule; named fields declare one schedule per
+partition. A stream opts into that schedule where timestamp completion belongs:
 
 ```yaml
 transforms:

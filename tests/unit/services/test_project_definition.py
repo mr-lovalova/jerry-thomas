@@ -360,7 +360,7 @@ def test_project_without_name_still_validates_operation_interpolation(
         encoding="utf-8",
     )
     (tmp_path / "operations" / "custom.yaml").write_text(
-        'kind: artifact\nentrypoint: plugin.artifact\noutput: "${unknown_output}"\n',
+        'kind: artifact\nentrypoint: plugin.artifact\npath: "${unknown_output}"\n',
         encoding="utf-8",
     )
 
@@ -396,17 +396,13 @@ def test_artifact_operation_change_changes_artifact_hashes(tmp_path: Path) -> No
     project_yaml = _write_project(tmp_path)
     operation = tmp_path / "operations" / "custom.yaml"
     operation.write_text(
-        "kind: artifact\n"
-        "entrypoint: plugin.artifact.custom\n"
-        "output: build/first.json\n",
+        "kind: artifact\nentrypoint: plugin.artifact.custom\npath: build/first.json\n",
         encoding="utf-8",
     )
     first = load_project_definition(project_yaml)
 
     operation.write_text(
-        "kind: artifact\n"
-        "entrypoint: plugin.artifact.custom\n"
-        "output: build/second.json\n",
+        "kind: artifact\nentrypoint: plugin.artifact.custom\npath: build/second.json\n",
         encoding="utf-8",
     )
     second = load_project_definition(project_yaml)
@@ -1163,9 +1159,7 @@ def test_artifact_operation_comment_does_not_change_artifact_hashes(
     project_yaml = _write_project(tmp_path)
     operation = tmp_path / "operations" / "custom.yaml"
     operation.write_text(
-        "kind: artifact\n"
-        "entrypoint: plugin.artifact.custom\n"
-        "output: build/custom.json\n",
+        "kind: artifact\nentrypoint: plugin.artifact.custom\npath: build/custom.json\n",
         encoding="utf-8",
     )
     first = load_project_definition(project_yaml)

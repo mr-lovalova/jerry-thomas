@@ -51,8 +51,11 @@ class Task(BaseModel):
 
 
 class ArtifactTask(Task):
+    # YAML uses path; Python callers and serialized artifact contracts retain output.
+    model_config = ConfigDict(populate_by_name=True)
+
     kind: Literal["artifact"] = Field(default="artifact")
-    output: str
+    output: str = Field(validation_alias="path")
 
     @field_validator("output")
     @classmethod
@@ -60,13 +63,13 @@ class ArtifactTask(Task):
         output = output.strip()
         output_path = Path(output)
         if not output or output_path == Path("."):
-            raise ValueError("output must name a file under the artifacts root")
+            raise ValueError("path must name a file under the artifacts root")
         if output_path.is_absolute():
-            raise ValueError("output must be a relative path under artifacts root")
+            raise ValueError("path must be a relative path under artifacts root")
         if ".." in output_path.parts:
-            raise ValueError("output must not traverse outside artifacts root")
+            raise ValueError("path must not traverse outside artifacts root")
         if output_path.parts[0].rstrip(" .").casefold() == "_system":
-            raise ValueError("output must not use the reserved '_system' directory")
+            raise ValueError("path must not use the reserved '_system' directory")
         return output
 
 

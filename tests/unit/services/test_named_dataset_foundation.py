@@ -238,7 +238,7 @@ def test_shared_artifacts_are_preserved_without_dataset_binding(tmp_path):
             "product": "schedule",
             "stream": "sessions",
             "partition_by": [],
-            "output": "shared/calendar.jsonl",
+            "path": "shared/calendar.jsonl",
         },
     )
     _write_yaml(
@@ -246,7 +246,7 @@ def test_shared_artifacts_are_preserved_without_dataset_binding(tmp_path):
         {
             "kind": "artifact",
             "entrypoint": "example.custom",
-            "output": "shared/custom.json",
+            "path": "shared/custom.json",
         },
     )
     operations = _operations(project_yaml)

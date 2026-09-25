@@ -128,6 +128,10 @@ def _operation_from_document(
                 "product instead of kind and entrypoint."
             )
 
+    if issubclass(model, ArtifactTask) and "output" in entry:
+        raise ValueError(
+            f"Artifact operation '{operation_id}' uses path instead of output."
+        )
     task = model.model_validate({"id": operation_id, **entry})
     dataset_kind = artifact_kind(task)
     if dataset_kind is not None or isinstance(
@@ -142,7 +146,7 @@ def _operation_from_document(
             )
         if isinstance(task, ScheduleTask):
             raise ValueError("Schedule operations must not bind a dataset.")
-        if dataset_kind is not None and "output" not in entry:
+        if dataset_kind is not None and "path" not in entry:
             task = task.model_copy(
                 update={"output": _artifact_output(task.dataset, dataset_kind)}
             )

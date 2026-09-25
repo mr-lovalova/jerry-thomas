@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from jerrythomas.config.profiles.materialize import MaterializeProfile
 from jerrythomas.config.tasks.base import (
@@ -181,7 +182,7 @@ def test_plugin_runtime_task_rejects_non_serializable_options() -> None:
         ),
         (
             "schedule",
-            "stream: calendar\npartition_by: []\noutput: calendars/exchange.jsonl\n",
+            "stream: calendar\npartition_by: []\npath: calendars/exchange.jsonl\n",
             ScheduleTask(
                 id="selected",
                 stream="calendar",
@@ -284,7 +285,7 @@ def test_builtin_entrypoints_require_product_syntax(
         ),
         (
             "kind: artifact\nentrypoint: research.snapshot\ndataset: default\n"
-            "output: research/snapshot.json\n",
+            "path: research/snapshot.json\n",
             ArtifactTask(
                 id="selected",
                 entrypoint="research.snapshot",
@@ -359,11 +360,11 @@ def test_artifact_tasks_load_configs(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "schema.yaml").write_text(
-        ("kind: artifact\nentrypoint: plugin.artifact.schema\noutput: schema.json\n"),
+        ("kind: artifact\nentrypoint: plugin.artifact.schema\npath: schema.json\n"),
         encoding="utf-8",
     )
     (config_dir / "scaler.yaml").write_text(
-        "product: scaler\ndataset: default\noutput: stats.pkl\n",
+        "product: scaler\ndataset: default\npath: stats.pkl\n",
         encoding="utf-8",
     )
 
@@ -382,6 +383,57 @@ def test_artifact_tasks_load_configs(tmp_path):
     assert schema.output == "schema.json"
     scaler = next(task for task in tasks if task.id == "scaler")
     assert scaler.output == "stats.pkl"
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        "product: scaler\ndataset: default\n",
+        "kind: artifact\nentrypoint: research.snapshot\n",
+    ],
+)
+@pytest.mark.parametrize("path_field", ["", "path: chosen.json\n"])
+def test_artifact_operations_reject_legacy_output_field(
+    tmp_path: Path, selector: str, path_field: str
+) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    (_operations_dir(project_yaml) / "selected.yaml").write_text(
+        f"{selector}{path_field}output: legacy.json\n", encoding="utf-8"
+    )
+
+    with pytest.raises(
+        ValueError, match="Artifact operation 'selected' uses path instead of output"
+    ):
+        _tasks(project_yaml)
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        "product: records\nstream: prices\n",
+        "kind: runtime\nentrypoint: research.report\n",
+    ],
+)
+def test_runtime_operations_reject_artifact_path(tmp_path: Path, selector: str) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    (_operations_dir(project_yaml) / "selected.yaml").write_text(
+        f"{selector}path: records.jsonl\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="path\\n.*Extra inputs are not permitted"):
+        _tasks(project_yaml)
+
+
+def test_custom_artifact_missing_path_reports_public_field(tmp_path: Path) -> None:
+    project_yaml = _write_project(tmp_path, operations_ref="operations")
+    (_operations_dir(project_yaml) / "selected.yaml").write_text(
+        "kind: artifact\nentrypoint: research.snapshot\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValidationError) as error:
+        _tasks(project_yaml)
+    assert error.value.errors()[0]["loc"] == ("path",)
+    assert error.value.errors()[0]["type"] == "missing"
 
 
 def test_core_artifacts_are_defaults_but_runtime_operations_are_explicit(tmp_path):
@@ -436,7 +488,7 @@ def test_schedule_artifact_task_loads_arbitrary_id(tmp_path):
             "product: schedule\n"
             "stream: reference.stream\n"
             "partition_by: []\n"
-            "output: build/dataset_schedule.jsonl\n"
+            "path: build/dataset_schedule.jsonl\n"
         ),
         encoding="utf-8",
     )
@@ -459,7 +511,7 @@ def test_schedule_artifact_task_loads_partition_by(tmp_path):
             "product: schedule\n"
             "stream: reference.stream\n"
             "partition_by: [security_id]\n"
-            "output: build/schedule.jsonl\n"
+            "path: build/schedule.jsonl\n"
         ),
         encoding="utf-8",
     )
@@ -474,7 +526,7 @@ def test_schedule_artifact_requires_explicit_partition_by(tmp_path) -> None:
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "schedule.yaml").write_text(
-        ("product: schedule\nstream: reference.stream\noutput: build/schedule.jsonl\n"),
+        ("product: schedule\nstream: reference.stream\npath: build/schedule.jsonl\n"),
         encoding="utf-8",
     )
 
@@ -497,7 +549,7 @@ def test_schedule_artifact_rejects_invalid_identity_fields(
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "schedule.yaml").write_text(
-        (f"product: schedule\n{body}output: build/schedule.jsonl\n"),
+        (f"product: schedule\n{body}path: build/schedule.jsonl\n"),
         encoding="utf-8",
     )
 
@@ -513,12 +565,13 @@ def test_artifact_operation_rejects_empty_output(
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "snapshot.yaml").write_text(
-        (f"kind: artifact\nentrypoint: plugin.artifact.snapshot\noutput: {output!r}\n"),
+        (f"kind: artifact\nentrypoint: plugin.artifact.snapshot\npath: {output!r}\n"),
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="output must name a file"):
+    with pytest.raises(ValidationError, match="path must name a file") as error:
         _artifact_tasks(project_yaml)
+    assert error.value.errors()[0]["loc"] == ("path",)
 
 
 @pytest.mark.parametrize(
@@ -562,7 +615,7 @@ def test_default_artifact_id_cannot_name_an_unrelated_operation(tmp_path):
             "product: schedule\n"
             "stream: reference.stream\n"
             "partition_by: []\n"
-            "output: build/metadata_schedule.jsonl\n"
+            "path: build/metadata_schedule.jsonl\n"
         ),
         encoding="utf-8",
     )
@@ -575,7 +628,7 @@ def test_coverage_stats_task_loads_configs(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "coverage_stats.yaml").write_text(
-        "product: coverage_statistics\ndataset: default\noutput: build/custom-coverage-stats.json\nstage: assembled\n",
+        "product: coverage_statistics\ndataset: default\npath: build/custom-coverage-stats.json\nstage: assembled\n",
         encoding="utf-8",
     )
 
@@ -589,7 +642,7 @@ def test_coverage_stats_task_defaults_to_postprocessed_stage(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "coverage_stats.yaml").write_text(
-        "product: coverage_statistics\ndataset: default\noutput: build/custom-coverage-stats.json\n",
+        "product: coverage_statistics\ndataset: default\npath: build/custom-coverage-stats.json\n",
         encoding="utf-8",
     )
 
@@ -1446,7 +1499,7 @@ def test_dataset_artifact_requires_dataset_binding(
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "custom.yaml").write_text(
-        (f"product: {product}\noutput: build/custom.json\n"),
+        (f"product: {product}\npath: build/custom.json\n"),
         encoding="utf-8",
     )
 
@@ -1535,11 +1588,11 @@ def test_duplicate_operation_filenames_raise(tmp_path):
     project_yaml = _write_project(tmp_path, operations_ref="operations")
     config_dir = _operations_dir(project_yaml)
     (config_dir / "snapshot.yaml").write_text(
-        "kind: artifact\nentrypoint: plugin.artifact.snapshot\noutput: snapshot-a.json\n",
+        "kind: artifact\nentrypoint: plugin.artifact.snapshot\npath: snapshot-a.json\n",
         encoding="utf-8",
     )
     (config_dir / "snapshot.yml").write_text(
-        "kind: artifact\nentrypoint: plugin.artifact.snapshot\noutput: snapshot-b.json\n",
+        "kind: artifact\nentrypoint: plugin.artifact.snapshot\npath: snapshot-b.json\n",
         encoding="utf-8",
     )
 

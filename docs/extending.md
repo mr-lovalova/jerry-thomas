@@ -81,10 +81,12 @@ that used those Python APIs must return one `RuntimeOutput`; built-in dataset
 fanout remains available through dataset profiles.
 
 Custom artifact operations use the `jerrythomas.operations.build` group. Their
-configuration accepts `kind: artifact`, `entrypoint`, and `output`; the filename
-supplies the operation ID. They do not accept `options` or `requires`. Their
-cache hashes cover the bound dataset and complete stream catalog. Runtime plugins
-can declare prerequisite artifacts with `requires` and plugin settings with
+configuration accepts `kind: artifact`, `entrypoint`, and `path`; the filename
+supplies the operation ID. `path` is relative to `paths.artifacts` and is exposed
+as `task.output` in the existing Python contract. They do not accept `options`
+or `requires`. Their cache hashes cover the bound dataset and complete stream
+catalog. Runtime plugins can declare prerequisite artifacts with `requires`
+and plugin settings with
 `options`; those capabilities do not extend to custom artifact operations.
 
 ### Custom Stream Transforms

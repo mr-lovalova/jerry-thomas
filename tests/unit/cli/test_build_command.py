@@ -491,7 +491,7 @@ def test_runtime_operation_change_keeps_artifact_plan_current(
 ) -> None:
     project = _write_project(tmp_path)
     (tmp_path / "operations" / "custom_snapshot.yaml").write_text(
-        "kind: artifact\nentrypoint: plugin.snapshot\noutput: build/custom.json\n",
+        "kind: artifact\nentrypoint: plugin.snapshot\npath: build/custom.json\n",
         encoding="utf-8",
     )
     runtime_operation = tmp_path / "operations" / "custom_report.yaml"

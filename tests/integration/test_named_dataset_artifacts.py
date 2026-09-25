@@ -19,7 +19,7 @@ def test_build_hydrates_callers_dataset_after_shared_schedule_context(tmp_path):
             "product": "schedule",
             "stream": "rows",
             "partition_by": ["id_"],
-            "output": "shared/calendar.jsonl",
+            "path": "shared/calendar.jsonl",
         },
     )
     write_config(
@@ -103,7 +103,13 @@ def test_explicit_products_reuse_default_artifacts_and_preserve_dataset_outputs(
     for kind, product in products.items():
         write_config(
             tmp_path / "operations" / f"dataset.alpha.{kind}.yaml",
-            {"product": product, "dataset": "alpha"},
+            {
+                "product": product,
+                "dataset": "alpha",
+                "path": implicit.definition.artifact_graph.tasks_by_id[
+                    f"dataset.alpha.{kind}"
+                ].output,
+            },
         )
     explicit = build_runtime_run_request(
         "serve",

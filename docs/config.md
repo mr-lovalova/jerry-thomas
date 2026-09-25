@@ -366,14 +366,14 @@ options:
 # operations/coverage_stats.yaml
 product: coverage_statistics
 dataset: default
-output: summaries/default.json
+path: summaries/default.json
 stage: assembled
 
 # operations/schedule.yaml — explicit expected-timestamp artifact
 product: schedule
 stream: exchange.sessions
 partition_by: []
-output: build/schedule.jsonl
+path: build/schedule.jsonl
 
 # operations/custom_report.yaml — custom operation
 kind: runtime
@@ -393,6 +393,9 @@ options: {}
 - Each file contains one mapping, and its filename supplies the operation ID.
   Do not repeat `id`. Product names do not change operation IDs: for example,
   `operations/matrix.yaml` remains `operation: matrix` in a profile.
+- Artifact operations use `path` for their file relative to `paths.artifacts`.
+  Dataset artifacts keep their default paths when omitted. Schedule and custom
+  artifact operations require `path`. Profile output settings remain `output`.
 - Runtime operations are executable units; profiles reference them via
   `operation`.
 - Custom operations use `kind: runtime|artifact` and `entrypoint` instead of
@@ -401,7 +404,7 @@ options: {}
 - `requires` declares additional prerequisite artifact operation IDs for custom or
   built-in runtime operations. Each referenced artifact and its dependency chain must
   have available producer operations.
-- Custom artifact operations accept `kind`, `entrypoint`, and `output`, with
+- Custom artifact operations accept `kind`, `entrypoint`, and `path`, with
   their ID supplied by the filename. They do not accept `options` or `requires`;
   their cache hashes cover their bound dataset and complete stream catalog.
 - Built-in runtime operation options depend on the product:

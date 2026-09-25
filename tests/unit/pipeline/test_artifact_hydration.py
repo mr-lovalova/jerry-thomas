@@ -326,7 +326,7 @@ def test_project_hydration_uses_semantic_artifact_hash(tmp_path) -> None:
             [
                 "kind: artifact",
                 "entrypoint: plugin.snapshot",
-                "output: build/custom.json",
+                "path: build/custom.json",
             ]
         ),
         encoding="utf-8",
