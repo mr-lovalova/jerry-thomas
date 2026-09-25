@@ -52,7 +52,9 @@ from jerrythomas.profiles.orchestration import run_profiles
 from jerrythomas.profiles.request_builder import build_runtime_run_request
 
 request = build_runtime_run_request(
-    "serve", "path/to/project.yaml", profile_name="dataset",
+    "serve",
+    "path/to/project.yaml",
+    profile_name="dataset",
 )
 results = () if request is None else run_profiles(request)
 for result in results:
