@@ -14,7 +14,7 @@ from jerrythomas.config.tasks.metadata import MetadataTask
 from jerrythomas.config.tasks.scaler import ScalerTask
 from jerrythomas.config.tasks.schedule import ScheduleTask
 from jerrythomas.config.tasks.series import SeriesTask
-from jerrythomas.config.tasks.stream import StreamTask
+from jerrythomas.config.tasks.registry import CORE_OPERATION_MODELS
 from jerrythomas.services.config_inventory import pipeline_yaml_files
 from jerrythomas.services.definitions import ProjectManifest
 from jerrythomas.io.yaml import YamlDocument, read_yaml_document
@@ -25,17 +25,6 @@ DATASET_ARTIFACT_MODELS: dict[str, type[ArtifactTask]] = {
     "series": SeriesTask,
     "metadata": MetadataTask,
     "coverage_stats": CoverageStatsTask,
-}
-CORE_OPERATION_MODELS: dict[str, type[Task]] = {
-    "core.records": StreamTask,
-    "core.dataset": DatasetTask,
-    "core.availability_matrix": MatrixTask,
-    "core.coverage_report": CoverageTask,
-    "core.dataset_series": SeriesTask,
-    "core.scaler": ScalerTask,
-    "core.dataset_metadata": MetadataTask,
-    "core.coverage_statistics": CoverageStatsTask,
-    "core.schedule": ScheduleTask,
 }
 
 

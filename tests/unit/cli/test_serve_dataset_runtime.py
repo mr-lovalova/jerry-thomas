@@ -23,6 +23,7 @@ from jerrythomas.config.dataset.dataset import DatasetConfig, SampleConfig
 from jerrythomas.config.dataset.series import SeriesConfig, TargetSeriesConfig
 from jerrythomas.config.dataset.split import DatasetFold, TimeInterval, TimeSplitConfig
 from jerrythomas.config.preview import PreviewStage
+from jerrythomas.config.tasks.dataset import DatasetTask
 from jerrythomas.domain.sample import Sample
 from jerrythomas.domain.vector import Vector
 from jerrythomas.io.dataset_table import DatasetTable
@@ -35,6 +36,7 @@ from jerrythomas.operations.persistence import (
     persist_runtime_result,
 )
 from jerrythomas.operations.runtime.dataset import run_dataset_operation
+from jerrythomas.operations.runtime.execution import OutputOptions
 
 START = datetime(2020, 1, 1, tzinfo=timezone.utc)
 BOUNDARY = datetime(2021, 1, 1, tzinfo=timezone.utc)
@@ -214,11 +216,12 @@ def _serve(
     runtime.dataset = dataset
     return run_dataset_operation(
         runtime=runtime,
-        output_ids=output_ids,
-        limit=None,
-        output_format=target.format,
-        throttle_ms=None,
-        preview=preview,
+        task=DatasetTask(id="dataset"),
+        options=OutputOptions(
+            output_ids=output_ids,
+            output_format=target.format,
+            preview=preview,
+        ),
     )
 
 
@@ -241,11 +244,8 @@ def test_dataset_operation_reraises_keyboard_interrupt_and_marks_run_failed(
 
     result = run_dataset_operation(
         runtime=runtime,
-        output_ids=(),
-        limit=None,
-        output_format=target.format,
-        throttle_ms=None,
-        preview=None,
+        task=DatasetTask(id="dataset"),
+        options=OutputOptions(output_format=target.format),
     )
 
     with pytest.raises(KeyboardInterrupt):
@@ -403,11 +403,8 @@ def test_limited_preview_closes_sample_pipeline_once(monkeypatch, throttle_ms):
 
     result = run_dataset_operation(
         runtime=_runtime(),
-        output_ids=(),
-        limit=1,
-        output_format="jsonl",
-        throttle_ms=throttle_ms,
-        preview="samples",
+        task=DatasetTask(id="dataset"),
+        options=OutputOptions(limit=1, throttle_ms=throttle_ms, preview="samples"),
     )
 
     assert isinstance(result, RuntimeOutput)

@@ -408,9 +408,10 @@ options: {}
 - Artifact operations use `path` for their file relative to `paths.artifacts`.
   Dataset artifacts keep their default paths when omitted. Schedule and custom
   artifact operations require `path`. Profile output settings remain `output`.
-- Custom output entrypoints resolve in `jerrythomas.operations.runtime`;
-  custom artifact entrypoints resolve in `jerrythomas.operations.build`.
-  These Python registration groups are unchanged by the YAML kind names.
+- All output entrypoints resolve in `jerrythomas.operations.runtime`; all
+  artifact entrypoints resolve in `jerrythomas.operations.build`. Built-ins and
+  plugins use the same registration lookup. Jerry registers its built-ins in
+  `pyproject.toml`. These Python group names are unchanged by the YAML kind names.
 - `requires` declares additional prerequisite artifact operation IDs for custom or
   built-in output operations. Each referenced artifact and its dependency chain must
   have available producer operations.
@@ -433,9 +434,12 @@ options: {}
     destination come from the inspect profile or CLI.
 - Unknown keys on built-in output operations are rejected. Custom plugin
   output operations retain their plugin-defined `options` mapping.
-- A custom output entrypoint has one positional contract: `(runtime, task,
-  limit)`. It returns one `RuntimeOutput`, or `None`; shared persistence applies
-  the profile output. Runtime results cannot choose output paths.
+- Every output entrypoint receives `(runtime, task, options)`, where `options`
+  is a frozen `OutputOptions` with the limit, output format, and applicable
+  dataset execution settings. Custom plugins return one `RuntimeOutput`, or
+  `None`; shared persistence applies the profile output. Neither execution
+  options nor results choose output paths. See the
+  [plugin contract](extending.md#entry-points) for the Python interface.
 
 For example, a serve operation and a materialize operation are explicit:
 

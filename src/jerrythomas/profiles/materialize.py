@@ -178,7 +178,7 @@ def execute_materialize_job(
             try:
                 output = materialize_stream(
                     runtime=runtime,
-                    stream_id=job.stream,
+                    task=job.task,
                     output=job.output,
                     overwrite=job.overwrite,
                 )

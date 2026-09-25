@@ -187,7 +187,7 @@ def test_materialize_empty_output_has_successful_zero_row_receipt(
     root = copy_fixture("regression_project")
     _profiles(root)
     monkeypatch.setattr(
-        "jerrythomas.services.materialize.run_stream_pipeline",
+        "jerrythomas.operations.runtime.records.run_stream_pipeline",
         lambda *_args: iter(()),
     )
     _execute(root, "--profile", "first", result_json=False)

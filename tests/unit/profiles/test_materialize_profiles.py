@@ -259,7 +259,7 @@ def test_execute_materialize_job_emits_config_and_returns_output(
     assert calls == [
         {
             "runtime": runtime,
-            "stream_id": "adv.20",
+            "task": job.task,
             "output": job.output,
             "overwrite": False,
         }

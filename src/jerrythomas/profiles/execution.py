@@ -6,25 +6,18 @@ from typing import Literal
 from jerrythomas.artifacts.errors import ArtifactResolutionError
 from jerrythomas.artifacts.hydration import hydrate_runtime_artifacts_for_pipeline
 from jerrythomas.artifacts.validation import validate_artifact_plan
-from jerrythomas.config.tasks.base import ArtifactTask, PluginRuntimeTask
+from jerrythomas.config.tasks.base import ArtifactTask
 from jerrythomas.config.tasks.coverage import CoverageTask
 from jerrythomas.config.tasks.dataset import DatasetTask
-from jerrythomas.config.tasks.matrix import MatrixTask
-from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.execution.observability import (
     emit_execution_message,
     operation_scope,
 )
 from jerrythomas.operations.persistence import (
-    RuntimeOutput,
     WrittenOutput,
     persist_runtime_result,
 )
-from jerrythomas.operations.runtime.coverage import run_coverage_operation
-from jerrythomas.operations.runtime.dataset import limit_items, run_dataset_operation
-from jerrythomas.pipelines.stream.pipeline import run_stream_pipeline
-from jerrythomas.operations.runtime.matrix import run_matrix_operation
-from jerrythomas.plugins import RUNTIME_OPERATIONS_EP, load_entrypoint
+from jerrythomas.operations.runtime.execution import OutputOptions, run_output_operation
 from jerrythomas.services.definitions import ProjectDefinition
 
 from .models import MaterializeJob, RuntimeJob
@@ -96,35 +89,6 @@ def plan_runtime_job(
     return RuntimeJobPlan(job=job, required_artifacts=required_artifacts)
 
 
-def run_runtime_operation(job: RuntimeJob) -> object:
-    task = job.task
-    if isinstance(task, DatasetTask):
-        return run_dataset_operation(
-            runtime=job.runtime,
-            output_ids=job.output_ids,
-            limit=job.limit,
-            output_format=job.output.format,
-            throttle_ms=job.throttle_ms,
-            preview=job.preview,
-        )
-    if isinstance(task, StreamTask):
-        return RuntimeOutput(
-            rows=limit_items(run_stream_pipeline(job.runtime, task.stream), job.limit)
-        )
-    if isinstance(task, MatrixTask):
-        return run_matrix_operation(job.runtime, task, job.limit)
-    if isinstance(task, CoverageTask):
-        return run_coverage_operation(job.runtime, task)
-    if not isinstance(task, PluginRuntimeTask):
-        raise TypeError(f"Unsupported runtime task: {type(task).__name__}")
-
-    plugin = load_entrypoint(RUNTIME_OPERATIONS_EP, task.entrypoint)
-    result = plugin(job.runtime, task, job.limit)
-    if result is not None and not isinstance(result, RuntimeOutput):
-        raise TypeError("Custom output operation must return RuntimeOutput or None.")
-    return result
-
-
 def execute_runtime_job(
     command: Literal["serve", "inspect"],
     definition: ProjectDefinition,
@@ -179,7 +143,17 @@ def execute_runtime_job(
             ),
             level=logging.DEBUG,
         )
-        result = run_runtime_operation(job)
+        result = run_output_operation(
+            job.runtime,
+            job.task,
+            OutputOptions(
+                limit=job.limit,
+                output_format=job.output.format,
+                throttle_ms=job.throttle_ms,
+                preview=job.preview,
+                output_ids=job.output_ids,
+            ),
+        )
         return persist_runtime_result(
             result,
             job.output,

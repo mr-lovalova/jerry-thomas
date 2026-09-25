@@ -56,11 +56,11 @@ from jerrythomas.operations.persistence import (
     RuntimeOutput,
     RuntimeOutputBatch,
 )
+from jerrythomas.operations.runtime.execution import OutputOptions, run_output_operation
 from jerrythomas.profiles.execution import (
     RuntimeJobPlan,
     execute_runtime_job,
     plan_runtime_job,
-    run_runtime_operation,
 )
 from jerrythomas.profiles.models import (
     BuildJob,
@@ -183,6 +183,7 @@ def _runtime_job(
     *,
     limit: int | None = None,
     preview: PreviewStage | None = None,
+    throttle_ms: float | None = None,
     heartbeat_interval_seconds: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     output_ids: tuple[str, ...] = (),
     output: OutputTarget | None = None,
@@ -194,7 +195,7 @@ def _runtime_job(
         output=_output() if output is None else output,
         observability=_observability(heartbeat_interval_seconds),
         limit=limit,
-        throttle_ms=None,
+        throttle_ms=throttle_ms,
         preview=preview,
         output_ids=output_ids,
     )
@@ -714,7 +715,7 @@ def test_runtime_job_emits_resolved_config_at_debug(
         lambda message, level: messages.append((message, level)),
     )
     monkeypatch.setattr(
-        "jerrythomas.profiles.execution.load_entrypoint",
+        "jerrythomas.operations.runtime.execution.load_entrypoint",
         lambda *_args: lambda *_runner_args: None,
     )
 
@@ -756,7 +757,9 @@ def test_runtime_job_does_not_hide_plugin_value_errors(
 
         return run
 
-    monkeypatch.setattr("jerrythomas.profiles.execution.load_entrypoint", fail)
+    monkeypatch.setattr(
+        "jerrythomas.operations.runtime.execution.load_entrypoint", fail
+    )
 
     with pytest.raises(ValueError, match="plugin bug"):
         execute_runtime_job(
@@ -787,31 +790,98 @@ def test_runtime_job_reports_unavailable_artifacts(monkeypatch, tmp_path: Path) 
         )
 
 
-def test_runtime_plugin_receives_the_documented_contract(
-    monkeypatch, tmp_path: Path
-) -> None:
-    task = PluginRuntimeTask(id="report", entrypoint="plugin.runtime.report")
-    job = _runtime_job("report", task, _runtime(tmp_path), limit=7)
-    received = None
+@pytest.mark.parametrize(
+    ("task", "options", "result"),
+    [
+        (
+            StreamTask(id="records", stream="prices"),
+            OutputOptions(limit=7),
+            RuntimeOutput(rows=()),
+        ),
+        (
+            DatasetTask(id="dataset"),
+            OutputOptions(
+                limit=5,
+                output_format="parquet",
+                throttle_ms=25,
+                preview="postprocess",
+                output_ids=("holdout.train",),
+            ),
+            RoutedRuntimeOutput(rows=()),
+        ),
+        (
+            MatrixTask(id="matrix"),
+            OutputOptions(limit=3, output_format="html"),
+            RuntimeOutput(payload={"matrix": []}),
+        ),
+        (
+            CoverageTask(id="coverage"),
+            OutputOptions(output_format="html"),
+            RuntimeOutput(payload={"coverage": {}}),
+        ),
+        (
+            PluginRuntimeTask(id="report", entrypoint="research.report"),
+            OutputOptions(limit=7, output_format="txt"),
+            RuntimeOutput(payload={"result": "ok"}),
+        ),
+    ],
+)
+def test_output_jobs_use_registered_runner_with_complete_execution_options(
+    monkeypatch, tmp_path, task, options, result
+):
+    job = _runtime_job(
+        task.id,
+        task,
+        _runtime(tmp_path),
+        limit=options.limit,
+        preview=options.preview,
+        throttle_ms=options.throttle_ms,
+        output_ids=options.output_ids,
+        output=OutputTarget(
+            transport="fs",
+            format=options.output_format,
+            view="raw",
+            encoding="utf-8",
+            destination=tmp_path / "output",
+        ),
+    )
+    received = []
 
     def load_runner(group, entrypoint):
         assert group == "jerrythomas.operations.runtime"
         assert entrypoint == task.entrypoint
 
-        def run(runtime, operation_task, limit):
-            nonlocal received
-            received = runtime, operation_task, limit
-            return RuntimeOutput(payload={"result": "ok"})
+        def run(runtime, operation_task, execution_options):
+            assert runtime is job.runtime
+            assert operation_task is job.task
+            received.append(execution_options)
+            return result
 
         return run
 
+    persisted = []
     monkeypatch.setattr(
-        "jerrythomas.profiles.execution.load_entrypoint",
-        load_runner,
+        "jerrythomas.profiles.execution.hydrate_runtime_artifacts_for_pipeline",
+        lambda *_args, **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        "jerrythomas.operations.runtime.execution.load_entrypoint", load_runner
+    )
+    monkeypatch.setattr(
+        "jerrythomas.profiles.execution.persist_runtime_result",
+        lambda value, *_args, **_kwargs: persisted.append(value) or (),
     )
 
-    assert run_runtime_operation(job) == RuntimeOutput(payload={"result": "ok"})
-    assert received == (job.runtime, job.task, 7)
+    assert (
+        execute_runtime_job(
+            "inspect",
+            project_definition(tmp_path / "project.yaml"),
+            RuntimeJobPlan(job, ()),
+        )
+        == ()
+    )
+    assert received == [options]
+    assert persisted[0] is result
 
 
 @pytest.mark.parametrize(
@@ -819,17 +889,17 @@ def test_runtime_plugin_receives_the_documented_contract(
     (
         RoutedRuntimeOutput(rows=()),
         RuntimeOutputBatch(outputs={"extra": RuntimeOutput(payload={})}),
+        {"unwrapped": "payload"},
     ),
 )
-def test_runtime_plugin_rejects_multi_output_results(
+def test_runtime_plugin_rejects_unsupported_results(
     monkeypatch,
     tmp_path: Path,
     result,
 ) -> None:
-    task = PluginRuntimeTask(id="report", entrypoint="plugin.runtime.report")
-    job = _runtime_job("report", task, _runtime(tmp_path))
+    task = PluginRuntimeTask(id="report", entrypoint="research.report")
     monkeypatch.setattr(
-        "jerrythomas.profiles.execution.load_entrypoint",
+        "jerrythomas.operations.runtime.execution.load_entrypoint",
         lambda *_args: lambda *_runner_args: result,
     )
 
@@ -837,88 +907,34 @@ def test_runtime_plugin_rejects_multi_output_results(
         TypeError,
         match="Custom output operation must return RuntimeOutput or None",
     ):
-        run_runtime_operation(job)
+        run_output_operation(_runtime(tmp_path), task, OutputOptions())
 
 
-def test_base_runtime_task_is_not_dispatched_as_a_plugin(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    task = RuntimeTask(id="runtime", entrypoint="plugin.runtime")
-    job = _runtime_job("runtime", task, _runtime(tmp_path))
+@pytest.mark.parametrize(
+    ("task", "expected_model"),
+    [
+        (RuntimeTask(id="runtime", entrypoint="research.report"), "PluginRuntimeTask"),
+        (PluginRuntimeTask(id="records", entrypoint="core.records"), "StreamTask"),
+        (PluginRuntimeTask(id="dataset", entrypoint="core.dataset"), "DatasetTask"),
+        (
+            PluginRuntimeTask(id="matrix", entrypoint="core.availability_matrix"),
+            "MatrixTask",
+        ),
+        (
+            PluginRuntimeTask(id="coverage", entrypoint="core.coverage_report"),
+            "CoverageTask",
+        ),
+    ],
+)
+def test_output_entrypoint_rejects_wrong_configuration_before_loading(
+    monkeypatch, tmp_path, task, expected_model
+):
     monkeypatch.setattr(
-        "jerrythomas.profiles.execution.load_entrypoint",
-        lambda *_args: pytest.fail("Base runtime task must not load a plugin"),
+        "jerrythomas.operations.runtime.execution.load_entrypoint",
+        lambda *_args: pytest.fail("Invalid configuration must not load an entrypoint"),
     )
-
-    with pytest.raises(TypeError, match="Unsupported runtime task: RuntimeTask"):
-        run_runtime_operation(job)
-
-
-def test_dataset_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> None:
-    task = DatasetTask(id="dataset")
-    job = _runtime_job(
-        "dataset",
-        task,
-        _runtime(tmp_path),
-        limit=5,
-        output_ids=("holdout.train",),
-    )
-    received = None
-
-    def run_dataset(
-        runtime,
-        output_ids,
-        limit,
-        output_format,
-        throttle_ms,
-        preview,
-    ):
-        nonlocal received
-        received = runtime, output_ids, limit, output_format, throttle_ms, preview
-        return "dataset"
-
-    monkeypatch.setattr(
-        "jerrythomas.profiles.execution.run_dataset_operation",
-        run_dataset,
-    )
-    monkeypatch.setattr(
-        "jerrythomas.profiles.execution.load_entrypoint",
-        lambda *_args: pytest.fail("core operations must not load plugin entry points"),
-    )
-
-    assert run_runtime_operation(job) == "dataset"
-    assert received == (
-        job.runtime,
-        job.output_ids,
-        5,
-        job.output.format,
-        None,
-        None,
-    )
-
-
-def test_matrix_operation_uses_its_core_runner(monkeypatch, tmp_path: Path) -> None:
-    task = MatrixTask(id="matrix")
-    job = _runtime_job("matrix", task, _runtime(tmp_path), limit=5)
-    received = None
-
-    def run_matrix(runtime, operation_task, limit):
-        nonlocal received
-        received = runtime, operation_task, limit
-        return "matrix"
-
-    monkeypatch.setattr(
-        "jerrythomas.profiles.execution.run_matrix_operation",
-        run_matrix,
-    )
-    monkeypatch.setattr(
-        "jerrythomas.profiles.execution.load_entrypoint",
-        lambda *_args: pytest.fail("core operations must not load plugin entry points"),
-    )
-
-    assert run_runtime_operation(job) == "matrix"
-    assert received == (job.runtime, job.task, 5)
+    with pytest.raises(TypeError, match=f"requires {expected_model}"):
+        run_output_operation(_runtime(tmp_path), task, OutputOptions())
 
 
 def test_coverage_operation_rejects_limit_before_planning(tmp_path: Path) -> None:
@@ -1288,8 +1304,8 @@ def test_later_output_commit_failure_marks_run_failed_and_preserves_latest(
         lambda job, _definition: RuntimeJobPlan(job, ()),
     )
     monkeypatch.setattr(
-        "jerrythomas.profiles.execution.run_dataset_operation",
-        lambda **_kwargs: result,
+        "jerrythomas.profiles.execution.run_output_operation",
+        lambda *_args: result,
     )
 
     with pytest.raises(OSError):

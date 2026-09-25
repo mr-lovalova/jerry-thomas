@@ -133,7 +133,7 @@ def test_result_excludes_planned_files_when_operation_returns_no_output(
     root = copy_fixture("regression_project")
     request = build_runtime_run_request("serve", str(root / "project.yaml"))
     monkeypatch.setattr(
-        "jerrythomas.profiles.execution.run_runtime_operation", lambda _job: None
+        "jerrythomas.profiles.execution.run_output_operation", lambda *_args: None
     )
     results = run_profiles(request)
     assert len(results) == 1

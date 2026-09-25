@@ -9,6 +9,7 @@ from jerrythomas.artifacts.models import (
 from jerrythomas.artifacts.registry import COVERAGE_STATS_SPEC
 from jerrythomas.config.tasks.coverage import CoverageTask
 from jerrythomas.operations.persistence import RuntimeOutput
+from jerrythomas.operations.runtime.execution import OutputOptions
 from jerrythomas.runtime import Runtime
 
 
@@ -94,25 +95,25 @@ def _section_report(
 def run_coverage_operation(
     runtime: Runtime,
     task: CoverageTask,
+    options: OutputOptions,
 ) -> RuntimeOutput:
-    options = task.options
     coverage_stats = runtime.artifacts.load(COVERAGE_STATS_SPEC)
     return RuntimeOutput(
         payload={
             "report": "coverage",
             "stage": coverage_stats.stage,
-            "threshold": options.threshold,
+            "threshold": task.options.threshold,
             "total_samples": coverage_stats.total_samples,
             "empty_samples": coverage_stats.empty_samples,
             "features": _section_report(
                 coverage_stats.features,
                 coverage_stats.total_samples,
-                options.threshold,
+                task.options.threshold,
             ),
             "targets": _section_report(
                 coverage_stats.targets,
                 coverage_stats.total_samples,
-                options.threshold,
+                task.options.threshold,
             ),
         }
     )

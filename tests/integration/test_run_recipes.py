@@ -68,6 +68,16 @@ def test_materialize_recipe_preserves_resolved_external_config_not_unused_catalo
     assert "do-not-preserve" not in saved.recipe_path.read_text()
     assert "${" not in saved.recipe_path.read_text()
     assert saved.output("linear").row_count == 6
+    assert not any(
+        item["group"] == "jerrythomas.operations.runtime"
+        for item in recipe.implementation["unidentified_entrypoints"]
+    )
+    assert {
+        "group": "jerrythomas.operations.runtime",
+        "name": "core.records",
+        "value": "jerrythomas.operations.runtime.records:run_records_operation",
+        "distribution": "jerry-thomas",
+    } in recipe.implementation["entrypoints"]
     archive = tmp_path / "archive"
     archive.mkdir()
     for path in (saved.metadata_path, saved.recipe_path, *saved.outputs):
@@ -117,6 +127,16 @@ def test_serve_recipe_includes_overrides_and_selected_artifact_identities(copy_f
         == hashlib.sha256(saved.recipe_path.read_bytes()).hexdigest()
     )
     assert "jerry-thomas" in recipe.implementation["packages"]
+    assert not any(
+        item["group"] == "jerrythomas.operations.runtime"
+        for item in recipe.implementation["unidentified_entrypoints"]
+    )
+    assert {
+        "group": "jerrythomas.operations.runtime",
+        "name": "core.dataset",
+        "value": "jerrythomas.operations.runtime.dataset:run_dataset_operation",
+        "distribution": "jerry-thomas",
+    } in recipe.implementation["entrypoints"]
 
 
 def test_shared_serve_root_saves_only_its_own_jobs(copy_fixture):

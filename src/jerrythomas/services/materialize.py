@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+from jerrythomas.config.tasks.stream import StreamTask
 from jerrythomas.io.compression import Compression
 from jerrythomas.operations.persistence import (
     RuntimeOutput,
@@ -10,7 +11,7 @@ from jerrythomas.operations.persistence import (
 from jerrythomas.io.output import OutputTarget
 from jerrythomas.io.runs import materialize_receipt_path
 from jerrythomas.io.recipes import recipe_path
-from jerrythomas.pipelines.stream.pipeline import run_stream_pipeline
+from jerrythomas.operations.runtime.execution import OutputOptions, run_output_operation
 from jerrythomas.runtime import Runtime
 from jerrythomas.services.execution_lock import output_lock_path
 
@@ -29,7 +30,7 @@ def resolve_materialize_output(output: Path) -> OutputTarget:
 
 def materialize_stream(
     runtime: Runtime,
-    stream_id: str,
+    task: StreamTask,
     output: OutputTarget,
     overwrite: bool = False,
 ) -> WrittenOutput:
@@ -48,8 +49,13 @@ def materialize_stream(
         )
     _check_data_destination(output_path, overwrite)
 
+    result = run_output_operation(
+        runtime, task, OutputOptions(output_format=output.format)
+    )
+    if not isinstance(result, RuntimeOutput) or result.rows is None:
+        raise TypeError("Records operation must return RuntimeOutput with rows.")
     row_count = persist_runtime_output(
-        RuntimeOutput(rows=run_stream_pipeline(runtime, stream_id)),
+        result,
         output,
         runtime.heartbeat_interval_seconds,
         logging.getLogger(__name__),

@@ -15,6 +15,7 @@ from jerrythomas.io.output import OutputTarget
 from jerrythomas.operations.persistence import persist_runtime_result
 from jerrythomas.operations.runtime import coverage as coverage_ops
 from jerrythomas.operations.runtime import matrix as matrix_ops
+from jerrythomas.operations.runtime.execution import OutputOptions
 
 
 def _coverage_stats() -> CoverageStatsArtifact:
@@ -127,6 +128,7 @@ def test_inspect_coverage_reads_typed_coverage_stats_artifact(
     result = coverage_ops.run_coverage_operation(
         runtime=SimpleNamespace(artifacts=SimpleNamespace(load=_load_coverage_stats)),
         task=CoverageTask(id="coverage", options={"threshold": 0.8}),
+        options=OutputOptions(),
     )
     _persist_result(
         result,
@@ -152,6 +154,7 @@ def test_inspect_coverage_writes_one_json_report(monkeypatch, tmp_path) -> None:
     result = coverage_ops.run_coverage_operation(
         runtime=SimpleNamespace(artifacts=SimpleNamespace(load=_load_coverage_stats)),
         task=CoverageTask(id="coverage"),
+        options=OutputOptions(),
     )
     _persist_result(
         result,
@@ -178,6 +181,7 @@ def test_inspect_matrix_writes_jsonl(monkeypatch, tmp_path) -> None:
     result = matrix_ops.run_matrix_operation(
         runtime=_matrix_runtime(),
         task=MatrixTask(id="matrix", options={"max_cells": 10}),
+        options=OutputOptions(),
     )
     _persist_result(
         result,
@@ -205,6 +209,7 @@ def test_inspect_matrix_writes_html(monkeypatch, tmp_path) -> None:
     result = matrix_ops.run_matrix_operation(
         runtime=_matrix_runtime(),
         task=MatrixTask(id="matrix"),
+        options=OutputOptions(),
     )
 
     _persist_result(
@@ -235,6 +240,7 @@ def test_assembled_matrix_does_not_postprocess(monkeypatch) -> None:
     matrix_ops.run_matrix_operation(
         runtime=_matrix_runtime(),
         task=MatrixTask(id="matrix", options={"stage": "assembled"}),
+        options=OutputOptions(),
     )
 
 
@@ -253,7 +259,7 @@ def test_matrix_limit_caps_samples_after_postprocess(monkeypatch) -> None:
     result = matrix_ops.run_matrix_operation(
         runtime=_matrix_runtime(),
         task=MatrixTask(id="matrix"),
-        limit=1,
+        options=OutputOptions(limit=1),
     )
 
     assert result.rows is not None
@@ -275,6 +281,7 @@ def test_postprocessed_matrix_keeps_headers_when_every_sample_is_dropped(
     result = matrix_ops.run_matrix_operation(
         runtime=_matrix_runtime(),
         task=MatrixTask(id="matrix"),
+        options=OutputOptions(),
     )
     _persist_result(
         result,

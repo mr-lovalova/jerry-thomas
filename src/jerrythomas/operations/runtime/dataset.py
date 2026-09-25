@@ -1,7 +1,6 @@
 import logging
 import time
 from collections.abc import Iterator, Sequence
-from itertools import islice
 from typing import TypeVar
 
 from jerrythomas.artifacts.models import (
@@ -14,6 +13,7 @@ from jerrythomas.artifacts.series import load_series_manifest
 from jerrythomas.artifacts.specs import dataset_requires_scaler
 from jerrythomas.config.preview import PreviewStage
 from jerrythomas.config.profiles.output import Format
+from jerrythomas.config.tasks.dataset import DatasetTask
 from jerrythomas.domain.sample import Sample
 from jerrythomas.io.dataset_table import DatasetTable
 from jerrythomas.operations.persistence import (
@@ -24,6 +24,8 @@ from jerrythomas.operations.persistence import (
     RuntimeOutputBatch,
     RuntimeOutputItem,
 )
+from jerrythomas.operations.runtime.execution import OutputOptions
+from jerrythomas.operations.runtime.records import limit_items
 from jerrythomas.pipelines.dataset.pipeline import (
     resolve_fold_output_plans,
     run_dataset_pipeline,
@@ -39,15 +41,6 @@ from jerrythomas.runtime import Runtime
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
-
-
-def limit_items(items: Iterator[T], limit: int | None) -> Iterator[T]:
-    selected = items if limit is None else islice(items, limit)
-    try:
-        for item in selected:
-            yield item
-    finally:
-        _close_iterator(items)
 
 
 def throttle_items(
@@ -282,11 +275,8 @@ def _dataset_table(
 
 def run_dataset_operation(
     runtime: Runtime,
-    output_ids: tuple[str, ...],
-    limit: int | None,
-    output_format: Format,
-    throttle_ms: float | None,
-    preview: PreviewStage | None,
+    task: DatasetTask,
+    options: OutputOptions,
 ) -> RuntimeOutputItem | RuntimeOutputBatch | None:
     dataset = runtime.require_dataset()
 
@@ -294,29 +284,29 @@ def run_dataset_operation(
         logger.warning("(no features configured; nothing to serve)")
         return None
 
-    if preview is not None:
+    if options.preview is not None:
         return _serve_preview(
             runtime,
-            limit,
-            output_format,
-            throttle_ms,
-            preview,
+            options.limit,
+            options.output_format,
+            options.throttle_ms,
+            options.preview,
         )
 
     if dataset.split is not None:
-        if not output_ids:
+        if not options.output_ids:
             raise ValueError("A split dataset requires at least one fold output.")
         return _serve_fold_outputs(
             runtime,
-            output_ids,
-            limit,
-            output_format,
-            throttle_ms,
+            options.output_ids,
+            options.limit,
+            options.output_format,
+            options.throttle_ms,
         )
 
     return _serve_dataset(
         runtime,
-        limit,
-        output_format,
-        throttle_ms,
+        options.limit,
+        options.output_format,
+        options.throttle_ms,
     )

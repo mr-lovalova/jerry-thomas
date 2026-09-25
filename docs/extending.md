@@ -50,8 +50,11 @@ timezone-aware timestamps; Jerry normalizes them to UTC before downstream
 processing.
 
 Every operation YAML declares `kind: output|artifact` and an `entrypoint`.
-Custom output operations use the `jerrythomas.operations.runtime` registration
-group; its Python name is unchanged. For the registered example above:
+Built-in and custom output operations are registered in
+`jerrythomas.operations.runtime` and run through the same lookup and calling
+contract. Jerry registers `core.records`, `core.dataset`,
+`core.availability_matrix`, and `core.coverage_report` in its `pyproject.toml`.
+For the custom example above:
 
 ```yaml
 kind: output
@@ -64,23 +67,29 @@ A custom output operation receives exactly three positional arguments:
 ```python
 from jerrythomas.config.tasks.base import PluginRuntimeTask
 from jerrythomas.operations.persistence import RuntimeOutput
+from jerrythomas.operations.runtime.execution import OutputOptions
 from jerrythomas.runtime import Runtime
 
 
 def run_report(
     runtime: Runtime,
     task: PluginRuntimeTask,
-    limit: int | None,
+    options: OutputOptions,
 ) -> RuntimeOutput | None: ...
 ```
 
-`runtime` is the compiled `Runtime`, `task` is the configured
-`PluginRuntimeTask`,
-and `limit` is the CLI cap or `None`. Return one `RuntimeOutput`, or `None` when
-there is nothing to persist. The profile owns its output destination; runtime
-results cannot select paths. Dataset split routing, preview, throttle, and
-`include_outputs` belong to the built-in dataset operation and are not passed to
-plugins.
+`runtime` is the compiled `Runtime`, and `task` is the configured
+`PluginRuntimeTask`; `task.options` holds the plugin-defined YAML settings.
+The frozen `OutputOptions` carries execution settings: `limit` (default `None`),
+`output_format` (default `"jsonl"`), `throttle_ms` and `preview` (default `None`),
+and `output_ids` (default `()`). Read the record cap from `options.limit`.
+Preview, throttle, and split routing remain exclusive to the built-in dataset
+operation; plugins receive their defaults for those fields.
+
+Return one `RuntimeOutput`, or `None` when there is nothing to persist. The
+profile owns its output destination; neither `OutputOptions` nor runtime
+results select paths. Jerry 12 replaces the old `(runtime, task, limit)` plugin
+signature with `(runtime, task, options)`; there is no legacy-signature adapter.
 
 Jerry 10 removes result-owned `target`/`targets` fields and custom
 `RuntimeOutputBatch`/`RoutedRuntimeOutput` returns. Custom runtime operations

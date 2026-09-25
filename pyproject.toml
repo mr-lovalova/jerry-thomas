@@ -93,6 +93,12 @@ identity = "jerrythomas.mappers.noop:identity"
 identity = "jerrythomas.parsers.identity:IdentityParser"
 "core.temporal_record" = "jerrythomas.parsers.temporal_record:TemporalRecordParser"
 
+[project.entry-points."jerrythomas.operations.runtime"]
+"core.records" = "jerrythomas.operations.runtime.records:run_records_operation"
+"core.dataset" = "jerrythomas.operations.runtime.dataset:run_dataset_operation"
+"core.availability_matrix" = "jerrythomas.operations.runtime.matrix:run_matrix_operation"
+"core.coverage_report" = "jerrythomas.operations.runtime.coverage:run_coverage_operation"
+
 [project.entry-points."jerrythomas.operations.build"]
 "core.dataset_series" = "jerrythomas.operations.artifacts.series:build_series_artifact"
 "core.dataset_metadata" = "jerrythomas.operations.artifacts.metadata:build_metadata_artifact"
