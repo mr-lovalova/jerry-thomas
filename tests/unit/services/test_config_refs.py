@@ -185,7 +185,7 @@ def test_project_path_refs_resolve_loader_arguments_and_inputs(
     )
     (project_root / "sources" / "prices.yaml").write_text(
         "id: prices\n"
-        "parser: {entrypoint: identity}\n"
+        "parser: {entrypoint: core.identity}\n"
         "loader:\n"
         "  entrypoint: custom.prices\n"
         "  args: {root: '${raw_root}'}\n"
@@ -462,7 +462,7 @@ def test_load_sources_resolve_nested_globals_before_fs_path_normalization(
             [
                 "id: equity.prices",
                 "parser:",
-                "  entrypoint: identity",
+                "  entrypoint: core.identity",
                 "  args: {}",
                 "loader:",
                 "  transport: fs",
@@ -670,7 +670,7 @@ def test_load_sources_resolve_env_backed_globals_before_fs_path_normalization(
             [
                 "id: sample.fs",
                 "parser:",
-                "  entrypoint: identity",
+                "  entrypoint: core.identity",
                 "  args: {}",
                 "loader:",
                 "  transport: fs",
@@ -747,7 +747,7 @@ def test_artifact_hash_changes_when_env_value_changes(
             [
                 "id: sample.fs",
                 "parser:",
-                "  entrypoint: identity",
+                "  entrypoint: core.identity",
                 "  args: {}",
                 "loader:",
                 "  transport: fs",
@@ -784,7 +784,7 @@ def test_artifact_hash_includes_multiple_source_roots(tmp_path: Path) -> None:
             [
                 "id: common.fs",
                 "parser:",
-                "  entrypoint: identity",
+                "  entrypoint: core.identity",
                 "loader:",
                 "  transport: fs",
                 "  path: rows.jsonl",
@@ -812,7 +812,7 @@ def test_artifact_hash_includes_multiple_source_roots(tmp_path: Path) -> None:
             [
                 "id: common.fs",
                 "parser:",
-                "  entrypoint: identity",
+                "  entrypoint: core.identity",
                 "loader:",
                 "  transport: fs",
                 "  path: changed.jsonl",
@@ -842,14 +842,14 @@ def test_artifact_hash_ignores_source_document_order(tmp_path: Path) -> None:
     alpha_path.write_text(
         "id: zeta\n"
         "inputs: {files: [data/zeta.jsonl]}\n"
-        "parser: {entrypoint: identity}\n"
+        "parser: {entrypoint: core.identity}\n"
         "loader: {entrypoint: custom.loader}\n",
         encoding="utf-8",
     )
     zeta_path.write_text(
         "id: alpha\n"
         "inputs: {files: [data/alpha.jsonl]}\n"
-        "parser: {entrypoint: identity}\n"
+        "parser: {entrypoint: core.identity}\n"
         "loader: {entrypoint: custom.loader}\n",
         encoding="utf-8",
     )
@@ -871,7 +871,7 @@ def test_artifact_hash_ignores_source_document_order(tmp_path: Path) -> None:
         pytest.param(
             """\
 id: sample.fs
-parser: {entrypoint: identity, args: {}}
+parser: {entrypoint: core.identity, args: {}}
 loader:
   transport: fs
   path: data/*.jsonl
@@ -885,7 +885,7 @@ loader:
         pytest.param(
             """\
 id: sample.file
-parser: {entrypoint: identity, args: {}}
+parser: {entrypoint: core.identity, args: {}}
 loader: {transport: fs, path: data/a.jsonl, reader: {format: jsonl}}
 """,
             "sample.file",
@@ -897,7 +897,7 @@ loader: {transport: fs, path: data/a.jsonl, reader: {format: jsonl}}
 id: sample.custom
 inputs:
   files: [data/*.jsonl]
-parser: {entrypoint: identity, args: {}}
+parser: {entrypoint: core.identity, args: {}}
 loader: {entrypoint: custom.loader, args: {}}
 """,
             "sample.custom",
@@ -964,7 +964,7 @@ def test_artifact_hash_rejects_source_input_directory(tmp_path: Path) -> None:
         """\
 id: sample.custom
 inputs: {files: [data]}
-parser: {entrypoint: identity, args: {}}
+parser: {entrypoint: core.identity, args: {}}
 loader: {entrypoint: custom.loader, args: {}}
 """,
         encoding="utf-8",
@@ -989,14 +989,14 @@ loader: {transport: fs, path: data/a.jsonl, reader: {format: jsonl}}
         (
             """\
 id: sample.fs
-parser: {entrypoint: identity, args: {}}
+parser: {entrypoint: core.identity, args: {}}
 """,
             "loader",
         ),
         (
             """\
 id: sample.fs
-parser: identity
+parser: core.identity
 loader: {transport: fs, path: data/a.jsonl, reader: {format: jsonl}}
 """,
             "parser",

@@ -2,5 +2,5 @@ id: time.ticks.hour_sin
 from:
   source: synthetic.ticks
 map:
-  entrypoint: encode_time
+  entrypoint: core.encode_time
   args: { mode: hour_sin }

@@ -18,7 +18,7 @@ def _source(source_id: str = "source.alias") -> SourceConfig:
     return SourceConfig.model_validate(
         {
             "id": source_id,
-            "parser": {"entrypoint": "identity"},
+            "parser": {"entrypoint": "core.identity"},
             "loader": {"entrypoint": "load"},
             "freshness": "opaque",
         }
@@ -35,7 +35,7 @@ def _source_stream(
         {
             "id": stream_id,
             "from": {"source": "source.alias"},
-            "map": {"entrypoint": "identity"},
+            "map": {"entrypoint": "core.identity"},
             "partition_by": [] if partition_by is None else partition_by,
             "presorted": presorted,
             "transforms": [] if transforms is None else transforms,

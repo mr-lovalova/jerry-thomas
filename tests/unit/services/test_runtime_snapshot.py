@@ -54,13 +54,13 @@ def compiled_runtime(tmp_path):
     )
     for source_id in ("prices", "unused"):
         (tmp_path / "sources" / f"{source_id}.yaml").write_text(
-            f"id: {source_id}\nparser: {{entrypoint: core.temporal_record}}\n"
+            f"id: {source_id}\nparser: {{entrypoint: core.record}}\n"
             "loader:\n  transport: fs\n  path: ${data_file}\n"
             "  reader: {format: jsonl}\n"
         )
         (tmp_path / "streams" / f"{source_id}.yaml").write_text(
             f"id: {source_id}\nfrom: {{source: {source_id}}}\n"
-            "map: {entrypoint: identity}\npartition_by: [ticker]\n"
+            "map: {entrypoint: core.identity}\npartition_by: [ticker]\n"
         )
     (tmp_path / "streams" / "selected.yaml").write_text(
         "id: selected\nfrom: {stream: prices}\n"

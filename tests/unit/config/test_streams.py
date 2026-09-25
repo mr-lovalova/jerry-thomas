@@ -61,7 +61,7 @@ def test_presorted_requires_a_boolean(value) -> None:
             {
                 "id": "prices",
                 "from": {"source": "vendor.prices"},
-                "map": {"entrypoint": "identity"},
+                "map": {"entrypoint": "core.identity"},
                 "presorted": value,
             }
         )
@@ -74,7 +74,7 @@ def test_ordered_by_is_rejected_even_with_presorted(presorted) -> None:
             {
                 "id": "prices",
                 "from": {"source": "vendor.prices"},
-                "map": {"entrypoint": "identity"},
+                "map": {"entrypoint": "core.identity"},
                 "ordered_by": ["time"],
                 "presorted": presorted,
             }
@@ -116,7 +116,7 @@ def test_derived_stream_requires_a_transform() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("map", {"entrypoint": "identity"}),
+        ("map", {"entrypoint": "core.identity"}),
         ("preprocess", []),
         ("partition_by", ["ticker"]),
         ("presorted", True),
@@ -309,7 +309,7 @@ def test_broadcast_stream_rejects_other_stream_contracts(field: str) -> None:
                 "from": {"stream": "measurements"},
                 "join": {"kind": "broadcast", "with": "reference"},
                 "combine": {"entrypoint": "attach_reference"},
-                field: {"entrypoint": "identity"} if field == "map" else [],
+                field: {"entrypoint": "core.identity"} if field == "map" else [],
             }
         )
 
@@ -357,7 +357,7 @@ def test_aligned_stream_rejects_other_stream_contracts(field: str) -> None:
                 "from": {"stream": "prices"},
                 "join": {"kind": "align", "streams": ["shares"]},
                 "combine": {"entrypoint": "market_cap"},
-                field: {"entrypoint": "identity"} if field == "map" else [],
+                field: {"entrypoint": "core.identity"} if field == "map" else [],
             }
         )
 

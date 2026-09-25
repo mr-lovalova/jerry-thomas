@@ -3,7 +3,7 @@ from:
   source: regression.targets
 
 map:
-  entrypoint: identity
+  entrypoint: core.identity
   args: {}
 
 preprocess:

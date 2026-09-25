@@ -1,6 +1,6 @@
 id: fixture.fundamentals
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: data/fundamentals.jsonl

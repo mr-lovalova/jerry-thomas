@@ -83,15 +83,15 @@ exclude = ["^src/jerrythomas/templates/"]
 check_untyped_defs = true
 
 [project.entry-points."jerrythomas.mappers"]
-encode_time = "jerrythomas.mappers.synthetic.time:encode"
-identity = "jerrythomas.mappers.noop:identity"
+"core.encode_time" = "jerrythomas.mappers.synthetic.time:encode"
+"core.identity" = "jerrythomas.mappers.noop:identity"
 
 [project.entry-points."jerrythomas.loaders"]
 "core.synthetic.ticks" = "jerrythomas.sources.synthetic.time.loader:make_time_loader"
 
 [project.entry-points."jerrythomas.parsers"]
-identity = "jerrythomas.parsers.identity:IdentityParser"
-"core.temporal_record" = "jerrythomas.parsers.temporal_record:TemporalRecordParser"
+"core.identity" = "jerrythomas.parsers.identity:IdentityParser"
+"core.record" = "jerrythomas.parsers.temporal_record:TemporalRecordParser"
 
 [project.entry-points."jerrythomas.operations.runtime"]
 "core.records" = "jerrythomas.operations.runtime.records:run_records_operation"

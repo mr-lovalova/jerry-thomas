@@ -31,7 +31,7 @@ def test_create_source_scaffolds_into_default_project(tmp_path: Path) -> None:
     create_source_yaml(
         source_id="demo.weather",
         loader=loader,
-        parser_ep="identity",
+        parser_ep="core.identity",
         root=plugin_root,
     )
 
@@ -48,7 +48,7 @@ def test_create_source_preserves_custom_source_id(tmp_path: Path) -> None:
     create_source_yaml(
         source_id="demo.weather.hourly",
         loader={"entrypoint": "custom.loader", "args": {}},
-        parser_ep="identity",
+        parser_ep="core.identity",
         root=plugin_root,
     )
 
@@ -153,7 +153,7 @@ def test_create_source_refuses_to_replace_existing_config(tmp_path: Path) -> Non
     path = create_source_yaml(
         source_id="demo.weather",
         loader={"entrypoint": "custom.loader", "args": {}},
-        parser_ep="identity",
+        parser_ep="core.identity",
         root=plugin_root,
     )
     original = path.read_bytes()
@@ -184,7 +184,7 @@ def test_create_source_rejects_existing_id_in_another_root(tmp_path: Path) -> No
     )
     (common_sources / "existing.yaml").write_text(
         "id: demo.weather\n"
-        "parser: {entrypoint: identity}\n"
+        "parser: {entrypoint: core.identity}\n"
         "loader: {entrypoint: identity}\n",
         encoding="utf-8",
     )
@@ -193,7 +193,7 @@ def test_create_source_rejects_existing_id_in_another_root(tmp_path: Path) -> No
         create_source_yaml(
             source_id="demo.weather",
             loader={"entrypoint": "custom.loader", "args": {}},
-            parser_ep="identity",
+            parser_ep="core.identity",
             root=plugin_root,
             project_yaml=project_yaml,
         )
@@ -213,7 +213,7 @@ def test_create_source_does_not_validate_unrelated_source_values(
     )
     (project.source_dirs[0] / "existing.yaml").write_text(
         "id: demo.existing\n"
-        "parser: {entrypoint: identity}\n"
+        "parser: {entrypoint: core.identity}\n"
         "loader:\n"
         "  transport: ${env:SECRET}\n"
         "  path: data.jsonl\n"
@@ -224,7 +224,7 @@ def test_create_source_does_not_validate_unrelated_source_values(
     path = create_source_yaml(
         source_id="demo.weather",
         loader={"entrypoint": "custom.loader", "args": {}},
-        parser_ep="identity",
+        parser_ep="core.identity",
         root=plugin_root,
         project_yaml=project_yaml,
     )
@@ -246,6 +246,6 @@ def test_create_source_rejects_unsafe_source_id(
         create_source_yaml(
             source_id=source_id,
             loader={"entrypoint": "custom.loader", "args": {}},
-            parser_ep="identity",
+            parser_ep="core.identity",
             root=plugin_root,
         )

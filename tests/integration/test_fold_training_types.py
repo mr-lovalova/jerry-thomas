@@ -57,12 +57,12 @@ def _filled_fold_project(root: Path, fill_value: int | float) -> Path:
                 "path": "prices.jsonl",
                 "reader": {"format": "jsonl"},
             },
-            "parser": {"entrypoint": "core.temporal_record"},
+            "parser": {"entrypoint": "core.record"},
         },
         "streams/prices.yaml": {
             "id": "prices",
             "from": {"source": "prices"},
-            "map": {"entrypoint": "identity"},
+            "map": {"entrypoint": "core.identity"},
             "transforms": [
                 {"operation": "ensure_cadence", "cadence": "1h"},
                 {"operation": "fill_missing", "field": "value", "value": fill_value},

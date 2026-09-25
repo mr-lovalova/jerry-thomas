@@ -259,7 +259,7 @@ Declare the local Parquet file as a normal source:
 # sources/research.adv-rank.yaml
 id: research.adv-rank
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: research/adv_rank.parquet
@@ -275,7 +275,7 @@ id: research.adv-rank
 from:
   source: research.adv-rank
 map:
-  entrypoint: identity
+  entrypoint: core.identity
 partition_by: [ticker]
 presorted: true
 ```

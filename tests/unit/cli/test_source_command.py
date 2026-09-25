@@ -20,7 +20,7 @@ def test_source_create_uses_source_id_and_builtin_loader(monkeypatch) -> None:
         source_id="demo.weather",
         transport="fs",
         format="csv",
-        parser="identity",
+        parser="core.identity",
     )
 
     assert captured["source_id"] == "demo.weather"
@@ -30,7 +30,7 @@ def test_source_create_uses_source_id_and_builtin_loader(monkeypatch) -> None:
     reader = loader["reader"]
     assert isinstance(reader, dict)
     assert reader["format"] == "csv"
-    assert captured["parser_ep"] == "identity"
+    assert captured["parser_ep"] == "core.identity"
 
 
 def test_source_create_explicit_loader_overrides_transport(monkeypatch) -> None:
@@ -73,7 +73,7 @@ def test_source_create_defaults_to_identity_parser_when_noninteractive(
         transport="synthetic",
     )
 
-    assert captured["parser_ep"] == "identity"
+    assert captured["parser_ep"] == "core.identity"
 
 
 def test_source_create_rejects_invalid_source_id() -> None:
@@ -81,7 +81,7 @@ def test_source_create_rejects_invalid_source_id() -> None:
         source.handle(
             source_id="weather",
             transport="synthetic",
-            parser="identity",
+            parser="core.identity",
         )
 
 
@@ -90,7 +90,7 @@ def test_source_create_rejects_unsafe_source_id_before_loader_selection() -> Non
         source.handle(
             source_id="demo/vendor.weather",
             transport="synthetic",
-            parser="identity",
+            parser="core.identity",
         )
 
     assert exc.value.code == 2
@@ -102,7 +102,7 @@ def test_source_create_rejects_pickle_format(caplog) -> None:
             source_id="demo.weather",
             transport="fs",
             format="pickle",
-            parser="identity",
+            parser="core.identity",
         )
 
     assert exc.value.code == 2
@@ -115,7 +115,7 @@ def test_source_create_rejects_http_parquet(caplog) -> None:
             source_id="demo.weather",
             transport="http",
             format="parquet",
-            parser="identity",
+            parser="core.identity",
         )
 
     assert exc.value.code == 2

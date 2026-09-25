@@ -48,9 +48,9 @@ def test_custom_source_id_is_used_for_source_and_stream(monkeypatch, tmp_path) -
         source=SourceCreation(
             source_id="nasa.weather.hourly",
             loader={"entrypoint": "custom.loader", "args": {}},
-            parser=ParserReference("identity"),
+            parser=ParserReference("core.identity"),
         ),
-        mapper=MapperReference("identity"),
+        mapper=MapperReference("core.identity"),
         domain=DomainReference("weather"),
         dto_to_create=None,
     )
@@ -76,9 +76,9 @@ def test_invalid_source_id_fails_before_project_mutation(monkeypatch, tmp_path) 
         source=SourceCreation(
             source_id="weather",
             loader={"entrypoint": "custom.loader", "args": {}},
-            parser=ParserReference("identity"),
+            parser=ParserReference("core.identity"),
         ),
-        mapper=MapperReference("identity"),
+        mapper=MapperReference("core.identity"),
         domain=DomainCreation("weather"),
         dto_to_create=None,
     )
@@ -112,9 +112,9 @@ def test_existing_project_with_missing_config_dirs_can_be_scaffolded(
         source=SourceCreation(
             source_id="demo.weather",
             loader={"entrypoint": "custom.loader", "args": {}},
-            parser=ParserReference("identity"),
+            parser=ParserReference("core.identity"),
         ),
-        mapper=MapperReference("identity"),
+        mapper=MapperReference("core.identity"),
         domain=DomainReference("weather"),
         dto_to_create=None,
     )
@@ -145,7 +145,7 @@ def test_existing_source_fails_before_creating_planned_components(
     source_path = common_sources / "existing.yaml"
     source_path.write_text(
         "id: nasa.weather\n"
-        "parser: {entrypoint: identity}\n"
+        "parser: {entrypoint: core.identity}\n"
         "loader: {entrypoint: identity}\n",
         encoding="utf-8",
     )
@@ -198,7 +198,7 @@ def test_existing_stream_fails_before_creating_planned_components(
     stream_path.write_text(
         "id: weather.weather\n"
         "from: {source: nasa.weather}\n"
-        "map: {entrypoint: identity}\n",
+        "map: {entrypoint: core.identity}\n",
         encoding="utf-8",
     )
     dto = PythonType("WeatherDTO", "example.dtos.weather_dto")

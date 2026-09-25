@@ -22,7 +22,7 @@ def _streams(
         {
             "id": "prices",
             "from": {"source": "raw"},
-            "map": {"entrypoint": "identity"},
+            "map": {"entrypoint": "core.identity"},
             "partition_by": partition_by,
             "transforms": [] if transforms is None else transforms,
         }
@@ -36,7 +36,7 @@ def _as_of_streams(max_age: str | None) -> StreamsConfig:
         {
             "id": "fundamentals",
             "from": {"source": "raw.fundamentals"},
-            "map": {"entrypoint": "identity"},
+            "map": {"entrypoint": "core.identity"},
             "partition_by": ["ticker"],
         }
     )
@@ -296,7 +296,7 @@ def test_hash_split_rejects_broadcast_as_of_dependency() -> None:
         {
             "id": "market",
             "from": {"source": "raw.market"},
-            "map": {"entrypoint": "identity"},
+            "map": {"entrypoint": "core.identity"},
         }
     )
     joined = CombinedStreamConfig.model_validate(

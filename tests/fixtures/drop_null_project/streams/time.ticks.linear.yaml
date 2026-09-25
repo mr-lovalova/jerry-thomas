@@ -3,7 +3,7 @@ from:
   source: synthetic.ticks
 
 map:
-  entrypoint: encode_time
+  entrypoint: core.encode_time
   args: { mode: linear }
 
 preprocess:

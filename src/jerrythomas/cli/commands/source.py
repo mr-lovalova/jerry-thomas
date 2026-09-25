@@ -99,7 +99,7 @@ def _select_parser_from_menu(plugin_root: Path | None) -> str:
         if choice == "temporal_record":
             return DEFAULT_TEMPORAL_RECORD_PARSER_EP
         if choice == "identity":
-            return "identity"
+            return "core.identity"
         return prompt_required("Parser entrypoint")
 
     choice = pick_from_menu(
@@ -113,7 +113,7 @@ def _select_parser_from_menu(plugin_root: Path | None) -> str:
     if choice == "temporal_record":
         return DEFAULT_TEMPORAL_RECORD_PARSER_EP
     if choice == "identity":
-        return "identity"
+        return "core.identity"
     return prompt_required("Parser entrypoint")
 
 
@@ -124,7 +124,7 @@ def _resolve_parser_entrypoint(
     if parser:
         return parser
     if not sys.stdin.isatty():
-        return "identity"
+        return "core.identity"
     return _select_parser_from_menu(plugin_root)
 
 

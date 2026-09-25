@@ -231,7 +231,7 @@ def test_project_hydration_excludes_nested_schedule_and_dependents(
                 "feature": {
                     "id": "feature",
                     "from": {"source": "raw"},
-                    "map": {"entrypoint": "identity"},
+                    "map": {"entrypoint": "core.identity"},
                     "transforms": [
                         {
                             "operation": "ensure_schedule",

@@ -63,7 +63,7 @@ def _price_streams() -> StreamsConfig:
                 "prices": {
                     "id": "prices",
                     "from": {"source": "raw"},
-                    "map": {"entrypoint": "identity"},
+                    "map": {"entrypoint": "core.identity"},
                 }
             }
         }
@@ -186,7 +186,7 @@ def test_schedule_artifacts_feed_scaler_and_series() -> None:
                 "feature.stream": {
                     "id": "feature.stream",
                     "from": {"source": "raw"},
-                    "map": {"entrypoint": "identity"},
+                    "map": {"entrypoint": "core.identity"},
                     "transforms": [
                         {
                             "operation": "ensure_schedule",
@@ -231,7 +231,7 @@ def test_schedule_artifact_rejects_nested_schedule_in_upstream_stream() -> None:
                 "base": {
                     "id": "base",
                     "from": {"source": "raw"},
-                    "map": {"entrypoint": "identity"},
+                    "map": {"entrypoint": "core.identity"},
                     "transforms": [
                         {
                             "operation": "ensure_schedule",
@@ -248,7 +248,7 @@ def test_schedule_artifact_rejects_nested_schedule_in_upstream_stream() -> None:
                 "duration": {
                     "id": "duration",
                     "from": {"source": "raw"},
-                    "map": {"entrypoint": "identity"},
+                    "map": {"entrypoint": "core.identity"},
                     "transforms": [
                         {
                             "operation": "ensure_cadence",
@@ -289,7 +289,7 @@ def test_schedule_artifact_allows_duration_cadence() -> None:
                 "hourly": {
                     "id": "hourly",
                     "from": {"source": "raw"},
-                    "map": {"entrypoint": "identity"},
+                    "map": {"entrypoint": "core.identity"},
                     "transforms": [
                         {
                             "operation": "ensure_cadence",
@@ -860,7 +860,7 @@ def test_record_and_series_previews_require_declared_schedule(
                 "feature.stream": {
                     "id": "feature.stream",
                     "from": {"source": "raw"},
-                    "map": {"entrypoint": "identity"},
+                    "map": {"entrypoint": "core.identity"},
                     "transforms": [
                         {
                             "operation": "ensure_schedule",

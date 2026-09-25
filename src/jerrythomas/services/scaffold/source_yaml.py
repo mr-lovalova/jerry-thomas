@@ -13,7 +13,7 @@ from jerrythomas.services.scaffold.utils import write_new_file
 from jerrythomas.services.streams.loader import declared_source_ids
 
 DEFAULT_SYNTHETIC_LOADER_EP = "core.synthetic.ticks"
-DEFAULT_TEMPORAL_RECORD_PARSER_EP = "core.temporal_record"
+DEFAULT_TEMPORAL_RECORD_PARSER_EP = "core.record"
 
 
 def default_loader_config(

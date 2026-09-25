@@ -135,7 +135,7 @@ def _select_parser_plan(
         )
 
     if parser_choice == "identity":
-        return ParserSelection(ParserReference("identity"), None)
+        return ParserSelection(ParserReference("core.identity"), None)
     if parser_choice != "create":
         raise ValueError(f"Unknown parser choice: {parser_choice}")
 
@@ -175,7 +175,7 @@ def _select_mapper_plan(
         )
         return MapperSelection(MapperReference(entrypoint), None)
     if mapper_choice == "identity":
-        return MapperSelection(MapperReference("identity"), None)
+        return MapperSelection(MapperReference("core.identity"), None)
     if mapper_choice != "create":
         raise ValueError(f"Unknown mapper choice: {mapper_choice}")
 

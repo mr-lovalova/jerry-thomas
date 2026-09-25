@@ -170,7 +170,7 @@ def test_recipe_saves_the_null_argument_actually_passed_to_a_plugin(copy_fixture
         project.read_text().replace("globals:", "globals:\n  frequency: null")
     )
     (root / "sources" / "metrics.linear.yaml").write_text(
-        "id: regression.linear\nparser: {entrypoint: core.temporal_record}\n"
+        "id: regression.linear\nparser: {entrypoint: core.record}\n"
         "freshness: opaque\nloader:\n  entrypoint: core.synthetic.ticks\n"
         "  args: {start: '${start_time}', end: '${end_time}', frequency: '${frequency}'}\n"
     )
@@ -255,7 +255,7 @@ def test_materialized_input_records_upstream_receipt_reference(copy_fixture):
     root = copy_fixture("regression_project")
     (upstream,) = run_profiles(_materialize(root))
     (root / "sources" / "metrics.linear.yaml").write_text(
-        "id: regression.linear\nparser: {entrypoint: core.temporal_record}\n"
+        "id: regression.linear\nparser: {entrypoint: core.record}\n"
         "loader: {transport: fs, path: exports/linear.jsonl, reader: {format: jsonl}}\n"
     )
     (downstream,) = run_profiles(_materialize(root, name="second"))
@@ -281,11 +281,11 @@ def test_materialize_batch_captures_inputs_after_previous_job_finishes(copy_fixt
         "operation: raw-imported\norder: 2\noutput: exports/second.jsonl\n"
     )
     (root / "sources" / "imported.yaml").write_text(
-        "id: imported\nparser: {entrypoint: core.temporal_record}\n"
+        "id: imported\nparser: {entrypoint: core.record}\n"
         "loader: {transport: fs, path: exports/linear.jsonl, reader: {format: jsonl}}\n"
     )
     (root / "streams" / "imported.yaml").write_text(
-        "id: imported\nfrom: {source: imported}\nmap: {entrypoint: identity}\n"
+        "id: imported\nfrom: {source: imported}\nmap: {entrypoint: core.identity}\n"
     )
     request = build_materialize_run_request(
         str(root / "project.yaml"),

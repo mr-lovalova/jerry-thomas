@@ -275,7 +275,7 @@ def test_runtime_request_rejects_colliding_preview_output_ids(
     (tmp_path / "sources" / "source.yaml").write_text(
         (
             "id: source\n"
-            "parser: {entrypoint: core.temporal_record}\n"
+            "parser: {entrypoint: core.record}\n"
             "loader:\n"
             "  entrypoint: core.synthetic.ticks\n"
             "  args:\n"
@@ -291,7 +291,7 @@ def test_runtime_request_rejects_colliding_preview_output_ids(
             (
                 f"id: {stream_id}\n"
                 "from: {source: source}\n"
-                "map: {entrypoint: identity}\n"
+                "map: {entrypoint: core.identity}\n"
             ),
             encoding="utf-8",
         )

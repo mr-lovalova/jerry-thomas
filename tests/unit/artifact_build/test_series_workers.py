@@ -209,7 +209,7 @@ def lifecycle_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 {
                     "id": stream,
                     "freshness": "opaque",
-                    "parser": {"entrypoint": "core.temporal_record"},
+                    "parser": {"entrypoint": "core.record"},
                     "loader": {
                         "entrypoint": "test.stream.lifecycle",
                         "args": {
@@ -227,7 +227,7 @@ def lifecycle_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 {
                     "id": stream,
                     "from": {"source": stream},
-                    "map": {"entrypoint": "identity"},
+                    "map": {"entrypoint": "core.identity"},
                     "partition_by": ["id_"],
                     "presorted": True,
                 },

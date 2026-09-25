@@ -3,7 +3,7 @@ from:
   source: fixture.prices
 partition_by: [ticker]
 map:
-  entrypoint: identity
+  entrypoint: core.identity
 
 transforms:
   - { operation: dedupe }

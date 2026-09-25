@@ -90,7 +90,7 @@ def _runtime(
             root / "sources" / f"{stream}.yaml",
             {
                 "id": stream,
-                "parser": {"entrypoint": "core.temporal_record"},
+                "parser": {"entrypoint": "core.record"},
                 "loader": {
                     "transport": "fs",
                     "path": f"data/{stream}.jsonl",
@@ -103,7 +103,7 @@ def _runtime(
             {
                 "id": stream,
                 "from": {"source": stream},
-                "map": {"entrypoint": "identity"},
+                "map": {"entrypoint": "core.identity"},
                 "partition_by": ["id_"],
                 "transforms": (transforms or {}).get(stream, []),
             },

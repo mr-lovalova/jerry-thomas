@@ -105,12 +105,12 @@ def _write_project(tmp_path: Path) -> Path:
             encoding="utf-8",
         )
     (tmp_path / "sources" / "source.yaml").write_text(
-        "id: source\nparser: {entrypoint: identity}\n"
+        "id: source\nparser: {entrypoint: core.identity}\n"
         "loader: {entrypoint: plugin.source}\nfreshness: opaque\n",
         encoding="utf-8",
     )
     (tmp_path / "streams" / "stream.yaml").write_text(
-        "id: stream\nfrom: {source: source}\nmap: {entrypoint: identity}\n",
+        "id: stream\nfrom: {source: source}\nmap: {entrypoint: core.identity}\n",
         encoding="utf-8",
     )
     return project_path
@@ -136,12 +136,12 @@ def _definition_with_local_source(
     source_path.write_text("{}\n", encoding="utf-8")
     (tmp_path / "sources" / "prices.yaml").write_text(
         "id: prices\n"
-        "parser: {entrypoint: identity}\n"
+        "parser: {entrypoint: core.identity}\n"
         "loader: {transport: fs, path: 'data/*.jsonl', reader: {format: jsonl}}\n",
         encoding="utf-8",
     )
     (tmp_path / "streams" / "prices.yaml").write_text(
-        "id: prices\nfrom: {source: prices}\nmap: {entrypoint: identity}\n",
+        "id: prices\nfrom: {source: prices}\nmap: {entrypoint: core.identity}\n",
         encoding="utf-8",
     )
     (tmp_path / "datasets/default.yaml").write_text(

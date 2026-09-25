@@ -278,7 +278,7 @@ def _raw_source():
     return SourceConfig.model_validate(
         {
             "id": "raw",
-            "parser": {"entrypoint": "core.temporal_record"},
+            "parser": {"entrypoint": "core.record"},
             "loader": {
                 "transport": "fs",
                 "path": "data/raw.jsonl",
@@ -293,7 +293,7 @@ def test_stream_validation_rejects_writes_to_canonical_fields() -> None:
         {
             "id": "prices",
             "from": {"source": "raw"},
-            "map": {"entrypoint": "identity"},
+            "map": {"entrypoint": "core.identity"},
             "partition_by": ["ticker"],
         }
     )
@@ -336,7 +336,7 @@ def test_hash_splits_reject_custom_transforms() -> None:
         {
             "id": "prices",
             "from": {"source": "raw"},
-            "map": {"entrypoint": "identity"},
+            "map": {"entrypoint": "core.identity"},
             "partition_by": ["ticker"],
             "transforms": [{"operation": "custom", "entrypoint": "x:y"}],
         }
@@ -380,7 +380,7 @@ def test_custom_transform_runs_end_to_end_from_yaml(tmp_path, monkeypatch) -> No
         """\
 id: events.source
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: data/events.jsonl
@@ -407,7 +407,7 @@ loader:
 id: events
 from: {source: events.source}
 partition_by: [ticker]
-map: {entrypoint: identity}
+map: {entrypoint: core.identity}
 """,
         encoding="utf-8",
     )

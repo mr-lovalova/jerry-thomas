@@ -46,7 +46,7 @@ your DTO shape and no type conversion is needed. Choose **Create parser** when y
 need to parse timestamps, coerce types, rename fields, or drop/validate rows.
 
 For persisted domain-record-like JSON/JSONL rows, choose **Temporal record
-rehydration** (`core.temporal_record`) to rehydrate canonical records without
+rehydration** (`core.record`) to rehydrate canonical records without
 creating a DTO or custom mapper.
 
 ### Mapper

@@ -213,7 +213,7 @@ def test_hash_splits_reject_ewm_std() -> None:
         {
             "id": "prices",
             "from": {"source": "raw"},
-            "map": {"entrypoint": "identity"},
+            "map": {"entrypoint": "core.identity"},
             "partition_by": ["ticker"],
             "transforms": [{"operation": "ewm_std", "field": "close", "alpha": 0.3}],
         }

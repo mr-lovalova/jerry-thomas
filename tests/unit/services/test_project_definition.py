@@ -126,13 +126,13 @@ def test_load_project_definition_rejects_legacy_scaler_fold_config(
     project_yaml = _write_project(tmp_path)
     (tmp_path / "sources" / "prices.yaml").write_text(
         "id: prices\n"
-        "parser: {entrypoint: identity}\n"
+        "parser: {entrypoint: core.identity}\n"
         "loader: {entrypoint: custom.loader}\n"
         "freshness: opaque\n",
         encoding="utf-8",
     )
     (tmp_path / "streams" / "prices.yaml").write_text(
-        "id: prices\nfrom: {source: prices}\nmap: {entrypoint: identity}\n",
+        "id: prices\nfrom: {source: prices}\nmap: {entrypoint: core.identity}\n",
         encoding="utf-8",
     )
     (tmp_path / "datasets" / "default.yaml").write_text(
@@ -162,7 +162,7 @@ def test_project_definition_keeps_resolved_environment_snapshot(
     project_yaml = _write_project(tmp_path)
     (tmp_path / "sources" / "prices.yaml").write_text(
         """id: prices
-parser: {entrypoint: identity}
+parser: {entrypoint: core.identity}
 loader:
   transport: fs
   path: ${env:SOURCE_PATH}
@@ -241,14 +241,14 @@ def test_project_definition_keeps_retargeted_yaml_symlink_snapshot(
     project_yaml = _write_project(tmp_path)
     first = tmp_path / "first-source.yaml"
     first.write_text(
-        "id: linked\nparser: {entrypoint: identity}\n"
+        "id: linked\nparser: {entrypoint: core.identity}\n"
         "loader: {entrypoint: custom.loader}\n"
         "freshness: opaque\n",
         encoding="utf-8",
     )
     second = tmp_path / "second-source.yaml"
     second.write_text(
-        "id: linked\nparser: {entrypoint: identity}\n"
+        "id: linked\nparser: {entrypoint: core.identity}\n"
         "loader: {entrypoint: other.loader}\n"
         "freshness: opaque\n",
         encoding="utf-8",
@@ -305,7 +305,7 @@ def test_next_project_definition_reloads_project_dotenv(
     project_yaml = _write_project(tmp_path)
     (tmp_path / "sources" / "prices.yaml").write_text(
         """id: prices
-parser: {entrypoint: identity}
+parser: {entrypoint: core.identity}
 loader:
   transport: fs
   path: ${env:SOURCE_PATH}
@@ -471,13 +471,13 @@ def test_artifact_hashing_rejects_missing_active_scaler(tmp_path: Path) -> None:
     project_yaml = _write_project(tmp_path)
     (tmp_path / "sources" / "prices.yaml").write_text(
         "id: prices\n"
-        "parser: {entrypoint: identity}\n"
+        "parser: {entrypoint: core.identity}\n"
         "loader: {entrypoint: custom.loader}\n"
         "freshness: opaque\n",
         encoding="utf-8",
     )
     (tmp_path / "streams" / "prices.yaml").write_text(
-        "id: prices\nfrom: {source: prices}\nmap: {entrypoint: identity}\n",
+        "id: prices\nfrom: {source: prices}\nmap: {entrypoint: core.identity}\n",
         encoding="utf-8",
     )
     definition = load_project_definition(project_yaml)
@@ -1111,7 +1111,7 @@ def test_cross_section_config_changes_series_artifact_hash(tmp_path: Path) -> No
     project_yaml = _write_project(tmp_path)
     (tmp_path / "sources" / "signals.yaml").write_text(
         "id: signals\n"
-        "parser: {entrypoint: identity}\n"
+        "parser: {entrypoint: core.identity}\n"
         "loader: {entrypoint: custom.loader}\n"
         "freshness: opaque\n",
         encoding="utf-8",
@@ -1119,7 +1119,7 @@ def test_cross_section_config_changes_series_artifact_hash(tmp_path: Path) -> No
     (tmp_path / "streams" / "signals.yaml").write_text(
         "id: signals\n"
         "from: {source: signals}\n"
-        "map: {entrypoint: identity}\n"
+        "map: {entrypoint: core.identity}\n"
         "partition_by: [ticker]\n",
         encoding="utf-8",
     )

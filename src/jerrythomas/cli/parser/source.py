@@ -53,7 +53,7 @@ def add_source_command(sub) -> None:
     )
     create.add_argument(
         "--parser",
-        help="parser entrypoint (defaults to identity)",
+        help="parser entrypoint (defaults to core.identity)",
     )
     add_logging_flags(create)
     add_logging_flags(parser)

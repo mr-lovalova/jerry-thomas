@@ -58,7 +58,7 @@ def _write_source_yaml(path: Path, alias: str) -> None:
         f"""
         id: {alias}
         parser:
-          entrypoint: identity
+          entrypoint: core.identity
           args: {{}}
         loader:
           entrypoint: identity
@@ -78,7 +78,7 @@ def _write_source_stream_yaml(path: Path, stream_id: str) -> None:
             from:
               source: demo.weather
             map:
-              entrypoint: identity
+              entrypoint: core.identity
               args: {{}}
             """
         ).strip()
@@ -118,7 +118,7 @@ def test_stream_scaffold_uses_project_paths(
     streams = load_streams(load_project(project_yaml))
     stream = streams.streams["weather.weather"]
     assert isinstance(stream, SourceStreamConfig)
-    assert stream.map.entrypoint == "identity"
+    assert stream.map.entrypoint == "core.identity"
     assert stream.preprocess == []
     package = plugin_root / "src" / "sample_plugin"
     assert not (package / "dtos").exists()
@@ -143,7 +143,7 @@ def test_stream_identity_mapper_skips_scaffold(
     stream_path = streams_dir / "weather.weather.yaml"
     assert stream_path.exists()
     document = yaml.safe_load(stream_path.read_text(encoding="utf-8"))
-    assert document["map"]["entrypoint"] == "identity"
+    assert document["map"]["entrypoint"] == "core.identity"
     package = plugin_root / "src" / "sample_plugin"
     assert not (package / "dtos").exists()
     assert not (package / "domains").exists()

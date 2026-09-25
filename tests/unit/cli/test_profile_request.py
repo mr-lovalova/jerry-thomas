@@ -54,12 +54,12 @@ def _write_project(tmp_path: Path) -> Path:
 
 def _write_stream(tmp_path: Path, stream: str) -> None:
     (tmp_path / "sources" / "source.yaml").write_text(
-        "id: source\nparser: {entrypoint: identity}\n"
+        "id: source\nparser: {entrypoint: core.identity}\n"
         "loader: {entrypoint: plugin.source}\nfreshness: opaque\n",
         encoding="utf-8",
     )
     (tmp_path / "streams" / f"{stream}.yaml").write_text(
-        f"id: {stream}\nfrom: {{source: source}}\nmap: {{entrypoint: identity}}\n",
+        f"id: {stream}\nfrom: {{source: source}}\nmap: {{entrypoint: core.identity}}\n",
         encoding="utf-8",
     )
 

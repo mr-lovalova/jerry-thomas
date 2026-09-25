@@ -34,7 +34,7 @@ def _source_stream(**values: object) -> SourceStreamConfig:
         {
             "id": "prices.raw",
             "from": {"source": "prices"},
-            "map": {"entrypoint": "identity"},
+            "map": {"entrypoint": "core.identity"},
             **values,
         }
     )

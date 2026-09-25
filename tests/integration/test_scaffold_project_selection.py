@@ -18,7 +18,7 @@ def _source(path: Path, source_id: str) -> None:
         {
             "id": source_id,
             "loader": {"entrypoint": "core.synthetic.ticks", "args": {}},
-            "parser": {"entrypoint": "identity", "args": {}},
+            "parser": {"entrypoint": "core.identity", "args": {}},
             "freshness": "opaque",
         },
     )
@@ -103,7 +103,13 @@ def test_scaffolds_target_selected_project_roots(
     selected = workspace / "projects" / "selected"
     shared_before = _snapshot(selected / "shared")
     if command == "source":
-        arguments = ["demo.fresh", "--transport", "synthetic", "--parser", "identity"]
+        arguments = [
+            "demo.fresh",
+            "--transport",
+            "synthetic",
+            "--parser",
+            "core.identity",
+        ]
         answers = []
     elif command == "stream":
         arguments = ["--identity"]
@@ -154,7 +160,7 @@ def test_builtin_scaffolds_work_in_standalone_project(tmp_path, monkeypatch, com
     _source(tmp_path / "sources/demo.tick.yaml", "demo.tick")
     monkeypatch.chdir(tmp_path)
     arguments = (
-        ["demo.fresh", "--transport", "synthetic", "--parser", "identity"]
+        ["demo.fresh", "--transport", "synthetic", "--parser", "core.identity"]
         if command == "source"
         else ["--identity"]
     )
@@ -199,7 +205,7 @@ def test_standalone_aligned_stream_accepts_manual_combiner(tmp_path, monkeypatch
             {
                 "id": stream_id,
                 "from": {"source": "demo.tick"},
-                "map": {"entrypoint": "identity"},
+                "map": {"entrypoint": "core.identity"},
             },
         )
     monkeypatch.chdir(tmp_path)
@@ -229,7 +235,7 @@ def test_scaffolding_preserves_workspace_default_project(workspace, monkeypatch)
             "--transport",
             "synthetic",
             "--parser",
-            "identity",
+            "core.identity",
         ],
     )
 

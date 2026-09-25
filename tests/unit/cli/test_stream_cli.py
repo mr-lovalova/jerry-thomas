@@ -106,7 +106,7 @@ def test_select_parser_plan_identity(monkeypatch) -> None:
         Path("/tmp/plugin"), "example_pkg", "nasa", "weather"
     )
 
-    assert selection.plan == ParserReference("identity")
+    assert selection.plan == ParserReference("core.identity")
     assert selection.dto_to_create is None
 
 
@@ -124,7 +124,7 @@ def test_select_parser_plan_temporal_record(monkeypatch) -> None:
         Path("/tmp/plugin"), "example_pkg", "nasa", "weather"
     )
 
-    assert selection.plan == ParserReference("core.temporal_record")
+    assert selection.plan == ParserReference("core.record")
     assert selection.dto_to_create is None
 
 
@@ -334,7 +334,7 @@ def test_collect_stream_plan_preserves_custom_source_id(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "jerrythomas.cli.commands.inflow._select_mapper_plan",
-        lambda *args: MapperSelection(MapperReference("identity"), None),
+        lambda *args: MapperSelection(MapperReference("core.identity"), None),
     )
 
     plan = _collect_stream_plan(
@@ -346,7 +346,7 @@ def test_collect_stream_plan_preserves_custom_source_id(monkeypatch) -> None:
     assert isinstance(plan.source, SourceCreation)
     assert plan.source.source_id == "nasa.weather.hourly"
     assert plan.source.parser == parser_plan
-    assert plan.mapper == MapperReference("identity")
+    assert plan.mapper == MapperReference("core.identity")
     assert plan.dto_to_create == "WeatherDTO"
     assert plan.stream_id == "weather.hourly"
 

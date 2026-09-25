@@ -21,5 +21,5 @@ def encode(stream: Iterator[TemporalRecord], mode: str) -> Iterator[TemporalReco
         elif mode == "linear":
             val = t.timestamp()
         else:
-            raise ValueError(f"Unsupported encode_time mode: {mode}")
+            raise ValueError(f"Unsupported core.encode_time mode: {mode}")
         yield TimeEncodedRecord(time=rec.time, value=val)

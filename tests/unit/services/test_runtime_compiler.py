@@ -73,7 +73,7 @@ def test_streams_sharing_a_source_compile_distinct_runtime_objects(tmp_path) -> 
         """\
 id: shared
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: data.jsonl
@@ -89,7 +89,7 @@ id: {stream_id}
 from:
   source: shared
 map:
-  entrypoint: identity
+  entrypoint: core.identity
 """,
             encoding="utf-8",
         )
@@ -116,7 +116,7 @@ def test_compiled_runtimes_isolate_mutable_transform_configuration(tmp_path) -> 
     )
     (sources_dir / "prices.yaml").write_text(
         "id: prices\n"
-        "parser: {entrypoint: core.temporal_record}\n"
+        "parser: {entrypoint: core.record}\n"
         "loader:\n"
         "  transport: fs\n"
         "  path: data/prices.jsonl\n"
@@ -126,7 +126,7 @@ def test_compiled_runtimes_isolate_mutable_transform_configuration(tmp_path) -> 
     (streams_dir / "prices.yaml").write_text(
         "id: prices\n"
         "from: {source: prices}\n"
-        "map: {entrypoint: identity}\n"
+        "map: {entrypoint: core.identity}\n"
         "preprocess:\n"
         "  - {operation: where, field: value, operator: in, comparand: [1, 2]}\n"
         "transforms:\n"
@@ -196,7 +196,7 @@ def test_compiled_runtimes_isolate_nested_plugin_arguments(
     )
     (sources_dir / "lookup.yaml").write_text(
         "id: lookup\n"
-        "parser: {entrypoint: core.temporal_record}\n"
+        "parser: {entrypoint: core.record}\n"
         "loader:\n"
         "  transport: fs\n"
         "  path: data/lookup.jsonl\n"
@@ -212,7 +212,7 @@ def test_compiled_runtimes_isolate_nested_plugin_arguments(
         encoding="utf-8",
     )
     (streams_dir / "lookup.yaml").write_text(
-        "id: lookup\nfrom: {source: lookup}\nmap: {entrypoint: identity}\n",
+        "id: lookup\nfrom: {source: lookup}\nmap: {entrypoint: core.identity}\n",
         encoding="utf-8",
     )
     (streams_dir / "combined.yaml").write_text(
@@ -327,7 +327,7 @@ def test_yaml_derived_stream_runs_with_inherited_partition(tmp_path) -> None:
         """\
 id: prices.source
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: data/prices.jsonl
@@ -343,7 +343,7 @@ from:
   source: prices.source
 partition_by: [ticker]
 map:
-  entrypoint: identity
+  entrypoint: core.identity
 """,
         encoding="utf-8",
     )
@@ -375,7 +375,7 @@ def test_yaml_cross_section_stream_compiles_typed_contract(tmp_path) -> None:
         """\
 id: signals.source
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: data/signals.jsonl
@@ -391,7 +391,7 @@ from:
   source: signals.source
 partition_by: [ticker]
 map:
-  entrypoint: identity
+  entrypoint: core.identity
 """,
         encoding="utf-8",
     )
@@ -476,7 +476,7 @@ def test_exact_global_factors_feed_partitioned_rolling_ols_with_gap(
             f"""\
 id: {input_name}.source
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: data/{input_name}.jsonl
@@ -491,7 +491,7 @@ loader:
 id: stocks
 from: {source: stocks.source}
 partition_by: [ticker]
-map: {entrypoint: identity}
+map: {entrypoint: core.identity}
 """,
         encoding="utf-8",
     )
@@ -500,7 +500,7 @@ map: {entrypoint: identity}
             f"""\
 id: {factor}
 from: {{source: {factor}.source}}
-map: {{entrypoint: identity}}
+map: {{entrypoint: core.identity}}
 """,
             encoding="utf-8",
         )
@@ -603,7 +603,7 @@ def test_yaml_broadcast_stream_reuses_exact_input_across_partitions(
             f"""\
 id: {input_name}.source
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: data/{input_name}.jsonl
@@ -617,7 +617,7 @@ loader:
 id: measurements
 from: {source: measurements.source}
 partition_by: [station]
-map: {entrypoint: identity}
+map: {entrypoint: core.identity}
 """,
         encoding="utf-8",
     )
@@ -625,7 +625,7 @@ map: {entrypoint: identity}
         """\
 id: reference
 from: {source: reference.source}
-map: {entrypoint: identity}
+map: {entrypoint: core.identity}
 """,
         encoding="utf-8",
     )
@@ -724,7 +724,7 @@ def test_yaml_as_of_streams_compile_and_run(
             f"""\
 id: {input_name}.source
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: data/{input_name}.jsonl
@@ -738,7 +738,7 @@ loader:
             f"""\
 id: {input_name}
 from: {{source: {input_name}.source}}
-{partition}map: {{entrypoint: identity}}
+{partition}map: {{entrypoint: core.identity}}
 """,
             encoding="utf-8",
         )
@@ -871,7 +871,7 @@ def test_yaml_aggregate_exact_optional_alignment_and_literal_fill(
             f"""\
 id: {input_name}.source
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: data/{input_name}.jsonl
@@ -885,7 +885,7 @@ loader:
         """\
 id: prices
 from: {source: prices.source}
-map: {entrypoint: identity}
+map: {entrypoint: core.identity}
 partition_by: [ticker]
 """,
         encoding="utf-8",
@@ -894,7 +894,7 @@ partition_by: [ticker]
         """\
 id: events
 from: {source: events.source}
-map: {entrypoint: identity}
+map: {entrypoint: core.identity}
 partition_by: [ticker]
 transforms:
   - {operation: aggregate_sum, field: value, count_to: event_count}
@@ -992,7 +992,7 @@ def test_yaml_aligned_stream_runs_with_inherited_partition_and_combiner(
             f"""\
 id: {input_name}.source
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: data/{input_name}.jsonl
@@ -1008,7 +1008,7 @@ from:
   source: {input_name}.source
 partition_by: [ticker]
 map:
-  entrypoint: identity
+  entrypoint: core.identity
 """,
             encoding="utf-8",
         )
@@ -1094,7 +1094,7 @@ def test_yaml_forward_as_of_stream_compiles_and_runs(tmp_path, monkeypatch) -> N
             f"""\
 id: {input_name}.source
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: data/{input_name}.jsonl
@@ -1108,7 +1108,7 @@ loader:
 id: {input_name}
 from: {{source: {input_name}.source}}
 partition_by: [ticker]
-map: {{entrypoint: identity}}
+map: {{entrypoint: core.identity}}
 """,
             encoding="utf-8",
         )
@@ -1162,7 +1162,7 @@ def test_source_ordering_declaration_reaches_runtime(
     project_yaml, sources_dir, streams_dir, data_dir = _write_test_project(tmp_path)
     (sources_dir / "prices.yaml").write_text(
         "id: prices\n"
-        "parser: {entrypoint: core.temporal_record}\n"
+        "parser: {entrypoint: core.record}\n"
         "loader:\n"
         "  transport: fs\n"
         "  path: data/prices.jsonl\n"
@@ -1173,7 +1173,7 @@ def test_source_ordering_declaration_reaches_runtime(
     (streams_dir / "prices.yaml").write_text(
         "id: prices\n"
         "from: {source: prices}\n"
-        "map: {entrypoint: identity}\n"
+        "map: {entrypoint: core.identity}\n"
         f"partition_by: {json.dumps(partition_by)}\n" + declaration,
         encoding="utf-8",
     )

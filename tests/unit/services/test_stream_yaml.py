@@ -31,7 +31,7 @@ def test_source_stream_rejects_unsafe_id_before_mutating_project(
             project_yaml,
             stream_id,
             "provider.prices",
-            "identity",
+            "core.identity",
         )
 
     assert not project_yaml.exists()
@@ -66,7 +66,7 @@ def test_source_stream_refuses_to_replace_existing_config(tmp_path: Path) -> Non
             project_yaml,
             "prices.daily",
             "provider.prices",
-            "identity",
+            "core.identity",
         )
 
     assert path.read_text(encoding="utf-8") == "existing\n"
@@ -104,7 +104,7 @@ def test_stream_scaffold_rejects_existing_id_in_another_root(tmp_path: Path) -> 
     (common_streams / "existing.yaml").write_text(
         "id: prices.daily\n"
         "from: {source: provider.prices}\n"
-        "map: {entrypoint: identity}\n",
+        "map: {entrypoint: core.identity}\n",
         encoding="utf-8",
     )
 
@@ -113,7 +113,7 @@ def test_stream_scaffold_rejects_existing_id_in_another_root(tmp_path: Path) -> 
             project_yaml,
             "prices.daily",
             "provider.prices",
-            "identity",
+            "core.identity",
         )
 
     assert not (project.stream_dirs[0] / "prices.daily.yaml").exists()
@@ -131,7 +131,7 @@ def test_stream_scaffold_does_not_validate_unrelated_stream_values(
     (project.stream_dirs[0] / "existing.yaml").write_text(
         "id: prices.existing\n"
         "from: {source: '${env:SECRET}'}\n"
-        "map: {entrypoint: identity}\n",
+        "map: {entrypoint: core.identity}\n",
         encoding="utf-8",
     )
 
@@ -139,7 +139,7 @@ def test_stream_scaffold_does_not_validate_unrelated_stream_values(
         project_yaml,
         "prices.daily",
         "provider.prices",
-        "identity",
+        "core.identity",
     )
 
     assert path.name == "prices.daily.yaml"
@@ -152,7 +152,7 @@ def test_stream_scaffolds_render_valid_configs(tmp_path: Path) -> None:
         project_yaml,
         "prices.daily-us",
         "provider.prices",
-        "identity",
+        "core.identity",
     )
     aligned_path = write_aligned_stream(
         project_yaml,

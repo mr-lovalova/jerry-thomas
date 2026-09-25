@@ -1,7 +1,7 @@
 id: regression.sine
 
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
   args: {}
 loader:
   transport: fs

@@ -2,5 +2,5 @@ id: regression.outcome
 from:
   source: regression.outcome
 map:
-  entrypoint: identity
+  entrypoint: core.identity
   args: {}

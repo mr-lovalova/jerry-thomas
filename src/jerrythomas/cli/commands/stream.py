@@ -48,7 +48,7 @@ def _select_source_mapper(root: Path | None) -> str:
         )
         return entrypoint
     if choice == "identity":
-        return "identity"
+        return "core.identity"
     if choice == "custom":
         return prompt_required("Mapper entrypoint")
     raise ValueError(f"Unknown mapper choice: {choice}")
@@ -125,7 +125,7 @@ def handle(
         )
 
     if use_identity:
-        mapper_entrypoint = "identity"
+        mapper_entrypoint = "core.identity"
     else:
         mapper_entrypoint = _select_source_mapper(plugin_root)
 

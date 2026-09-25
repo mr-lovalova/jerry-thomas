@@ -3,7 +3,7 @@ from:
   source: incomplete.elspot
 
 map:
-  entrypoint: identity
+  entrypoint: core.identity
   args: {}
 
 preprocess:

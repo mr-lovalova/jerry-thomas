@@ -1,7 +1,7 @@
 id: synthetic.ticks
 
 parser:
-  entrypoint: "core.temporal_record"
+  entrypoint: "core.record"
   args: {}
 loader:
   entrypoint: "core.synthetic.ticks"

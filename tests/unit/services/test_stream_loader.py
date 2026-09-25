@@ -48,7 +48,7 @@ def _write_source_yaml(
     lines = [
         "id: sample.fs",
         "parser:",
-        "  entrypoint: identity",
+        "  entrypoint: core.identity",
         "  args: {}",
         "loader:",
         "  transport: fs",
@@ -71,7 +71,7 @@ def _write_named_source_yaml(sources_dir: Path, filename: str, source_id: str) -
             [
                 f"id: {source_id}",
                 "parser:",
-                "  entrypoint: identity",
+                "  entrypoint: core.identity",
                 "  args: {}",
                 "loader:",
                 "  transport: fs",
@@ -287,7 +287,7 @@ def test_load_sources_rejects_missing_id(tmp_path: Path) -> None:
     sources_dir = project_root / "sources"
     sources_dir.mkdir(parents=True)
     (sources_dir / "bad.yaml").write_text(
-        "parser: {entrypoint: identity}\n"
+        "parser: {entrypoint: core.identity}\n"
         "loader: {transport: fs, path: data.jsonl, reader: {format: jsonl}}\n",
         encoding="utf-8",
     )

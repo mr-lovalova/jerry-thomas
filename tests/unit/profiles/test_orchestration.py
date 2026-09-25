@@ -133,7 +133,7 @@ def _stream_catalog() -> StreamsConfig:
             "sources": {
                 "test.source": {
                     "id": "test.source",
-                    "parser": {"entrypoint": "identity"},
+                    "parser": {"entrypoint": "core.identity"},
                     "loader": {"entrypoint": "identity"},
                     "freshness": "opaque",
                 }
@@ -142,7 +142,7 @@ def _stream_catalog() -> StreamsConfig:
                 stream_id: {
                     "id": stream_id,
                     "from": {"source": "test.source"},
-                    "map": {"entrypoint": "identity"},
+                    "map": {"entrypoint": "core.identity"},
                 }
                 for stream_id in ("stream", "prices")
             },

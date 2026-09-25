@@ -92,7 +92,7 @@ def test_source_create_without_project_keeps_plugin_fallback(monkeypatch, tmp_pa
     assert captured["loader"]["transport"] == "http"
     assert captured["loader"]["reader"]["format"] == "json"
     assert captured["root"] is None
-    assert captured["parser_ep"] == "identity"
+    assert captured["parser_ep"] == "core.identity"
 
 
 def test_project_path_resolves_relative_to_workspace_root(monkeypatch, tmp_path):

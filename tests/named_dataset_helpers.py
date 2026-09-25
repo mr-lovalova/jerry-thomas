@@ -29,7 +29,7 @@ def create_project(root: Path, *, datasets: bool = True) -> Path:
         root / "sources" / "rows.yaml",
         {
             "id": "rows",
-            "parser": {"entrypoint": "core.temporal_record"},
+            "parser": {"entrypoint": "core.record"},
             "loader": {
                 "transport": "fs",
                 "path": "rows.jsonl",
@@ -57,7 +57,7 @@ def create_project(root: Path, *, datasets: bool = True) -> Path:
         {
             "id": "rows",
             "from": {"source": "rows"},
-            "map": {"entrypoint": "identity"},
+            "map": {"entrypoint": "core.identity"},
             "partition_by": ["id_"],
         },
     )

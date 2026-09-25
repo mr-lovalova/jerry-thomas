@@ -5,7 +5,7 @@ from:
 partition_by: [municipality]
 
 map:
-  entrypoint: identity
+  entrypoint: core.identity
   args: {}
 
 preprocess:

@@ -86,7 +86,7 @@ def test_samples_parquet_can_be_derived_and_reingested(copy_fixture) -> None:
         """\
 id: research.price-mean-signal
 parser:
-  entrypoint: core.temporal_record
+  entrypoint: core.record
 loader:
   transport: fs
   path: research/price_mean_signal.parquet
@@ -101,7 +101,7 @@ id: research.price-mean-signal
 from:
   source: research.price-mean-signal
 map:
-  entrypoint: identity
+  entrypoint: core.identity
 partition_by: [ticker]
 """,
         encoding="utf-8",

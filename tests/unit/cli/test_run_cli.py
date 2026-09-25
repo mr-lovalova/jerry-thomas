@@ -334,7 +334,7 @@ def test_dataset_preview_plans_every_output_id(
                 {
                     "id": stream_id,
                     "from": {"source": f"{stream_id}.source"},
-                    "map": {"entrypoint": "identity"},
+                    "map": {"entrypoint": "core.identity"},
                 }
             )
             for stream_id in ("prices", "fundamentals")
